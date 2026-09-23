@@ -175,7 +175,7 @@ jobs:
         run: |
           # rlphantom-r is the RL Phantom 2.4" (Sunton ESP32-2432S024R), the
           # resistive-touch version, confirmed on real boards.
-          pio run -e cyd -e cyd-ili9341 -e awok -e rlphantom-r -e cyd-fast -e cyd-ili9341-fast -e cyd35-fast
+          pio run -e cyd -e cyd-ili9341 -e cyd32-st7798 -e awok -e rlphantom-r -e cyd-fast -e cyd-ili9341-fast -e cyd35-fast
           # twatch-s3 is the LilyGo T-Watch S3: an ESP32-S3, so its own
           # bootloader (at 0x0, not 0x1000) and its own 16 MB partition
           # table. A lab board until the watch work settles; see ?lab=1.
@@ -241,7 +241,7 @@ jobs:
           # board that looks bricked.
           for f in bootloader partitions; do
             ref="$(sha256sum ".pio/build/cyd/$f.bin" | cut -d' ' -f1)"
-            for v in cyd cyd-ili9341 awok rlphantom-r cyd-fast cyd-ili9341-fast cyd35-fast; do
+            for v in cyd cyd-ili9341 cyd32-st7798 awok rlphantom-r cyd-fast cyd-ili9341-fast cyd35-fast; do
               got="$(sha256sum ".pio/build/$v/$f.bin" | cut -d' ' -f1)"
               if [ "$got" != "$ref" ]; then
                 echo "::error::$v/$f.bin differs from cyd/$f.bin."
@@ -273,7 +273,7 @@ jobs:
           # merged image for those on purpose: the merged blob is a
           # manual-recovery artifact, and recovery should land you on the
           # spec-compliant build rather than the overclocked one.
-          for v in cyd cyd-ili9341 awok rlphantom-r cyd-fast cyd-ili9341-fast cyd35-fast twatch-s3; do
+          for v in cyd cyd-ili9341 cyd32-st7798 awok rlphantom-r cyd-fast cyd-ili9341-fast cyd35-fast twatch-s3; do
             cp ".pio/build/$v/firmware.bin" "$v-firmware.bin"
           done
 
@@ -319,6 +319,7 @@ jobs:
               if m: news = [x.strip()[:38] for x in m.group(1).split("|") if x.strip()][:4]
           print("manifest: name %r, %d line(s)" % (name, len(news)))
           for p in ("web-flasher/manifest-cyd.json", "web-flasher/manifest-cyd-ili9341.json",
+                    "web-flasher/manifest-cyd32-st7798.json",
                     "web-flasher/manifest-awok.json", "web-flasher/manifest-cyd-fast.json",
                     "web-flasher/manifest-cyd-ili9341-fast.json",
                     "web-flasher/manifest-rlphantom-r.json",
@@ -342,6 +343,7 @@ jobs:
           # version picker one tag after it ships.
           cp web-flasher/manifest-cyd.json manifest-cyd.json
           cp web-flasher/manifest-cyd-ili9341.json manifest-cyd-ili9341.json
+          cp web-flasher/manifest-cyd32-st7798.json manifest-cyd32-st7798.json
           cp web-flasher/manifest-awok.json manifest-awok.json
           cp web-flasher/manifest-cyd-fast.json manifest-cyd-fast.json
           cp web-flasher/manifest-cyd-ili9341-fast.json manifest-cyd-ili9341-fast.json
@@ -373,6 +375,7 @@ jobs:
             esp32-otadata.bin \
             cyd-firmware.bin \
             cyd-ili9341-firmware.bin \
+            cyd32-st7798-firmware.bin \
             awok-firmware.bin \
             rlphantom-r-firmware.bin \
             cyd-fast-firmware.bin \
@@ -385,10 +388,12 @@ jobs:
             manifest-twatch-s3.json \
             firmware-cyd-merged.bin \
             firmware-cyd-ili9341-merged.bin \
+            firmware-cyd32-st7798-merged.bin \
             firmware-awok-merged.bin \
             firmware-rlphantom-r-merged.bin \
             manifest-cyd.json \
             manifest-cyd-ili9341.json \
+            manifest-cyd32-st7798.json \
             manifest-awok.json \
             manifest-rlphantom-r.json \
             manifest-cyd-fast.json \
@@ -447,6 +452,7 @@ jobs:
           cp web-flasher/index.html _site/index.html
           cp web-flasher/manifest-cyd.json _site/manifest-cyd.json
           cp web-flasher/manifest-cyd-ili9341.json _site/manifest-cyd-ili9341.json
+          cp web-flasher/manifest-cyd32-st7798.json _site/manifest-cyd32-st7798.json
           cp web-flasher/manifest-awok.json _site/manifest-awok.json
           cp web-flasher/manifest-cyd-fast.json _site/manifest-cyd-fast.json
           cp web-flasher/manifest-cyd-ili9341-fast.json _site/manifest-cyd-ili9341-fast.json
@@ -481,7 +487,7 @@ jobs:
           import json, shutil, os
           label = "${{ steps.ver.outputs.label }}"
           ver   = "${{ steps.ver.outputs.version }}"
-          for board in ("cyd", "cyd-ili9341", "cyd-fast", "cyd-ili9341-fast", "rlphantom-r", "twatch-s3"):
+          for board in ("cyd", "cyd-ili9341", "cyd32-st7798", "cyd-fast", "cyd-ili9341-fast", "rlphantom-r", "twatch-s3"):
               shutil.copy(board + "-firmware.bin", "_site/lab-" + board + "-firmware.bin")
               if os.path.exists(board + "-firmware.sig"):
                   shutil.copy(board + "-firmware.sig", "_site/lab-" + board + "-firmware.sig")
@@ -521,7 +527,7 @@ jobs:
             # firmware here: v1.16.0 shipped cyd35-fast to the release and into
             # index.html's <option> list but neither into _site, so the 3.5"
             # appeared in the picker and 404'd when chosen.
-            for board in cyd cyd-ili9341 awok rlphantom-r cyd-fast cyd-ili9341-fast cyd35-fast twatch-s3; do
+            for board in cyd cyd-ili9341 cyd32-st7798 awok rlphantom-r cyd-fast cyd-ili9341-fast cyd35-fast twatch-s3; do
               cp "$board-firmware.bin" "_site/$board-firmware.bin"
               # The Bluetooth update page fetches the image and its signature
               # side by side from the site root.
