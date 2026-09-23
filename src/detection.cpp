@@ -433,6 +433,21 @@ bool DetectionEngine::init() {
     if (SLIM_WIFI) {
         esp_wifi_stop();
         esp_wifi_deinit();
+        // A tick between the teardown and the rebuild. On the ESP32-S3
+        // (arduino-esp32 2.0.14) esp_wifi_deinit() returns before the last of
+        // the teardown has run on its task, and an esp_wifi_init() in the
+        // same tick races it: the driver comes up with the RECEIVER OFF --
+        // scans find no networks and the sniffer no frames, in every
+        // configuration, while transmitting works and the BLE receiver next to
+        // it hears everything. Bisected on an Elecrow CrowPanel 7 (S3) on
+        // 2026-09-23: zero delay here was deaf on every boot; delay(1) heard
+        // on 3/3, delay(10) 3/3, delay(50) 3/3, with nothing else changed --
+        // and a delay placed BEFORE the stop (50 ms to 3 s) does nothing. It
+        // is also why a boot that did something slow first (the touch
+        // calibration, an earlier Arduino WiFi.mode) hears the room: a driver
+        // that has settled tears down synchronously. The classic ESP32 never
+        // showed it. Ten milliseconds is the margin.
+        delay(10);
         wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
         cfg.static_rx_buf_num  = 2;    // the DMA landing zone; 2 is the floor
         cfg.dynamic_rx_buf_num = 16;
