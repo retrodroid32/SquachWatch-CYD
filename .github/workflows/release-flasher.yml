@@ -112,7 +112,13 @@ jobs:
               echo "label=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
             fi
           else
-            echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+            WANT="$(cat VERSION | tr -d '[:space:]')"
+            HAVE="${TAG#v}"
+            if [ "$HAVE" != "$WANT" ]; then
+              echo "::error::Release tag must match VERSION (tag=$HAVE, VERSION=$WANT)"
+              exit 1
+            fi
+            echo "version=$HAVE" >> "$GITHUB_OUTPUT"
           fi
           # Everything downstream keys off this rather than re-testing the
           # tag shape, so there is one definition of what a lab build is.
@@ -459,6 +465,7 @@ jobs:
         run: |
           mkdir -p _site
           cp web-flasher/index.html _site/index.html
+          cp web-flasher/boards.json _site/boards.json
           cp web-flasher/manifest-cyd.json _site/manifest-cyd.json
           cp web-flasher/manifest-cyd-ili9341.json _site/manifest-cyd-ili9341.json
           cp web-flasher/manifest-cyd32-st7798.json _site/manifest-cyd32-st7798.json
