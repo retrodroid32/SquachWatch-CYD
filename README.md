@@ -1,6 +1,6 @@
 # SquachWatch-CYD
 
-> Surveillance-device detector for the ESP32-2432S028R ("Cheap Yellow Display").
+> Surveillance-device detector for ESP32 Cheap Yellow Display (CYD) boards and compatible touchscreen variants.
 
 SquachWatch-CYD sniffs the 2.4 GHz airwaves for known wireless signatures
 of Flock Safety cameras, Axon body cameras, recording glasses, card
@@ -69,9 +69,12 @@ otherwise see all week. It is one tap away in `DETECTION FILTER`.
 
 ## Hardware
 
-- **ESP32-2432S028R** ("Cheap Yellow Display" / CYD) — about $15.
-  Built-in 320×240 ILI9341 TFT, XPT2046 resistive touch, and an
-  onboard microSD card slot.
+- **ESP32-2432S028R** ("Cheap Yellow Display" / CYD) — the original 2.8" board.
+  SquachWatch supports the ST7789 profile plus the older ILI9341 variant,
+  with XPT2046 resistive touch and the onboard microSD card slot.
+- **ESP32-2432S032R / E32R32P** — the 3.2" resistive CYD.
+  SquachWatch includes a dedicated 240×320 ST7798/ST7789-compatible profile,
+  GPIO27 backlight control, and XPT2046 touch sharing the LCD SPI bus.
 
 That's it. No buzzer, no GPS, no extra modules. The CYD is the
 whole device.
@@ -84,7 +87,7 @@ from your browser:
 **[https://squachwatch.com/](https://squachwatch.com/)**
 
 Works in Firefox, Chrome, Edge, or Brave on desktop. Pick your board (2.8" CYD,
-AWOK 2.4" or RL Phantom 2.4"), plug in, click Connect & Install, done.
+3.2" CYD ST7798, AWOK 2.4" or RL Phantom 2.4"), plug in, click Connect & Install, done.
 
 ## Build
 
@@ -99,6 +102,11 @@ Three steps:
 3. Build and flash:
    ```sh
    pio run -t upload
+   ```
+
+   For the 3.2" CYD profile, use:
+   ```sh
+   pio run -e cyd32-st7798 -t upload
    ```
 
 The first build pulls the TFT_eSPI, XPT2046, and NimBLE-Arduino
@@ -482,3 +490,34 @@ Verified on real hardware. There is also a PC emulator in `sim/` that
 compiles the actual `src/` against shims, and a host test suite in `test/`
 (`make -C test`) covering the decoders, the signature tables and the
 emulator's own fidelity to the display library.
+
+
+### 3.2-inch CYD (ESP32-2432S032R / E32R32P; ST7798/ST7789-compatible)
+
+A dedicated PlatformIO target is included for the 3.2-inch resistive CYD:
+
+```text
+pio run -e cyd32-st7798
+pio run -e cyd32-st7798 -t upload
+```
+
+On Windows, `build_cyd32_st7798.bat` automatically finds the PlatformIO Core
+installed by the VS Code extension even when `pio` is not in PATH.
+`flash_cyd32_st7798.bat` lists the detected serial ports before upload, uses
+`COM17` as its default, and lets you select a different COM port before flashing.
+
+This target uses the 3.2-inch board wiring rather than the original 2.8-inch
+CYD assumptions: 240×320 display, backlight on GPIO27, LCD SPI on GPIO
+14/13/12, and XPT2046 touch sharing that LCD SPI bus with touch CS on GPIO33.
+The shared touch/display bus runs through TFT_eSPI's HSPI path, and the
+3.2-inch profile deliberately does not expose the 80 MHz display-overclock
+option used by some other board profiles.
+
+TFT_eSPI 2.5.43 does not provide an `ST7798_DRIVER` selector, so this target
+uses its ST7789-compatible ST77xx command/init path. The common
+ESP32-2432S032R/E32R32P is documented as ST7789, while some seller listings
+use ST7798 terminology for closely related ST77xx panels.
+
+The 3.2-inch baseline uses BGR colour order with inversion off. First boot
+still presents SquachWatch's colour check and intentionally runs touch
+calibration so individual panel/digitizer variations can be corrected.
