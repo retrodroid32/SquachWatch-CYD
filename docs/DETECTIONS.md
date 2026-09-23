@@ -42,8 +42,8 @@ of the matched signature rather than of the type:
 | **Medium** | Registered to a parent whose range is far wider than the product — Amazon owns Ring, and also Echo, Fire TV and Kindle. |
 | **Low** | A module or ODM vendor whose parts are in everything, or a block not in the IEEE registry. |
 
-Across all 73 OUI rows in the firmware that comes out at 31 High, 4
-Medium, 38 Low.
+Across all 77 OUI rows in the firmware that comes out at 33 High, 4
+Medium, 40 Low.
 
 **This is what makes ALERT FILTER work.** It has always been a minimum-
 confidence filter, and until now confidence was constant per type, so it
@@ -159,18 +159,6 @@ risk, since other Apple accessories (AirPods, etc.) also use `0x07`.
 would be High, but including `0x07` for faster detection trades some
 of that away (see above). Note: AirTags rotate their address
 frequently, so detection may flicker in and out.
-
----
-
-## Tile trackers — `AIRTAG` (categorised here) — **Medium confidence**
-
-**Why it works:** Tile devices advertise the proprietary service
-UUID `0xFEED`.
-
-**Source:** [Eye Spy](https://simeononsecurity.com/articles/eye-spy-passive-surveillance-detector-esp32-2026/).
-
-**Confidence in v1.0:** **Medium**. Categorised as `AIRTAG` in v1.0
-for simplicity; a `TILE` category is a v1.1 improvement.
 
 ---
 
