@@ -1,0 +1,14 @@
+SquachWatch-CYD 3.2" CYD support
+==================================
+PlatformIO environment: cyd32-st7798
+Target: ESP32-2432S032R / E32R32P-style 3.2" CYD
+Display: 240x320 ST77xx / ST7798-ST7789-compatible
+Backlight: GPIO27
+LCD SPI: SCK 14, MOSI 13, MISO 12, CS 15, DC 2
+Touch: XPT2046 shared with LCD SPI, CS 33
+Build: pio run -e cyd32-st7798
+Flash: pio run -e cyd32-st7798 -t upload
+Windows helpers:
+  build_cyd32_st7798.bat
+  flash_cyd32_st7798.bat
+The flash helper lists detected COM ports and defaults to COM17.
