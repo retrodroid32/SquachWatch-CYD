@@ -166,6 +166,9 @@ jobs:
       - name: Install PlatformIO
         run: pip install --upgrade platformio
 
+      - name: Validate board matrix and release metadata
+        run: python tools/board_matrix.py validate
+
       - name: Build firmware
         # cyd35-fast (the 3.5" ST7796) ships from v1.16.0 as a BETA, and
         # only at 80 MHz: the plain cyd35 at 40 MHz halves the frame rate on
@@ -175,7 +178,7 @@ jobs:
         run: |
           # rlphantom-r is the RL Phantom 2.4" (Sunton ESP32-2432S024R), the
           # resistive-touch version, confirmed on real boards.
-          pio run -e cyd -e cyd-ili9341 -e cyd32-st7798 -e awok -e rlphantom-r -e cyd-fast -e cyd-ili9341-fast -e cyd35-fast
+          pio run $(python tools/board_matrix.py pio-args release | sed 's/-e twatch-s3//g' | sed 's/-e rlphantom//g')
           # twatch-s3 is the LilyGo T-Watch S3: an ESP32-S3, so its own
           # bootloader (at 0x0, not 0x1000) and its own 16 MB partition
           # table. A lab board until the watch work settles; see ?lab=1.
@@ -199,6 +202,12 @@ jobs:
             0x1000  .pio/build/cyd-ili9341/bootloader.bin \
             0x8000  .pio/build/cyd-ili9341/partitions.bin \
             0x10000 .pio/build/cyd-ili9341/firmware.bin
+          python -m esptool --chip esp32 merge_bin \
+            -o firmware-cyd32-st7798-merged.bin \
+            --flash_mode dio --flash_freq 40m --flash_size 4MB \
+            0x1000  .pio/build/cyd32-st7798/bootloader.bin \
+            0x8000  .pio/build/cyd32-st7798/partitions.bin \
+            0x10000 .pio/build/cyd32-st7798/firmware.bin
           python -m esptool --chip esp32 merge_bin \
             -o firmware-awok-merged.bin \
             --flash_mode dio --flash_freq 40m --flash_size 4MB \
@@ -291,7 +300,7 @@ jobs:
           fi
           umask 077
           printf '%s\n' "$OTA_SIGNING_KEY" > "$RUNNER_TEMP/ota_key.pem"
-          for v in cyd cyd-ili9341 awok rlphantom-r cyd-fast cyd-ili9341-fast cyd35-fast twatch-s3; do
+          for v in $(python tools/board_matrix.py list sign); do
             python tools/sign_firmware.py --key "$RUNNER_TEMP/ota_key.pem" \
               --env "$v" --bin "$v-firmware.bin" --out "$v-firmware.sig"
           done
