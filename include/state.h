@@ -36,6 +36,29 @@ enum class DetectionType : uint8_t {
     COUNT   = 18
 };
 
+inline const char* detectionTypeDisplayName(DetectionType t) {
+    switch (t) {
+        case DetectionType::FLOCK:       return "FLOCK CAM";
+        case DetectionType::AXON:        return "AXON BODY";
+        case DetectionType::META:        return "META GLASSES";
+        case DetectionType::SKIMMER:     return "CARD SKIMMER";
+        case DetectionType::RAVEN:       return "RAVEN";
+        case DetectionType::AIRTAG:      return "AIRTAG";
+        case DetectionType::DRONE:       return "DRONE";
+        case DetectionType::ALPR:        return "ALPR";
+        case DetectionType::CAMERA:      return "CAMERA";
+        case DetectionType::SAMSUNG_TAG: return "SAMSUNG TAG";
+        case DetectionType::GOOGLE_TAG:  return "GOOGLE TAG";
+        case DetectionType::TILE:        return "TILE";
+        case DetectionType::RING:        return "RING CAM";
+        case DetectionType::DEAUTH:      return "DEAUTH";
+        case DetectionType::EVILTWIN:    return "EVIL TWIN AP";
+        case DetectionType::IBEACON:     return "PROXIMITY BEACON";
+        case DetectionType::HACKER:      return "HACKER HARDWARE";
+        default:                         return "UNKNOWN";
+    }
+}
+
 inline const char* detectionTypeName(DetectionType t) {
     switch (t) {
         case DetectionType::FLOCK:       return "FLOCK";
