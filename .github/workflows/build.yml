@@ -53,11 +53,14 @@ jobs:
       - name: Install PlatformIO
         run: pip install --upgrade platformio
 
-      # The three that ship, which is what `pio run` with no -e does --
+      # Normal shipping builds, including the 3.2-inch CYD, are in default_envs --
       # cyd35 is excluded on purpose (see platformio.ini: it is frozen and
       # boot loops on hardware, so a green build here would mean nothing)
       # and the two -fast variants differ from their base build by one
       # -D flag, so they cannot break independently of it.
+      - name: Validate board matrix and release metadata
+        run: python tools/board_matrix.py validate
+
       - name: Build
         run: pio run
 
@@ -82,8 +85,5 @@ jobs:
       - uses: actions/checkout@v4
       - name: Build the PC emulator
         run: make -C sim -j"$(nproc)"
-      - name: Render one frame
-        run: |
-          cd sim
-          ./squachsim clear /tmp/smoke.png --bg 7 --outfit 13 --frames 60
-          test -s /tmp/smoke.png
+      - name: Run UI screenshot regression suite
+        run: make -C sim regression
