@@ -5,8 +5,9 @@ a computer, you can flash this in about ten minutes.
 
 ## What you need
 
-- **ESP32-2432S028R** (the "Cheap Yellow Display" / CYD) — about $15
-  on Amazon.
+- **ESP32-2432S028R** (the 2.8" Cheap Yellow Display / CYD).
+- **ESP32-2432S032R / E32R32P** (the 3.2" resistive CYD) is also supported by
+  the dedicated `cyd32-st7798` profile.
 - A **USB-C cable** that supports data (some cables are charge-only —
   those won't work).
 - A computer running **Windows, macOS, or Linux**.
@@ -38,7 +39,7 @@ pipx install platformio
 ## Get the code
 
 ```sh
-git clone https://github.com/skizzophrenic/SquachWatch-CYD
+git clone https://github.com/retrodroid32/SquachWatch-CYD
 cd SquachWatch-CYD
 ```
 
@@ -58,10 +59,19 @@ bridge. On Windows 7 or older, install the CH340 driver manually:
 2. Click the PlatformIO sidebar icon (the alien-head).
 3. Under "Project Tasks" → "cyd" → "General" → click **Upload**.
 
-**From the command line:**
+**From the command line — 2.8" default profile:**
 ```sh
 pio run -t upload
 ```
+
+**3.2" CYD / ESP32-2432S032R:**
+```sh
+pio run -e cyd32-st7798 -t upload
+```
+
+On Windows you can also run `build_cyd32_st7798.bat` and
+`flash_cyd32_st7798.bat`. The flash helper lists detected serial ports and
+defaults to COM17, while still letting you choose another port.
 
 The first build downloads the toolchain + libraries (~200 MB, takes
 a few minutes). Subsequent builds are quick.
@@ -111,8 +121,9 @@ The CYD isn't entering flash mode. Try:
 
 ### Screen stays white / blank
 
-The TFT_eSPI user setup is wrong. Confirm `cyd_user_setup.h` is
-being `-include`'d by `platformio.ini`. See the
+The TFT_eSPI user setup is wrong. For a 2.8" board, confirm `cyd_user_setup.h` or
+`cyd_ili9341_user_setup.h` is being included. For the 3.2" board, confirm
+`include/cyd32_st7798_user_setup.h` is being included by `platformio.ini`. See the
 [`build_flags`](../platformio.ini) section.
 
 ### "WiFi: Unknown" / detections not firing
