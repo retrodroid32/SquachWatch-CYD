@@ -1462,8 +1462,24 @@
         .then(function (data) {
           if (!data || !Array.isArray(data.boards)) return;
           data.boards.forEach(function (b) { boardMatrix[b.id] = b; });
-          var current = select.options[select.selectedIndex];
-          if (current) updateCompatibility(current);
+
+          // boards.json is the source of truth. The static <option>s above are
+          // only a no-network fallback; once the matrix loads, rebuild the
+          // public picker from profiles marked visible.
+          var previous = boardIdFromOption(select.options[select.selectedIndex]);
+          select.innerHTML = '';
+          data.boards.filter(function (b) { return b.visible === true; }).forEach(function (b) {
+            var o = document.createElement('option');
+            o.value = './' + b.manifest;
+            o.textContent = b.label || b.id;
+            if (b.cyd28) o.dataset.cyd28 = '1';
+            if (b.fast_manifest) o.dataset.fast = './' + b.fast_manifest;
+            if (b.note) o.dataset.ocnote = b.note;
+            if (b.id === previous || (!previous && b.id === 'cyd')) o.selected = true;
+            select.appendChild(o);
+          });
+          if (select.selectedIndex < 0 && select.options.length) select.selectedIndex = 0;
+          applySelection(null);
         })
         .catch(function () { /* static picker remains fully functional */ });
     }
