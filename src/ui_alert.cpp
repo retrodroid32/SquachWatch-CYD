@@ -6,27 +6,6 @@
 #include "ignore_list.h"
 #include <Arduino.h>
 
-static const char* targetLabel(DetectionType t) {
-    switch (t) {
-        case DetectionType::FLOCK:   return "FLOCK CAM";
-        case DetectionType::AXON:    return "AXON BODY";
-        case DetectionType::META:    return "META GLASSES";
-        case DetectionType::SKIMMER: return "CARD SKIMMER";
-        case DetectionType::RAVEN:   return "RAVEN";
-        case DetectionType::AIRTAG:  return "AIRTAG";
-        case DetectionType::DRONE:   return "DRONE";
-        case DetectionType::ALPR:    return "ALPR";
-        case DetectionType::CAMERA:  return "CAMERA";
-        case DetectionType::SAMSUNG_TAG: return "SAMSUNG TAG";
-        case DetectionType::GOOGLE_TAG:  return "GOOGLE TAG";
-        case DetectionType::TILE:        return "TILE";
-        case DetectionType::RING:        return "RING CAM";
-        case DetectionType::EVILTWIN:    return "EVIL TWIN AP";
-        case DetectionType::IBEACON:     return "PROXIMITY BEACON";
-        case DetectionType::HACKER:      return "HACKER HARDWARE";
-        default:                     return "UNKNOWN";
-    }
-}
 
 static Detection s_last;
 static bool s_touched = false;
@@ -359,7 +338,7 @@ void uiAlertTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng,
     // Measured anyway, with a fallback, because a label that runs off the
     // side of a 240px rotation is not something to find out on hardware.
     {
-        const char* tgt = targetLabel(s_last.type);
+        const char* tgt = detectionTypeDisplayName(s_last.type);
         // The budget is the space left of the IGNORE button, NOT the screen
         // width. The button is drawn over this strip's right-hand end, so
         // measuring against w put "PROXIMITY BEACON" straight through it on
