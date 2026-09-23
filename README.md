@@ -1,5 +1,7 @@
 # SquachWatch-CYD
 
+**Current fork version: v1.20.0**
+
 > Surveillance-device detector for ESP32 Cheap Yellow Display (CYD) boards and compatible touchscreen variants.
 
 SquachWatch-CYD sniffs the 2.4 GHz airwaves for known wireless signatures
@@ -50,7 +52,7 @@ the glitchy SquachWatch wordmark.
 ### Confidence is per signature, not per type
 
 Every hardware prefix in the firmware was checked against the IEEE registry
-rather than against other detectors. Of 76 rows: **32 High, 4 Medium, 40
+rather than against other detectors. Of 77 rows: **33 High, 4 Medium, 40
 Low**.
 
 That grading matters most on `FLOCK`, where exactly **one** of 29 prefixes is
@@ -84,7 +86,7 @@ whole device.
 No build tools, no IDE, no cloning anything — flash a board straight
 from your browser:
 
-**[https://squachwatch.com/](https://squachwatch.com/)**
+**[https://retrodroid32.github.io/SquachWatch-CYD/](https://retrodroid32.github.io/SquachWatch-CYD/)**
 
 Works in Firefox, Chrome, Edge, or Brave on desktop. Pick your board (2.8" CYD,
 3.2" CYD ST7798, AWOK 2.4" or RL Phantom 2.4"), plug in, click Connect & Install, done.
@@ -96,7 +98,7 @@ Three steps:
 1. Install [PlatformIO](https://platformio.org/) (CLI or VS Code extension).
 2. Clone the repo:
    ```sh
-   git clone https://github.com/skizzophrenic/SquachWatch-CYD
+   git clone https://github.com/retrodroid32/SquachWatch-CYD
    cd SquachWatch-CYD
    ```
 3. Build and flash:
