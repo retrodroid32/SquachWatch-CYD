@@ -369,6 +369,9 @@ static void drawCrashCard(TFT_eSPI& t) {
 // Both variants route their touch controller through the same
 // GPIO25/32/33 trio (SPI vs I2C), so probing for the I2C chip at boot
 // tells us which board this is — see setup().
+//   - ESP32-2432S032R / E32R32P (3.2", env:cyd32-st7798): 240x320
+//     ST7789/ST7798-compatible panel, backlight GPIO27, resistive XPT2046
+//     sharing the display SPI bus (SCK/MOSI/MISO=14/13/12, CS=33).
 //   - ESP32-3248S035R (3.5", built separately as env:cyd35): resistive
 //     XPT2046 again, CS=33 sharing the *display's* SPI bus (SCK/MOSI/
 //     MISO = 14/13/12) instead of getting a dedicated peripheral —
@@ -398,7 +401,10 @@ static void drawCrashCard(TFT_eSPI& t) {
 //
 //   TOUCH_RAW_SHARED_BUS  -- the RL Phantom's resistive variant. A plain
 //     pressure-gated raw read, and the 2.8"-style old calibration.
-#if defined(AWOK)
+#if defined(AWOK) || defined(CYD32)
+    // AWOK and the 3.2" CYD both put XPT2046 on the LCD's SPI bus.
+    // A second SPIClass on those pins corrupts touch reads, so use
+    // TFT_eSPI's shared-bus touch path for both.
     #define TOUCH_ON_DISPLAY_BUS 1
 #endif
 #if defined(RLPHANTOM_R)
@@ -469,6 +475,11 @@ static void drawCrashCard(TFT_eSPI& t) {
 // Confirmed on the watch 2026-09-22: the ST7789 wants inversion on (as
 // LilyGo's own setup says); false showed every colour inverted.
 constexpr bool PANEL_NEEDS_INVERSION = true;
+#elif defined(CYD32)
+// Hardware-tested E32R32P/ST7789P3: BGR colour order, NO inversion.
+// An inverted baseline is exactly what turns the first-boot colour check into
+// a screen where every channel looks wrong.
+constexpr bool PANEL_NEEDS_INVERSION = false;
 #elif defined(CYD35)
 // UNCONFIRMED on real hardware post-fix: the original port's "true"
 // guess predates discovering the override bug above, so whatever
@@ -888,7 +899,10 @@ static bool rawReadFiltered(int16_t& a, int16_t& b) {
 // use, so what the calibration measures is exactly what touch then reads.
 static bool readTouchRaw(int16_t& a, int16_t& b) {
     if (usingCapTouch) return rawReadCap(a, b);
-#if defined(TOUCH_ON_DISPLAY_BUS) || defined(CYD35)
+#if defined(CYD32)
+    // 3.2-inch E32R32P: pressure-gated raw samples; TouchCal handles smoothing.
+    return rawReadResistive(a, b);
+#elif defined(TOUCH_ON_DISPLAY_BUS) || defined(CYD35)
     return rawReadFiltered(a, b);
 #else
     return rawReadResistive(a, b);
@@ -2371,14 +2385,13 @@ void setup() {
     Serial.println(usingCapTouch ? "T-Watch S3 -- FT6336 capacitive touch answered."
                                  : "T-Watch S3 -- FT6336 did not answer; no touch.");
 #elif defined(TOUCH_ON_DISPLAY_BUS)
-    // AWOK's XPT2046 sits on the display's own shared VSPI bus (TOUCH_CS=21,
-    // already armed by TFT_eSPI itself once awok_user_setup.h's #define
-    // is in scope) and is driven entirely through TFT_eSPI's own touch
-    // path -- no I2C cap-touch probe (this board has no cap-touch chip
-    // at all), no touch.begin(), no touchSPI. All subsequent touch
-    // reads go through pollTouch()'s AWOK branch (tft.getTouch()).
+    // AWOK and CYD32 put XPT2046 on the display's own shared SPI bus.
     usingCapTouch = false;
+#if defined(CYD32)
+    Serial.println("CYD 3.2 build -- XPT2046 on shared LCD SPI bus via TFT_eSPI.");
+#else
     Serial.println("AWOK build -- XPT2046 on shared VSPI bus via TFT_eSPI.");
+#endif
 #else
     // Touch: probe for the capacitive controller first (I2C 0x15 on
     // SDA=33/SCL=32, reset on GPIO25 — the JC2432W328C). If it doesn't
@@ -5368,7 +5381,9 @@ void loop() {
                 info.calB0 = (int16_t)lroundf(b0); info.calB1 = (int16_t)lroundf(b1);
             }
             info.usingCapTouch = usingCapTouch;
-#if defined(TOUCH_ON_DISPLAY_BUS)
+#if defined(CYD32)
+            info.boardName = "CYD 3.2";
+#elif defined(TOUCH_ON_DISPLAY_BUS)
             info.boardName = "AWOK";
 #elif defined(CYD35)
             info.boardName = "cyd35 BETA";
