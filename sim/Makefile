@@ -244,6 +244,9 @@ $(LIVE_BIN): $(UI_OBJS) $(LIVE_OBJS)
 
 -include $(DEPS)
 
+regression: $(BIN)
+	python3 regression_check.py
+
 shots: $(BIN)
 	@mkdir -p out
 	./$(BIN) clear    out/clear.png
@@ -259,4 +262,4 @@ clean:
 	rm -rf $(BIN).dSYM $(LIVE_BIN).dSYM
 	rm -rf out .nvs $(WASM_DIR)/squachsim.js $(WASM_DIR)/squachsim.wasm
 
-.PHONY: all live wasm shots clean
+.PHONY: all live wasm regression shots clean
