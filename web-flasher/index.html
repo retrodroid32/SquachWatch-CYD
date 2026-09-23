@@ -371,6 +371,16 @@
     box-shadow:0 0 14px rgba(180,0,255,0.4);
     outline:none;
   }
+  .board-compat-note{
+    margin:0 0 12px;
+    font-size:0.82rem;
+    color:var(--cyan);
+    background:rgba(0,255,245,0.05);
+    border:1px dashed rgba(0,255,245,0.55);
+    border-radius:6px;
+    padding:8px 10px;
+    line-height:1.4;
+  }
   .white-screen-note{
     margin:0 0 16px;
     font-size:0.82rem;
@@ -682,11 +692,12 @@
     <select class="board-select" id="boardSelect" aria-label="Board select">
       <option value="./manifest-cyd.json" data-cyd28="1" data-fast="./manifest-cyd-fast.json" selected>2.8&quot; CYD &mdash; ST7789 (default)</option>
       <option value="./manifest-cyd-ili9341.json" data-cyd28="1" data-fast="./manifest-cyd-ili9341-fast.json">2.8&quot; CYD &mdash; ILI9341 (older)</option>
-      <option value="./manifest-cyd32-st7798.json" data-ocnote="The 3.2&quot; CYD shares its touchscreen and display SPI bus, so display overclocking is disabled for this board.">3.2&quot; CYD &mdash; ST7798</option>
+      <option value="./manifest-cyd32-st7798.json" data-ocnote="The 3.2&quot; CYD shares its touchscreen and display SPI bus, so display overclocking is disabled for this board.">3.2&quot; CYD &mdash; ST7798 / ST7789 compatible</option>
       <option value="./manifest-awok.json">AWOK 2.4&quot;</option>
       <option value="./manifest-rlphantom-r.json">RL Phantom 2.4&quot;</option>
       <option value="./manifest-cyd35-fast.json" data-ocnote="The 3.5&quot; only ships at 80MHz, so there is no slower build to fall back to.">3.5&quot; &mdash; ST7796 (BETA)</option>
     </select>
+    <p class="board-compat-note" id="boardCompatNote" hidden></p>
     <p class="white-screen-note" id="whiteScreenNote">
       The 2.8&quot; CYD ships with one of two different display drivers depending on manufacturing
       batch, and there's no way to tell which from the outside. If you flash one and get a
@@ -1397,6 +1408,7 @@
     var select = document.getElementById('boardSelect');
     var installBtn = document.getElementById('installBtn');
     var note = document.getElementById('whiteScreenNote');
+    var compatNote = document.getElementById('boardCompatNote');
     var versionNote = document.getElementById('versionNote');
     var ocRow = document.getElementById('overclockRow');
     var ocChk = document.getElementById('overclockChk');
@@ -1442,6 +1454,35 @@
 
     var WHITE_SCREEN_LINE =
       "White screen after flashing? Your CYD's probably got the other display driver — try the other 2.8\" option in that dropdown.";
+
+    var boardMatrix = {};
+    function loadBoardMatrix() {
+      return fetch('./boards.json', { cache: 'no-store' })
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (data) {
+          if (!data || !Array.isArray(data.boards)) return;
+          data.boards.forEach(function (b) { boardMatrix[b.id] = b; });
+          var current = select.options[select.selectedIndex];
+          if (current) updateCompatibility(current);
+        })
+        .catch(function () { /* static picker remains fully functional */ });
+    }
+
+    function boardIdFromOption(opt) {
+      if (!opt) return '';
+      var m = (opt.value || '').match(/manifest-(.+?)\.json$/);
+      return m ? m[1] : '';
+    }
+
+    function updateCompatibility(opt) {
+      if (!compatNote) return;
+      var b = boardMatrix[boardIdFromOption(opt)];
+      var msg = b && b.note ? b.note : '';
+      compatNote.hidden = !msg;
+      compatNote.textContent = msg;
+    }
+
+    loadBoardMatrix();
 
     // The manifest's own "version" field is stamped with the release
     // tag by .github/workflows/release-flasher.yml at deploy time (the
@@ -1553,6 +1594,7 @@
       installBtn.setAttribute('manifest', manifest);
       var isCyd28 = opt.dataset.cyd28 === '1';
       if (note) note.hidden = !isCyd28;
+      updateCompatibility(opt);
       if (announce === 'board' && isCyd28) say(WHITE_SCREEN_LINE, 8000);
       if (announce === 'overclock' && useFast) say(OVERCLOCK_LINE, 8000);
       if (announce === 'version' && verDir) {
