@@ -821,7 +821,17 @@
 
 <footer>Stay squachy out there.</footer>
 
-<script type="module" src="./vendor/esp-web-tools-10.4.0.js"></script>
+<script type="module">
+  // Production releases self-host this pinned bundle. The CDN fallback is
+  // only for developers opening web-flasher/ straight from a source checkout;
+  // the release workflow validates the local file before Pages can deploy.
+  try {
+    await import('./vendor/esp-web-tools-10.4.0.js');
+  } catch (e) {
+    console.warn('Local ESP Web Tools bundle missing; using pinned development fallback.', e);
+    await import('https://unpkg.com/esp-web-tools@10.4.0/dist/web/install-button.js?module');
+  }
+</script>
 <script>
 (function () {
   var wrap = document.getElementById('squachyWrap');
@@ -1800,7 +1810,13 @@
       // bare name, which a browser cannot resolve, so the import threw before
       // anything was sent. And the port is NOT opened here: esploader.main()
       // opens it itself, and a port opened twice fails with "already open".
-      var mod = await import('./vendor/esptool-js-0.6.1.js');
+      var mod;
+      try {
+        mod = await import('./vendor/esptool-js-0.6.1.js');
+      } catch (e) {
+        console.warn('Local esptool-js bundle missing; using pinned development fallback.', e);
+        mod = await import('https://unpkg.com/esptool-js@0.6.1/bundle.js');
+      }
       transport = new mod.Transport(port);
       esploader = new mod.ESPLoader({ transport: transport, baudrate: 115200, enableTracing: false });
       var chipDesc = await esploader.main();
