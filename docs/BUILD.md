@@ -71,7 +71,7 @@ pio run -e cyd32-st7798 -t upload
 
 On Windows you can also run `build_cyd32_st7798.bat` and
 `flash_cyd32_st7798.bat`. The flash helper lists detected serial ports and
-defaults to COM17, while still letting you choose another port.
+asks which COM port to use before uploading.
 
 The first build downloads the toolchain + libraries (~200 MB, takes
 a few minutes). Subsequent builds are quick.
