@@ -86,9 +86,6 @@ jobs:
     needs: preflight
     if: needs.preflight.outputs.skip != 'true'
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - name: Check out
         uses: actions/checkout@v4
@@ -670,11 +667,6 @@ jobs:
           } > _site/versions.json
           cat _site/versions.json
 
-      - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: _site
-
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
+      # Pages is published by publish-pages.yml from master. Keeping release
+      # creation separate prevents tag deployment-policy rules from blocking
+      # the firmware release before it can even start.
