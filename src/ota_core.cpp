@@ -494,8 +494,8 @@ Fail finish() {
 //
 // The numbers below are the SHA-256 of what the published v1.11.0 cyd-fast
 // image was signed over, and the signature the release workflow produced for
-// it -- both taken straight off squachwatch.com, both public. They stay valid
-// however many releases follow: nothing here reads the site. A good one must pass, and
+// it -- both copied from the published upstream v1.11.0 release. They stay
+// valid however many releases follow: nothing here reads a live site. A good one must pass, and
 // anything touched afterwards must not. SIGTEST on the console.
 const char* testSignature() {
     static const uint8_t HASH[32] = {
