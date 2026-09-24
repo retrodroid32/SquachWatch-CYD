@@ -12,13 +12,13 @@ name: Build and release firmware
 # artifacts attached (bootloader/partitions/firmware — the human-facing
 # source of truth), then also merge each into one flashable image and
 # attach those plus per-board version-stamped manifests. The repo is
-# public now, so the web flasher itself is deployed straight to this
-# repo's own GitHub Pages site (github.io/SquachWatch-CYD) as part of
-# this same run — all three merged binaries and manifests are copied
-# alongside index.html there so the browser fetches them same-origin
-# (GitHub release assets don't send CORS headers, so the flasher page
-# can't fetch them directly from the Releases tab). index.html's board
-# picker swaps which manifest the install button targets.
+# public now, so this workflow also assembles and validates the exact
+# pages-site artifact consumed by publish-pages.yml. That separate workflow
+# deploys only after this run succeeds; ordinary master builds never replace
+# the production root. Firmware and manifests stay alongside index.html so
+# the browser fetches them same-origin (GitHub release assets don't send CORS
+# headers, so the flasher page can't fetch them directly from the Releases
+# tab). index.html's board picker swaps which manifest the install button targets.
 on:
   push:
     tags:
@@ -28,11 +28,8 @@ on:
       # Pages artifact, but no release notes and no public Release -- it exists
       # so an unfinished feature can be flashed from a machine that is not
       # the one it was built on. See the `is_lab` output below.
-      #
-      # NOTE: this trigger needs a "lab-*" tag policy on the github-pages
-      # environment, which by default allows only `master` and `v*`. Without
-      # it the run is rejected before it starts. The dispatch input below runs
-      # from master and needs no such change, so it is the working path today.
+      # Pages deployment is owned by publish-pages.yml, so this build workflow
+      # does not need a github-pages environment policy for lab tags.
       - "lab-*"
   workflow_dispatch:
     inputs:
@@ -46,9 +43,9 @@ on:
         default: ""
 
 permissions:
-  contents: write   # create the GitHub Release
-  pages: write       # deploy the flasher site
-  id-token: write    # required by actions/deploy-pages
+  # Least privilege for this workflow: it creates/reads GitHub Releases.
+  # Pages/id-token permissions live only in publish-pages.yml.
+  contents: write
 
 # One run per tag at a time. The v1.7.7 push started this workflow twice in
 # the same second -- same commit, same tag, same event -- and the two raced:
