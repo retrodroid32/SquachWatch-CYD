@@ -472,8 +472,30 @@ jobs:
               exit 1
             fi
             echo "Restoring root site from $LATEST"
+            # esp32s3-* and *-partitions.bin too: the watch's own bootloader
+            # and table are named differently from the shared ESP32 pair, and
+            # without them every lab run left the public watch install 404ing
+            # on two of its four files (v1.20.0 until this was caught).
             gh release download "$LATEST" -D _site --clobber \
-              -p '*-firmware.bin' -p 'manifest-*.json' -p 'esp32-*.bin' -p '*-firmware.sig' || true
+              -p '*-firmware.bin' -p 'manifest-*.json' -p 'esp32-*.bin' -p 'esp32s3-*.bin' \
+              -p '*-partitions.bin' -p '*-firmware.sig' || true
+            # Every file a restored public manifest names must be here, or the
+            # public page 404s on it. Fail the run rather than deploy that.
+            python - <<'PY'
+          import json, glob, os, sys
+          missing = []
+          for mf in glob.glob("_site/manifest-*.json"):
+              if os.path.basename(mf).startswith("manifest-lab-"):
+                  continue
+              for b in json.load(open(mf))["builds"]:
+                  for part in b["parts"]:
+                      if not os.path.exists(os.path.join("_site", part["path"])):
+                          missing.append(os.path.basename(mf) + " -> " + part["path"])
+          if missing:
+              print("::error::The restored public site is missing files:\n" + "\n".join(missing))
+              sys.exit(1)
+          print("restored public manifests: every file present")
+          PY
             # This run's build, under lab- names beside the release, with a
             # manifest each that points at them. web-flasher/index.html's
             # ?lab=1 list is what offers them.
