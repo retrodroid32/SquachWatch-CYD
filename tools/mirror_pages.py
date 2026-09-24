@@ -88,6 +88,7 @@ def main() -> None:
     versions = json.loads(versions_raw)
 
     for rel in (
+        ".nojekyll",
         "index.html",
         "update/index.html",
         "emulator/index.html",
