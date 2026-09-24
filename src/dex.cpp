@@ -194,11 +194,30 @@ void begin() {
 void note(DetectionType t, int8_t rssi) {
     const uint8_t i = indexOf(t);
     if (i >= ENTRIES) return;
+#if defined(ESP32) || defined(ARDUINO_ARCH_ESP32)
     pendingLock();
     Pending& p = s_pending[i];
     if (p.count < 0xFFFF) p.count++;
     if (rssi > p.bestRssi) p.bestRssi = rssi;
     pendingUnlock();
+#else
+    // Native tests/emulator have no radio task, and historical host tests
+    // intentionally inspect the record immediately after note(). Keep that
+    // single-thread behavior while the device build uses the deferred handoff.
+    Record& rec = s_rec[i];
+    if (Clock::trusted()) {
+        const uint32_t e = Clock::nowEpoch();
+        if (!rec.firstEpoch) rec.firstEpoch = e;
+        rec.lastEpoch = e;
+        if (Clock::night() && rec.night < 0xFFFF) rec.night++;
+    }
+    if (rssi > rec.bestRssi) {
+        if (rec.bestRssi > -128) s_newBest[i] = true;
+        rec.bestRssi = rssi;
+    }
+    s_dirty = true;
+    s_changed = millis();
+#endif
 }
 
 void tick(uint32_t now) {
