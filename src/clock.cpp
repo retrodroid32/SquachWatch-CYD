@@ -57,6 +57,7 @@ extern volatile bool g_consolePmu;
 extern volatile bool g_consoleRtc;
 extern volatile bool g_consoleBuzz;
 extern volatile bool g_consoleMotion;
+extern volatile bool g_consoleXtal;
 extern volatile bool g_consoleHeal;
 
 namespace Clock {
@@ -498,6 +499,7 @@ void pollSerial() {
         if (strcasecmp(line, "RTC") == 0)    { g_consoleRtc = true; continue; }
         if (strcasecmp(line, "BUZZ") == 0)   { g_consoleBuzz = true; continue; }
         if (strcasecmp(line, "MOTION") == 0) { g_consoleMotion = true; continue; }
+        if (strcasecmp(line, "XTAL") == 0)   { g_consoleXtal = true; continue; }
         if (strcasecmp(line, "RADIO DUTY") == 0) {
             Settings::cycleRadioDuty();
             Serial.printf("[radio] duty -> %s\n", Settings::radioDutyName(Settings::radioDutyRaw()));

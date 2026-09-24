@@ -56,6 +56,7 @@ static uint8_t s_dexCaught = 0;
 void twatchBatteryLine(char* out, size_t n);   // main.cpp, where the power chip lives
 bool twatchRadioResetArmed();                  // main.cpp: the first tap of two
 int  twatchChipC();                            // main.cpp: the chip's temperature, cached
+void twatchXtalLine(char* out, size_t n);      // main.cpp: CLOCK CHECK's state or result
 #endif
 
 static const SettingsRow ALL_ROWS[] = {
@@ -63,6 +64,7 @@ static const SettingsRow ALL_ROWS[] = {
     // The watch's own group, first: what only a watch has to think about.
     SettingsRow::WATCH_BATTERY, SettingsRow::WATCH_RADIO, SettingsRow::WATCH_BUZZ,
     SettingsRow::WATCH_RADIO_RESET, SettingsRow::WATCH_STEADY, SettingsRow::WATCH_TEMP,
+    SettingsRow::WATCH_XTAL,
 #endif
     SettingsRow::BORING_MODE, SettingsRow::CONFIDENCE, SettingsRow::AUTO_QUIET,
     SettingsRow::DETECTION_FILTER,
@@ -179,6 +181,7 @@ static RowGroupId groupFor(SettingsRow r) {
         case SettingsRow::WATCH_RADIO_RESET:
         case SettingsRow::WATCH_STEADY:
         case SettingsRow::WATCH_TEMP:
+        case SettingsRow::WATCH_XTAL:
             return RowGroupId::WATCH;
         // TIME ZONE sat on the SYSTEM page too, the same setting twice. Only
         // the clock reads it, so it lives with the clock.
@@ -841,6 +844,9 @@ static void rowContent(SettingsRow r, const DetectionEngine& eng, char* valBuf, 
             break;
         case SettingsRow::WATCH_TEMP:
             label = "CHIP TEMP"; snprintf(valBuf, valBufN, "%d C", twatchChipC()); value = valBuf;
+            break;
+        case SettingsRow::WATCH_XTAL:
+            label = "CLOCK CHECK"; twatchXtalLine(valBuf, valBufN); value = valBuf;
             break;
 #endif
         case SettingsRow::POWER_SAVER:
