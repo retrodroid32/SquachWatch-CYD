@@ -1,6 +1,6 @@
 # SquachWatch-CYD
 
-**Current fork version: v1.20.0**
+**Current fork version: v1.20.1**
 
 > Surveillance-device detector for ESP32 Cheap Yellow Display (CYD) boards and compatible touchscreen variants.
 
@@ -77,6 +77,8 @@ otherwise see all week. It is one tap away in `DETECTION FILTER`.
 - **ESP32-2432S032R / E32R32P** — the 3.2" resistive CYD.
   SquachWatch includes a dedicated 240×320 ST7798/ST7789-compatible profile,
   GPIO27 backlight control, and XPT2046 touch sharing the LCD SPI bus.
+- **LilyGo T-Watch S3 (BETA)** — ESP32-S3 watch profile with a 240×240 ST7789,
+  capacitive touch, battery/PMU support, haptics and a battery-backed RTC.
 
 That's it. No buzzer, no GPS, no extra modules. The CYD is the
 whole device.
@@ -89,7 +91,8 @@ from your browser:
 **[https://retrodroid32.github.io/SquachWatch-CYD/](https://retrodroid32.github.io/SquachWatch-CYD/)**
 
 Works in Firefox, Chrome, Edge, or Brave on desktop. Pick your board (2.8" CYD,
-3.2" CYD ST7798, AWOK 2.4" or RL Phantom 2.4"), plug in, click Connect & Install, done.
+3.2" CYD ST7798, AWOK 2.4", RL Phantom 2.4", or LilyGo T-Watch S3 beta),
+plug in, click Connect & Install, done. A T-Watch has its clock set after install.
 
 ## Build
 
@@ -505,15 +508,15 @@ pio run -e cyd32-st7798 -t upload
 
 On Windows, `build_cyd32_st7798.bat` automatically finds the PlatformIO Core
 installed by the VS Code extension even when `pio` is not in PATH.
-`flash_cyd32_st7798.bat` lists the detected serial ports before upload, uses
-`COM17` as its default, and lets you select a different COM port before flashing.
+`flash_cyd32_st7798.bat` lists the detected serial ports before upload and asks
+which COM port to use before flashing.
 
 This target uses the 3.2-inch board wiring rather than the original 2.8-inch
 CYD assumptions: 240×320 display, backlight on GPIO27, LCD SPI on GPIO
 14/13/12, and XPT2046 touch sharing that LCD SPI bus with touch CS on GPIO33.
-The shared touch/display bus runs through TFT_eSPI's HSPI path, and the
-3.2-inch profile deliberately does not expose the 80 MHz display-overclock
-option used by some other board profiles.
+The shared touch/display bus runs through TFT_eSPI's HSPI path. The web flasher
+offers an optional 80 MHz display-only build; TFT_eSPI still clocks XPT2046
+touch transactions at the profile's separate 2.5 MHz touch frequency.
 
 TFT_eSPI 2.5.43 does not provide an `ST7798_DRIVER` selector, so this target
 uses its ST7789-compatible ST77xx command/init path. The common
