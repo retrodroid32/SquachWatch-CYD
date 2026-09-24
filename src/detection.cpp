@@ -40,7 +40,6 @@ static DetectionEngine* g_engine = nullptr;
 // into DetectionEngine's fixed mailbox and applied by loop(); this mux protects
 // only the tiny head/tail/copy operation, never log processing or flash I/O.
 static portMUX_TYPE s_bleQMutex = portMUX_INITIALIZER_UNLOCKED;
-static volatile uint32_t s_bleQDropped = 0;
 
 // -------- manual raw scanner state (see startRawBleScan/startRawWifiScan) --------
 // NONE = normal continuous signature-matched scanning (the default).
@@ -146,10 +145,17 @@ void radioReport(bool withScan) {
                   (int)mode, (int)me, promisc ? "on" : "off", (unsigned)ch, (int)txp, cc.cc,
                   (unsigned)cc.schan, (unsigned)(cc.schan + cc.nchan - 1), (unsigned long)s_wifiRaw);
     NimBLEScan* sc = NimBLEDevice::getScan();
-    Serial.printf("[radio] ble: init %d, scanning %d, adverts %lu, queue drops %lu, raw mode %d, chip %.1f C, up %lu s\n",
+    const QueuePerfStats qp = g_engine ? g_engine->queuePerf() : QueuePerfStats{};
+    Serial.printf("[radio] ble: init %d, scanning %d, adverts %lu, q %u hi %u drop %lu, drain %lu/%lu us, budget %lu, raw mode %d, chip %.1f C, up %lu s\n",
                   (int)NimBLEDevice::isInitialized(), sc ? (int)sc->isScanning() : -1,
-                  (unsigned long)s_advRaw, (unsigned long)s_bleQDropped, (int)g_rawMode,
-                  temperatureRead(), (unsigned long)(millis() / 1000));
+                  (unsigned long)s_advRaw, (unsigned)qp.bleDepth, (unsigned)qp.bleHighWater,
+                  (unsigned long)qp.bleDropped, (unsigned long)qp.bleDrainAvgUs,
+                  (unsigned long)qp.bleDrainMaxUs, (unsigned long)qp.bleBudgetHits,
+                  (int)g_rawMode, temperatureRead(), (unsigned long)(millis() / 1000));
+    Serial.printf("[radio] wifi queue: q %u hi %u drop %lu, drain %lu/%lu us, budget %lu\n",
+                  (unsigned)qp.wifiDepth, (unsigned)qp.wifiHighWater,
+                  (unsigned long)qp.wifiDropped, (unsigned long)qp.wifiDrainAvgUs,
+                  (unsigned long)qp.wifiDrainMaxUs, (unsigned long)qp.wifiBudgetHits);
     {
         char line[160];
         int n = snprintf(line, sizeof line, "[radio] channel busyness, frames/s:");
@@ -1108,10 +1114,22 @@ static void scanFlushTick() {
 }
 
 void DetectionEngine::loop() {
+    // Bound radio work per pass so a dense RF burst cannot monopolise one UI
+    // frame. When a mailbox is at least half full the allowance expands
+    // automatically so the engine catches up quickly without returning to the
+    // old unbounded "drain everything before drawing" behaviour.
+    const QueuePerfStats q0 = queuePerf();
+    const bool blePressed  = q0.bleDepth  >= (BLE_Q_CAP  / 2);
+    const bool wifiPressed = q0.wifiDepth >= (WIFI_Q_CAP / 2);
+    const uint32_t bleBudgetUs  = blePressed  ? 2200u : 1100u;
+    const uint32_t wifiBudgetUs = wifiPressed ? 2200u : 1100u;
+    const uint8_t bleMax  = blePressed  ? (BLE_Q_CAP  - 1) : 4;
+    const uint8_t wifiMax = wifiPressed ? (WIFI_Q_CAP - 1) : 3;
+
     // First take ownership of anything NimBLE handed us. This runs before the
     // raw-scan early return so a result queued just before a mode change is not
     // stranded until that scan ends.
-    processBleQ();
+    processBleQ(bleBudgetUs, bleMax);
 
     // Resting radios still take the BLE side of the loop when BLE is up;
     // only the WiFi steps below are skipped, since WiFi is stopped.
@@ -1129,7 +1147,7 @@ void DetectionEngine::loop() {
     scanFlushTick();
     if (g_rawMode != RawScanMode::REST) {
         hopChannel();
-        processWiFiQ();
+        processWiFiQ(wifiBudgetUs, wifiMax);
         processDeauthQ();
     }
     expireStale();
@@ -1228,7 +1246,7 @@ void IRAM_ATTR DetectionEngine::postWiFi(const uint8_t* mac, int8_t rssi, uint8_
     // running maximum exactly once.
     if (mac[0] & 0x01) return;
     uint8_t next = (_wifiQHead + 1) % WIFI_Q_CAP;
-    if (next == _wifiQTail) return;            // queue full, drop
+    if (next == _wifiQTail) { _wifiQDropped++; return; } // queue full, drop
     WiFiQEntry& e = (WiFiQEntry&)_wifiQ[_wifiQHead];
     memcpy((void*)e.mac, mac, 6);
     e.rssi    = rssi;
@@ -1242,6 +1260,8 @@ void IRAM_ATTR DetectionEngine::postWiFi(const uint8_t* mac, int8_t rssi, uint8_
     e.encrypted = encrypted;
     e.pwnagotchi = pwnagotchi;
     _wifiQHead = next;
+    const uint8_t depth = (uint8_t)((_wifiQHead + WIFI_Q_CAP - _wifiQTail) % WIFI_Q_CAP);
+    if (depth > _wifiQHighWater) _wifiQHighWater = depth;
 }
 
 void IRAM_ATTR DetectionEngine::postDeauth(const uint8_t* mac, int8_t rssi, uint8_t channel) {
@@ -1351,6 +1371,8 @@ void DetectionEngine::postBle(Detection d) {
     if (next != _bleQTail) {
         _bleQ[_bleQHead] = d;
         _bleQHead = next;
+        const uint8_t depth = (uint8_t)((_bleQHead + BLE_Q_CAP - _bleQTail) % BLE_Q_CAP);
+        if (depth > _bleQHighWater) _bleQHighWater = depth;
     } else {
         // Under an extreme burst, prefer refreshing an already-queued device
         // to losing a distinct one. Only if all pending rows are different is
@@ -1363,7 +1385,7 @@ void DetectionEngine::postBle(Detection d) {
                 break;
             }
         }
-        if (!merged) s_bleQDropped++;
+        if (!merged) _bleQDropped++;
     }
     portEXIT_CRITICAL(&s_bleQMutex);
 #else
@@ -1373,9 +1395,15 @@ void DetectionEngine::postBle(Detection d) {
 #endif
 }
 
-void DetectionEngine::processBleQ() {
+void DetectionEngine::processBleQ(uint32_t budgetUs, uint8_t maxItems) {
 #if defined(ESP32) || defined(ARDUINO_ARCH_ESP32)
+    const uint32_t started = micros();
+    uint8_t processed = 0;
     for (;;) {
+        if (processed >= maxItems || (processed && (uint32_t)(micros() - started) >= budgetUs)) {
+            if (_bleQTail != _bleQHead) _bleBudgetHits++;
+            break;
+        }
         Detection d;
         bool have = false;
         portENTER_CRITICAL(&s_bleQMutex);
@@ -1387,7 +1415,16 @@ void DetectionEngine::processBleQ() {
         portEXIT_CRITICAL(&s_bleQMutex);
         if (!have) break;
         applyBle(d);
+        processed++;
     }
+    const uint32_t spent = micros() - started;
+    if (processed) {
+        _bleDrainAvgUs = _bleDrainAvgUs ? _bleDrainAvgUs + ((int32_t)spent - (int32_t)_bleDrainAvgUs) / 8 : spent;
+        if (spent > _bleDrainMaxUs) _bleDrainMaxUs = spent;
+    }
+#else
+    (void)budgetUs;
+    (void)maxItems;
 #endif
 }
 
@@ -1827,8 +1864,14 @@ bool DetectionEngine::noteApBeacon(const uint8_t* bssid, const char* ssid, bool 
     return false;
 }
 
-void DetectionEngine::processWiFiQ() {
+void DetectionEngine::processWiFiQ(uint32_t budgetUs, uint8_t maxItems) {
+    const uint32_t started = micros();
+    uint8_t processed = 0;
     while (_wifiQTail != _wifiQHead) {
+        if (processed >= maxItems || (processed && (uint32_t)(micros() - started) >= budgetUs)) {
+            _wifiBudgetHits++;
+            break;
+        }
         WiFiQEntry e;
         {
             // copy out under volatile guard
@@ -1837,6 +1880,7 @@ void DetectionEngine::processWiFiQ() {
             _wifiQTail = (_wifiQTail + 1) % WIFI_Q_CAP;
             interrupts();
         }
+        processed++;
         // Checked for every dequeued frame, regardless of what (if
         // anything) it ends up matching below -- a watched AP's own
         // MAC shows up here as addr2 (probe/data) or addr3/BSSID
@@ -1973,6 +2017,11 @@ void DetectionEngine::processWiFiQ() {
         d.hits   = 1;
         d.active = true;
         pushLog(d);
+    }
+    const uint32_t spent = micros() - started;
+    if (processed) {
+        _wifiDrainAvgUs = _wifiDrainAvgUs ? _wifiDrainAvgUs + ((int32_t)spent - (int32_t)_wifiDrainAvgUs) / 8 : spent;
+        if (spent > _wifiDrainMaxUs) _wifiDrainMaxUs = spent;
     }
 }
 
