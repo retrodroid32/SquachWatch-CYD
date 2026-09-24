@@ -57,6 +57,7 @@ enum class SettingsRow : uint8_t {
     WATCH_BATTERY,   // the T-Watch only: charge and voltage, under WATCH
     WATCH_RADIO,     // the T-Watch only: the radio duty cycle, under WATCH
     WATCH_BUZZ,      // the T-Watch only: buzz on an alert, under WATCH
+    WATCH_RADIO_RESET, // the T-Watch only: power cycle the watch to wake the radios, under WATCH
     BACK,
     COUNT,
     NONE = 255
