@@ -14,7 +14,7 @@ digital rain, Squachy the mascot, full-screen dramatic ALERT overlays, and
 the glitchy SquachWatch wordmark.
 
 <p align="center">
-  <a href="https://squachwatch.com/emulator/" title="Drive it in your browser">
+  <a href="https://retrodroid32.github.io/SquachWatch-CYD/emulator/" title="Drive it in your browser">
     <img src="docs/demo.gif" width="640"
          alt="SquachWatch booting, Squachy in the VOID EYE costume on the synthwave sunset, a Flock camera detection card, his reaction to it, and a visiting SquachWatch walking on to say hello">
   </a>
@@ -24,7 +24,7 @@ the glitchy SquachWatch wordmark.
   <b>That is the firmware itself, not a mockup.</b><br>
   Every frame above was rendered by the same C++ that runs on the board,
   compiled for a PC.<br>
-  <a href="https://squachwatch.com/emulator/"><b>Click it to drive it in your browser &rarr;</b></a>
+  <a href="https://retrodroid32.github.io/SquachWatch-CYD/emulator/"><b>Click it to drive it in your browser &rarr;</b></a>
 </p>
 
 ## What it detects
@@ -90,7 +90,7 @@ from your browser:
 
 **[https://retrodroid32.github.io/SquachWatch-CYD/](https://retrodroid32.github.io/SquachWatch-CYD/)**
 
-Works in Firefox, Chrome, Edge, or Brave on desktop. Pick your board (2.8" CYD,
+Works in Chrome, Edge, Brave, or another Chromium browser with Web Serial. Pick your board (2.8" CYD,
 3.2" CYD ST7798, AWOK 2.4", RL Phantom 2.4", or LilyGo T-Watch S3 beta),
 plug in, click Connect & Install, done. A T-Watch has its clock set after install.
 
@@ -335,7 +335,7 @@ from that board's side is ADD TO SQUAD, in person.
 ### Knowing there is an update
 
 Two ways, neither of which installs anything. At boot, a board with a saved
-WiFi network joins it for about a second, asks squachwatch.com for the latest
+WiFi network joins it for about a second, asks this fork's GitHub Pages update site for the latest
 version of its own build, and lets go again, all before Bluetooth starts;
 **UPDATE CHECK** on the SYSTEM page turns that off. And every board's hello
 to its squad carries its version, so a board that hears a member running
@@ -378,7 +378,7 @@ none of the saved networks is in range. REMOVE takes one off the list.
 **Settings → SYSTEM → UPDATE FIRMWARE → UPDATE SQUAD** tells every board in
 range with your phrase to install the version this one is running. Each of
 them shows a thirty-second countdown with SKIP, joins WiFi, installs the
-signed release from squachwatch.com, restarts, and reports back by name to
+signed release from this fork's GitHub Pages update site, restarts, and reports back by name to
 the board that asked. The sender can share its own saved network with the
 nudge, sealed with the phrase; the receiving boards use it once and forget it.
 
