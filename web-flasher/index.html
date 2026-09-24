@@ -821,7 +821,7 @@
 
 <footer>Stay squachy out there.</footer>
 
-<script type="module" src="https://unpkg.com/esp-web-tools@10.4.0/dist/web/install-button.js?module"></script>
+<script type="module" src="./vendor/esp-web-tools-10.4.0.js"></script>
 <script>
 (function () {
   var wrap = document.getElementById('squachyWrap');
@@ -1800,7 +1800,7 @@
       // bare name, which a browser cannot resolve, so the import threw before
       // anything was sent. And the port is NOT opened here: esploader.main()
       // opens it itself, and a port opened twice fails with "already open".
-      var mod = await import('https://unpkg.com/esptool-js@0.6.1/bundle.js');
+      var mod = await import('./vendor/esptool-js-0.6.1.js');
       transport = new mod.Transport(port);
       esploader = new mod.ESPLoader({ transport: transport, baudrate: 115200, enableTracing: false });
       var chipDesc = await esploader.main();
