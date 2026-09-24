@@ -87,8 +87,13 @@ def main() -> None:
     boards = json.loads(boards_raw)
     versions = json.loads(versions_raw)
 
+    # upload-pages-artifact adds/uses this marker and the deployed copy is
+    # intentionally zero bytes. Recreate it locally instead of trying to
+    # download an empty HTTP response through fetch(), which rejects empty
+    # required assets by design.
+    (args.dest / ".nojekyll").touch()
+
     for rel in (
-        ".nojekyll",
         "index.html",
         "update/index.html",
         "emulator/index.html",
