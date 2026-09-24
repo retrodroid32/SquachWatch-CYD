@@ -23,7 +23,7 @@ enum class PowerRow : uint8_t {
     CPU_CLOCK,
     WAKE_ON_ALERT,
 #if defined(TWATCH_S3)
-    RADIO_DUTY,     // the watch only: the CYDs have no battery to duty-cycle for
+    RADIO_DUTY,     // the watch only; also on the WATCH group in settings
 #endif
     COUNT,
     NONE = 255
