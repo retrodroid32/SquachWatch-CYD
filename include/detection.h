@@ -191,8 +191,12 @@ public:
     // firing per frame.
     void IRAM_ATTR postDeauth(const uint8_t* mac, int8_t rssi, uint8_t channel);
 
-    // Called from the BLE scan callback when a hit is found.
+    // Called from the BLE scan callback when a hit is found. These only
+    // enqueue callback data; all DetectionEngine/UI-visible state is mutated
+    // later by loop() on the application task.
     void postBle(Detection d);
+    void postBleRemote(Detection d, const uint8_t* payload, uint8_t len);
+    void postBleSignal(const uint8_t* mac, int8_t rssi);
 
     // ---- Remote ID ---------------------------------------------------
     // Feeds one raw advertisement through the ASTM F3411 decoder. Safe to
@@ -566,10 +570,34 @@ private:
     // detection instead of one per type.
     uint32_t    _lifetimeByType[(uint8_t)DetectionType::COUNT] = {0};
     bool        _lifetimeDirty   = false;   // counted since the last write
-    // Detections waiting for their SD line. pushLog runs on the Bluetooth
-    // host task, and an SD append (open, write, close) does not belong
-    // there any more than the flash writes did; loop() writes them, one a
-    // frame. A burst past eight loses log lines, never detections.
+    // BLE callbacks run on NimBLE's host task. Keep every mutation of the
+    // detection log, raw-scan list, watch/hunt history and gamification state
+    // on loop() by passing compact callback records through bounded queues.
+    // Known detections and raw rows are coalesced by MAC while pending.
+    struct BleQEntry {
+        Detection d;
+        uint8_t ridLen;
+        uint8_t rid[40];   // legacy BLE advertisements are <=31 bytes
+    };
+    static const uint8_t BLE_Q_CAP = 24;
+    BleQEntry _bleQ[BLE_Q_CAP];
+    uint8_t _bleQHead = 0, _bleQTail = 0;
+
+    struct BleSignalQEntry { uint8_t mac[6]; int8_t rssi; };
+    static const uint8_t BLE_SIGNAL_Q_CAP = 8;
+    BleSignalQEntry _bleSignalQ[BLE_SIGNAL_Q_CAP];
+    uint8_t _bleSignalQHead = 0, _bleSignalQTail = 0;
+
+    static const uint8_t RAW_BLE_Q_CAP = 24;
+    RawBleResult _rawBleQ[RAW_BLE_Q_CAP];
+    uint8_t _rawBleQHead = 0, _rawBleQTail = 0;
+
+    void processBleCallbackQueues();
+    void processBleDetection(Detection d, const uint8_t* ridPayload = nullptr, uint8_t ridLen = 0);
+    void applyRawBle(RawBleResult r);
+
+    // Detections waiting for their SD line. pushLog now runs only from loop(),
+    // so SD persistence is also application-task-only.
     static const uint8_t SD_Q_CAP = 8;
     Detection        _sdQ[SD_Q_CAP];
     volatile uint8_t _sdQHead = 0, _sdQTail = 0;
