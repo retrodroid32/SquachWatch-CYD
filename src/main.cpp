@@ -109,7 +109,8 @@ static bool takeBootCheckSkip() {
 #if defined(TWATCH_S3)
 // The watch's radio self-heal: how many restarts in a row it has made because
 // it heard nothing at all. Same RTC-memory shape as the flags above: a magic
-// in the top bits, believed only after a software reset. See
+// in the top bits, believed only after the heal's own deep-sleep wake (or a
+// software reset, the older way). See
 // twatchRadioHealTick().
 static const uint32_t HEAL_MAGIC = 0x4EA10000u;
 RTC_NOINIT_ATTR static uint32_t g_healWord;
@@ -117,7 +118,7 @@ static uint8_t s_healCount = 0;   // this boot's view of it, read once in setup
 static void takeHealCount() {
     const uint32_t v = g_healWord;
     g_healWord = 0;
-    s_healCount = (esp_reset_reason() == ESP_RST_SW && (v & 0xFFFF0000u) == HEAL_MAGIC) ? (uint8_t)(v & 0xFF) : 0;
+    s_healCount = ((esp_reset_reason() == ESP_RST_DEEPSLEEP || esp_reset_reason() == ESP_RST_SW) && (v & 0xFFFF0000u) == HEAL_MAGIC) ? (uint8_t)(v & 0xFF) : 0;
 }
 #endif
 static WipeBoot takeWipeBoot() {
@@ -2400,43 +2401,29 @@ static void twatchRadioTick(uint32_t now) {
 // Never the software kind (ESP.restart): parts of the chip, the radio's
 // analog side among them, stay powered through that, and every cure seen so
 // far was deeper -- the cable reset of an esptool MAC check (a whole-chip
-// reset) and the crown's off-and-on. Firmware cannot reach the cable reset,
-// so it takes the deepest thing it can: the PMU cuts the chip's power and
-// brings it back, exactly as the crown does. ESP.restart only if the PMU did
-// not answer or did not do it. At most HEAL_MAX in a row: the count clears the
+// reset) and the crown's off-and-on. Firmware cannot reach either. The PMU's
+// own "restart the SoC" (reg 0x10 bit 1) was tried first and HUNG the watch
+// on the wrist until a crown hard-off (2026-09-24), so it is out. What is
+// left is a second of deep sleep: the radio, the CPU and the digital core are
+// powered down, and the chip's RTC timer, which needs nothing from the PMU,
+// wakes it into a full boot. At most HEAL_MAX in a row: the count clears the
 // moment an advert arrives, so a field with no radios in it costs two
 // restarts and then waits, rather than looping.
 static const uint8_t  HEAL_MAX       = 2;
 static const uint32_t HEAL_DEAF_MS   = 120000;   // of Bluetooth listening, not of clock
-static const uint8_t  HEAL_PMU_MAGIC = 0x4E;
-static void twatchHealFromPmu() {
-    // A power cycle wipes RTC memory, so that restart leaves its count in the
-    // PMU's data buffer, which lives as long as the battery does.
-    if (!s_pmuOk) return;
-    uint8_t b[2] = { 0, 0 };
-    if (!s_pmu.readDataBuffer(b, 2)) return;
-    if (b[0] == HEAL_PMU_MAGIC && !s_healCount) s_healCount = b[1];
-    if (b[0] || b[1]) { uint8_t z[2] = { 0, 0 }; s_pmu.writeDataBuffer(z, 2); }
-}
-// Cut the watch's power and bring it back, the crown's off-and-on, leaving
-// `count` for the next boot to read. The black box gets a battery line first,
-// with why, so a morning read-out shows every one of these. Falls back to a
-// software restart if the PMU does not answer or does not do it.
+// Power the chip down for a second and let its own timer bring it back into
+// a full boot, leaving `count` in RTC memory (which deep sleep keeps) for the
+// next boot to read. The black box gets a battery line first, with why, so a
+// morning read-out shows every one of these.
 static void twatchPowerCycle(uint8_t count, uint8_t why) {
     twatchBatterySample(why);
+    Serial.println("[heal] a second of deep sleep, then a full boot");
     serialFlush();
     g_healWord = HEAL_MAGIC | (uint32_t)count;
-    if (s_pmuOk) {
-        uint8_t b[2] = { HEAL_PMU_MAGIC, count };
-        s_pmu.writeDataBuffer(b, 2);
-        delay(200);
-        s_pmu.reset();       // off and on again, as the crown does
-        delay(2000);         // if it is still running, the PMU did not do it
-        Serial.println("[heal] the PMU did not power cycle; restarting instead");
-        serialFlush();
-    }
-    delay(200);
-    ESP.restart();
+    engine.restRadios(true);   // WiFi stopped and Bluetooth's scan asked to stop, as a rest does
+    delay(100);
+    esp_sleep_enable_timer_wakeup(1000000ULL);
+    esp_deep_sleep_start();
 }
 
 // RADIO RESET under WATCH: two taps within three seconds, so a stray one
@@ -2448,7 +2435,7 @@ bool twatchRadioResetArmed() {
 static void twatchRadioResetTap() {
     if (!twatchRadioResetArmed()) { s_radioResetArmedAt = millis(); if (!s_radioResetArmedAt) s_radioResetArmedAt = 1; return; }
     s_radioResetArmedAt = 0;
-    Serial.printf("[heal] RADIO RESET tapped: %lu adverts and %lu WiFi frames since boot; power cycling\n",
+    Serial.printf("[heal] RADIO RESET tapped: %lu adverts and %lu WiFi frames since boot; restarting\n",
                   (unsigned long)advertsSeen(), (unsigned long)wifiFramesSeen());
     twatchPowerCycle(0, BlackBox::BATT_WHY_RESET);
 }
@@ -2492,10 +2479,9 @@ static void twatchRadioHealTick(uint32_t now) {
         return;
     }
     const uint8_t next = (uint8_t)(s_healCount + 1);
-    const bool powerCycle = s_pmuOk;
-    Serial.printf("[heal] Bluetooth deaf: no adverts in %lu s of listening (%lu WiFi frames since boot)%s; %s (%u of %u)\n",
+    Serial.printf("[heal] Bluetooth deaf: no adverts in %lu s of listening (%lu WiFi frames since boot)%s; restarting (%u of %u)\n",
                   (unsigned long)(HEAL_DEAF_MS / 1000), (unsigned long)wifiFramesSeen(), forced ? " (bench test)" : "",
-                  powerCycle ? "power cycling" : "restarting", (unsigned)next, (unsigned)HEAL_MAX);
+                  (unsigned)next, (unsigned)HEAL_MAX);
     twatchPowerCycle(next, BlackBox::BATT_WHY_HEAL);
 }
 
@@ -2621,7 +2607,6 @@ void setup() {
     printBootBanner();
 #if defined(TWATCH_S3)
     twatchPowerUp();
-    twatchHealFromPmu();
 #endif
 #if defined(CYD35)
     // One-time diagnostic: is PSRAM actually present on this unit? The
