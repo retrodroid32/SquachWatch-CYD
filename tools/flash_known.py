@@ -27,6 +27,7 @@ BOARDS = {
     # that nobody means to flash.
     "a4:f0:0f:8e:3a:88": ("cyd35-fast", "3.5in, 80MHz, two-band drawing"),
     "a0:f2:62:e1:29:10": ("twatch-s3",  "LilyGo T-Watch S3, native USB (COM13 is allowed for THIS MAC only)"),
+    "d4:e9:f4:c5:0e:e0": ("freenove32", "Freenove 3.2in CYD, ST7789, resistive touch on the display bus"),
     # 88:57:21:2e:e6:e0 runs SquachEmit, not this firmware. It is the only
     # CAPACITIVE 2.8in; to test capacitive touch, list it here as cyd-fast
     # for the test and comment it out again after (done 2026-09-21).
