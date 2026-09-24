@@ -927,6 +927,9 @@ static uint32_t s_crownDarkAt = 0;
 // moment -- the screen timeout, counted from the alert's end -- then goes
 // dark again. 0 = no alert has lit it.
 static uint32_t s_crownLitUntil = 0;
+// On the cable, read every two seconds in twatchRadioTick(). The screen
+// stays lit while it is true: a watch on its charger is a desk clock.
+static bool     s_onUsb = true;
 #endif
 static bool s_radiosResting = false;   // the duty cycle's state; see twatchRadioTick()
 #endif
@@ -1520,7 +1523,9 @@ static void startNudgedUpdate() {
     }
     enterUpdate();
     engine.startUpdateRadio();
+    lendFrameToDownload();
     if (!OtaWifi::begin()) {
+        restoreFrameBuffer();
         engine.stopUpdateRadio();
         memset(s_auto.pass, 0, sizeof s_auto.pass);
         Theme::showToast("CAN'T START UPDATE", nullptr, Theme::AMBER);
@@ -2228,7 +2233,7 @@ static void twatchBatteryTick(uint32_t now) {
 static void twatchRadioTick(uint32_t now) {
     static uint32_t phaseAt = 0, usbAt = 0;
     static bool     usb = true;
-    if (now - usbAt >= 2000) { usbAt = now; usb = s_pmuOk && s_pmu.isVbusIn(); }
+    if (now - usbAt >= 2000) { usbAt = now; usb = s_pmuOk && s_pmu.isVbusIn(); s_onUsb = usb; }
     // RADIO TEST on the console forces BLE+5/30 whatever the settings say.
     const uint8_t duty = g_consoleRadioTest ? 3 : Settings::radioDuty();
     // Only a device you asked to WATCH holds the radios awake. Every alert
@@ -3466,7 +3471,9 @@ void loop() {
                         // carries it from there.
                         enterUpdate();
                         engine.startUpdateRadio();
+                        lendFrameToDownload();
                         if (!OtaWifi::begin()) {
+                            restoreFrameBuffer();
                             engine.stopUpdateRadio();
                             Theme::showToast("CAN'T START UPDATE", updateRefusedWhy(), Theme::AMBER);
                         }
@@ -4860,7 +4867,9 @@ void loop() {
                 switch (uiUpdateHitTest(*canvas, tp.x, tp.y, &netIndex)) {
                     case UpdateHit::WIFI_START:
                         engine.startUpdateRadio();
+                        lendFrameToDownload();
                         if (!OtaWifi::begin()) {
+                            restoreFrameBuffer();
                             engine.stopUpdateRadio();
                             Theme::showToast("CAN'T START UPDATE", updateRefusedWhy(), Theme::AMBER);
                         }
@@ -5843,6 +5852,9 @@ void loop() {
         bool wantDim = timeoutSec && idleMs > (uint32_t)timeoutSec * 1000UL &&
                        !(Settings::wakeOnAlert() && alerting) && state != AppState::DESK;
 #if defined(TWATCH_S3)
+        // On the cable the watch stays lit; on battery the timeout always runs
+        // (see Settings::screenTimeoutSec), unless it is set to NEVER.
+        if (s_onUsb) wantDim = false;
         // The crown, which beats the cable, the desk and a timeout of NEVER.
         // A touch since the press, or an alert that wants the screen, ends it.
         //
