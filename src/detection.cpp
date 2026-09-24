@@ -1995,6 +1995,7 @@ void DetectionEngine::pushLog(const Detection& d) {
     _lifetimeDirty = true;
     Bingo::note(d.type);
     Dex::note(d.type, d.rssi);
+    Regulars::note(d.mac, d.type);
     const uint8_t next = (uint8_t)((_sdQHead + 1) % SD_Q_CAP);
     if (next != _sdQTail) { _sdQ[_sdQHead] = d; _sdQHead = next; }
     queueBlackBox(d, false);
