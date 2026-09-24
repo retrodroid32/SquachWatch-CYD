@@ -39,6 +39,8 @@ jobs:
           test -s _site/index.html
           test -s _site/boards.json
           test -s _site/versions.json
+          test -s _site/vendor/esp-web-tools-10.4.0.js
+          test -s _site/vendor/esptool-js-0.6.1.js
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
