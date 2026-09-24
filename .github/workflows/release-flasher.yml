@@ -430,28 +430,21 @@ jobs:
           # manifest lab-<sha>. Somebody arriving for the released firmware
           # got an unreleased build labelled with a commit.
           #
-          # Prefer restoring the root from the latest GitHub Release. Before
-          # this fork has its first Release, mirror the already-deployed Pages
-          # root instead; that keeps manual lab builds usable without changing
-          # what ordinary visitors receive.
-          LIVE_FALLBACK=0
+          # The safest lab base is the site that is actually live, not a
+          # reconstruction from release assets. A release can legitimately
+          # serve a freshly built emulator that differs from the committed
+          # copy at its tag, and board-specific bootloader/partition assets
+          # evolve over time. Mirroring production first preserves every root
+          # byte and retained-version directory exactly, then the lab run adds
+          # only lab-prefixed files beside them.
           if [ "${{ steps.ver.outputs.is_lab }}" = "true" ]; then
-            LATEST="$(gh release list --limit 1 --json tagName -q '.[0].tagName')"
-            if [ -z "$LATEST" ]; then
-              LIVE_FALLBACK=1
-              echo "::notice::No GitHub Release exists yet; preserving the live production Pages root."
-              rm -rf _site
-              python tools/mirror_pages.py \
-                --base "https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/" \
-                --dest _site
-              echo "LAB_LIVE_FALLBACK=1" >> "$GITHUB_ENV"
-            else
-              echo "Restoring root site from $LATEST"
-              gh release download "$LATEST" -D _site --clobber \
-                -p '*-firmware.bin' -p 'manifest-*.json' -p 'esp32-*.bin' -p '*-firmware.sig' || true
-              echo "LAB_LIVE_FALLBACK=0" >> "$GITHUB_ENV"
-            fi
-            # This run's build, under lab- names beside the release, with a
+            echo "::notice::Preserving the live production Pages root before adding lab assets."
+            rm -rf _site
+            python tools/mirror_pages.py \
+              --base "https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/" \
+              --dest _site
+            echo "LAB_ROOT_MIRRORED=1" >> "$GITHUB_ENV"
+            # This run's build, under lab- names beside production, with a
             # manifest each that points at them. web-flasher/index.html's
             # ?lab=1 list is what offers them.
             python - <<'PY'
@@ -483,7 +476,7 @@ jobs:
               json.dump(m, open("_site/manifest-lab-" + board + ".json", "w"), indent=2)
           print("lab boards added:", label, ver)
           PY
-            echo "root site restored from $LATEST; lab build $LATEST + ${{ steps.ver.outputs.version }}"
+            echo "live production root preserved; added lab build ${{ steps.ver.outputs.version }}"
           fi
           # One shared bootloader and partition table (see the build step
           # for why that is safe and how it is enforced), then one app per
@@ -536,15 +529,7 @@ jobs:
           # files are committed rather than release assets, so they come out
           # of the release tag's tree.
           if [ "${{ steps.ver.outputs.is_lab }}" = "true" ]; then
-            if [ "$LIVE_FALLBACK" = "1" ]; then
-              echo "emulator retained byte-for-byte from the live Pages root"
-            else
-              git fetch --depth=1 origin "refs/tags/$LATEST:refs/tags/$LATEST"
-              for f in index.html squachsim.js squachsim.wasm; do
-                git show "$LATEST:web-flasher/emulator/$f" > "_site/emulator/$f"
-              done
-              echo "emulator restored from $LATEST"
-            fi
+            echo "emulator retained byte-for-byte from the live Pages root"
           else
             # index.html is hand-written and not a build product, so it always
             # comes from the tree. The two build products come from the build
@@ -569,22 +554,14 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.ver.outputs.tag }}
         run: |
-          # Before the first GitHub Release exists, the assemble step mirrored
-          # versions.json and every referenced version directory from the live
-          # site. Keep that exact history rather than rebuilding it from an
-          # empty release list.
-          if [ "${{ steps.ver.outputs.is_lab }}" = "true" ] && [ "${LAB_LIVE_FALLBACK:-0}" = "1" ]; then
-            echo "No GitHub Release exists; retained live Pages version history."
+          # Lab assembly already mirrored versions.json and every referenced
+          # version directory from the live site. Rebuilding that history from
+          # the release API would be both redundant and less exact, so lab
+          # runs leave it untouched.
+          if [ "${{ steps.ver.outputs.is_lab }}" = "true" ] && [ "${LAB_ROOT_MIRRORED:-0}" = "1" ]; then
+            echo "Retained live Pages version history for lab deployment."
             cat _site/versions.json
             exit 0
-          fi
-
-          # A lab run has no release tag of its own -- TAG is the branch name.
-          # The root site it serves was restored from the latest release, so
-          # that release is what "latest" means here. Without this the public
-          # version picker read "master (latest)" after the 2026-09-12 lab run.
-          if [ "${{ steps.ver.outputs.is_lab }}" = "true" ]; then
-            TAG="$(gh release list --limit 1 --json tagName -q '.[0].tagName')"
           fi
           # Release assets carry no CORS headers, so a browser cannot fetch
           # them from the Releases tab -- everything the flasher touches has
