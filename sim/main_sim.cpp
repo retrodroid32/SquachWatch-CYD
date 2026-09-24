@@ -83,6 +83,7 @@ static void seedDetections(DetectionEngine& eng) {
         { DetectionType::AIRTAG,  "Apple",   "AirTag",        -42, 7 },
         { DetectionType::FLOCK,   "Flock",   "Flock Safety",  -68, 3 },
         { DetectionType::RING,    "Amazon",  "Ring Doorbell", -55, 2 },
+        { DetectionType::CAMERA,  "Wyze",    "Wyze Cam",      -61, 3 },
         { DetectionType::META,    "Meta",    "Ray-Ban Meta",  -73, 1 },
         { DetectionType::TILE,    "Tile",    "Tile Mate",     -81, 4 },
         // The name is what the detector writes for a real one: six hex of
