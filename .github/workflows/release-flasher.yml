@@ -193,8 +193,16 @@ jobs:
         run: python tools/board_matrix.py validate
 
       - name: Build firmware
+        env:
+          RELEASE_VERSION: ${{ steps.ver.outputs.version }}
         run: |
           set -euo pipefail
+          # A real tag stamps the exact release identity explicitly. Lab builds
+          # intentionally keep extra_script.py's X.Y.Z-dev.<sha> identity even
+          # though their browser manifest gets a friendlier lab-* label.
+          if [ "${{ steps.ver.outputs.is_lab }}" != "true" ]; then
+            export SQW_VERSION="$RELEASE_VERSION"
+          fi
           pio run $(python tools/board_matrix.py pio-args release)
           # Compile-only capacitive Phantom: CI/source coverage, never published.
           pio run -e rlphantom
