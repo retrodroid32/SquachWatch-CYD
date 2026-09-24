@@ -173,21 +173,10 @@ jobs:
         run: python tools/board_matrix.py validate
 
       - name: Build firmware
-        # cyd35-fast (the 3.5" ST7796) ships from v1.16.0 as a BETA, and
-        # only at 80 MHz: the plain cyd35 at 40 MHz halves the frame rate on
-        # a board that needs every frame it can get, so there is no slow
-        # build to offer and the flasher's overclock box is disabled for it.
-        # That board's boot screen says BETA on it, every boot.
         run: |
-          # rlphantom-r is the RL Phantom 2.4" (Sunton ESP32-2432S024R), the
-          # resistive-touch version, confirmed on real boards.
-          pio run $(python tools/board_matrix.py pio-args release | sed 's/-e twatch-s3//g' | sed 's/-e rlphantom//g')
-          # twatch-s3 is the LilyGo T-Watch S3: an ESP32-S3, so its own
-          # bootloader (at 0x0, not 0x1000) and its own 16 MB partition
-          # table. A lab board until the watch work settles; see ?lab=1.
-          pio run -e twatch-s3
-          # The Phantom's capacitive version has never run on a real board, so
-          # it is compiled to keep its code honest but NOT published anywhere.
+          set -euo pipefail
+          pio run $(python tools/board_matrix.py pio-args release)
+          # Compile-only capacitive Phantom: CI/source coverage, never published.
           pio run -e rlphantom
 
       - name: Merge into one flashable image (per board)
@@ -253,7 +242,12 @@ jobs:
           # board that looks bricked.
           for f in bootloader partitions; do
             ref="$(sha256sum ".pio/build/cyd/$f.bin" | cut -d' ' -f1)"
-            for v in cyd cyd-ili9341 cyd32-st7798 cyd32-st7798-fast awok rlphantom-r cyd-fast cyd-ili9341-fast cyd35-fast; do
+            for v in $(python - <<'PY'
+import json
+d = json.load(open("web-flasher/boards.json"))
+print(" ".join(b["id"] for b in d["boards"] if b.get("release") and b.get("shared_esp32")))
+PY
+); do
               got="$(sha256sum ".pio/build/$v/$f.bin" | cut -d' ' -f1)"
               if [ "$got" != "$ref" ]; then
                 echo "::error::$v/$f.bin differs from cyd/$f.bin."
@@ -285,7 +279,7 @@ jobs:
           # merged image for those on purpose: the merged blob is a
           # manual-recovery artifact, and recovery should land you on the
           # spec-compliant build rather than the overclocked one.
-          for v in cyd cyd-ili9341 cyd32-st7798 cyd32-st7798-fast awok rlphantom-r cyd-fast cyd-ili9341-fast cyd35-fast twatch-s3; do
+          for v in $(python tools/board_matrix.py list release); do
             cp ".pio/build/$v/firmware.bin" "$v-firmware.bin"
           done
 
@@ -330,14 +324,11 @@ jobs:
               m = re.search(r"<!--\s*board:\s*(.+?)\s*-->", head)
               if m: news = [x.strip()[:38] for x in m.group(1).split("|") if x.strip()][:4]
           print("manifest: name %r, %d line(s)" % (name, len(news)))
-          for p in ("web-flasher/manifest-cyd.json", "web-flasher/manifest-cyd-ili9341.json",
-                    "web-flasher/manifest-cyd32-st7798.json",
-                    "web-flasher/manifest-cyd32-st7798-fast.json",
-                    "web-flasher/manifest-awok.json", "web-flasher/manifest-cyd-fast.json",
-                    "web-flasher/manifest-cyd-ili9341-fast.json",
-                    "web-flasher/manifest-rlphantom-r.json",
-                    "web-flasher/manifest-cyd35-fast.json",
-                    "web-flasher/manifest-twatch-s3.json"):
+          matrix = json.load(open("web-flasher/boards.json", encoding="utf-8"))
+          for board in matrix["boards"]:
+              if not board.get("release") or not board.get("manifest"):
+                  continue
+              p = os.path.join("web-flasher", board["manifest"])
               m = json.load(open(p))
               m["version"] = "${{ steps.ver.outputs.version }}"
               if name: m["release_name"] = name
@@ -354,16 +345,9 @@ jobs:
           # resolve against that release's binaries with no rewriting.
           # Stop attaching them and every release silently falls out of the
           # version picker one tag after it ships.
-          cp web-flasher/manifest-cyd.json manifest-cyd.json
-          cp web-flasher/manifest-cyd-ili9341.json manifest-cyd-ili9341.json
-          cp web-flasher/manifest-cyd32-st7798.json manifest-cyd32-st7798.json
-          cp web-flasher/manifest-cyd32-st7798-fast.json manifest-cyd32-st7798-fast.json
-          cp web-flasher/manifest-awok.json manifest-awok.json
-          cp web-flasher/manifest-cyd-fast.json manifest-cyd-fast.json
-          cp web-flasher/manifest-cyd-ili9341-fast.json manifest-cyd-ili9341-fast.json
-          cp web-flasher/manifest-rlphantom-r.json manifest-rlphantom-r.json
-          cp web-flasher/manifest-cyd35-fast.json manifest-cyd35-fast.json
-          cp web-flasher/manifest-twatch-s3.json manifest-twatch-s3.json
+          for p in $(python tools/board_matrix.py manifests release); do
+            cp "web-flasher/$p" "$p"
+          done
 
       - name: Create GitHub Release with build artifacts
         # A lab tag publishes a flashable build and nothing else. Creating a
@@ -382,39 +366,7 @@ jobs:
           TITLE="SquachWatch-CYD ${{ steps.ver.outputs.tag }}"
           if [ -n "$NAME" ]; then TITLE="$TITLE \"$NAME\""; fi
           gh release create "${{ steps.ver.outputs.tag }}" \
-            --title "$TITLE" \
-            --notes-file ".github/release-notes/${{ steps.ver.outputs.tag }}.md" \
-            esp32-bootloader.bin \
-            esp32-partitions.bin \
-            esp32-otadata.bin \
-            cyd-firmware.bin \
-            cyd-ili9341-firmware.bin \
-            cyd32-st7798-firmware.bin \
-            cyd32-st7798-fast-firmware.bin \
-            awok-firmware.bin \
-            rlphantom-r-firmware.bin \
-            cyd-fast-firmware.bin \
-            cyd-ili9341-fast-firmware.bin \
-            cyd35-fast-firmware.bin \
-            esp32s3-bootloader.bin \
-            twatch-s3-partitions.bin \
-            twatch-s3-firmware.bin \
-            firmware-twatch-s3-merged.bin \
-            manifest-twatch-s3.json \
-            firmware-cyd-merged.bin \
-            firmware-cyd-ili9341-merged.bin \
-            firmware-cyd32-st7798-merged.bin \
-            firmware-awok-merged.bin \
-            firmware-rlphantom-r-merged.bin \
-            manifest-cyd.json \
-            manifest-cyd-ili9341.json \
-            manifest-cyd32-st7798.json \
-            manifest-cyd32-st7798-fast.json \
-            manifest-awok.json \
-            manifest-rlphantom-r.json \
-            manifest-cyd-fast.json \
-            manifest-cyd-ili9341-fast.json \
-            manifest-cyd35-fast.json \
+            $(python tools/board_matrix.py release-assets) \
             $(ls *-firmware.sig 2>/dev/null)
 
       - name: Build the browser emulator
@@ -467,16 +419,9 @@ jobs:
           mkdir -p _site
           cp web-flasher/index.html _site/index.html
           cp web-flasher/boards.json _site/boards.json
-          cp web-flasher/manifest-cyd.json _site/manifest-cyd.json
-          cp web-flasher/manifest-cyd-ili9341.json _site/manifest-cyd-ili9341.json
-          cp web-flasher/manifest-cyd32-st7798.json _site/manifest-cyd32-st7798.json
-          cp web-flasher/manifest-cyd32-st7798-fast.json _site/manifest-cyd32-st7798-fast.json
-          cp web-flasher/manifest-awok.json _site/manifest-awok.json
-          cp web-flasher/manifest-cyd-fast.json _site/manifest-cyd-fast.json
-          cp web-flasher/manifest-cyd-ili9341-fast.json _site/manifest-cyd-ili9341-fast.json
-          cp web-flasher/manifest-rlphantom-r.json _site/manifest-rlphantom-r.json
-          cp web-flasher/manifest-cyd35-fast.json _site/manifest-cyd35-fast.json
-          cp web-flasher/manifest-twatch-s3.json _site/manifest-twatch-s3.json
+          for p in $(python tools/board_matrix.py manifests release); do
+            cp "web-flasher/$p" "_site/$p"
+          done
           # A LAB RUN MUST NOT CHANGE WHAT THE PUBLIC PAGE SERVES.
           #
           # A Pages deploy is wholesale -- there is no partial update -- so a
@@ -505,7 +450,11 @@ jobs:
           import json, shutil, os
           label = "${{ steps.ver.outputs.label }}"
           ver   = "${{ steps.ver.outputs.version }}"
-          for board in ("cyd", "cyd-ili9341", "cyd32-st7798", "cyd32-st7798-fast", "cyd-fast", "cyd-ili9341-fast", "rlphantom-r", "twatch-s3"):
+          matrix = json.load(open("web-flasher/boards.json"))
+          for cfg in matrix["boards"]:
+              if not cfg.get("lab"):
+                  continue
+              board = cfg["id"]
               shutil.copy(board + "-firmware.bin", "_site/lab-" + board + "-firmware.bin")
               if os.path.exists(board + "-firmware.sig"):
                   shutil.copy(board + "-firmware.sig", "_site/lab-" + board + "-firmware.sig")
@@ -545,7 +494,7 @@ jobs:
             # firmware here: v1.16.0 shipped cyd35-fast to the release and into
             # index.html's <option> list but neither into _site, so the 3.5"
             # appeared in the picker and 404'd when chosen.
-            for board in cyd cyd-ili9341 cyd32-st7798 cyd32-st7798-fast awok rlphantom-r cyd-fast cyd-ili9341-fast cyd35-fast twatch-s3; do
+            for board in $(python tools/board_matrix.py list release); do
               cp "$board-firmware.bin" "_site/$board-firmware.bin"
               # The Bluetooth update page fetches the image and its signature
               # side by side from the site root.
@@ -672,6 +621,14 @@ jobs:
           } > _site/versions.json
           cat _site/versions.json
 
-      # Pages is published by publish-pages.yml from master. Keeping release
-      # creation separate prevents tag deployment-policy rules from blocking
-      # the firmware release before it can even start.
+      - name: Upload exact Pages site
+        uses: actions/upload-artifact@v4
+        with:
+          name: pages-site
+          path: _site
+          retention-days: 3
+          if-no-files-found: error
+
+      # publish-pages.yml deploys this exact artifact after this workflow
+      # succeeds. Release creation stays separate from Pages environment
+      # policy, but the deployed files are byte-for-byte the ones built here.
