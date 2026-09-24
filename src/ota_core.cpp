@@ -171,7 +171,7 @@ const char* failWords(Fail f) {
         case Fail::RADIO_BUSY:      return "Bluetooth was busy. Leave this screen and try again.";
         case Fail::WIFI_NOT_FOUND:  return "Couldn't find that WiFi network. Move closer to the router and try again.";
         case Fail::WIFI_PASSWORD:   return "Couldn't join that WiFi network. Check the password and try again.";
-        case Fail::NO_SITE:         return "Joined WiFi, but couldn't reach squachwatch.com. Check the internet connection.";
+        case Fail::NO_SITE:         return "Joined WiFi, but couldn't reach the update site. Check the internet connection.";
         case Fail::NOT_SIGNED:      return "The latest release can't be installed over the air yet. Use the USB flasher.";
         case Fail::TOO_OLD:         return "That firmware is older than the one running. Nothing was changed.";
         case Fail::LOW_MEMORY:      return "Not enough memory to download. Restart the board and try again.";
@@ -196,17 +196,25 @@ static char     s_relName[20] = "";
 static char     s_news[NEWS_MAX][40];
 static uint8_t  s_newsN = 0;
 
-// "1.7.8" or "v1.7.8" into three numbers; false for anything else.
-static bool verParts(const char* s, unsigned v[3]) {
+// Strict SemVer core comparison with prerelease awareness. Development
+// firmware is stamped "X.Y.Z-dev.<sha>"; the eventual X.Y.Z release must be
+// considered newer even though the three numeric components are identical.
+static bool verParts(const char* s, unsigned v[3], bool& prerelease) {
     if (!s) return false;
     if (*s == 'v' || *s == 'V') s++;
-    return sscanf(s, "%u.%u.%u", &v[0], &v[1], &v[2]) == 3;
+    int used = 0;
+    if (sscanf(s, "%u.%u.%u%n", &v[0], &v[1], &v[2], &used) != 3 || used <= 0) return false;
+    if (s[used] == '\0') { prerelease = false; return true; }
+    if (s[used] == '-' && s[used + 1] != '\0') { prerelease = true; return true; }
+    return false;
 }
 static bool verNewer(const char* a, const char* b) {   // a newer than b
     unsigned x[3], y[3];
-    if (!verParts(a, x) || !verParts(b, y)) return false;
+    bool xPre = false, yPre = false;
+    if (!verParts(a, x, xPre) || !verParts(b, y, yPre)) return false;
     for (int i = 0; i < 3; i++) { if (x[i] != y[i]) return x[i] > y[i]; }
-    return false;
+    if (xPre != yPre) return !xPre;   // a final release is newer than its prerelease
+    return false;                     // same core and same release class
 }
 
 void noteAvailable(const char* version, const char* who) {
@@ -441,12 +449,10 @@ Fail finish() {
         return Fail::BAD_SIGNATURE;
     }
 
-    // Older than the one running: refused, however well signed it is. The
-    // download comes over plain HTTP now, so somebody on the same network can
-    // answer with a real, signed, OLD release -- one with a bug that has since
-    // been fixed. The signature says the file is ours; this says it is not a
-    // step backwards. An equal version is allowed, because reinstalling the
-    // version you are on is a repair, not an attack.
+    // Older than the one running: refused, however well signed it is. HTTPS
+    // protects transport, while the signed image is the installation trust
+    // boundary. The version check additionally refuses replay of a genuine,
+    // signed older release. An equal version is allowed for repair installs.
     if (s_verFound) {
         if (verNewer(runningVersion(), s_imgVer)) {
             Serial.printf("[ota] refused %s: older than %s\n", s_imgVer, runningVersion());
