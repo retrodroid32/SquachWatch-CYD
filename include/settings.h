@@ -206,6 +206,12 @@ namespace Settings {
     // a motor to use it.
     bool       buzz();
     void       toggleBuzz();
+    // STEADY POWER on the watch: the power chip's DC1, which feeds the
+    // ESP32 and its radio, held in PWM instead of dropping to PFM at light
+    // load. A test for the deaf radios: PFM ripple is the kind of noise a
+    // receiver hears first. Off by default; costs a few mA.
+    bool       steadyPower();
+    void       toggleSteadyPower();
 
     // The watch's radio duty cycle; see RADIO_DUTY_NAMES in settings.cpp.
     // 0 when the saver is off. Watch only.
