@@ -1295,7 +1295,6 @@ void DetectionEngine::postBle(Detection d) {
             _log[slot].lastSeen = millis();
             Bingo::note(d.type);
             Dex::note(d.type, d.rssi);
-    Regulars::note(d.mac, d.type);
             Regulars::note(d.mac, d.type);
             if (reactivating) {
                 _log[slot].hits++;
