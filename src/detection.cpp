@@ -407,7 +407,7 @@ class BleScanCallbacks : public NimBLEScanCallbacks {
             det.vendor = "BLE";
         }
         if (det.type == DetectionType::DRONE) {
-            const std::string& p = adv->getPayload();
+            const auto& p = adv->getPayload();
             g_engine->postBleRemote(det, (const uint8_t*)p.data(), (uint8_t)p.size());
         } else {
             g_engine->postBle(det);
