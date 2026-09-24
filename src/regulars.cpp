@@ -45,7 +45,16 @@ struct Pending {
 static const uint8_t PENDING_CAP = 32;
 Pending s_pending[PENDING_CAP];
 uint8_t s_pendingN = 0;
+#if defined(ESP32) || defined(ARDUINO_ARCH_ESP32)
 portMUX_TYPE s_pendingMux = portMUX_INITIALIZER_UNLOCKED;
+inline void pendingLock()   { portENTER_CRITICAL(&s_pendingMux); }
+inline void pendingUnlock() { portEXIT_CRITICAL(&s_pendingMux); }
+#else
+// Native tests/emulator are single-threaded and deliberately do not carry
+// FreeRTOS. Device builds take the real ESP32 critical section above.
+inline void pendingLock()   {}
+inline void pendingUnlock() {}
+#endif
 
 const char* NS  = "regulars";
 const char* KEY = "tab";
@@ -107,11 +116,11 @@ void noteOnDay(const uint8_t* mac, DetectionType type, uint32_t day) {
 
 void note(const uint8_t* mac, DetectionType type) {
     if (!mac) return;
-    portENTER_CRITICAL(&s_pendingMux);
+    pendingLock();
     for (uint8_t i = 0; i < s_pendingN; i++) {
         if (s_pending[i].type == (uint8_t)type &&
             memcmp(s_pending[i].mac, mac, 6) == 0) {
-            portEXIT_CRITICAL(&s_pendingMux);
+            pendingUnlock();
             return;
         }
     }
@@ -120,17 +129,17 @@ void note(const uint8_t* mac, DetectionType type) {
         s_pending[s_pendingN].type = (uint8_t)type;
         s_pendingN++;
     }
-    portEXIT_CRITICAL(&s_pendingMux);
+    pendingUnlock();
 }
 
 void tick(uint32_t now) {
     Pending take[PENDING_CAP];
     uint8_t n = 0;
-    portENTER_CRITICAL(&s_pendingMux);
+    pendingLock();
     n = s_pendingN;
     if (n) memcpy(take, s_pending, (size_t)n * sizeof(Pending));
     s_pendingN = 0;
-    portEXIT_CRITICAL(&s_pendingMux);
+    pendingUnlock();
 
     if (Clock::trusted()) {
         const uint32_t day = Clock::localDay();

@@ -25,7 +25,16 @@ uint8_t  s_bestFil = 0;        // most squares on one card
 // Sightings the radio task has handed over, one bit a type. Never written to
 // flash from there -- tick() does that from loop().
 uint32_t s_pending = 0;
+#if defined(ESP32) || defined(ARDUINO_ARCH_ESP32)
 portMUX_TYPE s_pendingMux = portMUX_INITIALIZER_UNLOCKED;
+inline void pendingLock()   { portENTER_CRITICAL(&s_pendingMux); }
+inline void pendingUnlock() { portEXIT_CRITICAL(&s_pendingMux); }
+#else
+// Native tests/emulator are single-threaded and deliberately do not carry
+// FreeRTOS. Device builds take the real ESP32 critical section above.
+inline void pendingLock()   {}
+inline void pendingUnlock() {}
+#endif
 bool     s_dirty   = false;
 uint32_t s_saveAt  = 0;
 
@@ -95,10 +104,10 @@ void deal(const DetectionEngine* eng) {
 
 // Marks that came in from the radio task, and the lines they finish.
 void applyPending() {
-    portENTER_CRITICAL(&s_pendingMux);
+    pendingLock();
     const uint32_t bits = s_pending;
     s_pending = 0;
-    portEXIT_CRITICAL(&s_pendingMux);
+    pendingUnlock();
     if (!bits) return;
     const uint8_t day = Clock::trusted() ? (uint8_t)(Clock::weekday() + 1) : 1;
     for (uint8_t i = 0; i < CELLS; i++) {
@@ -190,9 +199,9 @@ void tick(uint32_t now) {
 void note(DetectionType t) {
     const uint8_t i = (uint8_t)t;
     if (!i || i >= 32) return;
-    portENTER_CRITICAL(&s_pendingMux);
+    pendingLock();
     s_pending |= (1u << i);
-    portEXIT_CRITICAL(&s_pendingMux);
+    pendingUnlock();
 }
 
 DetectionType typeAt(uint8_t i) {

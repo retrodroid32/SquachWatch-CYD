@@ -128,7 +128,16 @@ struct Pending {
     int8_t bestRssi;
 };
 Pending s_pending[ENTRIES];
+#if defined(ESP32) || defined(ARDUINO_ARCH_ESP32)
 portMUX_TYPE s_pendingMux = portMUX_INITIALIZER_UNLOCKED;
+inline void pendingLock()   { portENTER_CRITICAL(&s_pendingMux); }
+inline void pendingUnlock() { portEXIT_CRITICAL(&s_pendingMux); }
+#else
+// Native tests/emulator are single-threaded and deliberately do not carry
+// FreeRTOS. Device builds take the real ESP32 critical section above.
+inline void pendingLock()   {}
+inline void pendingUnlock() {}
+#endif
 
 const char* NS  = "dex";
 const char* KEY = "rec";
@@ -185,22 +194,22 @@ void begin() {
 void note(DetectionType t, int8_t rssi) {
     const uint8_t i = indexOf(t);
     if (i >= ENTRIES) return;
-    portENTER_CRITICAL(&s_pendingMux);
+    pendingLock();
     Pending& p = s_pending[i];
     if (p.count < 0xFFFF) p.count++;
     if (rssi > p.bestRssi) p.bestRssi = rssi;
-    portEXIT_CRITICAL(&s_pendingMux);
+    pendingUnlock();
 }
 
 void tick(uint32_t now) {
     Pending take[ENTRIES];
-    portENTER_CRITICAL(&s_pendingMux);
+    pendingLock();
     memcpy(take, s_pending, sizeof take);
     for (uint8_t i = 0; i < ENTRIES; i++) {
         s_pending[i].count = 0;
         s_pending[i].bestRssi = -128;
     }
-    portEXIT_CRITICAL(&s_pendingMux);
+    pendingUnlock();
 
     for (uint8_t i = 0; i < ENTRIES; i++) {
         if (!take[i].count) continue;
