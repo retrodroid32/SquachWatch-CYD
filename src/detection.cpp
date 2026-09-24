@@ -88,6 +88,54 @@ const volatile uint32_t* advertKinds() { return s_advKind; }
 static volatile uint32_t s_wifiRaw = 0;  // every frame the sniffer was handed
 uint32_t wifiFramesSeen() { return s_wifiRaw; }
 uint32_t advertsSeen()    { return s_advRaw; }
+
+// The RADIO console command: what the radios are doing right now, so a boot
+// that hears and a boot that does not can be compared side by side. With
+// "SCAN" it also runs the driver's own WiFi scan (sniffer paused for it).
+char g_bootRadioLine[192] = "";
+void radioReport(bool withScan) {
+    if (g_bootRadioLine[0]) Serial.printf("[radio] boot: %s\n", g_bootRadioLine);
+    wifi_mode_t mode = WIFI_MODE_NULL;
+    const esp_err_t me = esp_wifi_get_mode(&mode);
+    bool promisc = false;
+    esp_wifi_get_promiscuous(&promisc);
+    uint8_t ch = 0; wifi_second_chan_t ch2 = WIFI_SECOND_CHAN_NONE;
+    esp_wifi_get_channel(&ch, &ch2);
+    int8_t txp = 0;
+    esp_wifi_get_max_tx_power(&txp);
+    wifi_country_t cc = {};
+    esp_wifi_get_country(&cc);
+    Serial.printf("[radio] wifi: mode %d (err %d), sniffer %s, channel %u, tx max %d, country %.2s %u-%u, frames %lu\n",
+                  (int)mode, (int)me, promisc ? "on" : "off", (unsigned)ch, (int)txp, cc.cc,
+                  (unsigned)cc.schan, (unsigned)(cc.schan + cc.nchan - 1), (unsigned long)s_wifiRaw);
+    NimBLEScan* sc = NimBLEDevice::getScan();
+    Serial.printf("[radio] ble: init %d, scanning %d, adverts %lu, raw mode %d, chip %.1f C, up %lu s\n",
+                  (int)NimBLEDevice::isInitialized(), sc ? (int)sc->isScanning() : -1,
+                  (unsigned long)s_advRaw, (int)g_rawMode, temperatureRead(), (unsigned long)(millis() / 1000));
+    if (!withScan) return;
+    esp_wifi_set_promiscuous(false);
+    wifi_scan_config_t cfg = {};
+    cfg.show_hidden = true;
+    cfg.scan_type = WIFI_SCAN_TYPE_PASSIVE;
+    cfg.scan_time.passive = 150;
+    const uint32_t t0 = millis();
+    const esp_err_t se = esp_wifi_scan_start(&cfg, true);
+    uint16_t n = 0;
+    esp_wifi_scan_get_ap_num(&n);
+    int8_t best = -127;
+    if (n) {
+        uint16_t k = n > 20 ? 20 : n;
+        wifi_ap_record_t recs[20];
+        esp_wifi_scan_get_ap_records(&k, recs);
+        for (uint16_t i = 0; i < k; i++) if (recs[i].rssi > best) best = recs[i].rssi;
+    } else {
+        esp_wifi_clear_ap_list();
+    }
+    Serial.printf("[radio] driver scan: err %d, %u network(s), strongest %d dBm, %lu ms\n",
+                  (int)se, (unsigned)n, n ? (int)best : 0, (unsigned long)(millis() - t0));
+    esp_wifi_set_promiscuous(true);
+    esp_wifi_set_channel(ch ? ch : 1, WIFI_SECOND_CHAN_NONE);
+}
 static volatile uint8_t s_windowReq = 0;   // a WINDOW command waiting for the next restart
 static bool             s_windowPending = false;
 void setScanWindow(uint8_t w) { if (w >= 1 && w <= 100) { s_windowReq = w; s_windowPending = true; } }
