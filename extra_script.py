@@ -10,7 +10,8 @@ import subprocess
 def get_version():
     # A bench override: SQW_VERSION=9.9.9 makes a build claim a version, so a
     # squad update nudge from it counts as newer on a board built from the
-    # same tree. Never set in a release build.
+    # same tree. The release workflow also sets it deliberately after it has
+    # verified that the vX.Y.Z tag matches VERSION.
     forced = os.environ.get("SQW_VERSION", "").strip()
     if forced:
         return forced
