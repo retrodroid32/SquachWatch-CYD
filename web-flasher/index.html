@@ -695,7 +695,7 @@
       <option value="./manifest-cyd32-st7798.json" data-fast="./manifest-cyd32-st7798-fast.json">3.2&quot; CYD &mdash; ST7798 / ST7789 compatible</option>
       <option value="./manifest-awok.json">AWOK 2.4&quot;</option>
       <option value="./manifest-rlphantom-r.json">RL Phantom 2.4&quot;</option>
-      <option value="./manifest-cyd35-fast.json" data-ocnote="The 3.5&quot; only ships at 80MHz, so there is no slower build to fall back to.">3.5&quot; &mdash; ST7796 (BETA)</option>
+      <option value="./manifest-twatch-s3.json">LilyGo T-Watch S3 (BETA)</option>
     </select>
     <p class="board-compat-note" id="boardCompatNote" hidden></p>
     <p class="white-screen-note" id="whiteScreenNote">
@@ -745,7 +745,7 @@
       <button id="clockBtn" class="identify-btn">[ SET TIME &amp; ZONE ]</button>
       <div class="identify-result" id="clockResult"></div>
     </div>
-    <p class="browser-note">After flashing, <strong>Set Time &amp; Zone</strong> tells the board this computer's clock and time zone over the same cable. The zone is kept for good; the clock lasts until the board is unplugged, and a saved WiFi network puts it back at every boot.</p>
+    <p class="browser-note">After flashing, <strong>Set Time &amp; Zone</strong> tells the board this computer's clock and time zone over the same cable. The zone is kept for good; the clock lasts until the board is unplugged, and a saved WiFi network puts it back at every boot. A T-Watch has its clock set for it after installing, and keeps the time from then on, even through a flat battery.</p>
   </div>
 
   <div class="legend-section">
@@ -821,7 +821,7 @@
 
 <footer>Stay squachy out there.</footer>
 
-<script type="module" src="https://unpkg.com/esp-web-tools@10/dist/web/install-button.js?module"></script>
+<script type="module" src="https://unpkg.com/esp-web-tools@10.4.0/dist/web/install-button.js?module"></script>
 <script>
 (function () {
   var wrap = document.getElementById('squachyWrap');
@@ -1416,29 +1416,16 @@
     if (!select || !installBtn) return;
 
     // ---- Unlisted lab build ---------------------------------------------
-    // squachwatch.com/?lab=1 adds a development build to the picker. It is
-    // UNLISTED, not secret: this repo and this Pages site are both public,
-    // so anyone who knows the parameter can flash it. That is fine -- the
-    // point is that nobody arrives at an unfinished feature by accident,
-    // not that nobody can reach it.
-    //
-    // The option is only added when the manifest is actually deployed. A
-    // real release ships a site without it, so ?lab=1 after v1.5.22 finds
-    // nothing and silently leaves the picker alone rather than offering a
-    // button that 404s.
-    try {
-      if (/(?:^|[?&])lab=1(?:&|$)/.test(window.location.search)) {
-        // One entry per lab board. Each is added only if its manifest is
-        // actually deployed, so a site built without one silently leaves the
-        // picker alone rather than offering a button that 404s.
-        //
-        // One per board the release workflow's lab branch publishes. A
-        // named lab run (the "label" input) puts its name in each one.
+    // Add lab options only AFTER boards.json has rebuilt the public picker.
+    // Previously these asynchronous fetches raced and a lab option could be
+    // appended, then immediately erased by select.innerHTML = ''.
+    function addLabOptions() {
+      try {
+        if (!/(?:^|[?&])lab=1(?:&|$)/.test(window.location.search)) return;
         ['./manifest-lab-cyd.json', './manifest-lab-cyd-fast.json',
          './manifest-lab-cyd-ili9341.json', './manifest-lab-cyd-ili9341-fast.json',
          './manifest-lab-cyd32-st7798.json', './manifest-lab-cyd32-st7798-fast.json',
-         './manifest-lab-rlphantom-r.json',
-         './manifest-lab-twatch-s3.json'].forEach(function (path) {
+         './manifest-lab-rlphantom-r.json', './manifest-lab-twatch-s3.json'].forEach(function (path) {
           fetch(path, { cache: 'no-store' })
             .then(function (r) { return r.ok ? r.json() : null; })
             .then(function (m) {
@@ -1450,8 +1437,8 @@
             })
             .catch(function () { /* not deployed; nothing to add */ });
         });
-      }
-    } catch (e) { /* location unavailable in some embeddings */ }
+      } catch (e) { /* location unavailable in some embeddings */ }
+    }
 
     var WHITE_SCREEN_LINE =
       "White screen after flashing? Your CYD's probably got the other display driver — try the other 2.8\" option in that dropdown.";
@@ -1499,7 +1486,7 @@
       compatNote.textContent = msg;
     }
 
-    loadBoardMatrix();
+    loadBoardMatrix().then(addLabOptions);
 
     // The manifest's own "version" field is stamped with the release
     // tag by .github/workflows/release-flasher.yml at deploy time (the
@@ -1655,6 +1642,21 @@
       clockBtn.textContent = '[ SET TIME & ZONE ] (needs a desktop browser)';
     } else {
       clockBtn.addEventListener('click', setBoardClock);
+      new MutationObserver(function (muts) {
+        muts.forEach(function (m) {
+          m.removedNodes.forEach(function (n) {
+            if (!n.tagName || n.tagName.toLowerCase() !== 'ewt-install-dialog') return;
+            var mf = (document.getElementById('installBtn') || { getAttribute: function () { return ''; } }).getAttribute('manifest') || '';
+            if (mf.indexOf('twatch') < 0 || clockBtn.disabled) return;
+            navigator.serial.getPorts().then(function (ports) {
+              var p = ports.filter(isNativeUsb)[0];
+              if (!p) return;
+              clockResult.scrollIntoView({ block: 'center', behavior: 'smooth' });
+              setBoardClock(null, { port: p });
+            });
+          });
+        });
+      }).observe(document.body, { childList: true });
     }
   }
 
@@ -1690,21 +1692,60 @@
     return { zone: 'UTC', from: tz || 'unknown', sure: false };
   }
 
-  async function setBoardClock() {
+  // The T-Watch talks over the S3's own USB, not a serial chip: the baud rate
+  // means nothing to it, and 2,000,000 once left Windows' driver for it wedged
+  // until a replug. 115200 there.
+  function isNativeUsb(port) {
+    var info = {};
+    try { info = port.getInfo() || {}; } catch (e) {}
+    return info.usbVendorId === 0x303A;
+  }
+
+  // auto: { port } -- the flasher's own call after a watch install. No port
+  // picker (the install already has permission), and instead of a fixed
+  // boot wait it waits for the watch's main loop: a fresh install starts
+  // with touch calibration and the colour check, and nothing reads the
+  // console until those are done, so a line sent early would be read late
+  // and set the clock minutes slow.
+  async function setBoardClock(ev, auto) {
     clockBtn.disabled = true;
     clockResult.className = 'identify-result';
     var port, writer, reader;
     var z = zoneForBrowser();
     try {
-      clockResult.textContent = 'Pick the board’s port...';
-      port = await navigator.serial.requestPort();
-      await port.open({ baudRate: 2000000, bufferSize: 65536 });
+      if (auto) {
+        port = auto.port;
+      } else {
+        clockResult.textContent = 'Pick the board’s port...';
+        port = await navigator.serial.requestPort();
+      }
+      var native = isNativeUsb(port);
+      // The install dialog lets go of the port as it closes; give it a moment.
+      for (var tries = 0; ; tries++) {
+        try { await port.open({ baudRate: native ? 115200 : 2000000, bufferSize: 65536 }); break; }
+        catch (e) { if (tries >= 10) throw e; await new Promise(function (r) { setTimeout(r, 500); }); }
+      }
       // Both lines low: the board runs. Opening the port may have reset it,
       // so give it the whole boot, update check and all, before talking.
       try { await port.setSignals({ dataTerminalReady: false, requestToSend: false }); } catch (e) {}
-      for (var sec = 9; sec > 0; sec--) {
-        clockResult.textContent = 'Letting the board boot... ' + sec;
-        await new Promise(function (r) { setTimeout(r, 1000); });
+      if (auto) {
+        var seen = '', r0 = port.readable.getReader(), d0 = new TextDecoder(), w0 = Date.now(), up = false;
+        while (Date.now() - w0 < 240000) {
+          var left = Math.ceil((240000 - (Date.now() - w0)) / 1000);
+          clockResult.textContent = 'Setting the watch’s clock once it is on its main screen. Finish the touch targets and the colour check on the watch... (' + left + ' s)';
+          var c0 = await Promise.race([r0.read(), new Promise(function (r) { setTimeout(function () { r({ done: false, value: null }); }, 1000); })]);
+          if (c0.done) break;
+          if (c0.value) seen += d0.decode(c0.value, { stream: true });
+          if (seen.indexOf('[frame]') >= 0) { up = true; break; }
+          if (seen.length > 20000) seen = seen.slice(-2000);
+        }
+        await r0.cancel(); r0.releaseLock();
+        if (!up) throw new Error('the watch never reached its main screen. Press Set Time & Zone once it does');
+      } else {
+        for (var sec = 9; sec > 0; sec--) {
+          clockResult.textContent = 'Letting the board boot... ' + sec;
+          await new Promise(function (r) { setTimeout(r, 1000); });
+        }
       }
       var epoch = Math.floor(Date.now() / 1000);
       // A blank line first: the first byte after an open can go missing.
