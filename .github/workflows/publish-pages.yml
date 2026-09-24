@@ -1,0 +1,150 @@
+name: Publish web flasher
+
+on:
+  push:
+    branches:
+      - master
+  workflow_run:
+    workflows:
+      - "Build and release firmware"
+    types:
+      - completed
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: github-pages
+  cancel-in-progress: true
+
+jobs:
+  publish:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Check out master
+        uses: actions/checkout@v4
+        with:
+          ref: master
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Cache PlatformIO
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.platformio/.cache
+            ~/.platformio/packages
+            ~/.platformio/platforms
+          key: pages-platformio-${{ runner.os }}-${{ hashFiles('platformio.ini') }}
+          restore-keys: |
+            pages-platformio-${{ runner.os }}-
+
+      - name: Install PlatformIO
+        run: pip install --upgrade platformio
+
+      - name: Validate board matrix
+        run: python tools/board_matrix.py validate
+
+      - name: Build public flasher firmware
+        run: |
+          set -euo pipefail
+          pio run $(python tools/board_matrix.py pio-args release)
+
+      - name: Assemble Pages site
+        run: |
+          set -euo pipefail
+          rm -rf _site
+          mkdir -p _site/update _site/emulator
+
+          cp web-flasher/index.html _site/index.html
+          cp web-flasher/boards.json _site/boards.json
+          cp web-flasher/update/index.html _site/update/index.html
+          cp web-flasher/emulator/index.html _site/emulator/index.html
+          cp web-flasher/emulator/squachsim.js _site/emulator/squachsim.js
+          cp web-flasher/emulator/squachsim.wasm _site/emulator/squachsim.wasm
+
+          # ESP32 boards share these regions; board_matrix validation keeps
+          # every public board tied to a real PlatformIO environment.
+          cp .pio/build/cyd/bootloader.bin _site/esp32-bootloader.bin
+          cp .pio/build/cyd/partitions.bin _site/esp32-partitions.bin
+          cp "$HOME/.platformio/packages/framework-arduinoespressif32/tools/partitions/boot_app0.bin" _site/esp32-otadata.bin
+
+          # T-Watch S3 has its own bootloader and partition table.
+          cp .pio/build/twatch-s3/bootloader.bin _site/esp32s3-bootloader.bin
+          cp .pio/build/twatch-s3/partitions.bin _site/twatch-s3-partitions.bin
+
+          for board in $(python tools/board_matrix.py list release); do
+            cp ".pio/build/$board/firmware.bin" "_site/$board-firmware.bin"
+          done
+
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          root = Path(".")
+          site = Path("_site")
+          version = (root / "VERSION").read_text(encoding="utf-8").strip()
+          matrix = json.loads((root / "web-flasher" / "boards.json").read_text(encoding="utf-8"))
+
+          manifests = set()
+          for board in matrix["boards"]:
+              m = board.get("manifest")
+              if m:
+                  manifests.add(m)
+              fm = board.get("fast_manifest")
+              if fm:
+                  manifests.add(fm)
+
+          for name in sorted(manifests):
+              src = root / "web-flasher" / name
+              if not src.exists():
+                  raise SystemExit(f"missing manifest: {src}")
+              data = json.loads(src.read_text(encoding="utf-8"))
+              data["version"] = version
+              (site / name).write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+
+          # Validate every file referenced by every public/fast manifest.
+          missing = []
+          for name in sorted(manifests):
+              data = json.loads((site / name).read_text(encoding="utf-8"))
+              for build in data.get("builds", []):
+                  for part in build.get("parts", []):
+                      if not (site / part["path"]).exists():
+                          missing.append(f"{name}: {part['path']}")
+          if missing:
+              raise SystemExit("manifest targets missing:\n" + "\n".join(missing))
+
+          (site / "versions.json").write_text(
+              json.dumps({
+                  "latest": f"v{version}",
+                  "versions": [{"tag": f"v{version}", "dir": ""}]
+              }, indent=2) + "\n",
+              encoding="utf-8"
+          )
+          print(f"Pages site ready for v{version}: {len(manifests)} manifests")
+          PY
+
+          touch _site/.nojekyll
+          test -s _site/index.html
+          test -s _site/manifest-cyd32-st7798.json
+          test -s _site/cyd32-st7798-firmware.bin
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
