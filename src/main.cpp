@@ -2286,6 +2286,25 @@ void twatchBatteryLine(char* out, size_t n) {
     snprintf(out, n, "%s", line);
 }
 
+// The chip's own temperature sensor, read at most every two seconds: the
+// settings row asks every frame, and each read starts and stops the sensor.
+int twatchChipC() {
+    static uint32_t at = 0;
+    static int c = 0;
+    const uint32_t now = millis();
+    if (!at || now - at >= 2000) { at = now ? now : 1; c = (int)lroundf(temperatureRead()); }
+    return c;
+}
+
+// STEADY POWER: DC1 -- the ESP32 and its radio -- in forced PWM, or back to
+// the chip's automatic PWM/PFM. Applied at boot and on every toggle.
+static void twatchApplySteady() {
+    if (!s_pmuOk) return;
+    s_pmu.settDC1WorkModeToPwm(Settings::steadyPower() ? 1 : 0);
+    Serial.printf("[pmu] DC1 %s (reg 0x81 = %02X)\n", Settings::steadyPower() ? "forced PWM (STEADY POWER)" : "automatic PWM/PFM",
+                  (unsigned)s_pmu.readRegister(0x81));
+}
+
 static void twatchBatterySample(uint8_t why) {
     if (!s_pmuOk) return;
     BlackBox::BattRecord r;
@@ -2300,12 +2319,17 @@ static void twatchBatterySample(uint8_t why) {
     if (s_pmu.isCharging()) r.flags |= BlackBox::BATT_CHARGING;
     if (!s_panelAsleep)     r.flags |= BlackBox::BATT_SCREEN_ON;
     if (!s_radiosResting)   r.flags |= BlackBox::BATT_RADIOS_ON;
+    r.chipC   = (int8_t)twatchChipC();
+    r.steady  = Settings::steadyPower() ? 1 : 0;
+    r.adverts = advertsSeen();
+    r.frames  = wifiFramesSeen();
     BlackBox::noteBattery(r);
     static const char* const WHY[] = { "timer", "boot", "usb", "screen", "radio reset", "self-heal" };
-    Serial.printf("[batt] %u mV  %u%%  %s%s  screen %s  cpu %u MHz  up %lu s  (%s)\n",
+    Serial.printf("[batt] %u mV  %u%%  %s%s  screen %s  cpu %u MHz  up %lu s  chip %d C  heard %lu/%lu  (%s)\n",
                   (unsigned)r.mv, (unsigned)r.pct, (r.flags & BlackBox::BATT_USB) ? "on USB" : "on battery",
                   (r.flags & BlackBox::BATT_CHARGING) ? ", charging" : "", s_panelAsleep ? "off" : "on",
-                  (unsigned)getCpuFrequencyMhz(), (unsigned long)r.upSec, WHY[why < 6 ? why : 0]);
+                  (unsigned)getCpuFrequencyMhz(), (unsigned long)r.upSec, (int)r.chipC,
+                  (unsigned long)r.adverts, (unsigned long)r.frames, WHY[why < 6 ? why : 0]);
 }
 
 // Every ten minutes, at boot, and whenever the cable or the screen changes
@@ -2657,6 +2681,7 @@ void setup() {
     twatchRtcBegin();      // after Clock::begin(): a real time beats the note's guess
     twatchHapticBegin();
     twatchMotionBegin();
+    twatchApplySteady();   // after Settings::load(), which it reads
 #endif
     Security::begin();
     // Which version lives in this slot, and whether this boot is a fresh
@@ -3206,13 +3231,15 @@ void loop() {
     if (g_consoleBatt) { g_consoleBatt = false; twatchBatterySample(BlackBox::BATT_WHY_TIMER); }
     if (g_consoleBattLog) {
         g_consoleBattLog = false;
-        Serial.println("[battlog] newest first: boot  up(s)  epoch  mV  %  flags(usb/chg/scr/radio)  cpu  why");
+        Serial.println("[battlog] newest first: boot  up(s)  epoch  mV  %  flags(usb/chg/scr/radio)  cpu  why  chipC  steady  adverts  frames");
         BlackBox::forEachBattery([](const BlackBox::BattRecord& r, void*) {
             Serial.printf("[battlog] %u  %lu  %lu  %u  %u  %c%c%c%c  %u  %u\n", (unsigned)r.boot,
                           (unsigned long)r.upSec, (unsigned long)r.epoch, (unsigned)r.mv, (unsigned)r.pct,
                           (r.flags & BlackBox::BATT_USB) ? 'U' : '-', (r.flags & BlackBox::BATT_CHARGING) ? 'C' : '-',
                           (r.flags & BlackBox::BATT_SCREEN_ON) ? 'S' : '-', (r.flags & BlackBox::BATT_RADIOS_ON) ? 'R' : '-',
                           (unsigned)r.cpuMhz10 * 10, (unsigned)r.why);
+            Serial.printf("[battlog]    %d C  %u  %lu  %lu\n", (int)r.chipC, (unsigned)r.steady,
+                          (unsigned long)r.adverts, (unsigned long)r.frames);
             return true;
         }, nullptr);
     }
@@ -4875,6 +4902,12 @@ void loop() {
                         case SettingsRow::WATCH_RADIO: Settings::cycleRadioDuty(); break;
                         case SettingsRow::WATCH_BATTERY: break;   // a reading, not a switch
                         case SettingsRow::WATCH_RADIO_RESET: twatchRadioResetTap(); break;
+                        case SettingsRow::WATCH_STEADY:
+                            Settings::toggleSteadyPower();
+                            twatchApplySteady();
+                            twatchBatterySample(BlackBox::BATT_WHY_TIMER);   // a line in the log at the switch
+                            break;
+                        case SettingsRow::WATCH_TEMP: break;   // a reading, not a switch
                         case SettingsRow::WATCH_BUZZ:
                             Settings::toggleBuzz();
                             // The sample only when turning it ON: playing it on

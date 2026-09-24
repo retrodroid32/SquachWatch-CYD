@@ -79,7 +79,14 @@ struct __attribute__((packed)) BattRecord {
     uint32_t epoch;         // 0 when the clock was not set
     uint32_t upSec;
     uint8_t  cpuMhz10;      // CPU clock / 10
-    uint8_t  pad[46];
+    // What the radios had heard by then, and how warm the chip was: two
+    // samples with the same counts are a deaf spell, and these say when it
+    // started and what the watch was doing. Zero in older records.
+    int8_t   chipC;         // the chip's own sensor, degrees C
+    uint8_t  steady;        // 1 when STEADY POWER held DC1 in PWM
+    uint32_t adverts;       // Bluetooth adverts heard since boot
+    uint32_t frames;        // WiFi frames heard since boot
+    uint8_t  pad[36];
     uint8_t  crc;
 };
 static const uint8_t BATT_USB       = 0x01;   // on the cable
