@@ -488,6 +488,8 @@ and complete Pages artifact, and only then creates the GitHub Release.
 `publish-pages.yml` deploys that exact artifact after the release workflow
 succeeds; ordinary pushes to `master` cannot replace the production flasher.
 
+This fork uses its own OTA signing key. A board running an older/upstream-key build needs one USB/web flash of v1.20.1 to install the fork public key; after that, signed Wi-Fi/Bluetooth OTA releases from this fork are trusted.
+
 Detection is reliable for the high-priority targets (Flock, Axon, skimmer,
 camera glasses). Remote ID and iBeacon are exact-format matches. Raven,
 generic ALPR and the Google tracker network are best-effort — see
