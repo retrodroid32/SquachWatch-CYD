@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Single source of truth for SquachWatch build/publish board profiles."""
-# CI trigger/checkpoint: board matrix validation belongs in every normal build.
+# CI checkpoint: board matrix validation belongs in every normal build.
 from __future__ import annotations
 import argparse
 import json
