@@ -329,7 +329,6 @@ static void drawCrashCard(TFT_eSPI& t) {
 #include "meshmsg.h"
 #endif
 #include "ignore_list.h"
-#include "ignore_list.h"
 #include "ui_detfilter.h"
 #include "ui_beaconwarn.h"
 #include "ui_power.h"
@@ -1819,8 +1818,20 @@ struct KeptEntry {
 };
 
 static bool secretNamespace(const char* ns) {
-    // "otawifi" is the saved WiFi password for firmware updates.
-    return !strcmp(ns, "meshtalk") || !strcmp(ns, "ignore") || !strcmp(ns, "otawifi");
+    // A physical wipe preserves harmless personalization (settings, Squachy,
+    // clock calibration, PIN policy) but must not resurrect anything learned
+    // about nearby devices or any credential/mesh secret.
+    //
+    // "squachwatch" holds lifetime detection totals; "dex", "bingo" and
+    // "regulars" are all derived from encounters, with regulars containing
+    // actual observed MAC addresses. "otawifi" holds saved WiFi credentials.
+    return !strcmp(ns, "meshtalk")   ||
+           !strcmp(ns, "ignore")     ||
+           !strcmp(ns, "otawifi")    ||
+           !strcmp(ns, "squachwatch")||
+           !strcmp(ns, "dex")        ||
+           !strcmp(ns, "bingo")      ||
+           !strcmp(ns, "regulars");
 }
 
 static void physicalNvsWipe() {
