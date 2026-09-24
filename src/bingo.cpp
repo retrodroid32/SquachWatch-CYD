@@ -22,9 +22,10 @@ uint8_t  s_streak  = 0;
 uint8_t  s_best    = 0;        // best streak
 uint8_t  s_bestFil = 0;        // most squares on one card
 
-// Sightings the radio task has handed over, one bit a type. Never written to
-// flash from there -- tick() does that from loop().
-volatile uint32_t s_pending = 0;
+// Sightings the DetectionEngine has handed over, one bit per type. BLE
+// callbacks are serialized through DetectionEngine::loop(), so this state is
+// application-task-only; tick() is also where the deferred NVS write happens.
+uint32_t s_pending = 0;
 bool     s_dirty   = false;
 uint32_t s_saveAt  = 0;
 
