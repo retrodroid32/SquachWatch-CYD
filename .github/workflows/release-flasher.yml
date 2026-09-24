@@ -175,7 +175,9 @@ jobs:
         run: |
           # rlphantom-r is the RL Phantom 2.4" (Sunton ESP32-2432S024R), the
           # resistive-touch version, confirmed on real boards.
-          pio run -e cyd -e cyd-ili9341 -e awok -e rlphantom-r -e cyd-fast -e cyd-ili9341-fast -e cyd35-fast
+          # freenove32 is the Freenove 3.2" (FNK0103L): the RL Phantom
+          # resistive's pins with an ST7789, confirmed on a real board.
+          pio run -e cyd -e cyd-ili9341 -e awok -e rlphantom-r -e freenove32 -e cyd-fast -e cyd-ili9341-fast -e cyd35-fast
           # twatch-s3 is the LilyGo T-Watch S3: an ESP32-S3, so its own
           # bootloader (at 0x0, not 0x1000) and its own 16 MB partition
           # table. A lab board until the watch work settles; see ?lab=1.
@@ -211,6 +213,12 @@ jobs:
             0x1000  .pio/build/rlphantom-r/bootloader.bin \
             0x8000  .pio/build/rlphantom-r/partitions.bin \
             0x10000 .pio/build/rlphantom-r/firmware.bin
+          python -m esptool --chip esp32 merge_bin \
+            -o firmware-freenove32-merged.bin \
+            --flash_mode dio --flash_freq 40m --flash_size 4MB \
+            0x1000  .pio/build/freenove32/bootloader.bin \
+            0x8000  .pio/build/freenove32/partitions.bin \
+            0x10000 .pio/build/freenove32/firmware.bin
           python -m esptool --chip esp32s3 merge_bin \
             -o firmware-twatch-s3-merged.bin \
             --flash_mode dio --flash_freq 80m --flash_size 16MB \
@@ -241,7 +249,7 @@ jobs:
           # board that looks bricked.
           for f in bootloader partitions; do
             ref="$(sha256sum ".pio/build/cyd/$f.bin" | cut -d' ' -f1)"
-            for v in cyd cyd-ili9341 awok rlphantom-r cyd-fast cyd-ili9341-fast cyd35-fast; do
+            for v in cyd cyd-ili9341 awok rlphantom-r freenove32 cyd-fast cyd-ili9341-fast cyd35-fast; do
               got="$(sha256sum ".pio/build/$v/$f.bin" | cut -d' ' -f1)"
               if [ "$got" != "$ref" ]; then
                 echo "::error::$v/$f.bin differs from cyd/$f.bin."
@@ -273,7 +281,7 @@ jobs:
           # merged image for those on purpose: the merged blob is a
           # manual-recovery artifact, and recovery should land you on the
           # spec-compliant build rather than the overclocked one.
-          for v in cyd cyd-ili9341 awok rlphantom-r cyd-fast cyd-ili9341-fast cyd35-fast twatch-s3; do
+          for v in cyd cyd-ili9341 awok rlphantom-r freenove32 cyd-fast cyd-ili9341-fast cyd35-fast twatch-s3; do
             cp ".pio/build/$v/firmware.bin" "$v-firmware.bin"
           done
 
@@ -291,7 +299,7 @@ jobs:
           fi
           umask 077
           printf '%s\n' "$OTA_SIGNING_KEY" > "$RUNNER_TEMP/ota_key.pem"
-          for v in cyd cyd-ili9341 awok rlphantom-r cyd-fast cyd-ili9341-fast cyd35-fast twatch-s3; do
+          for v in cyd cyd-ili9341 awok rlphantom-r freenove32 cyd-fast cyd-ili9341-fast cyd35-fast twatch-s3; do
             python tools/sign_firmware.py --key "$RUNNER_TEMP/ota_key.pem" \
               --env "$v" --bin "$v-firmware.bin" --out "$v-firmware.sig"
           done
@@ -322,6 +330,7 @@ jobs:
                     "web-flasher/manifest-awok.json", "web-flasher/manifest-cyd-fast.json",
                     "web-flasher/manifest-cyd-ili9341-fast.json",
                     "web-flasher/manifest-rlphantom-r.json",
+                    "web-flasher/manifest-freenove32.json",
                     "web-flasher/manifest-cyd35-fast.json",
                     "web-flasher/manifest-twatch-s3.json"):
               m = json.load(open(p))
@@ -346,6 +355,7 @@ jobs:
           cp web-flasher/manifest-cyd-fast.json manifest-cyd-fast.json
           cp web-flasher/manifest-cyd-ili9341-fast.json manifest-cyd-ili9341-fast.json
           cp web-flasher/manifest-rlphantom-r.json manifest-rlphantom-r.json
+          cp web-flasher/manifest-freenove32.json manifest-freenove32.json
           cp web-flasher/manifest-cyd35-fast.json manifest-cyd35-fast.json
           cp web-flasher/manifest-twatch-s3.json manifest-twatch-s3.json
 
@@ -375,6 +385,7 @@ jobs:
             cyd-ili9341-firmware.bin \
             awok-firmware.bin \
             rlphantom-r-firmware.bin \
+            freenove32-firmware.bin \
             cyd-fast-firmware.bin \
             cyd-ili9341-fast-firmware.bin \
             cyd35-fast-firmware.bin \
@@ -387,10 +398,12 @@ jobs:
             firmware-cyd-ili9341-merged.bin \
             firmware-awok-merged.bin \
             firmware-rlphantom-r-merged.bin \
+            firmware-freenove32-merged.bin \
             manifest-cyd.json \
             manifest-cyd-ili9341.json \
             manifest-awok.json \
             manifest-rlphantom-r.json \
+            manifest-freenove32.json \
             manifest-cyd-fast.json \
             manifest-cyd-ili9341-fast.json \
             manifest-cyd35-fast.json \
@@ -451,6 +464,7 @@ jobs:
           cp web-flasher/manifest-cyd-fast.json _site/manifest-cyd-fast.json
           cp web-flasher/manifest-cyd-ili9341-fast.json _site/manifest-cyd-ili9341-fast.json
           cp web-flasher/manifest-rlphantom-r.json _site/manifest-rlphantom-r.json
+          cp web-flasher/manifest-freenove32.json _site/manifest-freenove32.json
           cp web-flasher/manifest-cyd35-fast.json _site/manifest-cyd35-fast.json
           cp web-flasher/manifest-twatch-s3.json _site/manifest-twatch-s3.json
           # A LAB RUN MUST NOT CHANGE WHAT THE PUBLIC PAGE SERVES.
@@ -472,6 +486,7 @@ jobs:
               exit 1
             fi
             echo "Restoring root site from $LATEST"
+            export LATEST
             # esp32s3-* and *-partitions.bin too: the watch's own bootloader
             # and table are named differently from the shared ESP32 pair, and
             # without them every lab run left the public watch install 404ing
@@ -482,7 +497,24 @@ jobs:
             # Every file a restored public manifest names must be here, or the
             # public page 404s on it. Fail the run rather than deploy that.
             python - <<'PY'
-          import json, glob, os, sys
+          import json, glob, os, re, subprocess, sys
+          # A board added to master since the release has a public manifest
+          # from web-flasher/ but nothing in the release behind it. A lab run
+          # cannot publish it, so it comes off the public page -- manifest
+          # and <option> -- until the next release carries it. A manifest the
+          # release DID ship is held to every file, below.
+          latest = os.environ["LATEST"]
+          shipped = set(subprocess.run(["gh", "release", "view", latest, "-R", os.environ["GITHUB_REPOSITORY"], "--json", "assets", "-q", ".assets[].name"],
+                                       capture_output=True, text=True, check=True).stdout.split())
+          page = open("_site/index.html", encoding="utf-8").read()
+          for mf in glob.glob("_site/manifest-*.json"):
+              name = os.path.basename(mf)
+              if name.startswith("manifest-lab-") or name in shipped:
+                  continue
+              os.remove(mf)
+              page, n = re.subn(r'[ \t]*<option value="\./' + re.escape(name) + r'"[^\n]*</option>\n', "", page)
+              print("::notice::%s is not in %s yet: off the public page until a release carries it (%d option removed)" % (name, latest, n))
+          open("_site/index.html", "w", encoding="utf-8").write(page)
           missing = []
           for mf in glob.glob("_site/manifest-*.json"):
               if os.path.basename(mf).startswith("manifest-lab-"):
@@ -503,7 +535,7 @@ jobs:
           import json, shutil, os
           label = "${{ steps.ver.outputs.label }}"
           ver   = "${{ steps.ver.outputs.version }}"
-          for board in ("cyd", "cyd-ili9341", "cyd-fast", "cyd-ili9341-fast", "rlphantom-r", "twatch-s3"):
+          for board in ("cyd", "cyd-ili9341", "cyd-fast", "cyd-ili9341-fast", "rlphantom-r", "freenove32", "twatch-s3"):
               shutil.copy(board + "-firmware.bin", "_site/lab-" + board + "-firmware.bin")
               if os.path.exists(board + "-firmware.sig"):
                   shutil.copy(board + "-firmware.sig", "_site/lab-" + board + "-firmware.sig")
@@ -543,7 +575,7 @@ jobs:
             # firmware here: v1.16.0 shipped cyd35-fast to the release and into
             # index.html's <option> list but neither into _site, so the 3.5"
             # appeared in the picker and 404'd when chosen.
-            for board in cyd cyd-ili9341 awok rlphantom-r cyd-fast cyd-ili9341-fast cyd35-fast twatch-s3; do
+            for board in cyd cyd-ili9341 awok rlphantom-r freenove32 cyd-fast cyd-ili9341-fast cyd35-fast twatch-s3; do
               cp "$board-firmware.bin" "_site/$board-firmware.bin"
               # The Bluetooth update page fetches the image and its signature
               # side by side from the site root.
