@@ -19,6 +19,6 @@ public:
 private:
     bool     _ready = false;
     uint32_t _lastFlush = 0;
-    char     _filename[24] = {0};
+    char     _filename[32] = {0};
     void     openDaily();
 };
