@@ -37,6 +37,10 @@ def validate(boards):
             errors.append(f"{bid}: release profile has no manifest")
         if manifest and not (ROOT / "web-flasher" / manifest).is_file():
             errors.append(f"{bid}: missing web-flasher/{manifest}")
+        if b.get("visible") and not b.get("release"):
+            errors.append(f"{bid}: visible profile is not a release profile")
+        if b.get("release") and not b.get("ci"):
+            errors.append(f"{bid}: release profile is not covered by CI")
         if b.get("release") and not b.get("sign"):
             errors.append(f"{bid}: release firmware is not marked for signing")
         fast = b.get("fast_env")
