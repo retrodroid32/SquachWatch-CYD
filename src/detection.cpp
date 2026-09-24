@@ -1478,6 +1478,9 @@ void DetectionEngine::applyRawBle(RawBleResult r) {
 void DetectionEngine::startRawBleScan() {
     if (g_rawMode == RawScanMode::WIFI) WiFi.scanDelete();
     _rawBleCount = 0;
+    portENTER_CRITICAL(&s_bleCallbackMux);
+    _rawBleQHead = _rawBleQTail = 0;
+    portEXIT_CRITICAL(&s_bleCallbackMux);
     // The continuous NimBLE scan (started once, forever, in init())
     // keeps running -- onResult() just routes into postRawBle() above
     // instead of the signature matcher while g_rawMode == BLE. WiFi's
