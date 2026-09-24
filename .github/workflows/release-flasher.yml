@@ -11,11 +11,11 @@ name: Build and release firmware
 # GitHub Release for that tag with each one's three raw PlatformIO
 # artifacts attached (bootloader/partitions/firmware — the human-facing
 # source of truth), then also merge each into one flashable image and
-# attach those plus per-board version-stamped manifests. The repo is
-# public now, so the web flasher itself is deployed straight to this
-# repo's own GitHub Pages site (github.io/SquachWatch-CYD) as part of
-# this same run — all three merged binaries and manifests are copied
-# alongside index.html there so the browser fetches them same-origin
+# attach those plus per-board version-stamped manifests. This job builds
+# the exact GitHub Pages artifact; publish-pages.yml deploys that artifact
+# only after this workflow succeeds. Normal master pushes never replace
+# production Pages. Firmware/manifests are copied beside index.html so
+# the browser fetches them same-origin
 # (GitHub release assets don't send CORS headers, so the flasher page
 # can't fetch them directly from the Releases tab). index.html's board
 # picker swaps which manifest the install button targets.
@@ -301,8 +301,9 @@ jobs:
       - name: Sign firmware for Bluetooth updates
         # Each board checks an update against the public key compiled into
         # include/ota_pubkey.h, over a message that includes its own build
-        # name -- see tools/sign_firmware.py. No secret, no signatures: the
-        # release still ships, and the update page tells people to use USB.
+        # name -- see tools/sign_firmware.py. A real release is blocked by
+        # the signing-key preflight above; only an explicitly requested lab
+        # build may continue unsigned for USB-only testing.
         env:
           OTA_SIGNING_KEY: ${{ secrets.OTA_SIGNING_KEY }}
         run: |
@@ -630,6 +631,17 @@ jobs:
             echo '}'
           } > _site/versions.json
           cat _site/versions.json
+
+          test -s _site/index.html
+          test -s _site/boards.json
+          test -s _site/vendor/esp-web-tools-10.4.0.js
+          test -s _site/vendor/esptool-js-0.6.1.js
+          for p in $(python tools/board_matrix.py manifests release); do
+            test -s "_site/$p"
+          done
+          for board in $(python tools/board_matrix.py list release); do
+            test -s "_site/$board-firmware.bin"
+          done
 
       - name: Upload exact Pages site
         uses: actions/upload-artifact@v4
