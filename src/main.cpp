@@ -6150,7 +6150,7 @@ void loop() {
     s_pushUsAvg  = emaUpdate(s_pushUsAvg, s_pushAccumUs);
     const uint32_t frameUs = micros() - frameStartUs;
     s_frameUsAvg = emaUpdate(s_frameUsAvg, frameUs);
-    FrameProf::endFrame();
+    FrameProf::endFrame(frameUs);
     if (const char* nm = timedScreenName(state)) {
         if (now - transitionStart >= TRANSITION_MS) {
             if (s_lastScreenAt != transitionStart) {
@@ -6172,6 +6172,16 @@ void loop() {
             const uint32_t loopsPerS = s_loopsSinceSay / 10;
             s_loopsSinceSay = 0;
             FrameProf::print();
+            {
+                const QueuePerfStats qp = engine.queuePerf();
+                Serial.printf("[queue] ble q %u hi %u drop %lu drain %lu/%lu us budget %lu  wifi q %u hi %u drop %lu drain %lu/%lu us budget %lu\n",
+                              (unsigned)qp.bleDepth, (unsigned)qp.bleHighWater,
+                              (unsigned long)qp.bleDropped, (unsigned long)qp.bleDrainAvgUs,
+                              (unsigned long)qp.bleDrainMaxUs, (unsigned long)qp.bleBudgetHits,
+                              (unsigned)qp.wifiDepth, (unsigned)qp.wifiHighWater,
+                              (unsigned long)qp.wifiDropped, (unsigned long)qp.wifiDrainAvgUs,
+                              (unsigned long)qp.wifiDrainMaxUs, (unsigned long)qp.wifiBudgetHits);
+            }
 #if defined(CYD35)
             // Measurement, not a feature: where the 3.5"'s frame really goes.
             Serial.printf("[bands] draw %lu / %lu us   hash %lu us   wire %lu us   rows %ld\n",
