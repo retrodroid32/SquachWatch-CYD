@@ -1524,6 +1524,7 @@ volatile bool g_consoleRadioTest = false; // RADIO TEST: cycle even on the cable
 volatile bool g_consoleBatt    = false;   // BATT: one reading, now
 volatile bool g_consoleBattLog = false;   // BATTLOG: every sample kept, newest first
 volatile bool g_consoleHeal = false;  // RADIO HEAL: take the self-heal path now, as if deaf (watch)
+volatile bool g_consoleXtal = false;   // XTAL: CLOCK CHECK from the console (watch)
 volatile bool g_consoleMotion = false; // MOTION: the motion sensor's reading and verdict (watch)
 volatile bool g_consoleBuzz = false;  // BUZZ: play the alert pattern now and report the driver (watch)
 volatile bool g_consoleRtc = false;   // RTC: read the clock chip (watch)
@@ -2311,6 +2312,81 @@ int twatchChipC() {
     const uint32_t now = millis();
     if (!at || now - at >= 2000) { at = now ? now : 1; c = (int)lroundf(temperatureRead()); }
     return c;
+}
+
+// CLOCK CHECK: the ESP32's 40 MHz crystal against the clock chip's own
+// 32 kHz one. Both radios tune off the ESP32's crystal, and so does micros();
+// a crystal that started up off-frequency would leave the CPU, the screen and
+// USB working and both radios deaf -- and only a power cut would restart it,
+// which is exactly how the deaf spells behave (2026-09-24). The clock chip's
+// seconds tick is the yardstick: catch one tick, count XTAL_SECS of them,
+// catch the last, and compare with micros(). Catching a tick means polling
+// the chip for up to a second, so the screen stalls twice, briefly.
+// Healthy is within about +-30 ppm (both crystals together); the radios need
+// the ESP32's within about +-25 ppm of true.
+static const uint32_t XTAL_SECS = 60;
+static uint8_t  s_xtalState = 0;          // 0 never run, 1 counting, 2 done, 3 failed
+static uint32_t s_xtalT0 = 0, s_xtalStartMs = 0;
+static uint8_t  s_xtalSec0 = 0;
+static int32_t  s_xtalPpm = 0;
+static int      s_xtalChipC = 0;
+// Polls the clock chip's seconds until they change; the micros() of the
+// change and the new second. False if the chip did not answer or never ticked.
+static bool rtcTick(uint32_t& atUs, uint8_t& sec) {
+    auto readSec = [](uint8_t& s) -> bool {
+        Wire1.beginTransmission(RTC_ADDR);
+        Wire1.write(0x02);
+        if (Wire1.endTransmission(false) != 0) return false;
+        if (Wire1.requestFrom(RTC_ADDR, (uint8_t)1) != 1) return false;
+        s = bcd2bin(Wire1.read() & 0x7F);
+        return true;
+    };
+    uint8_t first;
+    if (!readSec(first)) return false;
+    const uint32_t t0 = millis();
+    while (millis() - t0 < 1500) {
+        uint8_t s;
+        if (!readSec(s)) return false;
+        if (s != first) { atUs = micros(); sec = s; return true; }
+    }
+    return false;
+}
+static void twatchXtalStart() {
+    if (s_xtalState == 1) return;
+    if (!s_pmuOk || !rtcTick(s_xtalT0, s_xtalSec0)) {
+        s_xtalState = 3;
+        Serial.println("[xtal] the clock chip did not tick; no check");
+        return;
+    }
+    s_xtalState = 1;
+    s_xtalStartMs = millis();
+    Serial.printf("[xtal] counting %lu clock-chip seconds against micros()...\n", (unsigned long)XTAL_SECS);
+}
+static void twatchXtalTick(uint32_t now) {
+    if (s_xtalState != 1 || now - s_xtalStartMs < (XTAL_SECS - 1) * 1000u) return;
+    uint32_t t1; uint8_t s1;
+    if (!rtcTick(t1, s1)) { s_xtalState = 3; Serial.println("[xtal] lost the clock chip's tick"); return; }
+    const uint32_t us = t1 - s_xtalT0;
+    const uint32_t n  = (us + 500000u) / 1000000u;   // whole seconds the chip counted
+    if (!n || (s_xtalSec0 + n) % 60 != s1) { s_xtalState = 3; Serial.println("[xtal] the seconds did not add up"); return; }
+    s_xtalPpm   = (int32_t)(((int64_t)us - (int64_t)n * 1000000) * 1000000 / ((int64_t)n * 1000000));
+    s_xtalChipC = twatchChipC();
+    s_xtalState = 2;
+    Serial.printf("[xtal] %lu s by the clock chip took %lu us by the ESP32: %+ld ppm (chip %d C; radios heard %lu adverts, %lu frames since boot)\n",
+                  (unsigned long)n, (unsigned long)us, (long)s_xtalPpm, s_xtalChipC,
+                  (unsigned long)advertsSeen(), (unsigned long)wifiFramesSeen());
+}
+void twatchXtalLine(char* out, size_t n) {
+    switch (s_xtalState) {
+        case 1: {
+            const uint32_t el = (millis() - s_xtalStartMs) / 1000u;
+            snprintf(out, n, "%lus", (unsigned long)(el < XTAL_SECS ? XTAL_SECS - el : 0));
+            break;
+        }
+        case 2:  snprintf(out, n, "%+ld PPM", (long)s_xtalPpm); break;
+        case 3:  snprintf(out, n, "FAILED"); break;
+        default: snprintf(out, n, "GO"); break;
+    }
 }
 
 // STEADY POWER: DC1 -- the ESP32 and its radio -- in forced PWM, or back to
@@ -3246,6 +3322,8 @@ void loop() {
 #if defined(TWATCH_S3)
     twatchCrownTick(now);
     twatchMotionTick(now);
+    twatchXtalTick(now);
+    if (g_consoleXtal) { g_consoleXtal = false; twatchXtalStart(); }
     twatchRadioTick(now);
     twatchRadioHealTick(now);
     twatchBatteryTick(now);
@@ -4931,6 +5009,7 @@ void loop() {
                             twatchBatterySample(BlackBox::BATT_WHY_TIMER);   // a line in the log at the switch
                             break;
                         case SettingsRow::WATCH_TEMP: break;   // a reading, not a switch
+                        case SettingsRow::WATCH_XTAL: twatchXtalStart(); break;
                         case SettingsRow::WATCH_BUZZ:
                             Settings::toggleBuzz();
                             // The sample only when turning it ON: playing it on
