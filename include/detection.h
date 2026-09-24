@@ -191,7 +191,8 @@ public:
     // firing per frame.
     void IRAM_ATTR postDeauth(const uint8_t* mac, int8_t rssi, uint8_t channel);
 
-    // Called from the BLE scan callback when a hit is found.
+    // Called from the BLE scan callback when a hit is found. On device this
+    // only enqueues the compact result; loop() owns the live log/counters.
     void postBle(Detection d);
 
     // ---- Remote ID ---------------------------------------------------
@@ -426,6 +427,16 @@ private:
     static const uint32_t ALERT_GRACE_MS= 200;
     static const uint8_t  RAW_BLE_CAP   = 20;
 
+    // Known BLE detections cross from NimBLE's host task to the Arduino loop
+    // through this bounded mailbox. Keeping _log/_typeCounts loop-owned means
+    // UI readers never race a callback that is rewriting the same row.
+    static const uint8_t BLE_Q_CAP = 16;
+    Detection _bleQ[BLE_Q_CAP];
+    uint8_t   _bleQHead = 0;
+    uint8_t   _bleQTail = 0;
+    void      processBleQ();
+    void      applyBle(Detection d);
+
     // Raw (unfiltered) BLE scan results -- see startRawBleScan(). Not a
     // ring buffer like _log: entries are looked up by MAC and updated
     // in place, so this reads as "everything currently visible" rather
@@ -566,13 +577,13 @@ private:
     // detection instead of one per type.
     uint32_t    _lifetimeByType[(uint8_t)DetectionType::COUNT] = {0};
     bool        _lifetimeDirty   = false;   // counted since the last write
-    // Detections waiting for their SD line. pushLog runs on the Bluetooth
-    // host task, and an SD append (open, write, close) does not belong
-    // there any more than the flash writes did; loop() writes them, one a
-    // frame. A burst past eight loses log lines, never detections.
+    // Detections waiting for their SD line. BLE and WiFi detections are now
+    // applied from loop(), and the SD append stays deferred here so a frame
+    // never performs more than one open/write/close. A burst past eight loses
+    // log lines, never detections.
     static const uint8_t SD_Q_CAP = 8;
-    Detection        _sdQ[SD_Q_CAP];
-    volatile uint8_t _sdQHead = 0, _sdQTail = 0;
+    Detection _sdQ[SD_Q_CAP];
+    uint8_t   _sdQHead = 0, _sdQTail = 0;
 
     // Sightings owed to the black box. Not the Detection itself: the entry
     // is read back from the log when it is written, a second and a half

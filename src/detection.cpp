@@ -36,6 +36,12 @@
 // -------- global engine instance (referenced by callbacks) --------
 static DetectionEngine* g_engine = nullptr;
 
+// NimBLE delivers scan results on its host task. Known detections are copied
+// into DetectionEngine's fixed mailbox and applied by loop(); this mux protects
+// only the tiny head/tail/copy operation, never log processing or flash I/O.
+static portMUX_TYPE s_bleQMutex = portMUX_INITIALIZER_UNLOCKED;
+static volatile uint32_t s_bleQDropped = 0;
+
 // -------- manual raw scanner state (see startRawBleScan/startRawWifiScan) --------
 // NONE = normal continuous signature-matched scanning (the default).
 // Only one of these is ever active at a time -- see stopRawScan().
@@ -109,9 +115,10 @@ void radioReport(bool withScan) {
                   (int)mode, (int)me, promisc ? "on" : "off", (unsigned)ch, (int)txp, cc.cc,
                   (unsigned)cc.schan, (unsigned)(cc.schan + cc.nchan - 1), (unsigned long)s_wifiRaw);
     NimBLEScan* sc = NimBLEDevice::getScan();
-    Serial.printf("[radio] ble: init %d, scanning %d, adverts %lu, raw mode %d, chip %.1f C, up %lu s\n",
+    Serial.printf("[radio] ble: init %d, scanning %d, adverts %lu, queue drops %lu, raw mode %d, chip %.1f C, up %lu s\n",
                   (int)NimBLEDevice::isInitialized(), sc ? (int)sc->isScanning() : -1,
-                  (unsigned long)s_advRaw, (int)g_rawMode, temperatureRead(), (unsigned long)(millis() / 1000));
+                  (unsigned long)s_advRaw, (unsigned long)s_bleQDropped, (int)g_rawMode,
+                  temperatureRead(), (unsigned long)(millis() / 1000));
     if (!withScan) return;
     esp_wifi_set_promiscuous(false);
     wifi_scan_config_t cfg = {};
@@ -1045,6 +1052,11 @@ static void scanFlushTick() {
 }
 
 void DetectionEngine::loop() {
+    // First take ownership of anything NimBLE handed us. This runs before the
+    // raw-scan early return so a result queued just before a mode change is not
+    // stranded until that scan ends.
+    processBleQ();
+
     // Resting radios still take the BLE side of the loop when BLE is up;
     // only the WiFi steps below are skipped, since WiFi is stopped.
     if (g_rawMode != RawScanMode::NONE && g_rawMode != RawScanMode::REST) {
@@ -1244,6 +1256,53 @@ void DetectionEngine::mergeRemoteId(const uint8_t* mac, const uint8_t* payload,
 }
 
 void DetectionEngine::postBle(Detection d) {
+#if defined(ESP32) || defined(ARDUINO_ARCH_ESP32)
+    portENTER_CRITICAL(&s_bleQMutex);
+    const uint8_t next = (uint8_t)((_bleQHead + 1) % BLE_Q_CAP);
+    if (next != _bleQTail) {
+        _bleQ[_bleQHead] = d;
+        _bleQHead = next;
+    } else {
+        // Under an extreme burst, prefer refreshing an already-queued device
+        // to losing a distinct one. Only if all pending rows are different is
+        // this result dropped; the counter is exposed by RADIO diagnostics.
+        bool merged = false;
+        for (uint8_t i = _bleQTail; i != _bleQHead; i = (uint8_t)((i + 1) % BLE_Q_CAP)) {
+            if (_bleQ[i].type == d.type && memcmp(_bleQ[i].mac, d.mac, 6) == 0) {
+                _bleQ[i] = d;
+                merged = true;
+                break;
+            }
+        }
+        if (!merged) s_bleQDropped++;
+    }
+    portEXIT_CRITICAL(&s_bleQMutex);
+#else
+    // Native tests/emulator are single-threaded and keep the historical
+    // immediate semantics.
+    applyBle(d);
+#endif
+}
+
+void DetectionEngine::processBleQ() {
+#if defined(ESP32) || defined(ARDUINO_ARCH_ESP32)
+    for (;;) {
+        Detection d;
+        bool have = false;
+        portENTER_CRITICAL(&s_bleQMutex);
+        if (_bleQTail != _bleQHead) {
+            d = _bleQ[_bleQTail];
+            _bleQTail = (uint8_t)((_bleQTail + 1) % BLE_Q_CAP);
+            have = true;
+        }
+        portEXIT_CRITICAL(&s_bleQMutex);
+        if (!have) break;
+        applyBle(d);
+    }
+#endif
+}
+
+void DetectionEngine::applyBle(Detection d) {
     // Disabled types (Settings > DETECTION FILTER) are dropped here,
     // before the dedupe/merge below -- that merge branch re-activates
     // and re-alerts on an already-logged device without ever reaching
