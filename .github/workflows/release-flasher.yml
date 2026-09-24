@@ -93,13 +93,21 @@ jobs:
       - name: Determine version
         id: ver
         run: |
+          set -euo pipefail
           TAG="${GITHUB_REF_NAME}"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+          # Decide lab-vs-release FIRST. The old order compared lab-* tags to
+          # VERSION before it knew they were labs, so every lab tag failed.
+          IS_LAB=false
           if [ "${{ inputs.lab }}" = "true" ]; then
-            # A manual lab run has no tag -- REF_NAME is the branch. Stamping
-            # the manifests "master" would put that in the flasher's version
-            # line, so lab builds are stamped with the commit they came from,
-            # which is the only thing that identifies one.
+            IS_LAB=true
+          else
+            case "$TAG" in lab-*) IS_LAB=true ;; esac
+          fi
+          echo "is_lab=$IS_LAB" >> "$GITHUB_OUTPUT"
+
+          if [ "$IS_LAB" = "true" ]; then
             LABEL="$(echo "${{ inputs.label }}" | tr -cd 'A-Za-z0-9-' | tr 'A-Z' 'a-z')"
             if [ -n "$LABEL" ]; then
               echo "version=lab-$LABEL" >> "$GITHUB_OUTPUT"
@@ -116,20 +124,6 @@ jobs:
               exit 1
             fi
             echo "version=$HAVE" >> "$GITHUB_OUTPUT"
-          fi
-          # Everything downstream keys off this rather than re-testing the
-          # tag shape, so there is one definition of what a lab build is.
-          # Either a lab-* tag, or a manual run with the lab box ticked. The
-          # dispatch path exists because the github-pages environment only
-          # permits deploys from master and v* -- a lab-* tag is rejected
-          # before the job starts unless that policy is widened.
-          if [ "${{ inputs.lab }}" = "true" ]; then
-            echo "is_lab=true" >> "$GITHUB_OUTPUT"
-          else
-            case "$TAG" in
-              lab-*) echo "is_lab=true"  >> "$GITHUB_OUTPUT" ;;
-              *)     echo "is_lab=false" >> "$GITHUB_OUTPUT" ;;
-            esac
           fi
 
       - name: Require release notes
@@ -160,6 +154,16 @@ jobs:
             exit 1
           fi
           echo "Using $NOTES_FILE ($(wc -l < "$NOTES_FILE") lines)"
+
+      - name: Require OTA signing key for a release
+        if: steps.ver.outputs.is_lab != 'true'
+        env:
+          OTA_SIGNING_KEY: ${{ secrets.OTA_SIGNING_KEY }}
+        run: |
+          if [ -z "$OTA_SIGNING_KEY" ]; then
+            echo "::error::OTA_SIGNING_KEY is not configured. Refusing to publish a release with broken Wi-Fi/Bluetooth OTA."
+            exit 1
+          fi
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -225,7 +229,7 @@ jobs:
           # partway through uploading when the second partitions.bin
           # collided with the first. The firmware is board-prefixed below.
           #
-          # The bootloader and the partition table are NOT. All five builds
+          # The bootloader and the partition table are NOT. All shared-ESP32 release builds
           # produce them byte for byte identical: they depend on the chip,
           # the partition CSV and the flash mode/size, and every environment
           # shares all of those. Only the display driver header and the pin
@@ -254,7 +258,7 @@ jobs:
               fi
             done
             cp ".pio/build/cyd/$f.bin" "esp32-$f.bin"
-            echo "esp32-$f.bin is identical across all six builds ($ref)"
+            echo "esp32-$f.bin is identical across all shared ESP32 release builds ($ref)"
           done
           # The OTA data partition (0xE000), written blank-but-valid on every
           # USB install. Without it, a board that has taken a Bluetooth update
@@ -287,8 +291,12 @@ jobs:
           OTA_SIGNING_KEY: ${{ secrets.OTA_SIGNING_KEY }}
         run: |
           if [ -z "$OTA_SIGNING_KEY" ]; then
-            echo "::warning::OTA_SIGNING_KEY is not set; this release cannot be installed over Bluetooth."
-            exit 0
+            if [ "${{ steps.ver.outputs.is_lab }}" = "true" ]; then
+              echo "::warning::OTA_SIGNING_KEY is not set; lab firmware will be USB-only."
+              exit 0
+            fi
+            echo "::error::OTA_SIGNING_KEY disappeared after the release preflight."
+            exit 1
           fi
           umask 077
           printf '%s\n' "$OTA_SIGNING_KEY" > "$RUNNER_TEMP/ota_key.pem"
@@ -343,28 +351,6 @@ jobs:
           for p in $(python tools/board_matrix.py manifests release); do
             cp "web-flasher/$p" "$p"
           done
-
-      - name: Create GitHub Release with build artifacts
-        # A lab tag publishes a flashable build and nothing else. Creating a
-        # Release for one would put an unfinished feature in the download list
-        # next to the real firmware, which is the opposite of unlisted.
-        if: steps.ver.outputs.is_lab != 'true'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          # Existence was already checked before the build, so there is
-          # no fallback here -- the fallback is what let two releases
-          # ship with an empty body.
-          # A release can carry a name: the notes file's first line, as an
-          # HTML comment GitHub does not render, e.g. <!-- name: Anubis -->.
-          NAME="$(sed -n '1s/^<!-- name: \(.*\) -->$/\1/p' ".github/release-notes/${{ steps.ver.outputs.tag }}.md")"
-          TITLE="SquachWatch-CYD ${{ steps.ver.outputs.tag }}"
-          if [ -n "$NAME" ]; then TITLE="$TITLE \"$NAME\""; fi
-          gh release create "${{ steps.ver.outputs.tag }}" \
-            --title "$TITLE" \
-            --notes-file ".github/release-notes/${{ steps.ver.outputs.tag }}.md" \
-            $(python tools/board_matrix.py release-assets) \
-            $(find . -maxdepth 1 -name '*-firmware.sig' -printf '%f ' 2>/dev/null)
 
       - name: Build the browser emulator
         # Skipped on a lab run, which serves the released emulator instead --
@@ -626,6 +612,29 @@ jobs:
           retention-days: 3
           if-no-files-found: error
 
-      # publish-pages.yml deploys this exact artifact after this workflow
-      # succeeds. Release creation stays separate from Pages environment
-      # policy, but the deployed files are byte-for-byte the ones built here.
+      - name: Create GitHub Release with build artifacts
+        # A lab tag publishes a flashable build and nothing else. Creating a
+        # Release for one would put an unfinished feature in the download list
+        # next to the real firmware, which is the opposite of unlisted.
+        if: steps.ver.outputs.is_lab != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Everything that can invalidate a release (firmware, signatures,
+          # manifests, emulator and final Pages artifact) has succeeded before
+          # this point. Creating the Release last keeps a failed pipeline
+          # rerunnable instead of leaving a half-published immutable tag.
+          # A release can carry a name: the notes file's first line, as an
+          # HTML comment GitHub does not render, e.g. <!-- name: Anubis -->.
+          NAME="$(sed -n '1s/^<!-- name: \(.*\) -->$/\1/p' ".github/release-notes/${{ steps.ver.outputs.tag }}.md")"
+          TITLE="SquachWatch-CYD ${{ steps.ver.outputs.tag }}"
+          if [ -n "$NAME" ]; then TITLE="$TITLE \"$NAME\""; fi
+          gh release create "${{ steps.ver.outputs.tag }}" \
+            --title "$TITLE" \
+            --notes-file ".github/release-notes/${{ steps.ver.outputs.tag }}.md" \
+            $(python tools/board_matrix.py release-assets) \
+            $(find . -maxdepth 1 -name '*-firmware.sig' -printf '%f ' 2>/dev/null)
+
+
+      # publish-pages.yml deploys this exact artifact only after this workflow
+      # succeeds. Normal pushes to master never replace the production flasher.
