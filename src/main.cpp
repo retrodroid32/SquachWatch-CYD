@@ -2300,11 +2300,11 @@ static void twatchBatterySample(uint8_t why) {
     if (!s_panelAsleep)     r.flags |= BlackBox::BATT_SCREEN_ON;
     if (!s_radiosResting)   r.flags |= BlackBox::BATT_RADIOS_ON;
     BlackBox::noteBattery(r);
-    static const char* const WHY[] = { "timer", "boot", "usb", "screen" };
+    static const char* const WHY[] = { "timer", "boot", "usb", "screen", "radio reset", "self-heal" };
     Serial.printf("[batt] %u mV  %u%%  %s%s  screen %s  cpu %u MHz  up %lu s  (%s)\n",
                   (unsigned)r.mv, (unsigned)r.pct, (r.flags & BlackBox::BATT_USB) ? "on USB" : "on battery",
                   (r.flags & BlackBox::BATT_CHARGING) ? ", charging" : "", s_panelAsleep ? "off" : "on",
-                  (unsigned)getCpuFrequencyMhz(), (unsigned long)r.upSec, WHY[why < 4 ? why : 0]);
+                  (unsigned)getCpuFrequencyMhz(), (unsigned long)r.upSec, WHY[why < 6 ? why : 0]);
 }
 
 // Every ten minutes, at boot, and whenever the cable or the screen changes
@@ -2389,45 +2389,114 @@ static void twatchRadioTick(uint32_t now) {
     }
 }
 
-// The radio self-heal. After a flat battery the watch has come up with both
-// radios deaf more than once: started, configured, and hearing nothing. A
-// restart retuned them this morning (2026-09-24). So: two minutes in, a watch
-// that has heard not one WiFi frame and not one advert restarts itself. At
-// most HEAL_MAX times in a row -- the count clears the moment it hears
-// anything -- so the stubborn kind, or a field with no radios in it, costs a
-// couple of restarts and not a loop. A partial restart would not do: the
-// radio only retunes when WiFi and Bluetooth are both fully off.
-static const uint8_t  HEAL_MAX      = 2;
-static const uint32_t HEAL_AFTER_MS = 120000;
-static void twatchRadioHealTick(uint32_t now) {
-    static bool done = false, said = false;
-    if (!said) {
-        said = true;
-        if (s_healCount) Serial.printf("[heal] this boot is self-heal restart %u of %u\n", (unsigned)s_healCount, (unsigned)HEAL_MAX);
-    }
-    if (done) return;
-    const bool forced = g_consoleHeal;
-    if (!forced && now < HEAL_AFTER_MS) return;
-    g_consoleHeal = false;
-    // Not while an update owns the radio: it is busy, not deaf.
-    if (!forced && (state == AppState::UPDATE || OtaWifi::state() != OtaWifi::State::OFF)) return;
-    done = true;
-    const uint32_t frames = wifiFramesSeen(), adverts = advertsSeen();
-    if (!forced && (frames || adverts)) {
-        if (s_healCount) Serial.printf("[heal] hearing again after %u self-heal restart(s)\n", (unsigned)s_healCount);
-        return;   // g_healWord was cleared at boot: the count starts over
-    }
-    if (s_healCount >= HEAL_MAX) {
-        Serial.printf("[heal] still deaf after %u restarts; leaving it until a power cycle\n", (unsigned)s_healCount);
-        return;
-    }
-    Serial.printf("[heal] deaf: %lu WiFi frames and %lu adverts in %lu s%s; restarting (%u of %u)\n",
-                  (unsigned long)frames, (unsigned long)adverts, (unsigned long)(now / 1000),
-                  forced ? " (bench test)" : "", (unsigned)(s_healCount + 1), (unsigned)HEAL_MAX);
+// The radio self-heal. The watch's radios have gone deaf more than once --
+// started, configured, hearing nothing -- sometimes both, sometimes only
+// Bluetooth (2026-09-24 at work: WiFi came back by itself, Bluetooth only
+// after the crown switched the watch off and on). Bluetooth is the tell: it
+// listens nearly all the time, and there is hardly a place with no adverts in
+// it. So: two minutes of Bluetooth listening without one advert, at any point
+// in the day and not just after boot, and the watch restarts itself.
+//
+// Never the software kind (ESP.restart): parts of the chip, the radio's
+// analog side among them, stay powered through that, and every cure seen so
+// far was deeper -- the cable reset of an esptool MAC check (a whole-chip
+// reset) and the crown's off-and-on. Firmware cannot reach the cable reset,
+// so it takes the deepest thing it can: the PMU cuts the chip's power and
+// brings it back, exactly as the crown does. ESP.restart only if the PMU did
+// not answer or did not do it. At most HEAL_MAX in a row: the count clears the
+// moment an advert arrives, so a field with no radios in it costs two
+// restarts and then waits, rather than looping.
+static const uint8_t  HEAL_MAX       = 2;
+static const uint32_t HEAL_DEAF_MS   = 120000;   // of Bluetooth listening, not of clock
+static const uint8_t  HEAL_PMU_MAGIC = 0x4E;
+static void twatchHealFromPmu() {
+    // A power cycle wipes RTC memory, so that restart leaves its count in the
+    // PMU's data buffer, which lives as long as the battery does.
+    if (!s_pmuOk) return;
+    uint8_t b[2] = { 0, 0 };
+    if (!s_pmu.readDataBuffer(b, 2)) return;
+    if (b[0] == HEAL_PMU_MAGIC && !s_healCount) s_healCount = b[1];
+    if (b[0] || b[1]) { uint8_t z[2] = { 0, 0 }; s_pmu.writeDataBuffer(z, 2); }
+}
+// Cut the watch's power and bring it back, the crown's off-and-on, leaving
+// `count` for the next boot to read. The black box gets a battery line first,
+// with why, so a morning read-out shows every one of these. Falls back to a
+// software restart if the PMU does not answer or does not do it.
+static void twatchPowerCycle(uint8_t count, uint8_t why) {
+    twatchBatterySample(why);
     serialFlush();
-    g_healWord = HEAL_MAGIC | (uint32_t)(s_healCount + 1);
+    g_healWord = HEAL_MAGIC | (uint32_t)count;
+    if (s_pmuOk) {
+        uint8_t b[2] = { HEAL_PMU_MAGIC, count };
+        s_pmu.writeDataBuffer(b, 2);
+        delay(200);
+        s_pmu.reset();       // off and on again, as the crown does
+        delay(2000);         // if it is still running, the PMU did not do it
+        Serial.println("[heal] the PMU did not power cycle; restarting instead");
+        serialFlush();
+    }
     delay(200);
     ESP.restart();
+}
+
+// RADIO RESET under WATCH: two taps within three seconds, so a stray one
+// does not blank the watch. Does not spend the self-heal's allowance.
+static uint32_t s_radioResetArmedAt = 0;
+bool twatchRadioResetArmed() {
+    return s_radioResetArmedAt && millis() - s_radioResetArmedAt < 3000;
+}
+static void twatchRadioResetTap() {
+    if (!twatchRadioResetArmed()) { s_radioResetArmedAt = millis(); if (!s_radioResetArmedAt) s_radioResetArmedAt = 1; return; }
+    s_radioResetArmedAt = 0;
+    Serial.printf("[heal] RADIO RESET tapped: %lu adverts and %lu WiFi frames since boot; power cycling\n",
+                  (unsigned long)advertsSeen(), (unsigned long)wifiFramesSeen());
+    twatchPowerCycle(0, BlackBox::BATT_WHY_RESET);
+}
+
+static bool bleShouldHear() {
+    // Resting with Bluetooth off (the 5/30 and 10/60 duties), a raw scan, an
+    // update: none of those are the radio's fault.
+    if (s_radiosResting && Settings::radioDuty() != 3) return false;
+    if (onRawScanScreen() || state == AppState::UPDATE || OtaWifi::state() != OtaWifi::State::OFF) return false;
+    return true;
+}
+static void twatchRadioHealTick(uint32_t now) {
+    static bool     said = false, gaveUp = false;
+    static uint32_t lastAdv = 0, lastAt = 0, deafMs = 0;
+    if (!said) {
+        said = true;
+        lastAt = now; lastAdv = advertsSeen();
+        if (s_healCount) Serial.printf("[heal] this boot is self-heal restart %u of %u\n", (unsigned)s_healCount, (unsigned)HEAL_MAX);
+    }
+    const bool forced = g_consoleHeal;
+    g_consoleHeal = false;
+    if (!forced) {
+        if (now - lastAt < 1000) return;
+        const uint32_t adv = advertsSeen();
+        if (adv != lastAdv) {
+            lastAdv = adv; deafMs = 0; gaveUp = false;
+            if (s_healCount) {
+                Serial.printf("[heal] hearing again after %u self-heal restart(s)\n", (unsigned)s_healCount);
+                s_healCount = 0;   // the next deaf spell starts from one
+            }
+        } else if (bleShouldHear()) {
+            deafMs += now - lastAt;
+        }
+        lastAt = now;
+        if (deafMs < HEAL_DEAF_MS) return;
+        deafMs = 0;
+    }
+    if (s_healCount >= HEAL_MAX) {
+        if (!gaveUp) Serial.printf("[heal] still deaf after %u restarts; waiting until it hears something\n", (unsigned)s_healCount);
+        gaveUp = true;
+        return;
+    }
+    const uint8_t next = (uint8_t)(s_healCount + 1);
+    const bool powerCycle = s_pmuOk;
+    Serial.printf("[heal] Bluetooth deaf: no adverts in %lu s of listening (%lu WiFi frames since boot)%s; %s (%u of %u)\n",
+                  (unsigned long)(HEAL_DEAF_MS / 1000), (unsigned long)wifiFramesSeen(), forced ? " (bench test)" : "",
+                  powerCycle ? "power cycling" : "restarting", (unsigned)next, (unsigned)HEAL_MAX);
+    twatchPowerCycle(next, BlackBox::BATT_WHY_HEAL);
 }
 
 // Polled ten times a second: one I2C read of the PMU's interrupt flags. A
@@ -2552,6 +2621,7 @@ void setup() {
     printBootBanner();
 #if defined(TWATCH_S3)
     twatchPowerUp();
+    twatchHealFromPmu();
 #endif
 #if defined(CYD35)
     // One-time diagnostic: is PSRAM actually present on this unit? The
@@ -4819,6 +4889,7 @@ void loop() {
 #if defined(TWATCH_S3)
                         case SettingsRow::WATCH_RADIO: Settings::cycleRadioDuty(); break;
                         case SettingsRow::WATCH_BATTERY: break;   // a reading, not a switch
+                        case SettingsRow::WATCH_RADIO_RESET: twatchRadioResetTap(); break;
                         case SettingsRow::WATCH_BUZZ:
                             Settings::toggleBuzz();
                             // The sample only when turning it ON: playing it on

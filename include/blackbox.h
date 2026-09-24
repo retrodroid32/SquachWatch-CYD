@@ -90,6 +90,8 @@ static const uint8_t BATT_WHY_TIMER  = 0;
 static const uint8_t BATT_WHY_BOOT   = 1;
 static const uint8_t BATT_WHY_USB    = 2;     // the cable came or went
 static const uint8_t BATT_WHY_SCREEN = 3;     // the screen slept or woke
+static const uint8_t BATT_WHY_RESET  = 4;     // RADIO RESET tapped: the watch power cycles next
+static const uint8_t BATT_WHY_HEAL   = 5;     // the self-heal found Bluetooth deaf: power cycles next
 void noteBattery(BattRecord& r);
 void forEachBattery(bool (*fn)(const BattRecord& r, void* ctx), void* ctx);   // newest first
 
