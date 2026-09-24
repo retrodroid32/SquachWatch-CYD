@@ -192,7 +192,7 @@ void DetectionEngine::recordHuntRssi(int8_t rssi) {
 }
 
 // ---- housekeeping the real engine runs from loop() -------------------
-void DetectionEngine::processWiFiQ() {}
+void DetectionEngine::processWiFiQ(uint32_t, uint8_t) {}
 void DetectionEngine::processDeauthQ() {}
 void DetectionEngine::expireStale() {}
 void DetectionEngine::hopChannel() {}
