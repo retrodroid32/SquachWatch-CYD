@@ -120,6 +120,16 @@ uint32_t s_changed = 0;
 bool     s_began   = false;
 Preferences s_prefs;
 
+// Radio/Wi-Fi callbacks hand sightings to loop() without touching the DEX
+// table, the clock, or Preferences. Counts preserve repeated sightings; the
+// strongest RSSI seen before the next loop pass is enough for "closest".
+struct Pending {
+    uint16_t count;
+    int8_t bestRssi;
+};
+Pending s_pending[ENTRIES];
+portMUX_TYPE s_pendingMux = portMUX_INITIALIZER_UNLOCKED;
+
 const char* NS  = "dex";
 const char* KEY = "rec";
 
@@ -157,7 +167,12 @@ const char* hint(DetectionType t)      { return entry(t).hint; }
 const char* radio(DetectionType t)     { return entry(t).radio; }
 
 void begin() {
-    for (uint8_t i = 0; i < ENTRIES; i++) { emptyRecord(s_rec[i]); s_newBest[i] = false; }
+    for (uint8_t i = 0; i < ENTRIES; i++) {
+        emptyRecord(s_rec[i]);
+        s_newBest[i] = false;
+        s_pending[i].count = 0;
+        s_pending[i].bestRssi = -128;
+    }
     s_prefs.begin(NS, false);
     // A short read means the type list has grown since it was written; take
     // what is there and leave the rest empty.
@@ -170,26 +185,44 @@ void begin() {
 void note(DetectionType t, int8_t rssi) {
     const uint8_t i = indexOf(t);
     if (i >= ENTRIES) return;
-    Record& r = s_rec[i];
-    // Only a clock that has been set gives a date worth keeping; a sighting
-    // before that still updates the signal, which needs no clock.
-    if (Clock::trusted()) {
-        const uint32_t e = Clock::nowEpoch();
-        if (!r.firstEpoch) r.firstEpoch = e;
-        r.lastEpoch = e;
-        if (Clock::night() && r.night < 0xFFFF) r.night++;
-    }
-    if (rssi > r.bestRssi) {
-        if (r.bestRssi > -128) s_newBest[i] = true;   // an improvement, not a first
-        r.bestRssi = rssi;
-    }
-    s_dirty = true;
-    s_changed = millis();
+    portENTER_CRITICAL(&s_pendingMux);
+    Pending& p = s_pending[i];
+    if (p.count < 0xFFFF) p.count++;
+    if (rssi > p.bestRssi) p.bestRssi = rssi;
+    portEXIT_CRITICAL(&s_pendingMux);
 }
 
-// Ten seconds after the last change, not on every sighting: a beacon that
-// bobs in and out of range would otherwise write flash all afternoon.
 void tick(uint32_t now) {
+    Pending take[ENTRIES];
+    portENTER_CRITICAL(&s_pendingMux);
+    memcpy(take, s_pending, sizeof take);
+    for (uint8_t i = 0; i < ENTRIES; i++) {
+        s_pending[i].count = 0;
+        s_pending[i].bestRssi = -128;
+    }
+    portEXIT_CRITICAL(&s_pendingMux);
+
+    for (uint8_t i = 0; i < ENTRIES; i++) {
+        if (!take[i].count) continue;
+        Record& r = s_rec[i];
+        if (Clock::trusted()) {
+            const uint32_t e = Clock::nowEpoch();
+            if (!r.firstEpoch) r.firstEpoch = e;
+            r.lastEpoch = e;
+            if (Clock::night()) {
+                const uint32_t n = (uint32_t)r.night + take[i].count;
+                r.night = (uint16_t)(n > 0xFFFF ? 0xFFFF : n);
+            }
+        }
+        if (take[i].bestRssi > r.bestRssi) {
+            if (r.bestRssi > -128) s_newBest[i] = true;
+            r.bestRssi = take[i].bestRssi;
+        }
+        s_dirty = true;
+        s_changed = now;
+    }
+
+    // Ten seconds after the last applied change, not on every sighting.
     if (!s_began || !s_dirty || now - s_changed < 10000) return;
     s_dirty = false;
     s_prefs.putBytes(KEY, s_rec, sizeof s_rec);

@@ -196,16 +196,32 @@ static char     s_relName[20] = "";
 static char     s_news[NEWS_MAX][40];
 static uint8_t  s_newsN = 0;
 
-// "1.7.8" or "v1.7.8" into three numbers; false for anything else.
-static bool verParts(const char* s, unsigned v[3]) {
+// "1.7.8", "v1.7.8", or a development identity such as
+// "1.20.1-dev+deadbeef". A clean release is newer than a development build
+// with the same numeric core, so a board running master still gets offered
+// the eventual official release. lab-* deliberately has no release ordering.
+struct VersionParts {
+    unsigned v[3];
+    bool prerelease;
+};
+static bool verParts(const char* s, VersionParts& out) {
     if (!s) return false;
     if (*s == 'v' || *s == 'V') s++;
-    return sscanf(s, "%u.%u.%u", &v[0], &v[1], &v[2]) == 3;
+    int used = 0;
+    if (sscanf(s, "%u.%u.%u%n", &out.v[0], &out.v[1], &out.v[2], &used) != 3)
+        return false;
+    const char tail = s[used];
+    if (tail && tail != '-' && tail != '+') return false;
+    out.prerelease = tail == '-';
+    return true;
 }
 static bool verNewer(const char* a, const char* b) {   // a newer than b
-    unsigned x[3], y[3];
+    VersionParts x, y;
     if (!verParts(a, x) || !verParts(b, y)) return false;
-    for (int i = 0; i < 3; i++) { if (x[i] != y[i]) return x[i] > y[i]; }
+    for (int i = 0; i < 3; i++) {
+        if (x.v[i] != y.v[i]) return x.v[i] > y.v[i];
+    }
+    if (x.prerelease != y.prerelease) return !x.prerelease;
     return false;
 }
 
@@ -441,12 +457,11 @@ Fail finish() {
         return Fail::BAD_SIGNATURE;
     }
 
-    // Older than the one running: refused, however well signed it is. The
-    // download comes over plain HTTP now, so somebody on the same network can
-    // answer with a real, signed, OLD release -- one with a bug that has since
-    // been fixed. The signature says the file is ours; this says it is not a
-    // step backwards. An equal version is allowed, because reinstalling the
-    // version you are on is a repair, not an attack.
+    // Older than the one running: refused, however well signed it is. HTTPS
+    // protects transport, while the signature is the firmware authenticity
+    // boundary. This version gate additionally prevents replay of a real,
+    // signed OLD release. An equal version is allowed because reinstalling
+    // the version you are on is a repair, not an attack.
     if (s_verFound) {
         if (verNewer(runningVersion(), s_imgVer)) {
             Serial.printf("[ota] refused %s: older than %s\n", s_imgVer, runningVersion());

@@ -1535,12 +1535,11 @@
     // targets and unticking it is a reflash rather than a menu the user
     // has to find on a display that may be the thing that broke.
     //
-    // Offered for the 2.8" boards only, hence data-fast living on those
-    // two <option>s rather than a flag here: AWOK and the RL Phantom run
-    // their touchscreen on the display's SPI bus through TFT_eSPI's own touch path, which
-    // reads SPI_FREQUENCY directly, so overclocking the panel would
-    // also overclock touch. An option with no data-fast disables the
-    // row instead of silently ignoring the tick.
+    // Offered on every board option that declares data-fast (the 2.8" CYDs
+    // and the 3.2" ST7798/ST7789-compatible CYD). The 3.2" XPT2046 touch
+    // transactions explicitly switch to SPI_TOUCH_FREQUENCY, so the 80 MHz
+    // display clock does not become an 80 MHz touch clock. Boards without a
+    // vetted fast build simply omit data-fast and disable this row.
     var OC_DESC_ON =
       "Runs the screen at twice the rated clock — about 34fps instead of 22, which you " +
       "will notice everywhere. Not every panel takes it. If the screen stays white or shows " +

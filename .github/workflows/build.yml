@@ -33,16 +33,16 @@ jobs:
   firmware:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.x'
 
       # Both caches matter: the toolchain is a ~200MB download and the
       # framework another large unpack, and neither changes between runs.
       - name: Cache PlatformIO
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             ~/.platformio
@@ -70,7 +70,7 @@ jobs:
     # coordinate rather than a crash, which no amount of compiling catches.
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Run host tests
         run: make -C test
 
@@ -81,7 +81,7 @@ jobs:
     # somebody tries to render the README animation.
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Build the PC emulator
         run: make -C sim -j"$(nproc)"
       - name: Run UI screenshot regression suite

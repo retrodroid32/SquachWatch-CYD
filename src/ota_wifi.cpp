@@ -25,7 +25,7 @@ namespace {
 const char* NVS_NS = "otawifi";
 const uint32_t JOIN_TIMEOUT_MS  = 20000;
 const uint32_t STALL_TIMEOUT_MS = 15000;
-const uint32_t TASK_STACK       = 8192;    // measured 3.2 KB used over a whole plain-HTTP update (was 12 KB, sized for TLS)
+const uint32_t TASK_STACK       = 8192;    // measured with the current HTTPS update path
 
 volatile State s_state   = State::OFF;
 volatile Fail  s_fail    = Fail::NONE;
@@ -769,16 +769,13 @@ bool bootCheck(uint32_t budgetMs) {
         // whole budget would have wrapped it round to about fifty days.
         const uint32_t usedJ = millis() - tj;
         const uint32_t left  = usedJ + 1000 < budgetMs ? budgetMs - usedJ : 1000;
-        // Plain HTTP, on purpose. A TLS handshake wants 40 KB in one piece
-        // and five to ten seconds, and one that timed out left a dead
-        // connection in the middle of the heap that cost the frame buffer
-        // its block -- measured, twice. The site answers the manifest over
-        // plain HTTP, and nothing rides on this answer but a notice: the
-        // install itself goes over HTTPS and checks the signature.
+        // The fork's Pages endpoint is HTTPS. Use the same reusable TLS client
+        // as the install path so the boot-time metadata check follows the URL
+        // scheme instead of accidentally speaking plain HTTP to port 443.
         const String base = OTA_WIFI_BASE;
-        WiFiClient plain;
+        WiFiClientSecure* tls = client();
         HTTPClient http;
-        if (http.begin(plain, base + "manifest-" + OtaCore::buildName() + ".json")) {
+        if (tls && http.begin(*tls, base + "manifest-" + OtaCore::buildName() + ".json")) {
             http.setConnectTimeout((int32_t)left);
             http.setTimeout((uint16_t)(left > 60000 ? 60000 : left));
             const int code = http.GET();

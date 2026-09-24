@@ -14,7 +14,7 @@ digital rain, Squachy the mascot, full-screen dramatic ALERT overlays, and
 the glitchy SquachWatch wordmark.
 
 <p align="center">
-  <a href="https://squachwatch.com/emulator/" title="Drive it in your browser">
+  <a href="https://retrodroid32.github.io/SquachWatch-CYD/emulator/" title="Drive it in your browser">
     <img src="docs/demo.gif" width="640"
          alt="SquachWatch booting, Squachy in the VOID EYE costume on the synthwave sunset, a Flock camera detection card, his reaction to it, and a visiting SquachWatch walking on to say hello">
   </a>
@@ -24,7 +24,7 @@ the glitchy SquachWatch wordmark.
   <b>That is the firmware itself, not a mockup.</b><br>
   Every frame above was rendered by the same C++ that runs on the board,
   compiled for a PC.<br>
-  <a href="https://squachwatch.com/emulator/"><b>Click it to drive it in your browser &rarr;</b></a>
+  <a href="https://retrodroid32.github.io/SquachWatch-CYD/emulator/"><b>Click it to drive it in your browser &rarr;</b></a>
 </p>
 
 ## What it detects
@@ -89,6 +89,15 @@ No build tools, no IDE, no cloning anything — flash a board straight
 from your browser:
 
 **[https://retrodroid32.github.io/SquachWatch-CYD/](https://retrodroid32.github.io/SquachWatch-CYD/)**
+
+> **CDN trust note.** The flasher currently pins ESP Web Tools 10.4.0 and
+> esptool-js 0.6.1 but loads those browser libraries from unpkg. Firmware
+> manifests and binaries are served from this repository's Pages site, and
+> OTA firmware is signature-verified on-device; however, the browser-flashing
+> UI still has a residual third-party CDN availability/supply-chain dependency.
+> Vendoring ESP Web Tools safely requires carrying its module/dependency graph,
+> so this audit keeps the exact vetted versions pinned rather than replacing
+> them with an unreviewed bundle.
 
 Works in Firefox, Chrome, Edge, or Brave on desktop. Pick your board (2.8" CYD,
 3.2" CYD ST7798, AWOK 2.4", RL Phantom 2.4", or LilyGo T-Watch S3 beta),
@@ -335,7 +344,7 @@ from that board's side is ADD TO SQUAD, in person.
 ### Knowing there is an update
 
 Two ways, neither of which installs anything. At boot, a board with a saved
-WiFi network joins it for about a second, asks squachwatch.com for the latest
+WiFi network joins it for about a second, asks this fork's GitHub Pages site for the latest
 version of its own build, and lets go again, all before Bluetooth starts;
 **UPDATE CHECK** on the SYSTEM page turns that off. And every board's hello
 to its squad carries its version, so a board that hears a member running
@@ -378,7 +387,7 @@ none of the saved networks is in range. REMOVE takes one off the list.
 **Settings → SYSTEM → UPDATE FIRMWARE → UPDATE SQUAD** tells every board in
 range with your phrase to install the version this one is running. Each of
 them shows a thirty-second countdown with SKIP, joins WiFi, installs the
-signed release from squachwatch.com, restarts, and reports back by name to
+signed release from this fork's GitHub Pages site, restarts, and reports back by name to
 the board that asked. The sender can share its own saved network with the
 nudge, sealed with the phrase; the receiving boards use it once and forget it.
 
@@ -481,8 +490,11 @@ SquachWatch-CYD/
 
 ## Status
 
-**Shipping.** Releases are cut by pushing a `v*.*.*` tag; the flasher above
-is rebuilt and redeployed by the same CI run, so the web flasher always
+**Shipping.** Releases are cut by pushing a `v*.*.*` tag. The release
+workflow builds, signs, validates, and assembles the exact Pages artifact,
+publishes the GitHub Release only after those checks pass, and then the Pages
+workflow deploys that validated artifact. Ordinary `master` builds never
+replace the production flasher, so the web flasher always
 matches the newest release.
 
 Detection is reliable for the high-priority targets (Flock, Axon, skimmer,

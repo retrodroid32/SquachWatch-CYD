@@ -35,6 +35,18 @@ bool     s_dirty   = false;
 uint32_t s_changed = 0;
 bool     s_began   = false;
 Preferences s_prefs;
+
+// Callback-safe handoff. A repeated MAC already waiting is coalesced, because
+// Regulars counts at most once per local day anyway.
+struct Pending {
+    uint8_t mac[6];
+    uint8_t type;
+};
+static const uint8_t PENDING_CAP = 32;
+Pending s_pending[PENDING_CAP];
+uint8_t s_pendingN = 0;
+portMUX_TYPE s_pendingMux = portMUX_INITIALIZER_UNLOCKED;
+
 const char* NS  = "regulars";
 const char* KEY = "tab";
 
@@ -94,11 +106,38 @@ void noteOnDay(const uint8_t* mac, DetectionType type, uint32_t day) {
 }
 
 void note(const uint8_t* mac, DetectionType type) {
-    if (!Clock::trusted()) return;
-    noteOnDay(mac, type, Clock::localDay());
+    if (!mac) return;
+    portENTER_CRITICAL(&s_pendingMux);
+    for (uint8_t i = 0; i < s_pendingN; i++) {
+        if (s_pending[i].type == (uint8_t)type &&
+            memcmp(s_pending[i].mac, mac, 6) == 0) {
+            portEXIT_CRITICAL(&s_pendingMux);
+            return;
+        }
+    }
+    if (s_pendingN < PENDING_CAP) {
+        memcpy(s_pending[s_pendingN].mac, mac, 6);
+        s_pending[s_pendingN].type = (uint8_t)type;
+        s_pendingN++;
+    }
+    portEXIT_CRITICAL(&s_pendingMux);
 }
 
 void tick(uint32_t now) {
+    Pending take[PENDING_CAP];
+    uint8_t n = 0;
+    portENTER_CRITICAL(&s_pendingMux);
+    n = s_pendingN;
+    if (n) memcpy(take, s_pending, (size_t)n * sizeof(Pending));
+    s_pendingN = 0;
+    portEXIT_CRITICAL(&s_pendingMux);
+
+    if (Clock::trusted()) {
+        const uint32_t day = Clock::localDay();
+        for (uint8_t i = 0; i < n; i++)
+            noteOnDay(take[i].mac, (DetectionType)take[i].type, day);
+    }
+
     if (!s_began || !s_dirty || now - s_changed < 10000u) return;
     s_dirty = false;
     s_prefs.putBytes(KEY, s_t, sizeof s_t);

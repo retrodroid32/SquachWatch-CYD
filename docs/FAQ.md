@@ -4,7 +4,7 @@ Hey. It's me, the Sasquach. Yes, I know how to use GitHub. No, I don't know why 
 
 This is the FAQ for SquachWatch-CYD — the thing that turns a $15 screen into a pocket-sized "is someone watching me" detector. Here's how it all works, explained the way I'd explain it to you if you cornered me at a gas station at 2am, which, statistically, is likely.
 
-Just want to flash a board and go? **[Open the web flasher](https://squachwatch.com/)** — no build tools, no account, just a browser.
+Just want to flash a board and go? **[Open the web flasher](https://retrodroid32.github.io/SquachWatch-CYD/)** — no build tools, no account, just a browser.
 
 ## What even is this?
 
@@ -27,7 +27,7 @@ Either way: no GPS, no buzzer, no extra modules. The board *is* the whole device
 
 ## Do I need to build it myself?
 
-No. That's what the [web flasher](https://squachwatch.com/) is for — plug your board into a computer running Firefox, Chrome, Edge, or Brave, hit Connect & Install, and the firmware goes straight from your browser onto the board. No compiler, no IDE, no me judging your PlatformIO setup (I would never. probably).
+No. That's what the [web flasher](https://retrodroid32.github.io/SquachWatch-CYD/) is for — plug your board into a computer running Firefox, Chrome, Edge, or Brave, hit Connect & Install, and the firmware goes straight from your browser onto the board. No compiler, no IDE, no me judging your PlatformIO setup (I would never. probably).
 
 If you *do* want to build from source — maybe you're modifying something, maybe you just don't trust browsers with USB access, respectable — grab [PlatformIO](https://platformio.org/) and follow [docs/BUILD.md](docs/BUILD.md).
 

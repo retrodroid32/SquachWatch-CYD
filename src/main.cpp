@@ -329,7 +329,6 @@ static void drawCrashCard(TFT_eSPI& t) {
 #include "meshmsg.h"
 #endif
 #include "ignore_list.h"
-#include "ignore_list.h"
 #include "ui_detfilter.h"
 #include "ui_beaconwarn.h"
 #include "ui_power.h"
@@ -1808,9 +1807,10 @@ static void enterLocked() {
 // The NVS erase that actually erases. Deleting a key only marks its entry
 // erased -- the bytes sit in flash until that page is reused, and a USB cable
 // can read them -- so the secrets are removed by erasing the WHOLE store and
-// writing everything worth keeping back. Everything is kept except the two
-// namespaces that hold secrets: the message phrase and key, and the ignore
-// list. Settings, calibration, outfits, stats, the PIN itself: all restored.
+// writing only explicitly harmless UI/device preferences back. A duress wipe
+// must not preserve encounter-derived history, credentials, message material,
+// PIN state, crash history, or any future namespace merely because it was not
+// added to a denylist.
 struct KeptEntry {
     std::string ns, key;
     nvs_type_t  type;
@@ -1818,9 +1818,14 @@ struct KeptEntry {
     std::vector<uint8_t> bytes;
 };
 
-static bool secretNamespace(const char* ns) {
-    // "otawifi" is the saved WiFi password for firmware updates.
-    return !strcmp(ns, "meshtalk") || !strcmp(ns, "ignore") || !strcmp(ns, "otawifi");
+static bool safeNamespaceToPreserve(const char* ns) {
+    // Explicit allowlist: these contain appearance/control preferences or
+    // touch calibration only. Everything else is erased by default.
+    return !strcmp(ns, "settings") ||
+           !strcmp(ns, "touchfit") ||
+           !strcmp(ns, "touchcal") ||
+           !strcmp(ns, "awoktouch") ||
+           !strcmp(ns, "cyd35touch");
 }
 
 static void physicalNvsWipe() {
@@ -1830,13 +1835,13 @@ static void physicalNvsWipe() {
     // between the erase and the restart -- with the secrets already gone,
     // which is the one part that mattered, but as a crash, not a quiet reboot.
     kept.reserve(128);
-    Serial.printf("[wipe] keeping settings: heap %lu\n", (unsigned long)ESP.getFreeHeap());
+    Serial.printf("[wipe] preserving safe preferences only: heap %lu\n", (unsigned long)ESP.getFreeHeap());
     nvs_iterator_t it = nvs_entry_find(NVS_DEFAULT_PART_NAME, NULL, NVS_TYPE_ANY);
     while (it) {
         nvs_entry_info_t info;
         nvs_entry_info(it, &info);
         nvs_handle_t h;
-        if (!secretNamespace(info.namespace_name) &&
+        if (safeNamespaceToPreserve(info.namespace_name) &&
             nvs_open(info.namespace_name, NVS_READONLY, &h) == ESP_OK) {
             KeptEntry e;
             e.ns = info.namespace_name; e.key = info.key; e.type = info.type; e.num = 0;

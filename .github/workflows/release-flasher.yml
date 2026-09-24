@@ -2,7 +2,7 @@ name: Build and release firmware
 
 # Push a tag like v1.2.0 to: build firmware for the release-ready
 # environments (cyd, cyd-ili9341, awok, plus the cyd-fast/
-# cyd-ili9341-fast 80MHz display-overclock variants the flasher's
+# cyd-ili9341-fast/cyd32-st7798-fast 80MHz display-overclock variants the flasher's
 # "experimental overclock" checkbox targets -- cyd35 stays excluded, see
 # the build step below; cyd/cyd-ili9341 are the same physical 2.8"
 # board, just the two display drivers it might have shipped with; the
@@ -25,7 +25,7 @@ on:
       # v*.*.* is a real release: notes required, GitHub Release created.
       - "v*.*.*"
       # lab-* is a development build. Same firmware pipeline and the same
-      # Pages deploy, but no release notes and no public Release -- it exists
+      # Pages artifact, but no release notes and no public Release -- it exists
       # so an unfinished feature can be flashed from a machine that is not
       # the one it was built on. See the `is_lab` output below.
       #
@@ -67,7 +67,7 @@ jobs:
     outputs:
       skip: ${{ steps.chk.outputs.skip }}
     steps:
-      - name: Stop if this tag is already released
+      - name: Stop if this tag is already published
         id: chk
         env:
           GH_TOKEN: ${{ github.token }}
@@ -75,9 +75,15 @@ jobs:
           case "${{ github.ref_name }}" in
             v*)
               if gh release view "${{ github.ref_name }}" -R "${{ github.repository }}" >/dev/null 2>&1; then
-                echo "::notice::${{ github.ref_name }} is already released; nothing to do."
-                echo "skip=true" >> "$GITHUB_OUTPUT"
-                exit 0
+                DRAFT="$(gh release view "${{ github.ref_name }}" -R "${{ github.repository }}" --json isDraft -q .isDraft)"
+                if [ "$DRAFT" = "true" ]; then
+                  echo "::warning::Removing incomplete draft release so this validated build can retry publication."
+                  gh release delete "${{ github.ref_name }}" -R "${{ github.repository }}" --yes
+                else
+                  echo "::notice::${{ github.ref_name }} is already published; nothing to do."
+                  echo "skip=true" >> "$GITHUB_OUTPUT"
+                  exit 0
+                fi
               fi ;;
           esac
           echo "skip=false" >> "$GITHUB_OUTPUT"
@@ -88,49 +94,56 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check out
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Determine version
         id: ver
         run: |
+          set -euo pipefail
           TAG="${GITHUB_REF_NAME}"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+          IS_LAB=false
           if [ "${{ inputs.lab }}" = "true" ]; then
-            # A manual lab run has no tag -- REF_NAME is the branch. Stamping
-            # the manifests "master" would put that in the flasher's version
-            # line, so lab builds are stamped with the commit they came from,
-            # which is the only thing that identifies one.
-            LABEL="$(echo "${{ inputs.label }}" | tr -cd 'A-Za-z0-9-' | tr 'A-Z' 'a-z')"
-            if [ -n "$LABEL" ]; then
-              echo "version=lab-$LABEL" >> "$GITHUB_OUTPUT"
-              echo "label=${{ inputs.label }}" >> "$GITHUB_OUTPUT"
-            else
-              echo "version=lab-$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
-              echo "label=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
-            fi
-          else
-            WANT="$(cat VERSION | tr -d '[:space:]')"
-            HAVE="${TAG#v}"
-            if [ "$HAVE" != "$WANT" ]; then
-              echo "::error::Release tag must match VERSION (tag=$HAVE, VERSION=$WANT)"
-              exit 1
-            fi
-            echo "version=$HAVE" >> "$GITHUB_OUTPUT"
-          fi
-          # Everything downstream keys off this rather than re-testing the
-          # tag shape, so there is one definition of what a lab build is.
-          # Either a lab-* tag, or a manual run with the lab box ticked. The
-          # dispatch path exists because the github-pages environment only
-          # permits deploys from master and v* -- a lab-* tag is rejected
-          # before the job starts unless that policy is widened.
-          if [ "${{ inputs.lab }}" = "true" ]; then
-            echo "is_lab=true" >> "$GITHUB_OUTPUT"
+            IS_LAB=true
           else
             case "$TAG" in
-              lab-*) echo "is_lab=true"  >> "$GITHUB_OUTPUT" ;;
-              *)     echo "is_lab=false" >> "$GITHUB_OUTPUT" ;;
+              lab-*) IS_LAB=true ;;
             esac
           fi
+          echo "is_lab=$IS_LAB" >> "$GITHUB_OUTPUT"
+
+          if [ "$IS_LAB" = "true" ]; then
+            LABEL="$(echo "${{ inputs.label }}" | tr -cd 'A-Za-z0-9-' | tr 'A-Z' 'a-z')"
+            if [ -n "$LABEL" ]; then
+              VERSION="lab-$LABEL"
+              DISPLAY="${{ inputs.label }}"
+            elif [[ "$TAG" == lab-* ]]; then
+              VERSION="$TAG"
+              DISPLAY="${TAG#lab-}"
+            else
+              SHORT="$(git rev-parse --short=8 HEAD)"
+              VERSION="lab-$SHORT"
+              DISPLAY="$SHORT"
+            fi
+            echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+            echo "label=$DISPLAY" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          case "$TAG" in
+            v*.*.*) ;;
+            *)
+              echo "::error::Real releases must run from a v*.*.* tag."
+              exit 1 ;;
+          esac
+          WANT="$(tr -d '[:space:]' < VERSION)"
+          HAVE="${TAG#v}"
+          if [ "$HAVE" != "$WANT" ]; then
+            echo "::error::Release tag must match VERSION (tag=$HAVE, VERSION=$WANT)"
+            exit 1
+          fi
+          echo "version=$HAVE" >> "$GITHUB_OUTPUT"
 
       - name: Require release notes
         # Skipped for lab builds, which are not releases and have no notes to
@@ -162,7 +175,7 @@ jobs:
           echo "Using $NOTES_FILE ($(wc -l < "$NOTES_FILE") lines)"
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: "3.x"
 
@@ -173,6 +186,8 @@ jobs:
         run: python tools/board_matrix.py validate
 
       - name: Build firmware
+        env:
+          SQW_VERSION: ${{ steps.ver.outputs.version }}
         run: |
           set -euo pipefail
           pio run $(python tools/board_matrix.py pio-args release)
@@ -278,25 +293,36 @@ jobs:
             cp ".pio/build/$v/firmware.bin" "$v-firmware.bin"
           done
 
-      - name: Sign firmware for Bluetooth updates
-        # Each board checks an update against the public key compiled into
-        # include/ota_pubkey.h, over a message that includes its own build
-        # name -- see tools/sign_firmware.py. No secret, no signatures: the
-        # release still ships, and the update page tells people to use USB.
+      - name: Sign firmware for OTA updates
         env:
           OTA_SIGNING_KEY: ${{ secrets.OTA_SIGNING_KEY }}
         run: |
+          set -euo pipefail
           if [ -z "$OTA_SIGNING_KEY" ]; then
-            echo "::warning::OTA_SIGNING_KEY is not set; this release cannot be installed over Bluetooth."
-            exit 0
+            if [ "${{ steps.ver.outputs.is_lab }}" = "true" ]; then
+              echo "::warning::OTA_SIGNING_KEY is not configured; this lab build will be USB-only."
+              exit 0
+            fi
+            echo "::error::OTA_SIGNING_KEY is required for a real release."
+            echo "::error::Add it in Settings > Secrets and variables > Actions as OTA_SIGNING_KEY."
+            exit 1
           fi
+
           umask 077
-          printf '%s\n' "$OTA_SIGNING_KEY" > "$RUNNER_TEMP/ota_key.pem"
+          KEY="$RUNNER_TEMP/ota_key.pem"
+          printf '%s\n' "$OTA_SIGNING_KEY" > "$KEY"
+
+          VERIFY=(python tools/verify_ota_key.py --key "$KEY" --header include/ota_pubkey.h)
+          if [ "${{ steps.ver.outputs.is_lab }}" != "true" ]; then
+            VERIFY+=(--require-production)
+          fi
+          "${VERIFY[@]}"
+
           for v in $(python tools/board_matrix.py list sign); do
-            python tools/sign_firmware.py --key "$RUNNER_TEMP/ota_key.pem" \
+            python tools/sign_firmware.py --key "$KEY" \
               --env "$v" --bin "$v-firmware.bin" --out "$v-firmware.sig"
           done
-          rm -f "$RUNNER_TEMP/ota_key.pem"
+          rm -f "$KEY"
 
       - name: Stamp manifest versions
         run: |
@@ -344,27 +370,6 @@ jobs:
             cp "web-flasher/$p" "$p"
           done
 
-      - name: Create GitHub Release with build artifacts
-        # A lab tag publishes a flashable build and nothing else. Creating a
-        # Release for one would put an unfinished feature in the download list
-        # next to the real firmware, which is the opposite of unlisted.
-        if: steps.ver.outputs.is_lab != 'true'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          # Existence was already checked before the build, so there is
-          # no fallback here -- the fallback is what let two releases
-          # ship with an empty body.
-          # A release can carry a name: the notes file's first line, as an
-          # HTML comment GitHub does not render, e.g. <!-- name: Anubis -->.
-          NAME="$(sed -n '1s/^<!-- name: \(.*\) -->$/\1/p' ".github/release-notes/${{ steps.ver.outputs.tag }}.md")"
-          TITLE="SquachWatch-CYD ${{ steps.ver.outputs.tag }}"
-          if [ -n "$NAME" ]; then TITLE="$TITLE \"$NAME\""; fi
-          gh release create "${{ steps.ver.outputs.tag }}" \
-            --title "$TITLE" \
-            --notes-file ".github/release-notes/${{ steps.ver.outputs.tag }}.md" \
-            $(python tools/board_matrix.py release-assets) \
-            $(find . -maxdepth 1 -name '*-firmware.sig' -printf '%f ' 2>/dev/null)
 
       - name: Build the browser emulator
         # Skipped on a lab run, which serves the released emulator instead --
@@ -618,8 +623,51 @@ jobs:
           } > _site/versions.json
           cat _site/versions.json
 
+      - name: Validate final release and site artifacts
+        run: |
+          set -euo pipefail
+          python tools/board_matrix.py validate
+          test -s _site/index.html
+          test -s _site/boards.json
+          test -s _site/versions.json
+          test -s _site/update/index.html
+          test -s _site/emulator/index.html
+
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          site = Path("_site")
+          matrix = json.loads(Path("web-flasher/boards.json").read_text(encoding="utf-8"))
+          missing = []
+          for board in matrix["boards"]:
+              if not board.get("release") or not board.get("manifest"):
+                  continue
+              mp = site / board["manifest"]
+              if not mp.is_file():
+                  missing.append(str(mp))
+                  continue
+              manifest = json.loads(mp.read_text(encoding="utf-8"))
+              for build in manifest.get("builds", []):
+                  for part in build.get("parts", []):
+                      target = site / part["path"]
+                      if not target.is_file() or target.stat().st_size == 0:
+                          missing.append(str(target))
+          if missing:
+              raise SystemExit("missing/empty Pages artifact targets:\n" + "\n".join(sorted(set(missing))))
+          PY
+
+          if [ "${{ steps.ver.outputs.is_lab }}" != "true" ]; then
+            for board in $(python tools/board_matrix.py list sign); do
+              test -s "$board-firmware.sig"
+              test -s "_site/$board-firmware.sig"
+            done
+            test -s sim/web/squachsim.wasm
+            test "$(stat -c%s sim/web/squachsim.wasm)" -gt 200000
+          fi
+
       - name: Upload exact Pages site
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: pages-site
           path: _site
@@ -629,3 +677,23 @@ jobs:
       # publish-pages.yml deploys this exact artifact after this workflow
       # succeeds. Release creation stays separate from Pages environment
       # policy, but the deployed files are byte-for-byte the ones built here.
+
+      - name: Publish validated GitHub Release
+        if: steps.ver.outputs.is_lab != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          NOTES=".github/release-notes/${{ steps.ver.outputs.tag }}.md"
+          NAME="$(sed -n '1s/^<!-- name: \(.*\) -->$/\1/p' "$NOTES")"
+          TITLE="SquachWatch-CYD ${{ steps.ver.outputs.tag }}"
+          if [ -n "$NAME" ]; then TITLE="$TITLE \"$NAME\""; fi
+
+          # Publication is deliberately last. Create as a draft, upload every
+          # validated asset, then expose it only after all uploads succeed.
+          gh release create "${{ steps.ver.outputs.tag }}" \
+            --draft --title "$TITLE" --notes-file "$NOTES"
+          gh release upload "${{ steps.ver.outputs.tag }}" \
+            $(python tools/board_matrix.py release-assets) \
+            $(find . -maxdepth 1 -name '*-firmware.sig' -printf '%f ' 2>/dev/null)
+          gh release edit "${{ steps.ver.outputs.tag }}" --draft=false
