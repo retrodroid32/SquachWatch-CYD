@@ -76,9 +76,6 @@
 // NOTE: editing this file does not rebuild the library -- delete
 // .pio/build/<env>/lib*/TFT_eSPI first, or the board runs the old config.
 #define LOAD_FONT2
-#define LOAD_FONT2
-#define LOAD_FONT4
-#define SMOOTH_FONT
 
 // Colour handling. Taken from the vendor's factory file, which sets NEITHER
 // inversion nor a colour order -- meaning the ILI9341's own defaults. That
