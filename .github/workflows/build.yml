@@ -53,11 +53,10 @@ jobs:
       - name: Install PlatformIO
         run: pip install --upgrade platformio
 
-      # Normal shipping builds, including the 3.2-inch CYD, are in default_envs --
-      # cyd35 is excluded on purpose (see platformio.ini: it is frozen and
-      # boot loops on hardware, so a green build here would mean nothing)
-      # and the two -fast variants differ from their base build by one
-      # -D flag, so they cannot break independently of it.
+      # The board matrix is the authority for CI. Every release profile,
+      # including the fast display variants and T-Watch beta, must compile
+      # here. The known-boot-looping 3.5-inch development profile stays out
+      # of both release and CI until its hardware fault is resolved.
       - name: Validate board matrix and release metadata
         run: python tools/board_matrix.py validate
 
