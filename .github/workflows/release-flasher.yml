@@ -325,6 +325,7 @@ jobs:
           printf '%s\n' "$OTA_SIGNING_KEY" > "$RUNNER_TEMP/ota_key.pem"
           for v in $(python tools/board_matrix.py list sign); do
             python tools/sign_firmware.py --key "$RUNNER_TEMP/ota_key.pem" \
+              --pub tools/ota_pubkey.pem \
               --env "$v" --bin "$v-firmware.bin" --out "$v-firmware.sig"
           done
           rm -f "$RUNNER_TEMP/ota_key.pem"
