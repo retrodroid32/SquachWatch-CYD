@@ -1,12 +1,13 @@
 name: Publish web flasher
 
+# Production Pages is deployed only from the exact site artifact produced by
+# the release/lab workflow. A normal push to master may build and test firmware,
+# but it cannot silently replace the public flasher with an unreleased build.
 on:
   workflow_run:
     workflows:
-      - "Build"
       - "Build and release firmware"
     types: [completed]
-  workflow_dispatch:
 
 permissions:
   contents: read
@@ -20,230 +21,24 @@ concurrency:
 
 jobs:
   publish:
-    if: >-
-      github.event_name == 'workflow_dispatch' ||
-      (github.event.workflow_run.conclusion == 'success' &&
-       (github.event.workflow_run.name == 'Build and release firmware' ||
-        (github.event.workflow_run.name == 'Build' &&
-         github.event.workflow_run.event == 'push' &&
-         github.event.workflow_run.head_branch == 'master')))
+    if: github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
 
     steps:
-      - name: Download exact release or lab site
-        if: github.event_name == 'workflow_run' && github.event.workflow_run.name == 'Build and release firmware'
+      - name: Download exact tested site
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           mkdir -p _site
-          gh run download "${{ github.event.workflow_run.id }}" -R "${{ github.repository }}" -n pages-site -D _site
+          gh run download "${{ github.event.workflow_run.id }}" \
+            -R "${{ github.repository }}" -n pages-site -D _site
           test -s _site/index.html
           test -s _site/boards.json
-
-      - name: Check out tested master
-        if: github.event_name != 'workflow_run' || github.event.workflow_run.name == 'Build'
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || 'master' }}
-
-      - name: Set up Python
-        if: github.event_name != 'workflow_run' || github.event.workflow_run.name == 'Build'
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.x"
-
-      - name: Cache PlatformIO
-        if: github.event_name != 'workflow_run' || github.event.workflow_run.name == 'Build'
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.platformio
-            ~/.cache/pip
-          key: pages-platformio-${{ runner.os }}-${{ hashFiles('platformio.ini') }}
-          restore-keys: pages-platformio-${{ runner.os }}-
-
-      - name: Install PlatformIO
-        if: github.event_name != 'workflow_run' || github.event.workflow_run.name == 'Build'
-        run: pip install --upgrade platformio
-
-      - name: Validate board matrix
-        if: github.event_name != 'workflow_run' || github.event.workflow_run.name == 'Build'
-        run: python tools/board_matrix.py validate
-
-      - name: Build public flasher firmware
-        if: github.event_name != 'workflow_run' || github.event.workflow_run.name == 'Build'
-        run: |
-          set -euo pipefail
-          pio run $(python tools/board_matrix.py pio-args release)
-
-      - name: Set up Emscripten
-        if: github.event_name != 'workflow_run' || github.event.workflow_run.name == 'Build'
-        uses: mymindstorm/setup-emsdk@v14
-        with:
-          version: 6.0.9
-          actions-cache-folder: emsdk-cache
-
-      - name: Build browser emulator
-        if: github.event_name != 'workflow_run' || github.event.workflow_run.name == 'Build'
-        run: |
-          set -euo pipefail
-          make -C sim wasm
-          test -s sim/web/squachsim.js
-          test "$(stat -c%s sim/web/squachsim.wasm)" -gt 200000
-
-      - name: Assemble tested-master site
-        if: github.event_name != 'workflow_run' || github.event.workflow_run.name == 'Build'
-        env:
-          GH_TOKEN: ${{ github.token }}
-          OTA_SIGNING_KEY: ${{ secrets.OTA_SIGNING_KEY }}
-        run: |
-          set -euo pipefail
-          rm -rf _site
-          mkdir -p _site/update _site/emulator
-
-          cp web-flasher/index.html _site/index.html
-          cp web-flasher/boards.json _site/boards.json
-          cp web-flasher/update/index.html _site/update/index.html
-          cp web-flasher/emulator/index.html _site/emulator/index.html
-          cp sim/web/squachsim.js _site/emulator/squachsim.js
-          cp sim/web/squachsim.wasm _site/emulator/squachsim.wasm
-
-          SHARED="$(python - <<'PY'
-          import json
-          d = json.load(open("web-flasher/boards.json"))
-          print(" ".join(b["id"] for b in d["boards"]
-                         if b.get("release") and b.get("shared_esp32")))
-          PY
-          )"
-          for f in bootloader partitions; do
-            ref="$(sha256sum ".pio/build/cyd/$f.bin" | cut -d' ' -f1)"
-            for v in $SHARED; do
-              got="$(sha256sum ".pio/build/$v/$f.bin" | cut -d' ' -f1)"
-              if [ "$got" != "$ref" ]; then
-                echo "::error::$v/$f.bin differs from cyd/$f.bin"
-                exit 1
-              fi
-            done
-            cp ".pio/build/cyd/$f.bin" "_site/esp32-$f.bin"
-          done
-          cp "$HOME/.platformio/packages/framework-arduinoespressif32/tools/partitions/boot_app0.bin" _site/esp32-otadata.bin
-          test "$(stat -c%s _site/esp32-otadata.bin)" -eq 8192
-
-          if [ -d .pio/build/twatch-s3 ]; then
-            cp .pio/build/twatch-s3/bootloader.bin _site/esp32s3-bootloader.bin
-            cp .pio/build/twatch-s3/partitions.bin _site/twatch-s3-partitions.bin
-          fi
-
-          for board in $(python tools/board_matrix.py list release); do
-            cp ".pio/build/$board/firmware.bin" "_site/$board-firmware.bin"
-          done
-
-          if [ -n "$OTA_SIGNING_KEY" ]; then
-            umask 077
-            printf '%s\n' "$OTA_SIGNING_KEY" > "$RUNNER_TEMP/ota_key.pem"
-            for board in $(python tools/board_matrix.py list sign); do
-              python tools/sign_firmware.py --key "$RUNNER_TEMP/ota_key.pem"                 --env "$board" --bin "_site/$board-firmware.bin" --out "_site/$board-firmware.sig"
-            done
-            rm -f "$RUNNER_TEMP/ota_key.pem"
-          else
-            echo "::warning::OTA_SIGNING_KEY is not configured; USB flashing works, but Wi-Fi/Bluetooth OTA will report NOT SIGNED."
-          fi
-
-          python - <<'PY'
-          import json, re
-          from pathlib import Path
-
-          root = Path(".")
-          site = Path("_site")
-          version = (root / "VERSION").read_text(encoding="utf-8").strip()
-          matrix = json.loads((root / "web-flasher" / "boards.json").read_text(encoding="utf-8"))
-
-          name, news = "", []
-          note = root / ".github" / "release-notes" / f"v{version}.md"
-          if note.exists():
-              head = note.read_text(encoding="utf-8")[:4096]
-              m = re.search(r"<!--\s*name:\s*(.+?)\s*-->", head)
-              if m:
-                  name = m.group(1)[:19]
-              m = re.search(r"<!--\s*board:\s*(.+?)\s*-->", head)
-              if m:
-                  news = [x.strip()[:38] for x in m.group(1).split("|") if x.strip()][:4]
-
-          manifests = []
-          for board in matrix["boards"]:
-              if board.get("release") and board.get("manifest"):
-                  manifests.append(board["manifest"])
-
-          for mname in sorted(set(manifests)):
-              src = root / "web-flasher" / mname
-              data = json.loads(src.read_text(encoding="utf-8"))
-              data["version"] = version
-              if name:
-                  data["release_name"] = name
-              else:
-                  data.pop("release_name", None)
-              if news:
-                  data["whats_new"] = news
-              else:
-                  data.pop("whats_new", None)
-              (site / mname).write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
-
-          missing = []
-          for mname in sorted(set(manifests)):
-              data = json.loads((site / mname).read_text(encoding="utf-8"))
-              for build in data.get("builds", []):
-                  for part in build.get("parts", []):
-                      if not (site / part["path"]).exists():
-                          missing.append(f"{mname}: {part['path']}")
-          if missing:
-              raise SystemExit("manifest targets missing:\n" + "\n".join(missing))
-          PY
-
-          VERSION="$(cat VERSION | tr -d '[:space:]')"
-          PREV="$(gh release list --limit 12 --json tagName -q '.[].tagName' | grep -v "^v${VERSION}$" | head -2 || true)"
-          for tag in $PREV; do
-            mkdir -p "_site/$tag"
-            if ! gh release download "$tag" -D "_site/$tag"               -p '*-bootloader.bin' -p '*-partitions.bin'               -p '*-firmware.bin' -p 'manifest-*.json' -p '*-firmware.sig'; then
-              rm -rf "_site/$tag"
-              continue
-            fi
-            cp _site/esp32-otadata.bin "_site/$tag/esp32-otadata.bin"
-            python - "$tag" <<'PY'
-          import glob, json, sys
-          for p in glob.glob("_site/%s/manifest-*.json" % sys.argv[1]):
-              m = json.load(open(p))
-              builds = m.get("builds", [])
-              if not builds or builds[0].get("chipFamily") != "ESP32":
-                  continue
-              parts = builds[0]["parts"]
-              if not any(x.get("path") == "esp32-otadata.bin" for x in parts):
-                  parts.append({"path": "esp32-otadata.bin", "offset": 57344})
-                  json.dump(m, open(p, "w"), indent=2)
-          PY
-          done
-
-          {
-            echo '{'
-            echo "  \"latest\": \"v${VERSION}\","
-            echo '  "versions": ['
-            echo "    { \"tag\": \"v${VERSION}\", \"dir\": \"\" }"
-            for tag in $PREV; do
-              if [ -f "_site/$tag/manifest-cyd.json" ]; then
-                echo "    ,{ \"tag\": \"$tag\", \"dir\": \"$tag/\" }"
-              fi
-            done
-            echo '  ]'
-            echo '}'
-          } > _site/versions.json
-
-          touch _site/.nojekyll
-          test -s _site/index.html
-          test -s _site/manifest-cyd32-st7798.json
-          test -s _site/cyd32-st7798-firmware.bin
+          test -s _site/versions.json
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
