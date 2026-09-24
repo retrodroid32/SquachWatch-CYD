@@ -520,7 +520,16 @@ bool DetectionEngine::init() {
     // the step that might brown the board out -- because a brownout leaves no
     // crash dump and the reset reason alone does not say which of the two it
     // was. A board that boot-loops prints the last one it reached.
+#if defined(TWATCH_S3)
+    // Not on the watch. It has the heap to spare, and tearing the driver down
+    // 50 ms after WiFi.mode() started it -- while the radio may still be
+    // calibrating -- is the leading suspect for its deaf boots (2026-09-24:
+    // deaf through resets, reflashes and a power cut, while the bare stock
+    // sketch on the same watch heard 15 networks the same minute).
+    static const bool SLIM_WIFI = false;
+#else
     static const bool SLIM_WIFI = true;    // A/B on the bench: 45 frames/40 s slim, 20/45 s stock
+#endif
     Serial.println("[boot] starting WiFi");
     serialFlush();
     Serial.printf("[boot] heap before WiFi: %lu free, %lu largest\n", (unsigned long)ESP.getFreeHeap(), (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
