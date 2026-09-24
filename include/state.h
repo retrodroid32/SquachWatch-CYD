@@ -146,6 +146,11 @@ struct Detection {
     // the type. See lookupOui().
     Confidence     conf;
     bool           active;
+    // When it last asked to interrupt, allowed or not, in minutes of uptime
+    // (wrapping after 45 days). A device that keeps coming back keeps asking,
+    // so the gap since the last ask is how long it was really gone. Sits in
+    // what was padding.
+    uint16_t       askedMin;
 };
 
 // A detection's vendor, safe to print. A record is zeroed before it is

@@ -92,6 +92,35 @@ static volatile uint32_t s_advRaw = 0;   // every advert the radio handed over, 
 static volatile uint32_t s_advKind[5] = { 0, 0, 0, 0, 0 };
 const volatile uint32_t* advertKinds() { return s_advKind; }
 static volatile uint32_t s_wifiRaw = 0;  // every frame the sniffer was handed
+// Frames heard on each channel since the hop onto it, and how busy each one
+// has been lately: frames a second, times 16, smoothed over visits. See
+// hopChannel().
+static volatile uint16_t s_chanFrames[14];
+static uint16_t          s_chanRate[14];
+#if defined(TWATCH_S3)
+// Two 512-bit memories of Bluetooth addresses, by hash: this five minutes
+// and the five before. An address in neither is an arrival. A collision
+// only ever hides one, and the count is a nudge, not a detection.
+static uint8_t           s_seenNow[64], s_seenPrev[64];
+static volatile uint32_t s_bleArrivals = 0;
+uint32_t bleArrivals() { return s_bleArrivals; }
+void bleArrivalsRoll(uint32_t now) {
+    static uint32_t at = 0;
+    if (now - at < 300000u) return;
+    at = now;
+    memcpy(s_seenPrev, s_seenNow, sizeof s_seenPrev);
+    memset(s_seenNow, 0, sizeof s_seenNow);
+}
+static void noteBleAddress(const uint8_t* a) {
+    uint32_t h = 2166136261u;
+    for (uint8_t i = 0; i < 6; i++) h = (h ^ a[i]) * 16777619u;
+    const uint16_t ix = (uint16_t)(h & 511u);
+    const uint8_t byte = (uint8_t)(ix >> 3), bit = (uint8_t)(1u << (ix & 7));
+    if (s_seenNow[byte] & bit) return;
+    s_seenNow[byte] |= bit;
+    if (!(s_seenPrev[byte] & bit)) s_bleArrivals++;
+}
+#endif
 uint32_t wifiFramesSeen() { return s_wifiRaw; }
 uint32_t advertsSeen()    { return s_advRaw; }
 
@@ -101,6 +130,8 @@ uint32_t advertsSeen()    { return s_advRaw; }
 char g_bootRadioLine[192] = "";
 void radioReport(bool withScan) {
     if (g_bootRadioLine[0]) Serial.printf("[radio] boot: %s\n", g_bootRadioLine);
+    Serial.printf("[radio] power saver %s, radio duty %s (set to %s)\n", Settings::powerSaver() ? "ON" : "OFF",
+                  Settings::radioDutyName(Settings::radioDuty()), Settings::radioDutyName(Settings::radioDutyRaw()));
     wifi_mode_t mode = WIFI_MODE_NULL;
     const esp_err_t me = esp_wifi_get_mode(&mode);
     bool promisc = false;
@@ -119,6 +150,15 @@ void radioReport(bool withScan) {
                   (int)NimBLEDevice::isInitialized(), sc ? (int)sc->isScanning() : -1,
                   (unsigned long)s_advRaw, (unsigned long)s_bleQDropped, (int)g_rawMode,
                   temperatureRead(), (unsigned long)(millis() / 1000));
+    {
+        char line[160];
+        int n = snprintf(line, sizeof line, "[radio] channel busyness, frames/s:");
+        for (uint8_t c = 1; c <= 13; c++) n += snprintf(line + n, sizeof line - n, " %u:%u", (unsigned)c, (unsigned)(s_chanRate[c] / 16));
+#if defined(TWATCH_S3)
+        snprintf(line + n, sizeof line - n, "; BLE arrivals %lu", (unsigned long)s_bleArrivals);
+#endif
+        Serial.println(line);
+    }
     if (!withScan) return;
     esp_wifi_set_promiscuous(false);
     wifi_scan_config_t cfg = {};
@@ -165,6 +205,9 @@ class BleScanCallbacks : public NimBLEScanCallbacks {
     // quiet room right up to the crash.
     void onDiscovered(const NimBLEAdvertisedDevice* adv) override {
         s_advRaw++;
+#if defined(TWATCH_S3)
+        noteBleAddress(adv->getAddress().getBase()->val);
+#endif
         const uint8_t t = adv->getAdvType();
         s_advKind[t == BLE_HCI_ADV_TYPE_ADV_IND ? 0 : t == BLE_HCI_ADV_TYPE_ADV_DIRECT_IND_HD ? 1 :
                   t == BLE_HCI_ADV_TYPE_ADV_SCAN_IND ? 2 : t == BLE_HCI_ADV_TYPE_ADV_NONCONN_IND ? 3 : 4]++;
@@ -528,6 +571,10 @@ bool DetectionEngine::init() {
         s_wifiRaw++;
         if (!g_engine) return;
         const wifi_promiscuous_pkt_t* pkt = (const wifi_promiscuous_pkt_t*)buf;
+        {
+            const uint8_t ch = pkt->rx_ctrl.channel;
+            if (ch >= 1 && ch <= 13 && s_chanFrames[ch] < 0xFFFF) s_chanFrames[ch]++;
+        }
         if (pkt->rx_ctrl.sig_len < 24) return;
         // 802.11 frame header: bytes 0..23 contain frame control, duration,
         // addr1 (DA, offset 4), addr2 (SA, offset 10), addr3 (BSSID, offset 16)
@@ -1098,15 +1145,48 @@ void DetectionEngine::decayChannelActivity() {
 }
 
 void DetectionEngine::hopChannel() {
-    // Dwell ~300ms per channel, cycling 1-13 — without this the
-    // promiscuous sniffer stays parked on whatever channel the radio
-    // defaulted to and only ever sees traffic on that one channel,
-    // missing anything (real hardware included, not just test rigs)
-    // transmitting elsewhere in the band.
-    uint32_t now = millis();
-    if (now - _lastHopMs < 300) return;
+    // Cycling 1-13 -- without this the promiscuous sniffer stays parked on
+    // whatever channel the radio defaulted to and only ever sees traffic on
+    // that one channel, missing anything (real hardware included, not just
+    // test rigs) transmitting elsewhere in the band.
+    //
+    // Not an even 300 ms each any more. Most of a building's WiFi sits on
+    // two or three channels and the rest are often silent, so the busy ones
+    // get more of the sweep and the silent ones a quick look. The sweep
+    // still takes about four seconds, so the watch's five-second window
+    // still sees every channel; the shortest look still outlasts a router's
+    // beacon interval (about 100 ms).
+    const uint32_t now = millis();
+    if (now - _lastHopMs < _dwellMs) return;
+    {
+        // How busy the channel being left was: frames a second, times 16.
+        // A visit that ran long (the loop was held up, or the radios were
+        // resting) says nothing fair, so it is not scored.
+        const uint32_t spent = now - _lastHopMs;
+        const uint32_t f = s_chanFrames[_wifiChannel];
+        s_chanFrames[_wifiChannel] = 0;
+        if (spent <= 2u * _dwellMs + 200u) {
+            uint32_t rate = f * 16000u / (spent ? spent : 1);
+            if (rate > 0xFFFFu) rate = 0xFFFFu;
+            s_chanRate[_wifiChannel] = (uint16_t)(((uint32_t)s_chanRate[_wifiChannel] * 3u + rate) / 4u);
+        }
+    }
     _lastHopMs = now;
     _wifiChannel = (_wifiChannel % 13) + 1;
+    s_chanFrames[_wifiChannel] = 0;
+    // Shares: 4 for a channel at least a quarter as busy as the busiest,
+    // 2 for one with anything on it, 1 for a silent one. Split 3.9 s.
+    uint16_t top = 0;
+    for (uint8_t c = 1; c <= 13; c++) if (s_chanRate[c] > top) top = s_chanRate[c];
+    uint16_t total = 0, mine = 2;
+    for (uint8_t c = 1; c <= 13; c++) {
+        const uint16_t r = s_chanRate[c];
+        const uint16_t sh = !top ? 2 : (r * 4u >= top ? 4 : (r ? 2 : 1));
+        total += sh;
+        if (c == _wifiChannel) mine = sh;
+    }
+    _dwellMs = (uint16_t)(3900u * mine / total);
+    if (_dwellMs < 120) _dwellMs = 120;
     esp_wifi_set_channel(_wifiChannel, WIFI_SECOND_CHAN_NONE);
 }
 
@@ -1551,6 +1631,8 @@ void DetectionEngine::wakeRadios() {
     esp_wifi_start();
     esp_wifi_set_promiscuous(true);
     esp_wifi_set_channel(_wifiChannel, WIFI_SECOND_CHAN_NONE);
+    _lastHopMs = millis();                       // the visit starts now, not before the rest
+    s_chanFrames[_wifiChannel] = 0;
     if (g_restBle && s_updEvReady) ble_npl_eventq_put(nimble_port_get_dflt_eventq(), &s_updStartEv);
     g_restBle = false;
 }
