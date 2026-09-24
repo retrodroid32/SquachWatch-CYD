@@ -58,6 +58,8 @@ enum class SettingsRow : uint8_t {
     WATCH_RADIO,     // the T-Watch only: the radio duty cycle, under WATCH
     WATCH_BUZZ,      // the T-Watch only: buzz on an alert, under WATCH
     WATCH_RADIO_RESET, // the T-Watch only: power cycle the watch to wake the radios, under WATCH
+    WATCH_STEADY,    // the T-Watch only: STEADY POWER, DC1 held in PWM, under WATCH
+    WATCH_TEMP,      // the T-Watch only: the chip's temperature, a reading, under WATCH
     BACK,
     COUNT,
     NONE = 255
