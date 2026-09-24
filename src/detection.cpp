@@ -1835,9 +1835,10 @@ void DetectionEngine::pushLog(const Detection& d) {
     if (_logCount < LOG_CAP) _logCount++;
     _latest = &_log[(_logHead + LOG_CAP - 1) % LOG_CAP];
     _latestChangeMs = millis();
-    _typeCounts[(uint8_t)d.type]++;
+    const uint8_t typeIx = (uint8_t)d.type;
+    if (typeIx < (uint8_t)DetectionType::COUNT) _typeCounts[typeIx]++;
     _lifetimeTotal++;
-    if ((uint8_t)d.type < (uint8_t)DetectionType::COUNT) _lifetimeByType[(uint8_t)d.type]++;
+    if (typeIx < (uint8_t)DetectionType::COUNT) _lifetimeByType[typeIx]++;
     // Counted here, on the Bluetooth host task, and written to flash from
     // loop() (see saveLifetime). A flash write stalls both cores for a
     // millisecond and every so often for a sector erase, and two of them

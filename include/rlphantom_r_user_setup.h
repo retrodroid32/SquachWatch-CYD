@@ -63,9 +63,6 @@
 // NOTE: editing this file does not rebuild the library -- delete
 // .pio/build/<env>/lib*/TFT_eSPI first, or the board runs the old config.
 #define LOAD_FONT2
-#define LOAD_FONT2
-#define LOAD_FONT4
-#define SMOOTH_FONT
 
 #define TFT_INVERSION_OFF
 #define TFT_RGB_ORDER TFT_RGB

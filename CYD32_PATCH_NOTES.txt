@@ -11,4 +11,4 @@ Flash: pio run -e cyd32-st7798 -t upload
 Windows helpers:
   build_cyd32_st7798.bat
   flash_cyd32_st7798.bat
-The flash helper lists detected COM ports and defaults to COM17.
+The flash helper lists detected COM ports and asks which one to use.

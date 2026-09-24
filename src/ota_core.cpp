@@ -119,8 +119,11 @@ const char* s_noteSub   = nullptr;
 bool        s_noteGood  = false;
 char        s_noteSubBuf[40];
 
-void lock()   { if (!s_lock) s_lock = xSemaphoreCreateMutex(); xSemaphoreTake(s_lock, portMAX_DELAY); }
-void unlock() { xSemaphoreGive(s_lock); }
+bool lock() {
+    if (!s_lock) s_lock = xSemaphoreCreateMutex();
+    return s_lock && xSemaphoreTake(s_lock, portMAX_DELAY) == pdTRUE;
+}
+void unlock() { if (s_lock) xSemaphoreGive(s_lock); }
 
 // Is this signature ours? 0 if it is, an mbedtls error if it is not.
 //
@@ -374,7 +377,7 @@ Fail begin(uint32_t size, const uint8_t* sig, uint8_t sigLen) {
     if (!sig || sigLen == 0 || sigLen > sizeof s_sig) return Fail::BAD_SIGNATURE;
     Serial.printf("[ota] receiving %lu bytes into %s\n", (unsigned long)size, target->label);
 
-    lock();
+    if (!lock()) return Fail::LOW_MEMORY;
     // Erase as the writes arrive, a sector at a time -- NOT the whole image up
     // front. v1.7.2 erased all ~1.6 MB in one call, which held the flash long
     // enough that core 0's idle task missed the 5 s task watchdog, and the
@@ -407,7 +410,7 @@ Fail begin(uint32_t size, const uint8_t* sig, uint8_t sigLen) {
 }
 
 bool write(const uint8_t* data, size_t len) {
-    lock();
+    if (!lock()) return false;
     scanVersion(data, len);
     bool ok = s_open && s_written + len <= s_size;
     if (ok && s_written == 0 && len && data[0] != 0xE9) ok = false;   // not an ESP32 image
@@ -423,7 +426,7 @@ bool write(const uint8_t* data, size_t len) {
 uint32_t written() { return s_written; }
 
 Fail finish() {
-    lock();
+    if (!lock()) return Fail::LOW_MEMORY;
     if (!s_open || s_written != s_size) { closeLocked(); unlock(); return Fail::DAMAGED; }
     uint8_t hash[32];
     mbedtls_sha256_finish_ret(&s_sha, hash);
@@ -458,7 +461,7 @@ Fail finish() {
     }
 
     // esp_ota_end() checks the image itself: its segments and its own hash.
-    lock();
+    if (!lock()) return Fail::LOW_MEMORY;
     esp_err_t e = esp_ota_end(s_handle);
     s_open = false;
     unlock();
@@ -549,7 +552,7 @@ const char* testVersionDecision(const char* version) {
 }
 
 void abort() {
-    lock();
+    if (!lock()) return;
     closeLocked();
     s_written    = 0;
     s_tagMatch   = 0;

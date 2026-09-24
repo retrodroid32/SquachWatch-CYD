@@ -24,8 +24,12 @@ body:
         - 2.8" CYD, ILI9341 variant
         - 2.8" CYD, 80MHz overclock
         - 2.8" CYD, ILI9341 + 80MHz overclock
+        - 3.2" CYD, ST7798/ST7789-compatible
+        - 3.2" CYD, ST7798/ST7789-compatible + 80MHz display
         - AWOK 2.4"
-        - 3.5" CYD (frozen, known to boot loop)
+        - RL Phantom 2.4" resistive
+        - LilyGo T-Watch S3 (BETA)
+        - 3.5" CYD development build (known boot loop; not public)
         - Not sure
     validations:
       required: true

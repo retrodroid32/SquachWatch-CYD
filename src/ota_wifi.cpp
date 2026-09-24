@@ -4,6 +4,7 @@
 #include "clock.h"
 #include <Arduino.h>
 #include <WiFi.h>
+#include <WiFiClientSecure.h>
 #include <HTTPClient.h>
 #include <Preferences.h>
 #include <esp_heap_caps.h>
@@ -13,7 +14,7 @@
 #define FIRMWARE_VERSION "unknown"
 #endif
 #ifndef OTA_WIFI_BASE
-#define OTA_WIFI_BASE "http://squachwatch.com/"
+#define OTA_WIFI_BASE "https://retrodroid32.github.io/SquachWatch-CYD/"
 #endif
 
 using OtaCore::Fail;
@@ -185,21 +186,18 @@ void collectScan(int n) {
     WiFi.scanDelete();
 }
 
-// Plain HTTP, on purpose, for the firmware as well as the manifest.
-//
-// What made this safe was already here: every image is signed, and the board
-// refuses one that is not ours or that is older than the one running (see
-// OtaCore::finish). TLS was buying secrecy about WHICH public file was being
-// downloaded, and charging about 45 KB of flash and a 40 KB contiguous heap
-// block for it -- the block that forced the screen buffer to be freed before
-// an update could start, on a board whose largest block is 34 KB.
-//
-// The cost is that somebody on the same network can see which release is
-// being fetched, and a network that blocks plain HTTP now blocks updates too.
-static WiFiClient* s_plain = nullptr;
-WiFiClient* client() {
-    if (!s_plain) s_plain = new WiFiClient();
-    return s_plain;
+// This fork is hosted on GitHub Pages, which requires HTTPS. Firmware
+// authenticity is still enforced independently by OtaCore's ECDSA signature,
+// so certificate validation is not the installation trust boundary.
+// setInsecure() keeps the TLS certificate-chain footprint down: a network can
+// block or spoof metadata, but it cannot make altered firmware pass verify.
+static WiFiClientSecure* s_tls = nullptr;
+WiFiClientSecure* client() {
+    if (!s_tls) {
+        s_tls = new WiFiClientSecure();
+        if (s_tls) s_tls->setInsecure();
+    }
+    return s_tls;
 }
 
 // A small file into `out`. Returns the HTTP status, or a negative number when
@@ -207,7 +205,8 @@ WiFiClient* client() {
 int getSmall(const String& file, uint8_t* out, size_t cap, size_t& len) {
     len = 0;
     HTTPClient http;
-    if (!http.begin(*client(), String(OTA_WIFI_BASE) + file)) return -1;
+    WiFiClientSecure* c = client();
+    if (!c || !http.begin(*c, String(OTA_WIFI_BASE) + file)) return -1;
     http.setTimeout(STALL_TIMEOUT_MS);
     const int code = http.GET();
     if (code == 200) {
@@ -367,7 +366,8 @@ void download() {
     s_downloadStarted = true;
     s_rx = 0;
     HTTPClient http;
-    if (!http.begin(*client(), String(OTA_WIFI_BASE) + OtaCore::buildName() + "-firmware.bin")) {
+    WiFiClientSecure* c = client();
+    if (!c || !http.begin(*c, String(OTA_WIFI_BASE) + OtaCore::buildName() + "-firmware.bin")) {
         fail(Fail::NO_SITE);
         return;
     }

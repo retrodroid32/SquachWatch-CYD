@@ -294,7 +294,6 @@ bool begin() {
         s_data = svc->createCharacteristic(DATA_UUID, NIMBLE_PROPERTY::WRITE | NIMBLE_PROPERTY::WRITE_NR, 512);
         s_ctrl->setCallbacks(&s_ctrlCb);
         s_data->setCallbacks(&s_dataCb);
-        svc->start();
         s_server->start();
 
         const NimBLEAddress a = NimBLEDevice::getAddress();

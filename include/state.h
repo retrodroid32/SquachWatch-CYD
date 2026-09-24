@@ -35,6 +35,8 @@ enum class DetectionType : uint8_t {
     HACKER  = 17,
     COUNT   = 18
 };
+static_assert((uint8_t)DetectionType::COUNT <= 32,
+              "Detection type mask is uint32_t; widen it before adding more types");
 
 inline const char* detectionTypeDisplayName(DetectionType t) {
     switch (t) {

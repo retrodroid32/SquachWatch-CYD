@@ -3,7 +3,7 @@ setlocal EnableExtensions EnableDelayedExpansion
 cd /d "%~dp0"
 set "PIO_MODE="
 set "PIO_EXE="
-set "DEFAULT_PORT=COM17"
+set "DEFAULT_PORT="
 where pio.exe >nul 2>nul && set "PIO_MODE=PIO" && goto :pio_found
 where platformio.exe >nul 2>nul && set "PIO_MODE=PLATFORMIO" && goto :pio_found
 if exist "%USERPROFILE%\.platformio\penv\Scripts\platformio.exe" (
@@ -29,8 +29,12 @@ exit /b 1
 echo Detected serial ports:
 call :run_pio device list
 echo.
-set /p "UPLOAD_PORT=COM port [%DEFAULT_PORT%]: "
-if not defined UPLOAD_PORT set "UPLOAD_PORT=%DEFAULT_PORT%"
+set /p "UPLOAD_PORT=COM port (for example COM17): "
+if not defined UPLOAD_PORT (
+  echo ERROR: No COM port selected.
+  pause
+  exit /b 1
+)
 echo(!UPLOAD_PORT!| findstr /R /I "^COM[0-9][0-9]*$" >nul
 if errorlevel 1 (
   echo(!UPLOAD_PORT!| findstr /R "^[0-9][0-9]*$" >nul
