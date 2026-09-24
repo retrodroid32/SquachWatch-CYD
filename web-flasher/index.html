@@ -719,9 +719,9 @@
     <esp-web-install-button id="installBtn" manifest="./manifest-cyd.json">
       <button slot="activate" class="install-btn">[ CONNECT &amp; INSTALL ]</button>
       <span slot="unsupported" class="unsupported">
-        Your browser can't do this. Flashing needs Web Serial &mdash; Firefox,
-        Chrome, Edge or another Chromium browser, on a computer. Phones and
-        tablets can't do it at all, whatever browser they're running.
+        Your browser can't do this. Flashing needs Web Serial &mdash; use Chrome,
+        Edge, Brave or another Chromium browser on a desktop/laptop. Firefox and
+        Safari do not currently expose the Web Serial API this flasher needs.
       </span>
       <span slot="not-allowed" class="not-allowed">
         This page needs to be loaded over HTTPS to flash a device.
@@ -735,7 +735,7 @@
       <li>Click Install and leave it be — don't unplug until it says done.</li>
     </ol>
 
-    <p class="browser-note">Works in Firefox / Chrome / Edge / Brave on desktop. No app to install — just the browser.</p>
+    <p class="browser-note">Works in Chrome / Edge / Brave and other Chromium desktop browsers with Web Serial. No app to install.</p>
 
     <div class="identify-row">
       <button id="identifyBtn" class="identify-btn">[ IDENTIFY MY BOARD ]</button>
@@ -1535,12 +1535,11 @@
     // targets and unticking it is a reflash rather than a menu the user
     // has to find on a display that may be the thing that broke.
     //
-    // Offered for the 2.8" boards only, hence data-fast living on those
-    // two <option>s rather than a flag here: AWOK and the RL Phantom run
-    // their touchscreen on the display's SPI bus through TFT_eSPI's own touch path, which
-    // reads SPI_FREQUENCY directly, so overclocking the panel would
-    // also overclock touch. An option with no data-fast disables the
-    // row instead of silently ignoring the tick.
+    // Offered only where boards.json supplies fast_manifest. The 2.8" pair
+    // and the 3.2" CYD have explicit 80MHz firmware variants; the 3.2" keeps
+    // XPT2046 reads on SPI_TOUCH_FREQUENCY (2.5MHz) even though its display
+    // writes are overclocked. Boards without a tested fast profile simply
+    // disable this row instead of silently ignoring the tick.
     var OC_DESC_ON =
       "Runs the screen at twice the rated clock — about 34fps instead of 22, which you " +
       "will notice everywhere. Not every panel takes it. If the screen stays white or shows " +
