@@ -31,6 +31,7 @@ TESTS := remote_id_test ibeacon_test signatures_test emitter_roundtrip_test igno
 remote_id_test_SRCS          := $(SRC)/remote_id.cpp
 ibeacon_test_SRCS            := $(SRC)/signatures.cpp
 signatures_test_SRCS         := $(SRC)/signatures.cpp
+detection_vectors_test_SRCS  := $(SRC)/signatures.cpp
 emitter_roundtrip_test_SRCS  := $(SRC)/remote_id.cpp
 ignore_list_test_SRCS        := $(SRC)/ignore_list.cpp
 hacker_test_SRCS             := $(SRC)/signatures.cpp
