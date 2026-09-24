@@ -636,12 +636,22 @@ jobs:
           test -s _site/boards.json
           test -s _site/vendor/esp-web-tools-10.4.0.js
           test -s _site/vendor/esptool-js-0.6.1.js
-          for p in $(python tools/board_matrix.py manifests release); do
-            test -s "_site/$p"
-          done
-          for board in $(python tools/board_matrix.py list release); do
-            test -s "_site/$board-firmware.bin"
-          done
+          python3 - <<'PY'
+          import json, os
+          matrix = json.load(open("_site/boards.json", encoding="utf-8"))
+          missing = []
+          for b in matrix["boards"]:
+              if not b.get("release"):
+                  continue
+              m = b.get("manifest")
+              if m and not os.path.isfile(os.path.join("_site", m)):
+                  missing.append(m)
+              fw = b["id"] + "-firmware.bin"
+              if not os.path.isfile(os.path.join("_site", fw)):
+                  missing.append(fw)
+          if missing:
+              raise SystemExit("site targets missing:\n" + "\n".join(missing))
+          PY
 
       - name: Upload exact Pages site
         uses: actions/upload-artifact@v4
