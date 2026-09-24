@@ -148,6 +148,11 @@ void setScanInterval(uint16_t ms, uint8_t w) {
 static volatile uint8_t s_scanPin = 0;   // 0 auto, 1 active, 2 passive -- the bench's say
 void setScanPin(uint8_t pin) { s_scanPin = pin > 2 ? 0 : pin; }
 
+// NimBLE callbacks run on the host task while DetectionEngine::loop() and all
+// UI code run on the application task. Only the three bounded callback queues
+// cross that boundary; their indices and records are protected here.
+static portMUX_TYPE s_bleCallbackMux = portMUX_INITIALIZER_UNLOCKED;
+
 class BleScanCallbacks : public NimBLEScanCallbacks {
     // First sight of every advert, before any reply. The counts live here
     // and not in onResult: in an active scan a device that never answers
@@ -219,8 +224,7 @@ class BleScanCallbacks : public NimBLEScanCallbacks {
             if (ours) {
                 if (g_engine) {
                     const int8_t r = (int8_t)adv->getRSSI();
-                    g_engine->checkWatchBle(mac, r);
-                    g_engine->checkHuntBle(mac, r);
+                    g_engine->postBleSignal(mac, r);
                 }
                 return;
             }
@@ -233,8 +237,7 @@ class BleScanCallbacks : public NimBLEScanCallbacks {
         // are independent slots (see detection.h), so both are always
         // checked -- either, both, or neither can match a given frame.
         int8_t rssi = (int8_t)adv->getRSSI();
-        g_engine->checkWatchBle(mac, rssi);
-        g_engine->checkHuntBle(mac, rssi);
+        g_engine->postBleSignal(mac, rssi);
         // The radio is dedicated to a WiFi sweep or a firmware update right now.
         if (g_rawMode == RawScanMode::WIFI || g_rawMode == RawScanMode::UPDATE) return;
         if (g_rawMode == RawScanMode::BLE) {
@@ -369,18 +372,6 @@ class BleScanCallbacks : public NimBLEScanCallbacks {
         if (det.type == DetectionType::HACKER) {
             det.conf = matchedByName ? Confidence::MED_CONF : Confidence::HIGH_CONF;
         }
-        // A Remote ID advert carries far more than the fact that it exists.
-        // Decode it before the entry is posted so the log row can be named
-        // after the actual aircraft rather than after a service UUID.
-        if (det.type == DetectionType::DRONE) {
-            g_engine->mergeRemoteId(mac, adv->getPayload().data(),
-                                    (uint8_t)adv->getPayload().size());
-            const RemoteId::Info& rid = g_engine->remoteId();
-            if (rid.haveBasic && rid.serial[0]) {
-                strncpy(det.name, rid.serial, sizeof(det.name) - 1);
-                det.name[sizeof(det.name) - 1] = '\0';
-            }
-        }
         // Set vendor label based on the matched table entry.
         if (det.type == DetectionType::AIRTAG) {
             det.vendor = "Apple";
@@ -415,7 +406,12 @@ class BleScanCallbacks : public NimBLEScanCallbacks {
         } else {
             det.vendor = "BLE";
         }
-        g_engine->postBle(det);
+        if (det.type == DetectionType::DRONE) {
+            const std::string& p = adv->getPayload();
+            g_engine->postBleRemote(det, (const uint8_t*)p.data(), (uint8_t)p.size());
+        } else {
+            g_engine->postBle(det);
+        }
     }
 };
 static BleScanCallbacks g_bleScanCallbacks;
@@ -1045,6 +1041,8 @@ static void scanFlushTick() {
 }
 
 void DetectionEngine::loop() {
+    processBleCallbackQueues();
+
     // Resting radios still take the BLE side of the loop when BLE is up;
     // only the WiFi steps below are skipped, since WiFi is stopped.
     if (g_rawMode != RawScanMode::NONE && g_rawMode != RawScanMode::REST) {
@@ -1244,6 +1242,142 @@ void DetectionEngine::mergeRemoteId(const uint8_t* mac, const uint8_t* payload,
 }
 
 void DetectionEngine::postBle(Detection d) {
+    postBleRemote(d, nullptr, 0);
+}
+
+void DetectionEngine::postBleRemote(Detection d, const uint8_t* payload, uint8_t len) {
+    if (len > 40) len = 40;
+    portENTER_CRITICAL(&s_bleCallbackMux);
+
+    // Ordinary repeated advertisements can collapse into one pending row.
+    // Remote ID payloads do not: Basic ID, Location and System rotate through
+    // separate adverts and each one contributes different state.
+    if (!len) {
+        for (uint8_t i = _bleQTail; i != _bleQHead; i = (uint8_t)((i + 1) % BLE_Q_CAP)) {
+            if (_bleQ[i].d.type == d.type && memcmp(_bleQ[i].d.mac, d.mac, 6) == 0) {
+                _bleQ[i].d = d;
+                portEXIT_CRITICAL(&s_bleCallbackMux);
+                return;
+            }
+        }
+    }
+
+    const uint8_t next = (uint8_t)((_bleQHead + 1) % BLE_Q_CAP);
+    if (next != _bleQTail) {
+        BleQEntry& q = _bleQ[_bleQHead];
+        q.d = d;
+        q.ridLen = len;
+        if (len && payload) memcpy(q.rid, payload, len);
+        _bleQHead = next;
+    }
+    portEXIT_CRITICAL(&s_bleCallbackMux);
+}
+
+void DetectionEngine::postBleSignal(const uint8_t* mac, int8_t rssi) {
+    if (!mac) return;
+    // Only the selected WATCH/HUNT target needs per-advert RSSI samples. The
+    // selections themselves are changed on loop(), so taking the queue lock
+    // around this read prevents a callback from seeing a half-written MAC.
+    portENTER_CRITICAL(&s_bleCallbackMux);
+    const bool wanted =
+        (_watchKind == WatchKind::BLE && memcmp(mac, _watchMac, 6) == 0) ||
+        (_huntKind  == WatchKind::BLE && memcmp(mac, _huntMac,  6) == 0);
+    if (!wanted) {
+        portEXIT_CRITICAL(&s_bleCallbackMux);
+        return;
+    }
+    for (uint8_t i = _bleSignalQTail; i != _bleSignalQHead;
+         i = (uint8_t)((i + 1) % BLE_SIGNAL_Q_CAP)) {
+        if (memcmp(_bleSignalQ[i].mac, mac, 6) == 0) {
+            _bleSignalQ[i].rssi = rssi;
+            portEXIT_CRITICAL(&s_bleCallbackMux);
+            return;
+        }
+    }
+    const uint8_t next = (uint8_t)((_bleSignalQHead + 1) % BLE_SIGNAL_Q_CAP);
+    if (next != _bleSignalQTail) {
+        memcpy(_bleSignalQ[_bleSignalQHead].mac, mac, 6);
+        _bleSignalQ[_bleSignalQHead].rssi = rssi;
+        _bleSignalQHead = next;
+    }
+    portEXIT_CRITICAL(&s_bleCallbackMux);
+}
+
+void DetectionEngine::postRawBle(RawBleResult r) {
+    portENTER_CRITICAL(&s_bleCallbackMux);
+    for (uint8_t i = _rawBleQTail; i != _rawBleQHead; i = (uint8_t)((i + 1) % RAW_BLE_Q_CAP)) {
+        if (memcmp(_rawBleQ[i].mac, r.mac, 6) == 0) {
+            _rawBleQ[i] = r;
+            portEXIT_CRITICAL(&s_bleCallbackMux);
+            return;
+        }
+    }
+    const uint8_t next = (uint8_t)((_rawBleQHead + 1) % RAW_BLE_Q_CAP);
+    if (next != _rawBleQTail) {
+        _rawBleQ[_rawBleQHead] = r;
+        _rawBleQHead = next;
+    }
+    portEXIT_CRITICAL(&s_bleCallbackMux);
+}
+
+void DetectionEngine::processBleCallbackQueues() {
+    // Drain to local copies one record at a time so the radio task is never
+    // held off while signature bookkeeping, UI state or NVS-backed modules run.
+    for (;;) {
+        BleSignalQEntry q;
+        bool have = false;
+        portENTER_CRITICAL(&s_bleCallbackMux);
+        if (_bleSignalQTail != _bleSignalQHead) {
+            q = _bleSignalQ[_bleSignalQTail];
+            _bleSignalQTail = (uint8_t)((_bleSignalQTail + 1) % BLE_SIGNAL_Q_CAP);
+            have = true;
+        }
+        portEXIT_CRITICAL(&s_bleCallbackMux);
+        if (!have) break;
+        checkWatchBle(q.mac, q.rssi);
+        checkHuntBle(q.mac, q.rssi);
+    }
+
+    for (;;) {
+        RawBleResult q;
+        bool have = false;
+        portENTER_CRITICAL(&s_bleCallbackMux);
+        if (_rawBleQTail != _rawBleQHead) {
+            q = _rawBleQ[_rawBleQTail];
+            _rawBleQTail = (uint8_t)((_rawBleQTail + 1) % RAW_BLE_Q_CAP);
+            have = true;
+        }
+        portEXIT_CRITICAL(&s_bleCallbackMux);
+        if (!have) break;
+        applyRawBle(q);
+    }
+
+    // Cap work per frame so a pathological room cannot starve drawing or
+    // watchdog service. Duplicate ordinary adverts are already coalesced.
+    for (uint8_t n = 0; n < 12; n++) {
+        BleQEntry q;
+        bool have = false;
+        portENTER_CRITICAL(&s_bleCallbackMux);
+        if (_bleQTail != _bleQHead) {
+            q = _bleQ[_bleQTail];
+            _bleQTail = (uint8_t)((_bleQTail + 1) % BLE_Q_CAP);
+            have = true;
+        }
+        portEXIT_CRITICAL(&s_bleCallbackMux);
+        if (!have) break;
+        processBleDetection(q.d, q.ridLen ? q.rid : nullptr, q.ridLen);
+    }
+}
+
+void DetectionEngine::processBleDetection(Detection d, const uint8_t* ridPayload, uint8_t ridLen) {
+    if (ridPayload && ridLen && d.type == DetectionType::DRONE) {
+        mergeRemoteId(d.mac, ridPayload, ridLen);
+        const RemoteId::Info& rid = remoteId();
+        if (rid.haveBasic && rid.serial[0]) {
+            strncpy(d.name, rid.serial, sizeof(d.name) - 1);
+            d.name[sizeof(d.name) - 1] = '\0';
+        }
+    }
     // Disabled types (Settings > DETECTION FILTER) are dropped here,
     // before the dedupe/merge below -- that merge branch re-activates
     // and re-alerts on an already-logged device without ever reaching
@@ -1319,7 +1453,7 @@ void DetectionEngine::postBtClassic(Detection d) {
     postBle(d);
 }
 
-void DetectionEngine::postRawBle(RawBleResult r) {
+void DetectionEngine::applyRawBle(RawBleResult r) {
     // Looked up by MAC and updated in place -- this is "everything
     // currently visible", not a chronological log, so a device seen
     // again just refreshes its existing row instead of duplicating it.
@@ -1499,6 +1633,7 @@ void DetectionEngine::wakeRadios() {
 bool DetectionEngine::radiosResting() { return g_rawMode == RawScanMode::REST; }
 
 void DetectionEngine::watchBle(const uint8_t* mac, const char* name) {
+    portENTER_CRITICAL(&s_bleCallbackMux);
     _watchKind = WatchKind::BLE;
     memcpy(_watchMac, mac, 6);
     strncpy(_watchLabel, (name && name[0]) ? name : "Unnamed device", sizeof(_watchLabel) - 1);
@@ -1507,9 +1642,11 @@ void DetectionEngine::watchBle(const uint8_t* mac, const char* name) {
     _watchHitFlag   = false;
     _watchRssiHead = _watchRssiCount = 0;
     _watchRssiLastMs = 0;
+    portEXIT_CRITICAL(&s_bleCallbackMux);
 }
 
 void DetectionEngine::watchWifi(const uint8_t* bssid, const char* ssid) {
+    portENTER_CRITICAL(&s_bleCallbackMux);
     _watchKind = WatchKind::WIFI;
     memcpy(_watchMac, bssid, 6);
     strncpy(_watchLabel, (ssid && ssid[0]) ? ssid : "(hidden)", sizeof(_watchLabel) - 1);
@@ -1518,12 +1655,15 @@ void DetectionEngine::watchWifi(const uint8_t* bssid, const char* ssid) {
     _watchHitFlag   = false;
     _watchRssiHead = _watchRssiCount = 0;
     _watchRssiLastMs = 0;
+    portEXIT_CRITICAL(&s_bleCallbackMux);
 }
 
 void DetectionEngine::clearWatch() {
+    portENTER_CRITICAL(&s_bleCallbackMux);
     _watchKind    = WatchKind::NONE;
     _watchHitFlag = false;
     _watchRssiHead = _watchRssiCount = 0;
+    portEXIT_CRITICAL(&s_bleCallbackMux);
 }
 
 bool DetectionEngine::watchHitPending() {
@@ -1577,26 +1717,32 @@ int8_t DetectionEngine::watchRssiAt(uint8_t idx) const {
 }
 
 void DetectionEngine::huntBle(const uint8_t* mac, const char* name) {
+    portENTER_CRITICAL(&s_bleCallbackMux);
     _huntKind = WatchKind::BLE;
     memcpy(_huntMac, mac, 6);
     strncpy(_huntLabel, (name && name[0]) ? name : "Unnamed device", sizeof(_huntLabel) - 1);
     _huntLabel[sizeof(_huntLabel) - 1] = 0;
     _huntRssiHead = _huntRssiCount = 0;
     _huntRssiLastMs = 0;
+    portEXIT_CRITICAL(&s_bleCallbackMux);
 }
 
 void DetectionEngine::huntWifi(const uint8_t* bssid, const char* ssid) {
+    portENTER_CRITICAL(&s_bleCallbackMux);
     _huntKind = WatchKind::WIFI;
     memcpy(_huntMac, bssid, 6);
     strncpy(_huntLabel, (ssid && ssid[0]) ? ssid : "(hidden)", sizeof(_huntLabel) - 1);
     _huntLabel[sizeof(_huntLabel) - 1] = 0;
     _huntRssiHead = _huntRssiCount = 0;
     _huntRssiLastMs = 0;
+    portEXIT_CRITICAL(&s_bleCallbackMux);
 }
 
 void DetectionEngine::clearHunt() {
+    portENTER_CRITICAL(&s_bleCallbackMux);
     _huntKind = WatchKind::NONE;
     _huntRssiHead = _huntRssiCount = 0;
+    portEXIT_CRITICAL(&s_bleCallbackMux);
 }
 
 void DetectionEngine::checkHuntBle(const uint8_t* mac, int8_t rssi) {
