@@ -1,5 +1,7 @@
 // SquachWatch-CYD — SD log implementation
 #include "sd_log.h"
+#include "clock.h"
+#include <time.h>
 #include <SD.h>
 #include <stdio.h>
 // The Phantoms define CYD (they ARE a CYD) but still need this reference,
@@ -105,9 +107,16 @@ bool SdLog::begin() {
 
 void SdLog::openDaily() {
     if (!_ready) return;
-    uint32_t t = millis();
-    uint32_t day = t / (24UL * 60UL * 60UL * 1000UL);
-    snprintf(_filename, sizeof(_filename), "/squachwatch-%lu.log", (unsigned long)day);
+    if (Clock::trusted()) {
+        time_t epoch = (time_t)Clock::nowEpoch();
+        struct tm tmv = {};
+        localtime_r(&epoch, &tmv);
+        snprintf(_filename, sizeof(_filename), "/squachwatch-%04d%02d%02d.log",
+                 tmv.tm_year + 1900, tmv.tm_mon + 1, tmv.tm_mday);
+    } else {
+        const uint32_t day = millis() / (24UL * 60UL * 60UL * 1000UL);
+        snprintf(_filename, sizeof(_filename), "/squachwatch-up-%lu.log", (unsigned long)day);
+    }
 }
 
 void SdLog::logEvent(const Detection& d) {
@@ -144,24 +153,32 @@ void SdLog::wipe() {
     // than only today's, which is the whole point of a wipe.
     File dir = SD.open("/");
     if (!dir) return;
-    // Collect first, then remove: deleting while iterating openNextFile() is
-    // not something the FAT driver promises to survive.
-    char victims[16][32];
-    int  n = 0;
-    for (File f = dir.openNextFile(); f && n < 16; f = dir.openNextFile()) {
-        const char* nm = f.name();
-        // name() is with or without a leading slash depending on core version;
-        // match the basename either way.
-        const char* base = nm;
-        for (const char* p = nm; *p; p++) if (*p == '/') base = p + 1;
-        if (strncmp(base, "squachwatch-", 12) == 0) {
-            snprintf(victims[n], sizeof victims[n], "/%s", base);
-            n++;
-        }
-        f.close();
-    }
     dir.close();
-    for (int i = 0; i < n; i++) SD.remove(victims[i]);
+
+    // Collect then remove in bounded batches. A card can hold far more than
+    // sixteen daily logs; the old one-batch implementation left older files
+    // behind during a security/duress wipe.
+    for (;;) {
+        char victims[16][40];
+        int n = 0;
+        File pass = SD.open("/");
+        if (!pass) break;
+        for (File f = pass.openNextFile(); f && n < 16; f = pass.openNextFile()) {
+            const char* nm = f.name();
+            const char* base = nm;
+            for (const char* p = nm; *p; p++) if (*p == '/') base = p + 1;
+            if (strncmp(base, "squachwatch-", 12) == 0) {
+                snprintf(victims[n], sizeof victims[n], "/%s", base);
+                n++;
+            }
+            f.close();
+        }
+        pass.close();
+        if (!n) break;
+        int removed = 0;
+        for (int i = 0; i < n; i++) if (SD.remove(victims[i])) removed++;
+        if (!removed) break;
+    }
     _filename[0] = '\0';       // force a fresh openDaily() on the next event
 }
 
