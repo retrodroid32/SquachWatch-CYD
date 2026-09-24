@@ -14,6 +14,14 @@ def get_version():
     forced = os.environ.get("SQW_VERSION", "").strip()
     if forced:
         return forced
+    version_file = os.path.join(env["PROJECT_DIR"], "VERSION")
+    try:
+        with open(version_file, encoding="utf-8") as f:
+            v = f.read().strip()
+        if v:
+            return v
+    except Exception:
+        pass
     try:
         v = subprocess.check_output(
             ["git", "describe", "--tags", "--always", "--dirty"],
