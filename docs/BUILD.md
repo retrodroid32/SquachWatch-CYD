@@ -102,7 +102,7 @@ To verify the detector works:
   tool to broadcast a Flock probe request on a second ESP32.
 
 If a microSD card is inserted (and FAT32-formatted), every detection
-is also written to `squachwatch-<day>.log` on the card.
+is also written to `squachwatch-YYYYMMDD.log` once trusted time is available (or `squachwatch-up-<day>.log` before that) on the card.
 
 ## Troubleshooting
 
