@@ -14,23 +14,44 @@ def get_version():
     forced = os.environ.get("SQW_VERSION", "").strip()
     if forced:
         return forced
+
     version_file = os.path.join(env["PROJECT_DIR"], "VERSION")
+    base = "unknown"
     try:
         with open(version_file, encoding="utf-8") as f:
-            v = f.read().strip()
-        if v:
-            return v
+            base = f.read().strip() or "unknown"
     except Exception:
         pass
+
+    # Only an exact release tag is allowed to claim the bare VERSION. A normal
+    # branch build gets an explicit prerelease identity instead, so a board
+    # flashed from master never masquerades as the later vX.Y.Z release.
     try:
-        v = subprocess.check_output(
-            ["git", "describe", "--tags", "--always", "--dirty"],
+        exact = subprocess.check_output(
+            ["git", "describe", "--tags", "--exact-match", "HEAD"],
             stderr=subprocess.DEVNULL,
         ).decode().strip()
-        return v if v else "unknown"
+        if exact in (base, "v" + base):
+            return base
     except Exception:
-        return "unknown"
+        pass
 
+    try:
+        short = subprocess.check_output(
+            ["git", "rev-parse", "--short=8", "HEAD"],
+            stderr=subprocess.DEVNULL,
+        ).decode().strip()
+        dirty = subprocess.run(
+            ["git", "diff-index", "--quiet", "HEAD", "--"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        ).returncode != 0
+        suffix = "-dev." + (short or "unknown")
+        if dirty:
+            suffix += ".dirty"
+        return base + suffix if base != "unknown" else "unknown" + suffix
+    except Exception:
+        return base + "-dev" if base != "unknown" else "unknown"
 
 env.Append(BUILD_FLAGS=['-DFIRMWARE_VERSION=\\"%s\\"' % get_version()])
 
