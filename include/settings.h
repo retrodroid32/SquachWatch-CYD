@@ -291,6 +291,7 @@ namespace Settings {
     // ALERT screen before it has to earn the next one by coming CLOSER.
     // 0 is off. Nothing is actually silenced -- see Detection::quietBar --
     // which matters on a device whose job is telling you what is near you.
+    // On the watch, POWER SAVER makes it five at most.
     uint8_t     autoQuietAfter();
     void        cycleAutoQuiet();
     const char* autoQuietLabel();

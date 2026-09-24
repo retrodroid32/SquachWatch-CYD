@@ -106,6 +106,20 @@ static bool takeBootCheckSkip() {
     g_bootCheckSkip = 0;
     return esp_reset_reason() == ESP_RST_SW && v == CHKSKIP_MAGIC;
 }
+#if defined(TWATCH_S3)
+// The watch's radio self-heal: how many restarts in a row it has made because
+// it heard nothing at all. Same RTC-memory shape as the flags above: a magic
+// in the top bits, believed only after a software reset. See
+// twatchRadioHealTick().
+static const uint32_t HEAL_MAGIC = 0x4EA10000u;
+RTC_NOINIT_ATTR static uint32_t g_healWord;
+static uint8_t s_healCount = 0;   // this boot's view of it, read once in setup
+static void takeHealCount() {
+    const uint32_t v = g_healWord;
+    g_healWord = 0;
+    s_healCount = (esp_reset_reason() == ESP_RST_SW && (v & 0xFFFF0000u) == HEAL_MAGIC) ? (uint8_t)(v & 0xFF) : 0;
+}
+#endif
 static WipeBoot takeWipeBoot() {
     const uint32_t v = g_wipeBoot;
     g_wipeBoot = 0;
@@ -119,6 +133,9 @@ static WipeBoot takeWipeBoot() {
 
 static void crashReportInit() {
     const esp_reset_reason_t r = esp_reset_reason();
+#if defined(TWATCH_S3)
+    takeHealCount();
+#endif
     g_resetReason = r;
     {
         Preferences bp;
@@ -1088,9 +1105,22 @@ static bool s_alertLastFree = false;
 // The WATCH target is exempt outright. Asking to be told about one device is
 // the clearest statement of intent this board takes, and a feature whose
 // whole job is to interrupt less must never be the thing that overrides it.
+#if defined(TWATCH_S3)
+static bool twatchStill();
+#endif
 static bool alertMayInterrupt(const Detection& d) {
     const bool exempt = engine.isWatched(d.mac, true) || engine.isWatched(d.mac, false);
-    switch (engine.alertGate(d.mac, Settings::autoQuietAfter(), exempt)) {
+#if defined(TWATCH_S3)
+    const bool still = twatchStill();
+#else
+    const bool still = false;
+#endif
+    const DetectionEngine::AlertGate g = engine.alertGate(d.mac, Settings::autoQuietAfter(), exempt, still);
+#if defined(TWATCH_S3)
+    if (g == DetectionEngine::AlertGate::HOLD)
+        Serial.printf("[snooze] %02x:%02x held, watch %s\n", d.mac[4], d.mac[5], still ? "still" : "moving");
+#endif
+    switch (g) {
         case DetectionEngine::AlertGate::HOLD:       return false;
         case DetectionEngine::AlertGate::ALLOW_LAST: s_alertLastFree = true;  return true;
         default:                                     s_alertLastFree = false; return true;
@@ -1483,6 +1513,8 @@ volatile bool g_consoleRotate = false;
 volatile bool g_consoleRadioTest = false; // RADIO TEST: cycle even on the cable with the screen on (bench)
 volatile bool g_consoleBatt    = false;   // BATT: one reading, now
 volatile bool g_consoleBattLog = false;   // BATTLOG: every sample kept, newest first
+volatile bool g_consoleHeal = false;  // RADIO HEAL: take the self-heal path now, as if deaf (watch)
+volatile bool g_consoleMotion = false; // MOTION: the motion sensor's reading and verdict (watch)
 volatile bool g_consoleBuzz = false;  // BUZZ: play the alert pattern now and report the driver (watch)
 volatile bool g_consoleRtc = false;   // RTC: read the clock chip (watch)
 volatile bool g_consolePmu = false;   // PMU: dump the power chip's registers (watch)
@@ -2000,6 +2032,7 @@ static void twatchPowerUp() {
 // a wait of that many tens of milliseconds.
 static const uint8_t DRV_ADDR = 0x5A;
 static bool s_drvOk = false;
+static uint32_t s_drvAwakeAt = 0;   // when the last buzz woke it; 0 = in standby
 
 static bool drvWrite(uint8_t reg, uint8_t v) {
     Wire1.beginTransmission(DRV_ADDR);
@@ -2023,6 +2056,7 @@ static void twatchHapticBegin() {
     drvWrite(0x03, 0x01);                    // effect library 1: ERM
     drvWrite(0x1A, drvRead(0x1A) & 0x7F);    // FEEDBACK: ERM, not LRA
     drvWrite(0x1D, drvRead(0x1D) | 0x20);    // CONTROL3: ERM open loop
+    drvWrite(0x01, 0x40);                    // STANDBY until a buzz: a few uA instead of ~0.5 mA
     Serial.println("[buzz] DRV2605 ready");
 }
 
@@ -2041,10 +2075,94 @@ static void twatchBuzz(Buzz kind) {
     } else {                                 // a double click
         seq[0] = 1; seq[1] = 0x80 | 10; seq[2] = 1;
     }
+    drvWrite(0x01, 0x00);                    // out of standby for this one
+    s_drvAwakeAt = millis();
     for (uint8_t i = 0; i < 8; i++) drvWrite(0x04 + i, seq[i]);
     const bool go = drvWrite(0x0C, 0x01);    // GO
     Serial.printf("[buzz] %s%s\n", kind == Buzz::WATCH ? "watch alert" : kind == Buzz::ALERT ? "alert" : "sample",
                   go ? "" : " -- the motor driver did not answer");
+}
+
+// ---- the motion sensor: a BMA423 on the same bus --------------------------
+// Used for one thing so far: whether the watch is sitting still, which is
+// what tells a nightstand from a wrist. Raw readings only -- the step counter
+// and tilt features need a program loaded into the chip, and "has it moved"
+// does not. Twice a second, one six-byte read.
+static const uint8_t BMA_ADDR = 0x19;
+static bool     s_bmaOk = false;
+static uint64_t s_moveBits[2] = { 0, 0 };   // one bit a second, the last 128 s; bit 0 is now
+static uint32_t s_moveSec = 0;              // the second bit 0 stands for
+static int16_t  s_acc[3];
+static bool     s_accHave = false;
+// A reading this far from the last one is movement. +-4 g at twelve bits is
+// 512 a g, so about 0.06 g: well above the chip's noise, well below a wrist.
+static const int16_t  MOVE_LSB = 30;
+// Still is fewer than this many seconds with movement in the last two
+// minutes. A sleeper turning over is a few; a walk is most of them.
+static const uint8_t  MOVE_SECS = 10;
+
+static bool bmaWrite(uint8_t reg, uint8_t v) {
+    Wire1.beginTransmission(BMA_ADDR);
+    Wire1.write(reg);
+    Wire1.write(v);
+    const bool ok = Wire1.endTransmission() == 0;
+    delay(1);   // in its power-save mode the chip wants a gap between writes
+    return ok;
+}
+static bool bmaRead(uint8_t reg, uint8_t* buf, uint8_t n) {
+    Wire1.beginTransmission(BMA_ADDR);
+    Wire1.write(reg);
+    if (Wire1.endTransmission(false) != 0) return false;
+    if (Wire1.requestFrom(BMA_ADDR, n) != n) return false;
+    for (uint8_t i = 0; i < n; i++) buf[i] = Wire1.read();
+    return true;
+}
+
+static void twatchMotionBegin() {
+    if (!s_pmuOk) return;
+    uint8_t id = 0;
+    if (!bmaRead(0x00, &id, 1) || id != 0x13) { Serial.printf("[motion] BMA423 did not answer (id %02X)\n", id); return; }
+    bmaWrite(0x7C, 0x00);    // PWR_CONF: power save off while it is set up
+    bmaWrite(0x40, 0x15);    // ACC_CONF: averaging mode, 2 samples, 12.5 Hz
+    bmaWrite(0x41, 0x01);    // ACC_RANGE: +-4 g
+    bmaWrite(0x7D, 0x04);    // PWR_CTRL: accelerometer on
+    bmaWrite(0x7C, 0x03);    // PWR_CONF: power save back on, a few uA
+    s_bmaOk = true;
+    Serial.println("[motion] BMA423 ready");
+}
+
+static uint8_t movedSecs() {
+    return (uint8_t)(__builtin_popcountll(s_moveBits[0]) + __builtin_popcountll(s_moveBits[1]));
+}
+
+// No sensor, no verdict: without one the watch counts as moving, which is
+// how AUTO SNOOZE has always behaved.
+static bool twatchStill() { return s_bmaOk && s_accHave && movedSecs() < MOVE_SECS; }
+
+static void twatchMotionTick(uint32_t now) {
+    if (!s_bmaOk) return;
+    static uint32_t last = 0;
+    if (now - last < 500) return;
+    last = now;
+    uint8_t b[6];
+    if (!bmaRead(0x12, b, 6)) return;
+    bool moved = false;
+    for (uint8_t k = 0; k < 3; k++) {
+        const int16_t a = (int16_t)((uint16_t)b[2 * k + 1] << 8 | b[2 * k]) >> 4;
+        if (s_accHave && abs(a - s_acc[k]) > MOVE_LSB) moved = true;
+        s_acc[k] = a;
+    }
+    const bool wasStill = twatchStill();
+    // Slide the history along to this second.
+    const uint32_t sec = now / 1000, n = sec - s_moveSec;
+    s_moveSec = sec;
+    if (n >= 128)      { s_moveBits[0] = s_moveBits[1] = 0; }
+    else if (n >= 64)  { s_moveBits[1] = s_moveBits[0] << (n - 64); s_moveBits[0] = 0; }
+    else if (n)        { s_moveBits[1] = (s_moveBits[1] << n) | (s_moveBits[0] >> (64 - n)); s_moveBits[0] <<= n; }
+    if (moved) s_moveBits[0] |= 1;
+    if (!s_accHave) { s_accHave = true; return; }
+    const bool isStill = twatchStill();
+    if (isStill != wasStill) Serial.printf("[motion] %s\n", isStill ? "still" : "moving");
 }
 
 // ---- the clock chip: a PCF8563 on the same bus, with a backup cell ---------
@@ -2221,6 +2339,11 @@ static void twatchBatteryTick(uint32_t now) {
 static void twatchRadioTick(uint32_t now) {
     static uint32_t phaseAt = 0, usbAt = 0;
     static bool     usb = true;
+    // A rest cut short by a Bluetooth arrival is paid back on the next one,
+    // so the WiFi on-time is the same as the plain cycle: the window just
+    // lands when something turned up instead of on the clock.
+    static uint32_t owedMs = 0, arrivalsAt = 0;
+    bleArrivalsRoll(now);
     if (now - usbAt >= 2000) { usbAt = now; usb = s_pmuOk && s_pmu.isVbusIn(); s_onUsb = usb; }
     // RADIO TEST on the console forces BLE+5/30 whatever the settings say.
     const uint8_t duty = g_consoleRadioTest ? 3 : Settings::radioDuty();
@@ -2247,13 +2370,64 @@ static void twatchRadioTick(uint32_t now) {
         if (now - phaseAt < onMs) return;
         if (engine.restRadios(duty != 3)) {
             s_radiosResting = true;
-            Serial.println(duty == 3 ? "[radio] resting: WiFi off, BLE on" : "[radio] resting: WiFi and BLE off");
+            arrivalsAt = bleArrivals();
+            Serial.printf("[radio] resting: %s\n", duty == 3 ? (owedMs ? "WiFi off, BLE on, paying back an early window" : "WiFi off, BLE on") : "WiFi and BLE off");
         }
         phaseAt = now;   // either way: a refused rest tries again after another on-window
-    } else if (now - phaseAt >= offMs) {
-        engine.wakeRadios(); s_radiosResting = false; phaseAt = now;
-        Serial.println("[radio] awake (timed)");
+    } else {
+        const uint32_t rested = now - phaseAt;
+        // Only with Bluetooth listening, only once a rest has settled, and
+        // not on a rest that is paying back the last early one.
+        const bool arrival = duty == 3 && !owedMs && rested >= 3000 && rested < offMs &&
+                             bleArrivals() != arrivalsAt;
+        if (arrival || rested >= offMs + owedMs) {
+            owedMs = arrival ? offMs - rested : 0;
+            engine.wakeRadios(); s_radiosResting = false; phaseAt = now;
+            if (arrival) Serial.printf("[radio] awake early: a new Bluetooth device, %lu s into the rest\n", (unsigned long)(rested / 1000));
+            else         Serial.println("[radio] awake (timed)");
+        }
     }
+}
+
+// The radio self-heal. After a flat battery the watch has come up with both
+// radios deaf more than once: started, configured, and hearing nothing. A
+// restart retuned them this morning (2026-09-24). So: two minutes in, a watch
+// that has heard not one WiFi frame and not one advert restarts itself. At
+// most HEAL_MAX times in a row -- the count clears the moment it hears
+// anything -- so the stubborn kind, or a field with no radios in it, costs a
+// couple of restarts and not a loop. A partial restart would not do: the
+// radio only retunes when WiFi and Bluetooth are both fully off.
+static const uint8_t  HEAL_MAX      = 2;
+static const uint32_t HEAL_AFTER_MS = 120000;
+static void twatchRadioHealTick(uint32_t now) {
+    static bool done = false, said = false;
+    if (!said) {
+        said = true;
+        if (s_healCount) Serial.printf("[heal] this boot is self-heal restart %u of %u\n", (unsigned)s_healCount, (unsigned)HEAL_MAX);
+    }
+    if (done) return;
+    const bool forced = g_consoleHeal;
+    if (!forced && now < HEAL_AFTER_MS) return;
+    g_consoleHeal = false;
+    // Not while an update owns the radio: it is busy, not deaf.
+    if (!forced && (state == AppState::UPDATE || OtaWifi::state() != OtaWifi::State::OFF)) return;
+    done = true;
+    const uint32_t frames = wifiFramesSeen(), adverts = advertsSeen();
+    if (!forced && (frames || adverts)) {
+        if (s_healCount) Serial.printf("[heal] hearing again after %u self-heal restart(s)\n", (unsigned)s_healCount);
+        return;   // g_healWord was cleared at boot: the count starts over
+    }
+    if (s_healCount >= HEAL_MAX) {
+        Serial.printf("[heal] still deaf after %u restarts; leaving it until a power cycle\n", (unsigned)s_healCount);
+        return;
+    }
+    Serial.printf("[heal] deaf: %lu WiFi frames and %lu adverts in %lu s%s; restarting (%u of %u)\n",
+                  (unsigned long)frames, (unsigned long)adverts, (unsigned long)(now / 1000),
+                  forced ? " (bench test)" : "", (unsigned)(s_healCount + 1), (unsigned)HEAL_MAX);
+    serialFlush();
+    g_healWord = HEAL_MAGIC | (uint32_t)(s_healCount + 1);
+    delay(200);
+    ESP.restart();
 }
 
 // Polled ten times a second: one I2C read of the PMU's interrupt flags. A
@@ -2263,6 +2437,9 @@ static void twatchCrownTick(uint32_t now) {
     static uint32_t at = 0;
     if (!s_pmuOk || now - at < 100) return;
     at = now;
+    // The haptic driver back to standby once the longest pattern (three
+    // buzzes, about 1.5 s) is surely over.
+    if (s_drvAwakeAt && now - s_drvAwakeAt > 3000) { s_drvAwakeAt = 0; drvWrite(0x01, 0x40); }
     s_pmu.getIrqStatus();
     if (s_pmu.isPekeyShortPressIrq()) {
         if (!s_screenDimmed) {
@@ -2424,6 +2601,7 @@ void setup() {
 #if defined(TWATCH_S3)
     twatchRtcBegin();      // after Clock::begin(): a real time beats the note's guess
     twatchHapticBegin();
+    twatchMotionBegin();
 #endif
     Security::begin();
     // Which version lives in this slot, and whether this boot is a fresh
@@ -2748,10 +2926,10 @@ void setup() {
         nvs_stats_t st = {};
         nvs_get_stats(NULL, &st);
         snprintf(g_bootRadioLine, sizeof g_bootRadioLine,
-                 "radios started at %lu ms; chip %.1f C; heap %lu; nvs used %u free %u; calibration %s",
+                 "radios started at %lu ms; chip %.1f C; heap %lu; nvs used %u free %u; calibration %s; self-heal restart %u",
                  (unsigned long)millis(), temperatureRead(), (unsigned long)ESP.getFreeHeap(),
                  (unsigned)st.used_entries, (unsigned)st.free_entries,
-                 s_calRanThisBoot ? "RAN this boot" : "skipped");
+                 s_calRanThisBoot ? "RAN this boot" : "skipped", (unsigned)s_healCount);
         Serial.printf("[boot] %s\n", g_bootRadioLine);
     }
 #endif
@@ -2966,7 +3144,9 @@ void loop() {
     uint32_t now = millis();
 #if defined(TWATCH_S3)
     twatchCrownTick(now);
+    twatchMotionTick(now);
     twatchRadioTick(now);
+    twatchRadioHealTick(now);
     twatchBatteryTick(now);
     if (g_consoleBatt) { g_consoleBatt = false; twatchBatterySample(BlackBox::BATT_WHY_TIMER); }
     if (g_consoleBattLog) {
@@ -3167,6 +3347,12 @@ void loop() {
 #if defined(TWATCH_S3)
     // Every AXP2101 register, sixteen to a line, so a deaf boot and a
     // hearing boot can be compared register by register.
+    if (g_consoleMotion) {
+        g_consoleMotion = false;
+        Serial.printf("[motion] %s: x %d y %d z %d, moved %u of the last 128 s, %s; snooze after %u\n",
+                      s_bmaOk ? "BMA423" : "no sensor", s_acc[0], s_acc[1], s_acc[2], (unsigned)movedSecs(),
+                      twatchStill() ? "STILL" : "MOVING", (unsigned)Settings::autoQuietAfter());
+    }
     if (g_consoleBuzz) {
         g_consoleBuzz = false;
         Serial.printf("[buzz] test: screen %s, cpu %u MHz, driver status %02X mode %02X lib %02X\n",

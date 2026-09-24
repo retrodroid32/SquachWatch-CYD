@@ -340,6 +340,17 @@ void load() {
     // fresh device shows, and the two look nothing alike.
     if (s_background == Background::TUNNEL) s_background = Background::SYNTHWAVE;
     s_powerSaver   = s_prefs.getBool("pwrOn", DEFAULT_POWER_SAVER);
+#if defined(TWATCH_S3)
+    // Once per watch: POWER SAVER on. The default only reaches a watch that
+    // never saved the switch, and every watch that went through the bench
+    // builds had it saved OFF -- the radios then never rested and a night on
+    // the wrist lasted 2.2 hours. After this one pass, OFF sticks as usual.
+    if (!s_prefs.getBool("pwrWatch1", false)) {
+        s_powerSaver = true;
+        s_prefs.putBool("pwrOn", true);
+        s_prefs.putBool("pwrWatch1", true);
+    }
+#endif
     s_scrTimeoutIx = s_prefs.getUChar("pwrScrnT", 2);
     s_dimLevel     = s_prefs.getUChar("pwrDim", 16);
     s_idleFpsIx    = s_prefs.getUChar("pwrFps", 2);
@@ -631,9 +642,20 @@ void adjustBrightness(int8_t delta) {
 
 Confidence minConfidence() { return s_minConf; }
 
+// On the watch, POWER SAVER holds AUTO SNOOZE at five at most. Every alert
+// lights the screen and buzzes, and a night of two Ring cameras coming back
+// every two and a half minutes was about ninety of them: most of a battery.
+#if defined(TWATCH_S3)
+static bool autoQuietForced() { return s_powerSaver && (s_autoQuiet == 0 || s_autoQuiet > 5); }
+uint8_t autoQuietAfter() { return autoQuietForced() ? 5 : s_autoQuiet; }
+#else
 uint8_t autoQuietAfter() { return s_autoQuiet; }
+#endif
 
 const char* autoQuietLabel() {
+#if defined(TWATCH_S3)
+    if (autoQuietForced()) return "SAVER 5";
+#endif
     switch (s_autoQuiet) {
         case 5:  return "AFTER 5";
         case 10: return "AFTER 10";

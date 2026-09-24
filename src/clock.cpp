@@ -56,6 +56,8 @@ extern volatile bool g_consoleRadioTest;
 extern volatile bool g_consolePmu;
 extern volatile bool g_consoleRtc;
 extern volatile bool g_consoleBuzz;
+extern volatile bool g_consoleMotion;
+extern volatile bool g_consoleHeal;
 
 namespace Clock {
 
@@ -495,12 +497,14 @@ void pollSerial() {
         if (strcasecmp(line, "PMU") == 0)    { g_consolePmu = true; continue; }
         if (strcasecmp(line, "RTC") == 0)    { g_consoleRtc = true; continue; }
         if (strcasecmp(line, "BUZZ") == 0)   { g_consoleBuzz = true; continue; }
+        if (strcasecmp(line, "MOTION") == 0) { g_consoleMotion = true; continue; }
         if (strcasecmp(line, "RADIO DUTY") == 0) {
             Settings::cycleRadioDuty();
             Serial.printf("[radio] duty -> %s\n", Settings::radioDutyName(Settings::radioDutyRaw()));
             continue;
         }
 #if defined(ARDUINO_ARCH_ESP32)   // the radios themselves: nothing to ask in the emulator
+        if (strcasecmp(line, "RADIO HEAL") == 0) { g_consoleHeal = true; continue; }
         if (strcasecmp(line, "RADIO FULLCAL") == 0) {
             // Throw away the radio's saved tuning and restart: the next boot
             // has nothing to load, so it calibrates from scratch.

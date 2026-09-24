@@ -123,6 +123,13 @@ BootHeap bootHeap();
 bool     scanPassiveNow();   // the scan is passive right now (the room, or heap pressure)
 uint32_t advertRate();       // adverts/s the radio handed over in the last second
 uint32_t wifiFramesSeen();   // frames the WiFi sniffer has been handed since boot
+#if defined(TWATCH_S3)
+// Bluetooth addresses heard that were not heard in the last five to ten
+// minutes: something just arrived. The watch opens its WiFi window early on
+// one. bleArrivalsRoll() is called from loop() and ages the memory.
+uint32_t bleArrivals();
+void     bleArrivalsRoll(uint32_t now);
+#endif
 void     radioReport(bool withScan);   // the RADIO console command
 extern char g_bootRadioLine[192];     // how the radios started this boot
 uint32_t advertsSeen();      // adverts the radio has handed over since boot, seatbelt or not
@@ -302,6 +309,12 @@ public:
     // everything is allowed through. `exempt` is for the devices that must
     // always get through whatever they have cost you -- the one you asked to
     // WATCH, above all.
+    //
+    // `still` is the watch sitting still (see twatchStill()). A device's
+    // allowance normally comes back half an hour after its last alert, which
+    // for a Ring camera bobbing in and out all night is five more alerts every
+    // half hour. On a still watch it comes back only when the device was
+    // really gone for half an hour. Boards with no motion sensor pass false.
     enum class AlertGate : uint8_t {
         ALLOW,        // let it interrupt
         ALLOW_LAST,   // let it interrupt, and this was its last free one
@@ -311,7 +324,7 @@ public:
     // (sim/detection_sim.cpp) and this is pure arithmetic over the log --
     // one copy here means the emulator gates alerts exactly as the board
     // does, instead of a second implementation drifting from this one.
-    AlertGate alertGate(const uint8_t* mac, uint8_t afterN, bool exempt) {
+    AlertGate alertGate(const uint8_t* mac, uint8_t afterN, bool exempt, bool still = false) {
     if (afterN == 0 || exempt) return AlertGate::ALLOW;
     const uint32_t now = millis();
     for (uint8_t i = 0; i < _logCount; i++) {
@@ -319,8 +332,12 @@ public:
         if (memcmp(_log[slot].mac, mac, 6) != 0) continue;
         Detection& d = _log[slot];
 
+        const uint16_t nowMin = (uint16_t)(now / 60000u);
+        const bool     gone   = (uint16_t)(nowMin - d.askedMin) > QUIET_DECAY_MS / 60000u;
+        d.askedMin = nowMin;
+
         // Gone long enough to have earned a clean slate.
-        if (d.alerts && (now - d.lastAlertMs) > QUIET_DECAY_MS) {
+        if (d.alerts && (gone || (!still && (now - d.lastAlertMs) > QUIET_DECAY_MS))) {
             d.alerts   = 0;
             d.quietBar = 0;
         }
@@ -594,6 +611,7 @@ private:
     // transmitting on the other 12. See hopChannel().
     uint8_t     _wifiChannel = 1;
     uint32_t    _lastHopMs   = 0;
+    uint16_t    _dwellMs     = 300;   // how long this channel gets, set on arrival
 
     // Index 1..13; 0 is unused. Fed from every captured mgmt/data
     // frame in processWiFiQ() (not just ones that match a known
