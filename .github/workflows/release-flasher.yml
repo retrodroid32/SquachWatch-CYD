@@ -46,9 +46,7 @@ on:
         default: ""
 
 permissions:
-  contents: write   # create the GitHub Release
-  pages: write       # deploy the flasher site
-  id-token: write    # required by actions/deploy-pages
+  contents: write   # create the GitHub Release and read prior release assets
 
 # One run per tag at a time. The v1.7.7 push started this workflow twice in
 # the same second -- same commit, same tag, same event -- and the two raced:
