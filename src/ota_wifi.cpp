@@ -769,16 +769,17 @@ bool bootCheck(uint32_t budgetMs) {
         // whole budget would have wrapped it round to about fifty days.
         const uint32_t usedJ = millis() - tj;
         const uint32_t left  = usedJ + 1000 < budgetMs ? budgetMs - usedJ : 1000;
-        // Plain HTTP, on purpose. A TLS handshake wants 40 KB in one piece
-        // and five to ten seconds, and one that timed out left a dead
-        // connection in the middle of the heap that cost the frame buffer
-        // its block -- measured, twice. The site answers the manifest over
-        // plain HTTP, and nothing rides on this answer but a notice: the
-        // install itself goes over HTTPS and checks the signature.
+        // This fork's Pages endpoint is HTTPS. The boot check runs before the
+        // frame buffer is allocated specifically so the TLS handshake has the
+        // contiguous block it needs. Use a LOCAL secure client here: when the
+        // check ends its TLS buffers are released before the frame buffer is
+        // created. Firmware installation still has the independent signed-image
+        // trust boundary in OtaCore.
         const String base = OTA_WIFI_BASE;
-        WiFiClient plain;
+        WiFiClientSecure tls;
+        tls.setInsecure();
         HTTPClient http;
-        if (http.begin(plain, base + "manifest-" + OtaCore::buildName() + ".json")) {
+        if (http.begin(tls, base + "manifest-" + OtaCore::buildName() + ".json")) {
             http.setConnectTimeout((int32_t)left);
             http.setTimeout((uint16_t)(left > 60000 ? 60000 : left));
             const int code = http.GET();
