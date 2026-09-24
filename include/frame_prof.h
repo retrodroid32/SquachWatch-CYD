@@ -32,9 +32,17 @@ enum Slot : uint8_t {
     N
 };
 
-void begin();        // at the top of loop(): starts the clock, zeroes the frame
-void lap(Slot s);    // charges the time since the last lap (or begin) to s
-void endFrame();     // folds this frame into the running averages
-void print();        // one [frame] line with every slot, in ms
+struct WindowStats {
+    uint32_t p95Us;     // rolling 64-frame window
+    uint32_t maxUs;
+    uint8_t  samples;
+    uint8_t  over50ms;
+};
+
+void begin();                    // at the top of loop(): starts the clock, zeroes the frame
+void lap(Slot s);                // charges the time since the last lap (or begin) to s
+void endFrame(uint32_t totalUs); // folds this frame into averages + jitter window
+WindowStats windowStats();
+void print();                    // frame split plus rolling p95/max jitter
 
 }  // namespace FrameProf
