@@ -61,8 +61,8 @@ jobs:
       - name: Validate board matrix and release metadata
         run: python tools/board_matrix.py validate
 
-      - name: Build
-        run: pio run
+      - name: Build CI board matrix
+        run: pio run $(python tools/board_matrix.py pio-args ci)
 
   tests:
     # The decoders are pure arithmetic over byte buffers, so they run on a
