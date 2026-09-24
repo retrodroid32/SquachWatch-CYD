@@ -58,7 +58,9 @@ jobs:
       # here. The known-boot-looping 3.5-inch development profile stays out
       # of both release and CI until its hardware fault is resolved.
       - name: Validate board matrix and release metadata
-        run: python tools/board_matrix.py validate
+        run: |
+          python tools/board_matrix.py validate
+          python -m py_compile tools/mirror_pages.py
 
       - name: Build CI board matrix
         run: pio run $(python tools/board_matrix.py pio-args ci)

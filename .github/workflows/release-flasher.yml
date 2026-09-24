@@ -430,18 +430,27 @@ jobs:
           # manifest lab-<sha>. Somebody arriving for the released firmware
           # got an unreleased build labelled with a commit.
           #
-          # So the root site is restored from the latest release first, and
-          # only then does the lab build get added alongside it. The lab
-          # firmware is the sole thing this run contributes.
+          # Prefer restoring the root from the latest GitHub Release. Before
+          # this fork has its first Release, mirror the already-deployed Pages
+          # root instead; that keeps manual lab builds usable without changing
+          # what ordinary visitors receive.
+          LIVE_FALLBACK=0
           if [ "${{ steps.ver.outputs.is_lab }}" = "true" ]; then
             LATEST="$(gh release list --limit 1 --json tagName -q '.[0].tagName')"
             if [ -z "$LATEST" ]; then
-              echo "::error::No release to restore the root site from."
-              exit 1
+              LIVE_FALLBACK=1
+              echo "::notice::No GitHub Release exists yet; preserving the live production Pages root."
+              rm -rf _site
+              python tools/mirror_pages.py \
+                --base "https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/" \
+                --dest _site
+              echo "LAB_LIVE_FALLBACK=1" >> "$GITHUB_ENV"
+            else
+              echo "Restoring root site from $LATEST"
+              gh release download "$LATEST" -D _site --clobber \
+                -p '*-firmware.bin' -p 'manifest-*.json' -p 'esp32-*.bin' -p '*-firmware.sig' || true
+              echo "LAB_LIVE_FALLBACK=0" >> "$GITHUB_ENV"
             fi
-            echo "Restoring root site from $LATEST"
-            gh release download "$LATEST" -D _site --clobber \
-              -p '*-firmware.bin' -p 'manifest-*.json' -p 'esp32-*.bin' -p '*-firmware.sig' || true
             # This run's build, under lab- names beside the release, with a
             # manifest each that points at them. web-flasher/index.html's
             # ?lab=1 list is what offers them.
@@ -527,11 +536,15 @@ jobs:
           # files are committed rather than release assets, so they come out
           # of the release tag's tree.
           if [ "${{ steps.ver.outputs.is_lab }}" = "true" ]; then
-            git fetch --depth=1 origin "refs/tags/$LATEST:refs/tags/$LATEST"
-            for f in index.html squachsim.js squachsim.wasm; do
-              git show "$LATEST:web-flasher/emulator/$f" > "_site/emulator/$f"
-            done
-            echo "emulator restored from $LATEST"
+            if [ "$LIVE_FALLBACK" = "1" ]; then
+              echo "emulator retained byte-for-byte from the live Pages root"
+            else
+              git fetch --depth=1 origin "refs/tags/$LATEST:refs/tags/$LATEST"
+              for f in index.html squachsim.js squachsim.wasm; do
+                git show "$LATEST:web-flasher/emulator/$f" > "_site/emulator/$f"
+              done
+              echo "emulator restored from $LATEST"
+            fi
           else
             # index.html is hand-written and not a build product, so it always
             # comes from the tree. The two build products come from the build
@@ -556,6 +569,16 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.ver.outputs.tag }}
         run: |
+          # Before the first GitHub Release exists, the assemble step mirrored
+          # versions.json and every referenced version directory from the live
+          # site. Keep that exact history rather than rebuilding it from an
+          # empty release list.
+          if [ "${{ steps.ver.outputs.is_lab }}" = "true" ] && [ "${LAB_LIVE_FALLBACK:-0}" = "1" ]; then
+            echo "No GitHub Release exists; retained live Pages version history."
+            cat _site/versions.json
+            exit 0
+          fi
+
           # A lab run has no release tag of its own -- TAG is the branch name.
           # The root site it serves was restored from the latest release, so
           # that release is what "latest" means here. Without this the public
@@ -635,7 +658,9 @@ jobs:
           from pathlib import Path
 
           site = Path("_site")
-          matrix = json.loads(Path("web-flasher/boards.json").read_text(encoding="utf-8"))
+          # Validate the matrix the site actually serves. On a pre-first-release
+          # lab run this is the mirrored live matrix, intentionally not master.
+          matrix = json.loads((site / "boards.json").read_text(encoding="utf-8"))
           missing = []
           for board in matrix["boards"]:
               if not board.get("release") or not board.get("manifest"):
