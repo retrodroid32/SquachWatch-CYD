@@ -112,6 +112,19 @@ struct ScanFlushStats {
 };
 ScanFlushStats scanFlushStats();
 
+// Stage-1 performance telemetry for the two bounded radio mailboxes.
+// Depth/high-water are entries, drops are since boot, drainAvgUs/drainMaxUs
+// measure loop-task work only, and budgetHits counts passes that deliberately
+// left work queued to protect UI/frame latency.
+struct QueuePerfStats {
+    uint8_t  bleDepth,  bleHighWater;
+    uint8_t  wifiDepth, wifiHighWater;
+    uint32_t bleDropped,  wifiDropped;
+    uint32_t bleDrainAvgUs, wifiDrainAvgUs;
+    uint32_t bleDrainMaxUs, wifiDrainMaxUs;
+    uint32_t bleBudgetHits, wifiBudgetHits;
+};
+
 // The heap at each step of the radios coming up, for DIAGNOSTICS: a board
 // that is short of heap in one place and not another says WHICH radio took
 // it only if someone wrote the numbers down on the way. free/largest, bytes.
@@ -159,6 +172,23 @@ public:
     // Lifetime total across reboots (persisted to NVS), unlike the
     // live _typeCounts above which decay when a detection goes stale.
     uint32_t lifetimeTotal() const { return _lifetimeTotal; }
+
+    QueuePerfStats queuePerf() const {
+        QueuePerfStats s = {};
+        s.bleDepth      = (uint8_t)((_bleQHead + BLE_Q_CAP - _bleQTail) % BLE_Q_CAP);
+        s.bleHighWater  = _bleQHighWater;
+        s.wifiDepth     = (uint8_t)((_wifiQHead + WIFI_Q_CAP - _wifiQTail) % WIFI_Q_CAP);
+        s.wifiHighWater = _wifiQHighWater;
+        s.bleDropped    = _bleQDropped;
+        s.wifiDropped   = _wifiQDropped;
+        s.bleDrainAvgUs = _bleDrainAvgUs;
+        s.wifiDrainAvgUs= _wifiDrainAvgUs;
+        s.bleDrainMaxUs = _bleDrainMaxUs;
+        s.wifiDrainMaxUs= _wifiDrainMaxUs;
+        s.bleBudgetHits = _bleBudgetHits;
+        s.wifiBudgetHits= _wifiBudgetHits;
+        return s;
+    }
 
     // Lifetime count PER TYPE, surviving reboots -- the live _typeCounts
     // decay as detections go stale, so they cannot answer "how many Flock
@@ -449,9 +479,12 @@ private:
     // UI readers never race a callback that is rewriting the same row.
     static const uint8_t BLE_Q_CAP = 16;
     Detection _bleQ[BLE_Q_CAP];
-    uint8_t   _bleQHead = 0;
-    uint8_t   _bleQTail = 0;
-    void      processBleQ();
+    volatile uint8_t   _bleQHead = 0;
+    volatile uint8_t   _bleQTail = 0;
+    volatile uint8_t   _bleQHighWater = 0;
+    volatile uint32_t  _bleQDropped = 0;
+    uint32_t _bleDrainAvgUs = 0, _bleDrainMaxUs = 0, _bleBudgetHits = 0;
+    void      processBleQ(uint32_t budgetUs, uint8_t maxItems);
     void      applyBle(Detection d);
 
     // Raw (unfiltered) BLE scan results -- see startRawBleScan(). Not a
@@ -474,6 +507,9 @@ private:
     volatile WiFiQEntry _wifiQ[WIFI_Q_CAP];
     volatile uint8_t    _wifiQHead = 0;
     volatile uint8_t    _wifiQTail = 0;
+    volatile uint8_t    _wifiQHighWater = 0;
+    volatile uint32_t   _wifiQDropped = 0;
+    uint32_t _wifiDrainAvgUs = 0, _wifiDrainMaxUs = 0, _wifiBudgetHits = 0;
 
     // Deauth mailbox (filled in IRAM, drained in loop) -- see
     // postDeauth()/processDeauthQ(). Separate from _wifiQ above since
@@ -632,7 +668,7 @@ private:
     uint32_t    _channelLastMs[14]   = {0};
 
     void pushLog(const Detection& d);
-    void processWiFiQ();
+    void processWiFiQ(uint32_t budgetUs, uint8_t maxItems);
     void processDeauthQ();
     void expireStale();
     void hopChannel();
