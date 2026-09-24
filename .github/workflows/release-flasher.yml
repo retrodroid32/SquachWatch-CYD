@@ -173,6 +173,22 @@ jobs:
       - name: Install PlatformIO
         run: pip install --upgrade platformio
 
+      - name: Bundle pinned browser flasher dependencies
+        run: |
+          set -euo pipefail
+          DEPS="$RUNNER_TEMP/webdeps"
+          mkdir -p "$DEPS" web-flasher/vendor
+          npm install --prefix "$DEPS" --no-save --ignore-scripts \
+            esp-web-tools@10.4.0 esptool-js@0.6.1 esbuild@0.25.9
+          "$DEPS/node_modules/.bin/esbuild" \
+            "$DEPS/node_modules/esp-web-tools/dist/web/install-button.js" \
+            --bundle --format=esm --platform=browser --minify \
+            --outfile=web-flasher/vendor/esp-web-tools-10.4.0.js
+          cp "$DEPS/node_modules/esptool-js/bundle.js" \
+            web-flasher/vendor/esptool-js-0.6.1.js
+          test -s web-flasher/vendor/esp-web-tools-10.4.0.js
+          test -s web-flasher/vendor/esptool-js-0.6.1.js
+
       - name: Validate board matrix and release metadata
         run: python tools/board_matrix.py validate
 
@@ -402,6 +418,8 @@ jobs:
           mkdir -p _site
           cp web-flasher/index.html _site/index.html
           cp web-flasher/boards.json _site/boards.json
+          mkdir -p _site/vendor
+          cp web-flasher/vendor/*.js _site/vendor/
           for p in $(python tools/board_matrix.py manifests release); do
             cp "web-flasher/$p" "_site/$p"
           done
@@ -426,6 +444,13 @@ jobs:
             echo "Restoring root site from $LATEST"
             gh release download "$LATEST" -D _site --clobber \
               -p '*-firmware.bin' -p 'manifest-*.json' -p 'esp32-*.bin' -p '*-firmware.sig' || true
+            mkdir -p _site/vendor _site/update
+            gh release download "$LATEST" -D _site/vendor --clobber \
+              -p 'esp-web-tools-*.js' -p 'esptool-js-*.js'
+            git fetch --depth=1 origin "refs/tags/$LATEST:refs/tags/$LATEST"
+            git show "$LATEST:web-flasher/index.html" > _site/index.html
+            git show "$LATEST:web-flasher/boards.json" > _site/boards.json
+            git show "$LATEST:web-flasher/update/index.html" > _site/update/index.html
             # This run's build, under lab- names beside the release, with a
             # manifest each that points at them. web-flasher/index.html's
             # ?lab=1 list is what offers them.
@@ -485,7 +510,9 @@ jobs:
             done
           fi
           mkdir -p _site/update
-          cp web-flasher/update/index.html _site/update/index.html
+          if [ "${{ steps.ver.outputs.is_lab }}" != "true" ]; then
+            cp web-flasher/update/index.html _site/update/index.html
+          fi
           # The browser emulator: this firmware compiled to WebAssembly,
           # so the site can offer "try it" next to "flash it".
           #
@@ -633,7 +660,9 @@ jobs:
             --title "$TITLE" \
             --notes-file ".github/release-notes/${{ steps.ver.outputs.tag }}.md" \
             $(python tools/board_matrix.py release-assets) \
-            $(find . -maxdepth 1 -name '*-firmware.sig' -printf '%f ' 2>/dev/null)
+            $(find . -maxdepth 1 -name '*-firmware.sig' -printf '%f ' 2>/dev/null) \
+            web-flasher/vendor/esp-web-tools-10.4.0.js \
+            web-flasher/vendor/esptool-js-0.6.1.js
 
 
       # publish-pages.yml deploys this exact artifact only after this workflow
