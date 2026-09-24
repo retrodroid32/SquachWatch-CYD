@@ -481,9 +481,12 @@ SquachWatch-CYD/
 
 ## Status
 
-**Shipping.** Releases are cut by pushing a `v*.*.*` tag; the flasher above
-is rebuilt and redeployed by the same CI run, so the web flasher always
-matches the newest release.
+**Shipping.** Releases are cut by pushing a `v*.*.*` tag that matches
+`VERSION`. The release workflow must build every public target, sign every OTA
+image with the repository's `OTA_SIGNING_KEY`, assemble the browser emulator
+and complete Pages artifact, and only then creates the GitHub Release.
+`publish-pages.yml` deploys that exact artifact after the release workflow
+succeeds; ordinary pushes to `master` cannot replace the production flasher.
 
 Detection is reliable for the high-priority targets (Flock, Axon, skimmer,
 camera glasses). Remote ID and iBeacon are exact-format matches. Raven,
