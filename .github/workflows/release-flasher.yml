@@ -242,12 +242,7 @@ jobs:
           # board that looks bricked.
           for f in bootloader partitions; do
             ref="$(sha256sum ".pio/build/cyd/$f.bin" | cut -d' ' -f1)"
-            for v in $(python - <<'PY'
-import json
-d = json.load(open("web-flasher/boards.json"))
-print(" ".join(b["id"] for b in d["boards"] if b.get("release") and b.get("shared_esp32")))
-PY
-); do
+            for v in $(python -c 'import json; d=json.load(open("web-flasher/boards.json")); print(" ".join(b["id"] for b in d["boards"] if b.get("release") and b.get("shared_esp32")))'); do
               got="$(sha256sum ".pio/build/$v/$f.bin" | cut -d' ' -f1)"
               if [ "$got" != "$ref" ]; then
                 echo "::error::$v/$f.bin differs from cyd/$f.bin."
@@ -366,8 +361,10 @@ PY
           TITLE="SquachWatch-CYD ${{ steps.ver.outputs.tag }}"
           if [ -n "$NAME" ]; then TITLE="$TITLE \"$NAME\""; fi
           gh release create "${{ steps.ver.outputs.tag }}" \
+            --title "$TITLE" \
+            --notes-file ".github/release-notes/${{ steps.ver.outputs.tag }}.md" \
             $(python tools/board_matrix.py release-assets) \
-            $(ls *-firmware.sig 2>/dev/null)
+            $(find . -maxdepth 1 -name '*-firmware.sig' -printf '%f ' 2>/dev/null)
 
       - name: Build the browser emulator
         # Skipped on a lab run, which serves the released emulator instead --
