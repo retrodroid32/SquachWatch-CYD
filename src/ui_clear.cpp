@@ -2563,30 +2563,108 @@ static const uint8_t COUNTER_ROWS_LANDSCAPE = 2;
 static const uint8_t COUNTER_ROWS_PORTRAIT  =
     (MAX_COUNTER_TYPES + MAX_PER_ROW_PORTRAIT - 1) / MAX_PER_ROW_PORTRAIT;  // ceil
 
-static void drawCounterLine(TFT_eSPI& t, int w, int y, const DetectionEngine& eng,
-                            const DetectionType* types, uint8_t n) {
-    // 80, not 56: worst case is 7 entries x up to "XXXXX:999  " (11
-    // chars) = 77 -- the old 56-byte buffer was already marginal for
-    // 6 entries at high counts and would silently truncate (snprintf
-    // is bounds-safe, just visually cuts off) once TILE/RING pushed a
-    // line to 7.
-    char buf[80] = "";
-    int off = 0;
-    for (uint8_t i = 0; i < n; i++) {
-        off += snprintf(buf + off, sizeof(buf) - off, "%s:%u  ",
-                        counterLabel(types[i]), counterCount(eng, types[i]));
+struct ClearLayoutCache {
+    bool valid = false;
+    int16_t w = 0, h = 0;
+    bool ibeacon = false;
+    uint8_t counterRows = 0, counterN = 0;
+    Theme::ButtonBarGeom bar = {};
+    int16_t counterTextTop = 0;
+    int16_t squachyBottom = 0;
+    DetectionType types[MAX_COUNTER_TYPES] = {};
+    uint8_t rowStart[COUNTER_ROWS_PORTRAIT] = {};
+    uint8_t rowCount[COUNTER_ROWS_PORTRAIT] = {};
+};
+
+static ClearLayoutCache s_clearLayout;
+
+static const ClearLayoutCache& clearLayoutFor(TFT_eSPI& t) {
+    const int w = t.width(), h = t.height();
+    const bool ibeacon = Settings::typeEnabled(DetectionType::IBEACON);
+    if (s_clearLayout.valid && s_clearLayout.w == w && s_clearLayout.h == h &&
+        s_clearLayout.ibeacon == ibeacon) return s_clearLayout;
+
+    ClearLayoutCache& l = s_clearLayout;
+    l.valid = true;
+    l.w = (int16_t)w;
+    l.h = (int16_t)h;
+    l.ibeacon = ibeacon;
+    l.counterRows = (w > h) ? COUNTER_ROWS_LANDSCAPE : COUNTER_ROWS_PORTRAIT;
+    l.bar = Theme::computeButtonBar(w, h);
+    const int lineH = 14;
+    const int countersTop = l.bar.y - l.counterRows * lineH - 6;
+    l.counterTextTop = (int16_t)(countersTop + 9);
+    l.squachyBottom = (int16_t)(l.counterTextTop - 2);
+    l.counterN = activeCounterTypes(l.types);
+
+    const uint8_t base = l.counterN / l.counterRows;
+    const uint8_t remainder = l.counterN % l.counterRows;
+    uint8_t at = 0;
+    for (uint8_t row = 0; row < COUNTER_ROWS_PORTRAIT; row++) {
+        if (row < l.counterRows) {
+            const uint8_t n = (uint8_t)(base + (row < remainder ? 1 : 0));
+            l.rowStart[row] = at;
+            l.rowCount[row] = n;
+            at = (uint8_t)(at + n);
+        } else {
+            l.rowStart[row] = at;
+            l.rowCount[row] = 0;
+        }
     }
-    // The trailing gap is spacing between entries, not part of the last one.
-    while (off > 0 && buf[off - 1] == ' ') buf[--off] = '\0';
-    int tw = t.textWidth(buf);
-    const int x = (w - tw) / 2;
-    // A dark plate a few pixels past the text, not just the character cells:
-    // tight to the glyphs, the numbers read as cut out of whatever the
-    // background is doing behind them.
+    return l;
+}
+
+struct CounterLineCache {
+    bool valid = false;
+    uint32_t key = 0;
+    char text[80] = "";
+    int16_t width = 0;
+};
+static CounterLineCache s_counterLineCache[COUNTER_ROWS_PORTRAIT];
+
+static uint32_t counterLineKey(const DetectionEngine& eng,
+                               const DetectionType* types, uint8_t n) {
+    uint32_t h = 2166136261u;
+    h = (h ^ n) * 16777619u;
+    for (uint8_t i = 0; i < n; i++) {
+        const uint16_t count = counterCount(eng, types[i]);
+        h = (h ^ (uint8_t)types[i]) * 16777619u;
+        h = (h ^ (uint8_t)count) * 16777619u;
+        h = (h ^ (uint8_t)(count >> 8)) * 16777619u;
+    }
+    return h;
+}
+
+static void drawCounterLine(TFT_eSPI& t, int w, int y, const DetectionEngine& eng,
+                            const DetectionType* types, uint8_t n, uint8_t cacheIx) {
+    CounterLineCache& cache = s_counterLineCache[cacheIx];
+    const uint32_t key = counterLineKey(eng, types, n);
+    if (!cache.valid || cache.key != key) {
+        cache.valid = true;
+        cache.key = key;
+        cache.text[0] = '\0';
+        int off = 0;
+        for (uint8_t i = 0; i < n && off < (int)sizeof(cache.text) - 1; i++) {
+            const int wrote = snprintf(cache.text + off, sizeof(cache.text) - off, "%s:%u  ",
+                                       counterLabel(types[i]), counterCount(eng, types[i]));
+            if (wrote <= 0) break;
+            off += wrote;
+            if (off >= (int)sizeof(cache.text)) {
+                off = sizeof(cache.text) - 1;
+                cache.text[off] = '\0';
+                break;
+            }
+        }
+        while (off > 0 && cache.text[off - 1] == ' ') cache.text[--off] = '\0';
+        cache.width = (int16_t)t.textWidth(cache.text);
+    }
+
+    const int x = (w - cache.width) / 2;
     const int PAD_X = 4, PAD_Y = 2;
-    t.fillRect(x - PAD_X, y - PAD_Y, tw + 2 * PAD_X, t.fontHeight() + 2 * PAD_Y, Theme::BG);
+    t.fillRect(x - PAD_X, y - PAD_Y, cache.width + 2 * PAD_X,
+               t.fontHeight() + 2 * PAD_Y, Theme::BG);
     t.setCursor(x, y);
-    t.print(buf);
+    t.print(cache.text);
 }
 
 #if SQUACH_MESH
@@ -2722,10 +2800,20 @@ bool uiMascotStep(uint32_t now, bool advance) {
 }
 
 void uiClearTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool advance, bool scanMenu) {
-    int w = t.width();
-    int h = t.height();
-    // This boot's only: the rows the black box brought back were last boot's.
-    {
+    const ClearLayoutCache& layout = clearLayoutFor(t);
+    const int w = layout.w;
+    const int h = layout.h;
+    const uint8_t counterRows = layout.counterRows;
+    const Theme::ButtonBarGeom& bar = layout.bar;
+    const int lineH = 14;
+    const int counterTextTop = layout.counterTextTop;
+
+    // This value feeds banter, not layout. Scanning the entire detection ring
+    // every rendered frame was pure repeated work, so refresh it at 4 Hz.
+    // That is still far faster than any line of visit dialogue can change.
+    static uint32_t s_hitsScanAt = 0;
+    if (!s_hitsScanAt || (uint32_t)(now - s_hitsScanAt) >= 250u) {
+        s_hitsScanAt = now;
         uint8_t n = 0;
         for (uint8_t i = 0; i < eng.logCount(); i++) {
             const Detection* d = eng.logAt(i);
@@ -2733,98 +2821,13 @@ void uiClearTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool adv
         }
         s_hitsThisBoot = n;
     }
-    // Recomputed every tick, not cached per-board: rotating the screen
-    // changes w/h live, and the counter layout should follow it rather
-    // than staying stuck at whatever orientation was active at boot.
-    bool landscape = w > h;
-    // Two rows in landscape on every board, the 3.5" included. Stepping the
-    // counters up to size 2 was tried and taken back out: thirteen types is
-    // about 77 characters, which is 924 px at size 2 against a 480 px row, so
-    // bigger digits could only be paid for with four rows instead of two --
-    // and four bars of counters under the mascot is not what that screen is
-    // for. The counters stay small and stay two lines.
-    const uint8_t counterRows = landscape ? COUNTER_ROWS_LANDSCAPE : COUNTER_ROWS_PORTRAIT;
 
-    Theme::ButtonBarGeom bar = Theme::computeButtonBar(w, h);
-    const int lineH          = 14;
-    const int countersTop    = bar.y - counterRows * lineH - 6;
-    // The counter rows alone sit 9px lower than countersTop, and nothing
-    // else does. Measured off a rendered landscape frame before any of
-    // this: the headline's ink ended at row 172, the two counter rows ran
-    // 180-186 and 194-200, and the button bar started at 214 -- so the
-    // block sat 7px under the headline and 13px above the buttons, hugging
-    // the text above it.
-    //
-    // Centring it in that slack was the first attempt and it was the wrong
-    // one: 10px above and 10px below is balanced, and reads as belonging to
-    // neither the headline nor the buttons. Low is better. The counters are
-    // chrome, the same as the buttons are, so grouping the two into one
-    // footer and leaving the headline up with Squachy says what goes with
-    // what. 9 puts the last row's ink 4px off the button bar.
-    //
-    // Not further: 13 would touch the buttons. (The rows also have to land
-    // inside the background's repaint or they smear; that runs to the bottom
-    // of the screen now, so it no longer sets the limit.)
-    //
-    // Deliberately NOT folded into countersTop, which would look like the
-    // tidier fix. That value is the floor of everything above it: the
-    // headline is bottom-aligned to it, Squachy sizes himself against it,
-    // the pet takes it as its band, and the background repaints to it.
-    // Moving it would slide the headline down with the rows (leaving the
-    // grouping exactly as muddled as before) and hand Squachy nine more
-    // pixels of height -- which he cannot take: his waving arm already
-    // reaches row 4, and growing him walks the hand off the top edge.
-    //
-    // Orientation-independent by construction. The last row's ink lands at
-    // bar.y - 14 + this whatever counterRows is, so portrait's four rows
-    // clear the buttons by the same 4px landscape's two do.
-    const int counterTextTop = countersTop + 9;
-
-    // The headline hangs off the counter block now, not off countersTop.
-    //
-    // Measured off a render: ty puts the Bangers ink 4 rows lower and it
-    // runs 23 rows, with the 24-pass outline adding 2 more each way. So the
-    // whole painted band is ty+2 .. ty+28, and sitting it HEADLINE_PAD above
-    // the counters is that arithmetic run backwards.
-    //
-    // It used to bottom-align to countersTop, which put it at row 146 --
-    // floating across his shins in the middle of otherwise empty space,
-    // with 17 rows of nothing between it and the numbers it belongs to.
-    // LG, not MD. The size is a consequence of the word: at 90px LG the
-    // headline uses under a third of a 320px row, where the old 17-character
-    // one needed MD just to fit and still ran 216px. Short text does not
-    // want the same face at a smaller size, it wants the bigger face -- and
-    // this row is a burst that cuts in for a moment, so it has to land.
     static const Theme::BangersSize HEADLINE_SIZE = Theme::BangersSize::LG;
-    // Measured off a render at HEADLINE_SIZE by diffing a seeded frame
-    // against a --noseed one, which isolates the headline from a background
-    // that repaints every row of this band: the painted result runs ty+4 to
-    // ty+32, so 29 rows of which the 24-pass outline is the outer 2 each
-    // way. 33 is what puts that last painted row exactly HEADLINE_PAD above
-    // the counter text.
     static const int HEADLINE_H   = 33;
     static const int HEADLINE_PAD = 5;
     const int headlineTop = counterTextTop - HEADLINE_PAD - HEADLINE_H;
-
-    // ...which frees the rows it used to sit in, and Squachy takes them.
-    //
-    // His floor was countersTop, a number that stopped meaning anything to
-    // him once the counters moved down into the footer: it is neither where
-    // the text starts nor where the screen runs out. Two rows above the
-    // counter ink is the real bottom of the space he has.
-    //
-    // He is sized from the band he is handed -- scale = charAvail /
-    // BASE_HEIGHT -- so this is the whole of "make him bigger", and it is
-    // bigger everywhere rather than per costume. His feet land on the new
-    // floor for free; nothing else needs moving.
-    //
-    // The ceiling on this is his WAVING ARM, not his head. It reaches about
-    // two rows above his crest scaled, and the crest is only 8 rows off the
-    // top today, so there is far less room up there than the empty-looking
-    // rows suggest. See the measurement in the commit that added this.
-    const int squachyBottom = counterTextTop - 2;
-
-    const int titleBottom  = 16;
+    const int squachyBottom = layout.squachyBottom;
+    const int titleBottom = 16;
 
     // Background animation, the whole screen top to bottom -- style picked
     // from the settings menu. It used to stop just above the button bar and
@@ -3147,23 +3150,17 @@ void uiClearTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool adv
     t.setTextColor(Theme::CYAN, Theme::BG);
     t.setTextWrap(false);
 
-    // Evenly balanced, not greedily packed (e.g. 4/4/4/1 in portrait)
-    // -- a lone last row with a single item looked worse than several
-    // similarly-sized rows does, and this still never exceeds the
-    // per-orientation cap on any row.
-    DetectionType counterTypes[MAX_COUNTER_TYPES];
-    const uint8_t counterN = activeCounterTypes(counterTypes);
-    uint8_t base      = counterN / counterRows;
-    uint8_t remainder = counterN % counterRows;
-    uint8_t start = 0;
+    // Row membership and string formatting are cached until orientation,
+    // beacon visibility, or a displayed count changes. The opaque plate/text
+    // still composites every rendered frame because the animated background
+    // underneath it is intentionally fresh.
+    t.setTextFont(1);
     for (uint8_t row = 0; row < counterRows; row++) {
-        uint8_t n = base + (row < remainder ? 1 : 0);
         const int rowY = counterTextTop + row * lineH;
-        // `start` advances either way: the rows share one list of types, so a
-        // row that is not painted still has to hand the next one its place.
         if (DrawBand::has(rowY, rowY + lineH))
-            drawCounterLine(t, w, rowY, eng, counterTypes + start, n);
-        start += n;
+            drawCounterLine(t, w, rowY, eng,
+                            layout.types + layout.rowStart[row],
+                            layout.rowCount[row], row);
     }
 
     // Soft buttons, straight over the background: it repaints the whole
