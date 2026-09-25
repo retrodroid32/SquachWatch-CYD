@@ -102,6 +102,7 @@ bool SdLog::begin() {
     Serial.printf("[sd] card mounted: %llu MB\n", (unsigned long long)(SD.cardSize() >> 20));
     _ready = true;
     openDaily();
+    _lastFlush = millis();
     return true;
 }
 
@@ -119,10 +120,48 @@ void SdLog::openDaily() {
     }
 }
 
+bool SdLog::flushPending() {
+    if (!_ready || _pendingLen == 0) return true;
+    if (_filename[0] == '\0') openDaily();
+    if (_filename[0] == '\0') return false;
+
+    // Rate-limit retry attempts when a card disappears or temporarily stops
+    // answering. A successful close() commits FatFS' cached sector metadata.
+    _lastFlush = millis();
+    File f = SD.open(_filename, FILE_APPEND);
+    if (!f) {
+        _flushFailures++;
+        if (_flushFailures == 1 || ((_flushFailures & (_flushFailures - 1)) == 0)) {
+            Serial.printf("[sd] buffered flush open failed (%lu total, %u bytes pending)\n",
+                          (unsigned long)_flushFailures, (unsigned)_pendingLen);
+        }
+        return false;
+    }
+
+    const size_t written = f.write((const uint8_t*)_pending, _pendingLen);
+    f.close();
+
+    if (written > 0) {
+        const size_t consumed = written > _pendingLen ? _pendingLen : written;
+        const size_t remain = _pendingLen - consumed;
+        if (remain) memmove(_pending, _pending + consumed, remain);
+        _pendingLen = (uint16_t)remain;
+    }
+
+    if (_pendingLen == 0) return true;
+
+    _flushFailures++;
+    if (_flushFailures == 1 || ((_flushFailures & (_flushFailures - 1)) == 0)) {
+        Serial.printf("[sd] buffered flush short write (%lu total, %u bytes remain)\n",
+                      (unsigned long)_flushFailures, (unsigned)_pendingLen);
+    }
+    return false;
+}
+
 void SdLog::logEvent(const Detection& d) {
     if (!_ready) return;
-    File f = SD.open(_filename, FILE_APPEND);
-    if (!f) return;
+    if (_filename[0] == '\0') openDaily();
+
     char line[96];
     char mac[18];
     snprintf(mac, sizeof(mac), "%02X:%02X:%02X:%02X:%02X:%02X",
@@ -133,21 +172,54 @@ void SdLog::logEvent(const Detection& d) {
     strncpy(nameSafe,   d.name,   sizeof(nameSafe)   - 1); nameSafe[sizeof(nameSafe)-1]   = 0;
     for (char* p = vendorSafe; *p; p++) if (*p == ',') *p = '.';
     for (char* p = nameSafe;   *p; p++) if (*p == ',') *p = '.';
-    snprintf(line, sizeof(line),
-             "%lu,%s,%d,%s,%u,%s,%s\n",
-             (unsigned long)millis(),
-             detectionTypeName(d.type),
-             d.rssi,
-             mac,
-             d.channel,
-             vendorSafe,
-             nameSafe);
-    f.print(line);
-    f.close();
+
+    const int n = snprintf(line, sizeof(line),
+                           "%lu,%s,%d,%s,%u,%s,%s\n",
+                           (unsigned long)millis(),
+                           detectionTypeName(d.type),
+                           d.rssi,
+                           mac,
+                           d.channel,
+                           vendorSafe,
+                           nameSafe);
+    if (n <= 0) return;
+    const size_t lineLen = (size_t)n < sizeof(line) ? (size_t)n : sizeof(line) - 1;
+
+    // The queue feeding this method is already bounded. This second fixed
+    // buffer converts several small event writes into one card transaction.
+    // If the buffer is full, try to commit the older rows first; if the card
+    // is unavailable, retain those older rows and drop the newest one.
+    if ((size_t)_pendingLen + lineLen > WRITE_BUFFER_CAP) {
+        flushPending();
+    }
+    if ((size_t)_pendingLen + lineLen > WRITE_BUFFER_CAP) {
+        _droppedLines++;
+        if (_droppedLines == 1 || ((_droppedLines & (_droppedLines - 1)) == 0)) {
+            Serial.printf("[sd] write buffer full; dropped %lu line(s), %u bytes pending\n",
+                          (unsigned long)_droppedLines, (unsigned)_pendingLen);
+        }
+        return;
+    }
+
+    memcpy(_pending + _pendingLen, line, lineLen);
+    _pendingLen = (uint16_t)(_pendingLen + lineLen);
+
+    // Batch normal traffic, but do not let a busy room fill the whole sector.
+    // The 50 ms guard avoids hammering a failing card once per detection.
+    if (_pendingLen >= WRITE_BUFFER_FLUSH_AT && millis() - _lastFlush >= 50) {
+        flushPending();
+    }
 }
 
 void SdLog::wipe() {
     if (!_ready) return;
+
+    // A wipe means "forget it", including rows not yet committed to the card.
+    // Never flush these first or a detection queued just before a duress wipe
+    // would be written immediately before the files are deleted.
+    _pendingLen = 0;
+    _lastFlush = millis();
+
     // Walk the root and remove every file this firmware writes. Names are
     // /squachwatch-YYYYMMDD.log; matching on the prefix takes them all rather
     // than only today's, which is the whole point of a wipe.
@@ -179,17 +251,26 @@ void SdLog::wipe() {
         for (int i = 0; i < n; i++) if (SD.remove(victims[i])) removed++;
         if (!removed) break;
     }
-    _filename[0] = '\0';       // force a fresh openDaily() on the next event
+    _filename[0] = '\0';       // next buffered event rebuilds the daily path
 }
 
 void SdLog::tick() {
     if (!_ready) return;
-    uint32_t now = millis();
-    if (now - _lastFlush > 5000) {
-        _lastFlush = now;
-        // Reopen daily file once an hour (or on day change)
-        static uint32_t lastDayCheck = 0;
-        if (now - lastDayCheck > 3600000) {
+    const uint32_t now = millis();
+
+    // Commit sparse traffic within one second. Dense traffic usually reaches
+    // WRITE_BUFFER_FLUSH_AT first and flushes from logEvent().
+    if (_pendingLen && now - _lastFlush >= 1000) {
+        flushPending();
+    }
+
+    // Re-evaluate the daily filename once an hour, preserving the previous
+    // behavior. Buffered rows must be committed under the OLD filename before
+    // switching; if a card error prevents that, leave the check due so the
+    // next successful retry can rotate immediately afterward.
+    static uint32_t lastDayCheck = 0;
+    if (now - lastDayCheck >= 3600000) {
+        if (_pendingLen == 0 || (now - _lastFlush >= 1000 && flushPending())) {
             lastDayCheck = now;
             openDaily();
         }
