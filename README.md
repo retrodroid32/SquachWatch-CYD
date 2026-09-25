@@ -570,11 +570,20 @@ live radio-mailbox metrics.
   the ring overwrites an old slot.
 - Tombstones are periodically rebuilt from the live ring to keep probe lengths
   bounded during long crowded runs.
+- Stage 3B removes temporary scan-path `std::string` allocations for BLE
+  names and manufacturer data and avoids temporary `NimBLEUUID` objects for
+  16-bit service matching. The scanner reads those AD structures directly from
+  NimBLE's existing payload vector instead.
+- Complete BLE names are still preferred over shortened names, all SquachMesh
+  manufacturer blocks are still processed in order, and 16-bit service UUIDs
+  retain NimBLE's incomplete-list-before-complete-list matching order.
+- Direct name parsing also removes a dangling `c_str()` pointer that came from
+  calling `adv->getName().c_str()` on a temporary string.
 
 Stage 1 through Stage 3 are intended to make later optimizations measurable
 rather than subjective: the existing queue/frame/render telemetry remains the
-baseline while hot-path lookup work is reduced without changing detection
-semantics.
+baseline while hot-path lookup and BLE parsing work are reduced without
+changing intended detection semantics.
 
 ## License
 
