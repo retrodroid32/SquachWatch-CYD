@@ -91,15 +91,16 @@ static Confidence  s_minConf    = Confidence::LOW_CONF;
 
 // Per-type alert rules. Four bytes per DetectionType, persisted as one blob.
 static AlertRule s_alertRules[(uint8_t)DetectionType::COUNT];
-static const uint8_t AR_ALERT = 0x01;
-static const uint8_t AR_WAKE  = 0x02;
+static const uint8_t AR_ALERT  = 0x01;
+static const uint8_t AR_WAKE   = 0x02;
+static const uint8_t AR_NOTIFY = 0x04;
 static const uint8_t AR_INHERIT = 0xFF;
 static const uint16_t ALERT_COOLDOWN_SEC[] = { 0, 30, 60, 300, 900 };
 static const uint8_t ALERT_COOLDOWN_N = sizeof(ALERT_COOLDOWN_SEC) / sizeof(ALERT_COOLDOWN_SEC[0]);
 
 static void initAlertRuleDefaults() {
     for (uint8_t i = 0; i < (uint8_t)DetectionType::COUNT; i++) {
-        s_alertRules[i].flags = AR_ALERT | AR_WAKE;
+        s_alertRules[i].flags = AR_ALERT | AR_WAKE | AR_NOTIFY;
         s_alertRules[i].minConf = AR_INHERIT;
         s_alertRules[i].minRepeats = 1;
         s_alertRules[i].cooldownIx = 0;
@@ -334,7 +335,7 @@ void load() {
             s_prefs.getBytes("alrules", s_alertRules, sizeof(s_alertRules));
             for (uint8_t i = 0; i < (uint8_t)DetectionType::COUNT; i++) {
                 AlertRule& r = s_alertRules[i];
-                r.flags &= (AR_ALERT | AR_WAKE);
+                r.flags &= (AR_ALERT | AR_WAKE | AR_NOTIFY);
                 if (r.minConf != AR_INHERIT && r.minConf > (uint8_t)Confidence::HIGH_CONF) r.minConf = AR_INHERIT;
                 if (r.minRepeats != 1 && r.minRepeats != 2 && r.minRepeats != 3 && r.minRepeats != 5) r.minRepeats = 1;
                 if (r.cooldownIx >= ALERT_COOLDOWN_N) r.cooldownIx = 0;
@@ -766,6 +767,7 @@ const char* minConfidenceLabel() {
 
 bool alertEnabled(DetectionType t) { return (ruleForConst(t).flags & AR_ALERT) != 0; }
 bool alertWakeScreen(DetectionType t) { return (ruleForConst(t).flags & AR_WAKE) != 0; }
+bool alertNotify(DetectionType t) { return (ruleForConst(t).flags & AR_NOTIFY) != 0; }
 bool alertConfidenceInherited(DetectionType t) { return ruleForConst(t).minConf == AR_INHERIT; }
 Confidence alertMinConfidence(DetectionType t) {
     const uint8_t c = ruleForConst(t).minConf;
@@ -807,6 +809,9 @@ void toggleAlertEnabled(DetectionType t) {
 }
 void toggleAlertWakeScreen(DetectionType t) {
     AlertRule& r = ruleFor(t); r.flags ^= AR_WAKE; saveAlertRules();
+}
+void toggleAlertNotify(DetectionType t) {
+    AlertRule& r = ruleFor(t); r.flags ^= AR_NOTIFY; saveAlertRules();
 }
 void cycleAlertMinConfidence(DetectionType t) {
     AlertRule& r = ruleFor(t);
