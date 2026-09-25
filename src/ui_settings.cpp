@@ -68,7 +68,7 @@ static const SettingsRow ALL_ROWS[] = {
     SettingsRow::WATCH_XTAL,
 #endif
     SettingsRow::BORING_MODE, SettingsRow::CONFIDENCE, SettingsRow::AUTO_QUIET,
-    SettingsRow::DETECTION_FILTER,
+    SettingsRow::ALERT_RULES, SettingsRow::DETECTION_FILTER,
     SettingsRow::IGNORED_DEVICES,
     // APPEARANCE opens the display page -- see APPEARANCE_ROWS. It sat at the
     // very top of this list, which put it under the first thumb that opened
@@ -220,6 +220,7 @@ static RowGroupId groupFor(SettingsRow r) {
         case SettingsRow::BORING_MODE:
         case SettingsRow::CONFIDENCE:
         case SettingsRow::AUTO_QUIET:
+        case SettingsRow::ALERT_RULES:
         case SettingsRow::DETECTION_FILTER:
         case SettingsRow::IGNORED_DEVICES:
             return RowGroupId::BEHAVIOR;
@@ -807,6 +808,9 @@ static void rowContent(SettingsRow r, const DetectionEngine& eng, char* valBuf, 
             break;
         case SettingsRow::AUTO_QUIET:
             label = "AUTO SNOOZE"; value = Settings::autoQuietLabel();
+            break;
+        case SettingsRow::ALERT_RULES:
+            label = "ALERT RULES"; value = ">";
             break;
         case SettingsRow::DETECTION_FILTER:
             // "DETECTION FILTER" (the row's own screen title, no width
