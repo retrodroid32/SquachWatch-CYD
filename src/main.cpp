@@ -3829,53 +3829,188 @@ void loop() {
     FrameProf::lap(FrameProf::PRE);
     switch (state) {
         case AppState::BOOT: {
-            bool forceClearVisual = false;
-#if CROWD_BENCH
-            forceClearVisual = CrowdBench::active();
-#endif
-            const bool drawClear = clearShouldRender(
-                now, engine, s_scanPickerOpen,
-                tp.valid || touchJustDown || touchJustUp,
-                forceClearVisual);
-
-            if (drawClear) {
 #if defined(CYD35)
-                if (frameBufferOk) {
-                    // Two passes through the half-height sprite. State advances
-                    // only on the first pass; the second paints the same logical
-                    // frame into the lower physical band.
-                    int halfH = tft.height() / 2;
-                    uint32_t tBand = micros();
-                    DrawBand::set(0, halfH);
-                    frame.setViewport(0, 0, tft.width(), tft.height(), true);
-                    uiClearTick(frame, now, engine, true, s_scanPickerOpen);
-                    s_bandUs[0] = micros() - tBand;
-                    pushFrame(0, 0);
-                    tBand = micros();
-                    DrawBand::set(halfH, tft.height());
-                    frame.setViewport(0, -halfH, tft.width(), tft.height(), true);
-                    uiClearTick(frame, now, engine, false, s_scanPickerOpen);
-                    s_bandUs[1] = micros() - tBand;
-                    pushFrame(0, halfH);
-                    DrawBand::all();
-                    frame.resetViewport();
-                } else {
-                    uiClearTick(tft, now, engine, true, s_scanPickerOpen);
-                }
-#else
-                uiClearTick(*canvas, now, engine, true, s_scanPickerOpen);
-#endif
-                FrameProf::lap(FrameProf::CHROME);
-                Theme::drawToast(*canvas, now);
-                if (uiZoneCardWanted()) uiZoneCardDraw(*canvas, now);
+            if (frameBufferOk) {
+                // Same two-pass half-height `frame` trick CLEAR uses --
+                // reuses that same already-allocated sprite (see its
+                // setup() comment) rather than needing a second
+                // allocation, since BOOT/CLEAR/ALERT are never on
+                // screen at the same time. uiBootTick() has no internal
+                // per-call state to double-advance, so no advance flag
+                // needed here unlike uiClearTick().
+                int halfH = tft.height() / 2;
+                frame.setViewport(0, 0, tft.width(), tft.height(), true);
+                uiBootTick(frame, now);
+                pushFrame(0, 0);
+                frame.setViewport(0, -halfH, tft.width(), tft.height(), true);
+                uiBootTick(frame, now);
+                pushFrame(0, halfH);
+                frame.resetViewport();
             } else {
-                renderedThisLoop = false;
+                uiBootTick(tft, now);
             }
-
-            // The zone card still owns its tap on a retained frame. Its
-            // geometry is screen-derived, so hit testing does not require a
-            // redraw in the same loop.
+#else
+            uiBootTick(*canvas, now);
+            if (crashCardWanted()) drawCrashCard(*canvas);
+#endif
+            bool leave = uiBootDone(bootStart, crashCardWanted() ? 9000 : 3000);
+            if (!leave && touchJustDown && ignoreButtonHit(tp.x, tp.y, canvas->width())) {
+                ignoreShortBoots();
+                // The finger is still down where the next screen's own
+                // bottom-right button will be (BACK on the desk); the rest
+                // of this gesture is swallowed, as the calibration hatch does.
+                s_swallowTouch = true;
+                leave = true;
+            }
+            if (leave) {
+                // First-ever boot only -- goes straight into the normal
+                // onboarding overlay once this screen's own DONE button
+                // reaches enterClear(), same as it always did before
+                // this existed.
+                if (!Settings::colorChecked())    enterColorCheck(false);
+                // Something newer is out: the window says so before the
+                // board gets on with its day. Not over the first-boot
+                // walkthrough, which has a screen of its own to finish.
+                else if (OtaCore::availableVersion()[0] && !Security::locked()) enterSysProps();
+                else if (Settings::deskWanted())  enterDesk();   // switched off on the desk: back to it
+                else                              enterClear();
+            }
+            break;
+        }
+        case AppState::BINGO: {
+            drawTwoBand([&](TFT_eSPI& t, bool advance) { uiBingoTick(t, now, engine, advance); });
+            if (touchJustDown) {
+                lastTouch = now;
+                // OK leaves for the main screen or the desk, not back into
+                // the settings menu: somebody who opened the card to look at
+                // it wants the board back, not another list.
+                if (uiBingoHitTest(*canvas, tp.x, tp.y, tft.width(), tft.height()) == BingoTap::BACK)
+                    goHome();
+            }
+            break;
+        }
+        case AppState::DEX: {
+            drawTwoBand([&](TFT_eSPI& t, bool advance) { uiDexTick(t, now, engine, advance); });
+            if (touchJustDown) {
+                lastTouch = now;
+                if (uiDexHitTest(*canvas, tp.x, tp.y, tft.width(), tft.height()) == DexTap::BACK)
+                    goHome();
+            }
+            break;
+        }
+        case AppState::SYS_PROPS: {
+            // A detection still takes the screen. The window can open on a
+            // board nobody is watching -- a squad member's hello brings the
+            // news -- and it has no timeout, so without this it held every
+            // alert back until somebody happened to tap it.
+            {
+                const Detection* latest = engine.latest();
+                if (latest && (now - latest->firstSeen) < 200 &&
+                    latest->conf >= Settings::minConfidence() && !IgnoreList::silenced(latest->mac) &&
+                    alertMayInterrupt(*latest)) {
+                    uiAlertSetRedacted(false);
+                    enterAlert(*latest);
+                    s_backToDesk = Settings::deskWanted();   // dismissed, back where the window was over
+                    break;
+                }
+                if (engine.watchHitPending()) { enterWatchAlert(); break; }
+            }
+            drawTwoBand([&](TFT_eSPI& t, bool advance) { uiSysPropsTick(t, now, engine, advance); });
+            if (touchJustDown) {
+                switch (uiSysPropsTouch(*canvas, tp.x, tp.y)) {
+                    case SysPropsHit::UPDATE_NOW:
+                        // The same start the UPDATE screen's own WiFi button
+                        // makes: the radio changes hands and the update screen
+                        // carries it from there.
+                        enterUpdate();
+                        engine.startUpdateRadio();
+                        lendFrameToDownload();
+                        if (!OtaWifi::begin()) {
+                            restoreFrameBuffer();
+                            engine.stopUpdateRadio();
+                            Theme::showToast("CAN'T START UPDATE", updateRefusedWhy(), Theme::AMBER);
+                        }
+                        break;
+                    case SysPropsHit::CLOSE: goHome(); break;
+                    case SysPropsHit::NONE:  break;
+                }
+                lastTouch = now;
+            }
+            break;
+        }
+        case AppState::CLEAR: {
+            // A newer release heard of AFTER the intro: the window, now. The
+            // intro only opens it for news that is already known when the
+            // intro ends, and on a board whose boot check could not reach the
+            // site the news comes later, in a squad member's hello -- which on
+            // the bench landed a few seconds either side of that moment, so
+            // the window came up on one boot and not the next. Once per
+            // version: takeAvailableNotice() answers once, and a newer version
+            // arms it again. Not over a visit's banter any more either: being
+            // painted over by it is why this is a window at all.
+            if (now - transitionStart > 1500 && OtaCore::takeAvailableNotice()) {
+                enterSysProps();
+                break;
+            }
+            if (now - transitionStart > 7000 && !Squachy::visiting()) {
+                // Once a day, a hello with the date in it; on the days that
+                // count, how long it has been.
+                const char* dl = Squachy::takeDayLine();
+                if (dl) Squachy::announce(dl);
+            }
+            // And the first-of-its-kind line, straight after the card.
+            if (s_firstLine[0] && now - transitionStart > 1200) {
+                Squachy::announce(s_firstLine);
+                s_firstLine[0] = '\0';
+            }
+            // Checked before drawing so the celebration takes over on the
+            // same frame it becomes due, rather than after one frame of
+            // CLEAR flashing up behind it.
+            if (maybeEnterOutfitUnlock()) break;
+#if defined(CYD35)
+            if (frameBufferOk) {
+                // Two passes through the half-height `frame` sprite
+                // instead of one direct-to-tft pass -- see the setup()
+                // comment by its creation. advance=true only on the
+                // first pass so Squachy/digital-rain state advances once
+                // per logical frame even though this draws twice.
+                int halfH = tft.height() / 2;
+                uint32_t tBand = micros();
+                // The rows each pass can actually paint. Drawing that lands
+                // entirely outside them is declined a block at a time rather
+                // than clipped a pixel at a time -- see draw_band.h.
+                DrawBand::set(0, halfH);
+                frame.setViewport(0, 0, tft.width(), tft.height(), true);
+                uiClearTick(frame, now, engine, true, s_scanPickerOpen);
+                s_bandUs[0] = micros() - tBand;
+                pushFrame(0, 0);
+                tBand = micros();
+                DrawBand::set(halfH, tft.height());
+                frame.setViewport(0, -halfH, tft.width(), tft.height(), true);
+                uiClearTick(frame, now, engine, false, s_scanPickerOpen);
+                s_bandUs[1] = micros() - tBand;
+                pushFrame(0, halfH);
+                DrawBand::all();
+                frame.resetViewport();
+            } else {
+                // Fallback if a post-boot rotate ever failed to
+                // reallocate `frame` (see loop()) -- same direct-to-tft
+                // path this board already uses for every other screen.
+                uiClearTick(tft, now, engine, true, s_scanPickerOpen);
+            }
+#else
+            uiClearTick(*canvas, now, engine, true, s_scanPickerOpen);
+#endif
+            FrameProf::lap(FrameProf::CHROME);
+            // Toasts on the main screen too. They were only drawn on LOG and
+            // NEARBY, so SNOOZED and READ, both raised on the way here or while
+            // here, went unseen.
+            Theme::drawToast(*canvas, now);
+            // The clock is set and no zone was ever picked: the card, over
+            // everything, until THIS IS RIGHT. A tap on it is the card's; a
+            // tap beside it is the main screen's, so he can still be poked.
             if (uiZoneCardWanted()) {
+                uiZoneCardDraw(*canvas, now);
                 if (touchJustDown && (now - lastTouch) > TOUCH_DEBOUNCE_MS) {
                     const ZoneHit zh = uiZoneCardHit(tp.x, tp.y, tft.width(), tft.height());
                     if (zh != ZoneHit::NONE) {
