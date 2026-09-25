@@ -276,22 +276,6 @@ bool uiAlertHitMoreInfo(int x, int y, int screenW, int screenH) {
     return x >= bx && x <= bx + bw && y >= by && y <= by + bh;
 }
 
-static const char* evidenceShort(EvidenceKind e) {
-    switch (e) {
-        case EvidenceKind::BLE_MFG:         return "MFG";
-        case EvidenceKind::BLE_UUID:        return "UUID";
-        case EvidenceKind::BLE_NAME:        return "NAME";
-        case EvidenceKind::BLE_FINDMY:      return "FINDMY";
-        case EvidenceKind::BLE_IBEACON:     return "IBEACON";
-        case EvidenceKind::WIFI_OUI:        return "OUI";
-        case EvidenceKind::WIFI_SSID:       return "SSID";
-        case EvidenceKind::WIFI_PWNAGOTCHI: return "PWN";
-        case EvidenceKind::WIFI_EVILTWIN:   return "EVIL";
-        case EvidenceKind::WIFI_DEAUTH:     return "DEAUTH";
-        default:                            return "";
-    }
-}
-
 void uiAlertTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng,
                  bool infoPending, const char* infoTypeName, const char* infoText) {
     int w = t.width();
@@ -490,7 +474,7 @@ void uiAlertTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng,
         // plate and pushed the sighting count off the edge.
         t.setCursor(PLATE_X + 8, BAR_Y - LABEL_DY);
         char signalLabel[18];
-        const char* ev = evidenceShort(signalDet.evidence);
+        const char* ev = evidenceKindShortName(signalDet.evidence);
         if (ev[0]) snprintf(signalLabel, sizeof signalLabel, "%s SIG", ev);
         else       snprintf(signalLabel, sizeof signalLabel, "SIGNAL");
         t.print(signalLabel);
