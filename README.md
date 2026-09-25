@@ -537,9 +537,30 @@ environments, not just idle bench measurements.
 
 The normal ten-second serial report includes the new `[queue]` line and
 `[frame]` jitter statistics. The `RADIO` console command also reports the
-live radio-mailbox metrics. These measurements are the baseline for the next
-rendering and lookup optimizations; they let changes be judged by measured
-latency and queue pressure rather than by feel alone.
+live radio-mailbox metrics.
+
+**Stage 2 performance work (v1.20.1):**
+
+- CLEAR-screen layout is cached until orientation or optional counter
+  visibility actually changes instead of being rebuilt every frame.
+- Counter-row strings and measured widths are regenerated only when one of
+  their displayed counts changes.
+- The historical-log scan used only for SquachMesh banter is sampled at 4 Hz
+  instead of walking the live log on every rendered frame.
+- Animated CLEAR rendering is capped at 30 FPS. Radio processing, input,
+  alert decisions, security timers and other loop work continue between
+  rendered frames.
+- A genuinely static CLEAR screen (BLACK background + boring mode + no live
+  event/overlay) retains its already-rendered frame until visible state
+  changes. A sleeping T-Watch likewise skips drawing work entirely.
+- Touches, transition/glitch frames and benchmark visuals bypass the cadence
+  limiter so interaction and visual transitions stay immediate.
+- The ten-second serial report adds a `[render]` line showing CLEAR draws,
+  cadence skips, retained-static skips and sleeping-panel skips.
+
+Stage 1 and Stage 2 telemetry are intended to make later optimizations
+measurable rather than subjective: radio pressure, rendered-frame latency and
+avoided render work can all be compared directly.
 
 ## License
 
