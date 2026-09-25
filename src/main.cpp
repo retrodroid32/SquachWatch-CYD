@@ -3967,67 +3967,75 @@ void loop() {
             // same frame it becomes due, rather than after one frame of
             // CLEAR flashing up behind it.
             if (maybeEnterOutfitUnlock()) break;
-#if defined(CYD35)
-            if (frameBufferOk) {
-                // Two passes through the half-height `frame` sprite
-                // instead of one direct-to-tft pass -- see the setup()
-                // comment by its creation. advance=true only on the
-                // first pass so Squachy/digital-rain state advances once
-                // per logical frame even though this draws twice.
-                int halfH = tft.height() / 2;
-                uint32_t tBand = micros();
-                // The rows each pass can actually paint. Drawing that lands
-                // entirely outside them is declined a block at a time rather
-                // than clipped a pixel at a time -- see draw_band.h.
-                DrawBand::set(0, halfH);
-                frame.setViewport(0, 0, tft.width(), tft.height(), true);
-                uiClearTick(frame, now, engine, true, s_scanPickerOpen);
-                s_bandUs[0] = micros() - tBand;
-                pushFrame(0, 0);
-                tBand = micros();
-                DrawBand::set(halfH, tft.height());
-                frame.setViewport(0, -halfH, tft.width(), tft.height(), true);
-                uiClearTick(frame, now, engine, false, s_scanPickerOpen);
-                s_bandUs[1] = micros() - tBand;
-                pushFrame(0, halfH);
-                DrawBand::all();
-                frame.resetViewport();
-            } else {
-                // Fallback if a post-boot rotate ever failed to
-                // reallocate `frame` (see loop()) -- same direct-to-tft
-                // path this board already uses for every other screen.
-                uiClearTick(tft, now, engine, true, s_scanPickerOpen);
-            }
-#else
-            uiClearTick(*canvas, now, engine, true, s_scanPickerOpen);
+
+            bool forceClearVisual = false;
+#if CROWD_BENCH
+            forceClearVisual = CrowdBench::active();
 #endif
-            FrameProf::lap(FrameProf::CHROME);
-            // Toasts on the main screen too. They were only drawn on LOG and
-            // NEARBY, so SNOOZED and READ, both raised on the way here or while
-            // here, went unseen.
-            Theme::drawToast(*canvas, now);
-            // The clock is set and no zone was ever picked: the card, over
-            // everything, until THIS IS RIGHT. A tap on it is the card's; a
-            // tap beside it is the main screen's, so he can still be poked.
-            if (uiZoneCardWanted()) {
-                uiZoneCardDraw(*canvas, now);
-                if (touchJustDown && (now - lastTouch) > TOUCH_DEBOUNCE_MS) {
-                    const ZoneHit zh = uiZoneCardHit(tp.x, tp.y, tft.width(), tft.height());
-                    if (zh != ZoneHit::NONE) {
-                        lastTouch = now;
-                        if      (zh == ZoneHit::PREV) Settings::stepTimeZone(-1);
-                        else if (zh == ZoneHit::NEXT) Settings::stepTimeZone(1);
-                        else if (zh == ZoneHit::OK)   Settings::markTimeZoneChosen();
-                        break;
-                    }
+            const bool drawClear = clearShouldRender(
+                now, engine, s_scanPickerOpen,
+                tp.valid || touchJustDown || touchJustUp,
+                forceClearVisual);
+
+            if (drawClear) {
+#if defined(CYD35)
+                if (frameBufferOk) {
+                    // Two passes through the half-height sprite. State advances
+                    // only on the first pass; the second paints the same logical
+                    // frame into the lower physical band.
+                    const int halfH = tft.height() / 2;
+                    uint32_t tBand = micros();
+                    DrawBand::set(0, halfH);
+                    frame.setViewport(0, 0, tft.width(), tft.height(), true);
+                    uiClearTick(frame, now, engine, true, s_scanPickerOpen);
+                    s_bandUs[0] = micros() - tBand;
+                    pushFrame(0, 0);
+
+                    tBand = micros();
+                    DrawBand::set(halfH, tft.height());
+                    frame.setViewport(0, -halfH, tft.width(), tft.height(), true);
+                    uiClearTick(frame, now, engine, false, s_scanPickerOpen);
+                    s_bandUs[1] = micros() - tBand;
+                    pushFrame(0, halfH);
+                    DrawBand::all();
+                    frame.resetViewport();
+                } else {
+                    uiClearTick(tft, now, engine, true, s_scanPickerOpen);
+                }
+#else
+                uiClearTick(*canvas, now, engine, true, s_scanPickerOpen);
+#endif
+                FrameProf::lap(FrameProf::CHROME);
+
+                // Overlays are part of the retained frame: when one is live,
+                // clearShouldRender() keeps rendering until it expires.
+                Theme::drawToast(*canvas, now);
+                if (uiZoneCardWanted()) uiZoneCardDraw(*canvas, now);
+
+#if CROWD_BENCH
+                if (CrowdBench::active()) CrowdBench::drawOver(*canvas, now);
+#endif
+            } else {
+                renderedThisLoop = false;
+            }
+
+            // Hit testing is independent of whether this loop repainted. The
+            // retained frame is still exactly what the user is touching.
+            if (uiZoneCardWanted() &&
+                touchJustDown && (now - lastTouch) > TOUCH_DEBOUNCE_MS) {
+                const ZoneHit zh = uiZoneCardHit(tp.x, tp.y, tft.width(), tft.height());
+                if (zh != ZoneHit::NONE) {
+                    lastTouch = now;
+                    if      (zh == ZoneHit::PREV) Settings::stepTimeZone(-1);
+                    else if (zh == ZoneHit::NEXT) Settings::stepTimeZone(1);
+                    else if (zh == ZoneHit::OK)   Settings::markTimeZoneChosen();
+                    break;
                 }
             }
+
 #if CROWD_BENCH
-            // The crowd benchmark (a test build): its numbers or its table go
-            // over everything, a tap moves it on, and nothing else on this
-            // screen -- alerts included -- interrupts it while it runs.
+            // The benchmark forces every CLEAR render above, then owns taps.
             if (CrowdBench::active()) {
-                CrowdBench::drawOver(*canvas, now);
                 if (touchJustDown && (now - lastTouch) > TOUCH_DEBOUNCE_MS) {
                     lastTouch = now;
                     CrowdBench::tap();
