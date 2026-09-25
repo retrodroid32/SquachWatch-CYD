@@ -119,7 +119,8 @@ static void copyAdvName(const std::vector<uint8_t>& payload, char* dst, size_t d
 }
 
 static bool matchKnownServiceUuid16(const std::vector<uint8_t>& payload,
-                                    DetectionType& type, const char*& label) {
+                                    DetectionType& type, const char*& label,
+                                    uint16_t* matchedUuid = nullptr) {
     // NimBLE enumerates incomplete 16-bit UUID lists before complete lists.
     // Keep that ordering so Stage 3B changes allocation behavior, not which
     // matching signature wins when a device advertises several services.
@@ -139,6 +140,7 @@ static bool matchKnownServiceUuid16(const std::vector<uint8_t>& payload,
                 if (matched != DetectionType::UNKNOWN) {
                     type = matched;
                     label = uuidName(uuid);
+                    if (matchedUuid) *matchedUuid = uuid;
                     return true;
                 }
             }
@@ -397,10 +399,12 @@ class BleScanCallbacks : public NimBLEScanCallbacks {
         Detection det;
         memset(&det, 0, sizeof(det));
         memcpy(det.mac, mac, 6);
-        det.rssi   = adv->getRSSI();
+        const uint32_t seenNow = millis();
+        detectionRssiInit(det, (int8_t)adv->getRSSI(), seenNow);
         det.channel= 0;
-        det.firstSeen = det.lastSeen = millis();
+        det.firstSeen = det.lastSeen = seenNow;
         det.hits   = 1;
+        det.repeats = 1;
         det.active = true;
         copyAdvName(payload, det.name, sizeof(det.name));
         // The matched row's own label, for the types that cover several
@@ -413,6 +417,10 @@ class BleScanCallbacks : public NimBLEScanCallbacks {
             const uint16_t mfgId = (uint16_t)mfg.data[0] | ((uint16_t)mfg.data[1] << 8);
             det.type = lookupMfgId(mfgId);
             label    = mfgIdName(mfgId);
+            if (det.type != DetectionType::UNKNOWN) {
+                det.evidence = EvidenceKind::BLE_MFG;
+                det.evidenceCode = mfgId;
+            }
             // Apple's company ID alone is every Apple device, so it
             // still has to be confirmed as a tag. That check now
             // runs against the RAW advert rather than this parsed
@@ -421,6 +429,8 @@ class BleScanCallbacks : public NimBLEScanCallbacks {
                 if (!isAirTagPayload(payload.data(), (uint8_t)payload.size())) {
                     det.type = DetectionType::UNKNOWN;
                     label    = nullptr;
+                    det.evidence = EvidenceKind::UNKNOWN;
+                    det.evidenceCode = 0;
                     // Apple's company ID is also how an iBeacon announces
                     // itself, so this is where they used to die: not an
                     // AirTag, therefore nothing, therefore dropped. They
@@ -429,6 +439,8 @@ class BleScanCallbacks : public NimBLEScanCallbacks {
                     const uint8_t* b = mfg.data;
                     if (isIBeacon(b, mfg.len)) {
                         det.type = DetectionType::IBEACON;
+                        det.evidence = EvidenceKind::BLE_IBEACON;
+                        det.evidenceCode = 0x004C;
                         // Major and minor are BIG endian here, unlike the
                         // company ID two bytes earlier -- Apple's format
                         // is network order inside the block and Bluetooth
@@ -457,12 +469,24 @@ class BleScanCallbacks : public NimBLEScanCallbacks {
         if (det.type == DetectionType::UNKNOWN &&
             isAirTagPayload(payload.data(), (uint8_t)payload.size())) {
             det.type = DetectionType::AIRTAG;
+            det.evidence = EvidenceKind::BLE_FINDMY;
+            det.evidenceCode = 0x004C;
+        } else if (det.type == DetectionType::AIRTAG) {
+            // A company-ID hit only becomes an AirTag after the Find My
+            // structure check above, so describe the strong evidence rather
+            // than the generic Apple company ID.
+            det.evidence = EvidenceKind::BLE_FINDMY;
+            det.evidenceCode = 0x004C;
         }
 
         // Service UUIDs. Parse 16-bit UUID-list AD fields directly from
         // the payload, avoiding temporary NimBLEUUID objects in the scan path.
         if (det.type == DetectionType::UNKNOWN) {
-            matchKnownServiceUuid16(payload, det.type, label);
+            uint16_t matchedUuid = 0;
+            if (matchKnownServiceUuid16(payload, det.type, label, &matchedUuid)) {
+                det.evidence = EvidenceKind::BLE_UUID;
+                det.evidenceCode = matchedUuid;
+            }
         }
         // Name fallback
         bool matchedByName = false;
@@ -470,8 +494,10 @@ class BleScanCallbacks : public NimBLEScanCallbacks {
             det.type = lookupBtName(det.name);
             label    = nullptr;          // the name itself identifies it
             matchedByName = (det.type != DetectionType::UNKNOWN);
+            if (matchedByName) det.evidence = EvidenceKind::BLE_NAME;
         }
         if (det.type == DetectionType::UNKNOWN) return;
+        if (det.repeats >= Settings::alertMinRepeats(det.type)) det.alertReadyMs = seenNow;
         // BLE matches on service UUIDs, company IDs and device names --
         // none of those tables has a per-row grade, so the type's own
         // grade stands. Only the OUI table needed splitting.
