@@ -16,9 +16,8 @@ void uiIgnoreListInit(TFT_eSPI& t);
 void uiIgnoreListTick(TFT_eSPI& t, uint32_t now);
 void uiIgnoreListScroll(int delta);   // positive = scroll down
 
-// Index of the row whose REMOVE zone (x,y) falls in, or 0xFF for none.
-// Only the REMOVE zone is hit-testable: the rest of a row does nothing,
-// so a stray tap while scrolling cannot silently un-mute a device you
-// deliberately muted. Needs a live TFT_eSPI& because row height comes
-// from real font metrics, same as every other row list here.
-uint8_t uiIgnoreListHitRemove(TFT_eSPI& t, int x, int y, int screenW, int screenH);
+// Index of the row whose policy button falls at (x,y), or 0xFF for none.
+// A tap cycles IGNORE -> TRUSTED -> ALWAYS ALERT -> NORMAL/remove. Keeping
+// the rest of the row inert prevents an accidental swipe from changing a
+// device policy.
+uint8_t uiIgnoreListHitPolicy(TFT_eSPI& t, int x, int y, int screenW, int screenH);
