@@ -693,6 +693,7 @@
       <option value="./manifest-cyd.json" data-cyd28="1" data-fast="./manifest-cyd-fast.json" selected>2.8&quot; CYD &mdash; ST7789 (default)</option>
       <option value="./manifest-cyd-ili9341.json" data-cyd28="1" data-fast="./manifest-cyd-ili9341-fast.json">2.8&quot; CYD &mdash; ILI9341 (older)</option>
       <option value="./manifest-cyd32-st7798.json" data-fast="./manifest-cyd32-st7798-fast.json">3.2&quot; CYD &mdash; ST7798 / ST7789 compatible</option>
+      <option value="./manifest-freenove32.json">Freenove 3.2&quot; &mdash; ST7789</option>
       <option value="./manifest-awok.json">AWOK 2.4&quot;</option>
       <option value="./manifest-rlphantom-r.json">RL Phantom 2.4&quot;</option>
       <option value="./manifest-twatch-s3.json">LilyGo T-Watch S3 (BETA)</option>
@@ -1425,7 +1426,8 @@
         ['./manifest-lab-cyd.json', './manifest-lab-cyd-fast.json',
          './manifest-lab-cyd-ili9341.json', './manifest-lab-cyd-ili9341-fast.json',
          './manifest-lab-cyd32-st7798.json', './manifest-lab-cyd32-st7798-fast.json',
-         './manifest-lab-rlphantom-r.json', './manifest-lab-twatch-s3.json'].forEach(function (path) {
+         './manifest-lab-freenove32.json', './manifest-lab-rlphantom-r.json',
+         './manifest-lab-twatch-s3.json'].forEach(function (path) {
           fetch(path, { cache: 'no-store' })
             .then(function (r) { return r.ok ? r.json() : null; })
             .then(function (m) {
