@@ -571,9 +571,10 @@ live radio-mailbox metrics.
 - Tombstones are periodically rebuilt from the live ring to keep probe lengths
   bounded during long crowded runs.
 
-Stage 1 through Stage 3 telemetry and structure are intended to make later
-optimizations measurable rather than subjective: radio pressure, rendered-frame
-latency, avoided render work and hot-path lookup cost can be compared directly.
+Stage 1 through Stage 3 are intended to make later optimizations measurable
+rather than subjective: the existing queue/frame/render telemetry remains the
+baseline while hot-path lookup work is reduced without changing detection
+semantics.
 
 ## License
 
