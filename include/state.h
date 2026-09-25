@@ -130,6 +130,22 @@ inline const char* evidenceKindName(EvidenceKind e) {
     }
 }
 
+inline const char* evidenceKindShortName(EvidenceKind e) {
+    switch (e) {
+        case EvidenceKind::BLE_MFG:         return "MFG";
+        case EvidenceKind::BLE_UUID:        return "UUID";
+        case EvidenceKind::BLE_NAME:        return "NAME";
+        case EvidenceKind::BLE_FINDMY:      return "FINDMY";
+        case EvidenceKind::BLE_IBEACON:     return "IBEACON";
+        case EvidenceKind::WIFI_OUI:        return "OUI";
+        case EvidenceKind::WIFI_SSID:       return "SSID";
+        case EvidenceKind::WIFI_PWNAGOTCHI: return "PWN";
+        case EvidenceKind::WIFI_EVILTWIN:   return "EVIL";
+        case EvidenceKind::WIFI_DEAUTH:     return "DEAUTH";
+        default:                            return "";
+    }
+}
+
 enum class RssiTrend : uint8_t { UNKNOWN = 0, APPROACHING, STEADY, MOVING_AWAY };
 
 inline const char* rssiTrendName(RssiTrend t) {
