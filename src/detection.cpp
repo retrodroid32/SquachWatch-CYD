@@ -66,6 +66,87 @@ static void formatMac(char* dst, size_t dstSize, const uint8_t* mac) {
              mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
 }
 
+// Allocation-free view of one AD structure inside NimBLE's already-owned
+// payload vector. len is data bytes only (the AD type byte is excluded).
+// Legacy scan responses are appended to this same vector by NimBLE, so the
+// walk naturally sees both the original advert and its scan response.
+struct AdvFieldView {
+    const uint8_t* data = nullptr;
+    uint8_t len = 0;
+};
+
+static bool advFieldAt(const std::vector<uint8_t>& payload, uint8_t type,
+                       uint8_t wantedIndex, AdvFieldView& out) {
+    size_t pos = 0;
+    uint8_t seen = 0;
+    while (pos < payload.size()) {
+        const uint8_t fieldLen = payload[pos];
+        if (fieldLen == 0) {
+            pos++;
+            continue;
+        }
+        const size_t next = pos + 1u + fieldLen;
+        if (next > payload.size()) return false;
+        const uint8_t fieldType = payload[pos + 1];
+        if (fieldType == type) {
+            if (seen == wantedIndex) {
+                out.data = &payload[pos + 2];
+                out.len = (uint8_t)(fieldLen - 1);
+                return true;
+            }
+            seen++;
+        }
+        pos = next;
+    }
+    return false;
+}
+
+static void copyAdvName(const std::vector<uint8_t>& payload, char* dst, size_t dstSize) {
+    if (!dst || dstSize == 0) return;
+    dst[0] = 0;
+
+    // Match NimBLE's getName() semantics: prefer a complete name anywhere in
+    // the assembled payload, then fall back to the shortened/incomplete name.
+    AdvFieldView name;
+    if (!advFieldAt(payload, BLE_HS_ADV_TYPE_COMP_NAME, 0, name) &&
+        !advFieldAt(payload, BLE_HS_ADV_TYPE_INCOMP_NAME, 0, name)) {
+        return;
+    }
+
+    const size_t n = name.len < (dstSize - 1) ? name.len : (dstSize - 1);
+    if (n) memcpy(dst, name.data, n);
+    dst[n] = 0;
+}
+
+static bool matchKnownServiceUuid16(const std::vector<uint8_t>& payload,
+                                    DetectionType& type, const char*& label) {
+    // NimBLE enumerates incomplete 16-bit UUID lists before complete lists.
+    // Keep that ordering so Stage 3B changes allocation behavior, not which
+    // matching signature wins when a device advertises several services.
+    static const uint8_t kUuidFieldTypes[] = {
+        BLE_HS_ADV_TYPE_INCOMP_UUIDS16,
+        BLE_HS_ADV_TYPE_COMP_UUIDS16,
+    };
+
+    for (uint8_t fieldType : kUuidFieldTypes) {
+        for (uint8_t fieldIndex = 0;; fieldIndex++) {
+            AdvFieldView field;
+            if (!advFieldAt(payload, fieldType, fieldIndex, field)) break;
+            for (uint8_t off = 0; (uint16_t)off + 1u < field.len; off = (uint8_t)(off + 2)) {
+                const uint16_t uuid = (uint16_t)field.data[off] |
+                                      ((uint16_t)field.data[off + 1] << 8);
+                const DetectionType matched = lookupUuid(uuid);
+                if (matched != DetectionType::UNKNOWN) {
+                    type = matched;
+                    label = uuidName(uuid);
+                    return true;
+                }
+            }
+        }
+    }
+    return false;
+}
+
 // scan->start(0, ...) starts an indefinite scan (0 = "forever" per
 // NimBLEScan::start()'s own implementation); its completion callback
 // never fires for a forever-scan, which is why an early version of this
@@ -239,11 +320,10 @@ class BleScanCallbacks : public NimBLEScanCallbacks {
     }
     void onResult(const NimBLEAdvertisedDevice* adv) override { handle(adv); }
     void handle(const NimBLEAdvertisedDevice* adv) {
-        // The seatbelt. Everything below asks NimBLE for strings, and a
-        // string on a heap of scraps throws, and a throw on the host task
-        // is the abort a user photographed at 28 seconds up. With nothing
-        // to allocate into, the advert is dropped instead: the next flush
-        // (see scanFlushTick) is what makes room, not this callback.
+        // The low-heap seatbelt remains even though Stage 3B parses names,
+        // manufacturer data and 16-bit service UUIDs directly from NimBLE's
+        // existing payload vector. Other callback-side work can still need
+        // heap, and dropping one advert is safer than aborting the host task.
         if (s_heapLow) {
             s_advertsDropped++;
             return;
@@ -251,6 +331,7 @@ class BleScanCallbacks : public NimBLEScanCallbacks {
         // 2.x hands back a reference to the device's own address, so the
         // pointer is good for the whole of this call.
         const uint8_t* mac = adv->getAddress().getBase()->val;
+        const std::vector<uint8_t>& payload = adv->getPayload();
 #if SQUACH_MESH
         // A peer is handled here and RETURNS, so it never reaches the
         // signature tables and can never become a Detection. Getting that
@@ -262,12 +343,12 @@ class BleScanCallbacks : public NimBLEScanCallbacks {
         // which is what lets the name from the first travel with the second.
         // v1.5.23 and earlier only ever read the first, and that is exactly
         // what keeps them seeing a peer that is in the middle of a message.
-        if (adv->haveManufacturerData()) {
+        {
             bool ours = false;
-            const uint8_t mdN = adv->getManufacturerDataCount();
-            for (uint8_t i = 0; i < mdN; i++) {
-                const std::string md = adv->getManufacturerData(i);
-                if (Mesh::onManufacturerData((const uint8_t*)md.data(), md.size(), mac, millis())) ours = true;
+            for (uint8_t i = 0;; i++) {
+                AdvFieldView md;
+                if (!advFieldAt(payload, BLE_HS_ADV_TYPE_MFG_DATA, i, md)) break;
+                if (Mesh::onManufacturerData(md.data, md.len, mac, millis())) ours = true;
             }
             // A SquachWatch is not a detection, but it can be a hunt target:
             // the SQUAD screen's HUNT aims the gauge at one. Its advert feeds
@@ -298,8 +379,7 @@ class BleScanCallbacks : public NimBLEScanCallbacks {
             memset(&r, 0, sizeof(r));
             memcpy(r.mac, mac, 6);
             r.rssi = adv->getRSSI();
-            const char* name = adv->getName().c_str();
-            if (name && name[0]) strncpy(r.name, name, sizeof(r.name) - 1);
+            copyAdvName(payload, r.name, sizeof(r.name));
             g_engine->postRawBle(r);
             return;
         }
@@ -311,53 +391,48 @@ class BleScanCallbacks : public NimBLEScanCallbacks {
         det.firstSeen = det.lastSeen = millis();
         det.hits   = 1;
         det.active = true;
-        const char* name = adv->getName().c_str();
-        if (name && name[0]) {
-            strncpy(det.name, name, sizeof(det.name) - 1);
-        }
+        copyAdvName(payload, det.name, sizeof(det.name));
         // The matched row's own label, for the types that cover several
         // devices -- see where the vendor is written, below.
         const char* label = nullptr;
-        // Manufacturer data
-        if (adv->haveManufacturerData()) {
-            std::string mfg = adv->getManufacturerData();
-            if (mfg.size() >= 2) {
-                uint16_t mfgId = (uint8_t)mfg[0] | ((uint8_t)mfg[1] << 8);
-                det.type = lookupMfgId(mfgId);
-                label    = mfgIdName(mfgId);
-                // Apple's company ID alone is every Apple device, so it
-                // still has to be confirmed as a tag. That check now
-                // runs against the RAW advert rather than this parsed
-                // field -- see isAirTagPayload().
-                if (det.type == DetectionType::AIRTAG) {
-                    if (!isAirTagPayload(adv->getPayload().data(),
-                                         (uint8_t)adv->getPayload().size())) {
-                        det.type = DetectionType::UNKNOWN;
-                        label    = nullptr;
-                        // Apple's company ID is also how an iBeacon announces
-                        // itself, so this is where they used to die: not an
-                        // AirTag, therefore nothing, therefore dropped. They
-                        // are probably the most numerous tracking transmitter
-                        // most people walk past in a day.
-                        const uint8_t* b = (const uint8_t*)mfg.data();
-                        if (isIBeacon(b, (uint8_t)mfg.size())) {
-                            det.type = DetectionType::IBEACON;
-                            // Major and minor are BIG endian here, unlike the
-                            // company ID two bytes earlier -- Apple's format
-                            // is network order inside the block and Bluetooth
-                            // order outside it.
-                            const unsigned major = (unsigned)((b[20] << 8) | b[21]);
-                            const unsigned minor = (unsigned)((b[22] << 8) | b[23]);
-                            // Six hex of the proximity UUID plus major.minor.
-                            // The UUID is the DEPLOYMENT -- every beacon a
-                            // chain owns shares it -- so two sightings with
-                            // the same first half are the same operator in two
-                            // places, which is the part worth seeing. Six and
-                            // not eight so the unit number cannot be truncated
-                            // off the end of a 20-byte field.
-                            snprintf(det.name, sizeof(det.name), "%02X%02X%02X %u.%u",
-                                     b[4], b[5], b[6], major, minor);
-                        }
+        // Manufacturer data. Read the first raw AD field directly rather
+        // than asking NimBLE to copy it into a temporary std::string.
+        AdvFieldView mfg;
+        if (advFieldAt(payload, BLE_HS_ADV_TYPE_MFG_DATA, 0, mfg) && mfg.len >= 2) {
+            const uint16_t mfgId = (uint16_t)mfg.data[0] | ((uint16_t)mfg.data[1] << 8);
+            det.type = lookupMfgId(mfgId);
+            label    = mfgIdName(mfgId);
+            // Apple's company ID alone is every Apple device, so it
+            // still has to be confirmed as a tag. That check now
+            // runs against the RAW advert rather than this parsed
+            // field -- see isAirTagPayload().
+            if (det.type == DetectionType::AIRTAG) {
+                if (!isAirTagPayload(payload.data(), (uint8_t)payload.size())) {
+                    det.type = DetectionType::UNKNOWN;
+                    label    = nullptr;
+                    // Apple's company ID is also how an iBeacon announces
+                    // itself, so this is where they used to die: not an
+                    // AirTag, therefore nothing, therefore dropped. They
+                    // are probably the most numerous tracking transmitter
+                    // most people walk past in a day.
+                    const uint8_t* b = mfg.data;
+                    if (isIBeacon(b, mfg.len)) {
+                        det.type = DetectionType::IBEACON;
+                        // Major and minor are BIG endian here, unlike the
+                        // company ID two bytes earlier -- Apple's format
+                        // is network order inside the block and Bluetooth
+                        // order outside it.
+                        const unsigned major = (unsigned)((b[20] << 8) | b[21]);
+                        const unsigned minor = (unsigned)((b[22] << 8) | b[23]);
+                        // Six hex of the proximity UUID plus major.minor.
+                        // The UUID is the DEPLOYMENT -- every beacon a
+                        // chain owns shares it -- so two sightings with
+                        // the same first half are the same operator in two
+                        // places, which is the part worth seeing. Six and
+                        // not eight so the unit number cannot be truncated
+                        // off the end of a 20-byte field.
+                        snprintf(det.name, sizeof(det.name), "%02X%02X%02X %u.%u",
+                                 b[4], b[5], b[6], major, minor);
                     }
                 }
             }
@@ -369,40 +444,14 @@ class BleScanCallbacks : public NimBLEScanCallbacks {
         // carries the Find My structure behind another AD structure, or
         // in a scan response, reaches the detector only through here.
         if (det.type == DetectionType::UNKNOWN &&
-            isAirTagPayload(adv->getPayload().data(), (uint8_t)adv->getPayload().size())) {
+            isAirTagPayload(payload.data(), (uint8_t)payload.size())) {
             det.type = DetectionType::AIRTAG;
         }
 
-        // Service UUIDs
-        if (det.type == DetectionType::UNKNOWN && adv->haveServiceUUID()) {
-            for (int j = 0; j < adv->getServiceUUIDCount(); j++) {
-                NimBLEUUID u = adv->getServiceUUID(j);
-                // 16-bit UUID match: avoid touching ble_uuid_t's
-                // internals (the struct layout varies between
-                // NimBLE-Arduino versions). The equals() method is
-                // a stable API and compares the logical 16-bit value.
-                if (u.bitSize() == 16) {
-                    static const uint16_t kKnown16[] = {
-                        0x1101,  // SPP — skimmer
-                        0xFEED,  // Tile tracker
-                        0xFEEC,  // Tile tracker (second SIG-assigned UUID)
-                        0xFD5F,  // Ray-Ban Meta glasses
-                        0x3100, 0x3200, 0x3300, 0x3400, 0x3500,  // Raven
-                        0xFFFA,  // OpenDroneID
-                        0xFD5A,  // Samsung SmartTag
-                        0xFEAA,  // Google Find My Device Network (Eddystone)
-                        0x3081, 0x3082, 0x3083,  // Flipper Zero, one per case colour
-                    };
-                    for (uint16_t k : kKnown16) {
-                        if (u.equals(NimBLEUUID((uint16_t)k))) {
-                            det.type = lookupUuid(k);
-                            label    = uuidName(k);
-                            break;
-                        }
-                    }
-                    if (det.type != DetectionType::UNKNOWN) break;
-                }
-            }
+        // Service UUIDs. Parse 16-bit UUID-list AD fields directly from
+        // the payload, avoiding temporary NimBLEUUID objects in the scan path.
+        if (det.type == DetectionType::UNKNOWN) {
+            matchKnownServiceUuid16(payload, det.type, label);
         }
         // Name fallback
         bool matchedByName = false;
