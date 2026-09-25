@@ -1282,8 +1282,12 @@ void DetectionEngine::indexLogSlot(uint8_t slot) {
     }
 
     // With 128 buckets for at most 64 live rows this is only reachable if
-    // the table is saturated with tombstones. Rebuild once and insert again.
+    // the table is saturated with tombstones. A rebuild re-indexes every
+    // valid ring row, including this slot when the ring is full.
     rebuildLogIndex();
+    if (findLogSlot(d.mac, d.type) == slot) return;
+
+    // Defensive path for a not-yet-counted slot; normally unreachable.
     const uint8_t retry = logIndexHash(d.mac, d.type);
     for (uint8_t probe = 0; probe < LOG_INDEX_CAP; probe++) {
         const uint8_t ix = (uint8_t)((retry + probe) & (LOG_INDEX_CAP - 1));
