@@ -4422,7 +4422,8 @@ void loop() {
                     // is still the user acknowledging the alert.
                     lastTouch = now;
                     if (IgnoreList::contains(s_alertMac)) IgnoreList::remove(s_alertMac);
-                    else                                  IgnoreList::add(s_alertMac, lastAlertType);
+                    else IgnoreList::setPolicy(s_alertMac, lastAlertType,
+                                               IgnoreList::Policy::IGNORE, s_alertLabel);
                     squachyCatch(lastAlertType, s_alertMac, lastAlertHits, lastAlertRssi, lastAlertConf);
                     enterClear();
                 } else if (uiAlertHitSnooze(tp.x, tp.y, tft.width(), tft.height())) {
@@ -4606,7 +4607,8 @@ void loop() {
                         // feedback at all.
                         const bool wasOn = IgnoreList::contains(s_confirmMac);
                         if (wasOn) IgnoreList::remove(s_confirmMac);
-                        else       IgnoreList::add(s_confirmMac, s_confirmType);
+                        else IgnoreList::setPolicy(s_confirmMac, s_confirmType,
+                                                   IgnoreList::Policy::IGNORE, s_confirmLabel);
                         Theme::showToast(wasOn ? "UN-IGNORED" : "IGNORED",
                                          detectionTypeName(s_confirmType),
                                          Theme::colorFor(s_confirmType));
@@ -4770,7 +4772,8 @@ void loop() {
                         // type to record and none to name in the toast.
                         const bool wasOn = IgnoreList::contains(s_confirmMac);
                         if (wasOn) IgnoreList::remove(s_confirmMac);
-                        else       IgnoreList::add(s_confirmMac, DetectionType::UNKNOWN);
+                        else IgnoreList::setPolicy(s_confirmMac, DetectionType::UNKNOWN,
+                                                   IgnoreList::Policy::IGNORE, s_confirmLabel);
                         Theme::showToast(wasOn ? "UN-IGNORED" : "IGNORED",
                                          nullptr, Theme::CYAN);
                     } else if (ctap == RawScanConfirmTap::HUNT) {
@@ -5612,19 +5615,29 @@ void loop() {
                     break;
                 }
                 if (!ilMoved) {
-                    uint8_t hit = uiIgnoreListHitRemove(*canvas, ilStartX, ilStartY,
+                    uint8_t hit = uiIgnoreListHitPolicy(*canvas, ilStartX, ilStartY,
                                                         tft.width(), tft.height());
                     if (hit != 0xFF) {
                         lastTouch = now;
                         const uint8_t* mac = IgnoreList::macAt(hit);
                         if (mac) {
-                            // Copy first: remove() backfills the hole with
-                            // the last entry, so the pointer it was read
-                            // from stops meaning what it meant.
+                            // Copy first: NORMAL removes/backfills the record.
                             uint8_t tmp[6];
                             memcpy(tmp, mac, 6);
-                            IgnoreList::remove(tmp);
-                            uiIgnoreListScroll(0);   // re-clamp after shrink
+                            const DetectionType ty = IgnoreList::typeAt(hit);
+                            const IgnoreList::Policy cur = IgnoreList::policyAt(hit);
+                            IgnoreList::Policy next = IgnoreList::Policy::IGNORE;
+                            const char* toast = "IGNORED";
+                            if (cur == IgnoreList::Policy::IGNORE) {
+                                next = IgnoreList::Policy::TRUSTED; toast = "TRUSTED";
+                            } else if (cur == IgnoreList::Policy::TRUSTED) {
+                                next = IgnoreList::Policy::ALWAYS_ALERT; toast = "ALWAYS ALERT";
+                            } else if (cur == IgnoreList::Policy::ALWAYS_ALERT) {
+                                next = IgnoreList::Policy::NORMAL; toast = "POLICY REMOVED";
+                            }
+                            IgnoreList::setPolicy(tmp, ty, next);
+                            Theme::showToast(toast, detectionTypeName(ty), Theme::colorFor(ty));
+                            uiIgnoreListScroll(0);   // re-clamp after a removal
                         }
                     }
                 }
