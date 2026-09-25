@@ -1074,16 +1074,14 @@ static bool    s_alertIsBle = true;
 // matched to any known type at all, so its panel has no INFO button
 // and never touches this.
 static DetectionType s_confirmType = DetectionType::UNKNOWN;
+static Detection     s_confirmDetection = {};
 
-// The MORE INFO explanation panel -- opened by LOG's confirm panel or
-// ALERT's own MORE INFO button (mutually exclusive with LOG's confirm
-// panel and with everything else on whichever screen is showing it,
-// since only one state is ever active). s_infoShowingPrimer tracks
-// which of the (at most) two pages is up: the one-time RSSI/confidence
-// primer first if it's never been shown (see Settings::infoPrimerShown()),
-// then s_confirmType's own explanation either way.
-static bool          s_infoPending       = false;
-static bool          s_infoShowingPrimer = false;
+enum class InfoPage : uint8_t { PRIMER = 0, EVIDENCE, EXPLAIN };
+
+// MORE INFO has three layers: the one-time RSSI/confidence primer, concrete
+// evidence for this exact sighting, then the longer device/type explanation.
+static bool     s_infoPending = false;
+static InfoPage s_infoPage    = InfoPage::EVIDENCE;
 // Same "ignore the touch that opened this" gate s_confirmArmed uses,
 // applied to the info panel's own GOT IT button.
 static bool          s_infoArmed         = false;
@@ -1303,6 +1301,7 @@ static void enterAlert(const Detection& d) {
     lastAlertConf = d.conf;
     lastAlertHits = d.hits;
     lastAlertRssi = d.rssi;
+    s_confirmDetection = d;
     // Copied rather than kept as a Detection* -- the log is a ring
     // buffer that keeps being written while the alert is up, so the
     // entry this came from can be overwritten before HUNT is tapped.
@@ -4309,12 +4308,14 @@ void loop() {
             break;
         }
         case AppState::ALERT: {
-            const char* alertInfoText = s_infoShowingPrimer ? DetectionInfo::rssiConfidencePrimer()
-                                                              : DetectionInfo::explainFor(s_confirmType, s_confirmVendor, s_confirmName, engine);
-            // No heading during the primer page -- it's about RSSI/
-            // confidence in general, not any one detection type.
-            const char* alertInfoTypeName = s_infoShowingPrimer ? nullptr
-                                          : DetectionInfo::titleFor(s_confirmType, s_confirmVendor, s_confirmName);
+            const char* alertInfoText =
+                s_infoPage == InfoPage::PRIMER ? DetectionInfo::rssiConfidencePrimer()
+              : s_infoPage == InfoPage::EVIDENCE ? DetectionInfo::evidenceText(s_confirmDetection)
+              : DetectionInfo::explainFor(s_confirmType, s_confirmVendor, s_confirmName, engine);
+            const char* alertInfoTypeName =
+                s_infoPage == InfoPage::PRIMER ? nullptr
+              : s_infoPage == InfoPage::EVIDENCE ? "EVIDENCE"
+              : DetectionInfo::titleFor(s_confirmType, s_confirmVendor, s_confirmName);
 #if defined(CYD35)
             if (frameBufferOk) {
                 // Same two-pass half-height `frame` trick CLEAR/BOOT
@@ -4354,23 +4355,16 @@ void loop() {
                 } else if (tp.valid && (now - lastTouch) > TOUCH_DEBOUNCE_MS &&
                            Theme::infoPanelHitDismiss(tp.x, tp.y, tft.width(), tft.height())) {
                     lastTouch = now;
-                    if (s_infoShowingPrimer) {
-                        // First page done -- move straight to this
-                        // alert's own explanation rather than closing,
-                        // and only mark the primer seen once its page
-                        // has actually been read past.
+                    if (s_infoPage == InfoPage::PRIMER) {
                         Settings::markInfoPrimerShown();
-                        s_infoShowingPrimer = false;
+                        s_infoPage = InfoPage::EVIDENCE;
+                        s_infoArmed = false;
+                    } else if (s_infoPage == InfoPage::EVIDENCE) {
+                        s_infoPage = InfoPage::EXPLAIN;
                         s_infoArmed = false;
                     } else {
-                        // GOT IT on the actual explanation (not the
-                        // primer) closes the whole alert, straight back
-                        // to CLEAR -- same as tapping anywhere else on
-                        // the alert screen. Previously this just closed
-                        // the info panel back to the plain ALERT screen,
-                        // which read as an extra, redundant tap-to-
-                        // dismiss step once you'd already read the
-                        // explanation.
+                        // GOT IT on the final explanation acknowledges the
+                        // alert and returns home.
                         s_infoPending = false;
                         squachyCatch(lastAlertType, s_alertMac, lastAlertHits, lastAlertRssi, lastAlertConf);
                         enterClear();
@@ -4396,7 +4390,9 @@ void loop() {
                     s_confirmType        = lastAlertType;
                     memcpy(s_confirmVendor, s_alertVendor, sizeof s_confirmVendor);
                     memcpy(s_confirmName,   s_alertName,   sizeof s_confirmName);
-                    s_infoShowingPrimer  = !Settings::infoPrimerShown();
+                    if (const Detection* live = engine.findDetection(s_alertMac, lastAlertType))
+                        s_confirmDetection = *live;
+                    s_infoPage           = Settings::infoPrimerShown() ? InfoPage::EVIDENCE : InfoPage::PRIMER;
                     s_infoPending        = true;
                     s_infoArmed          = false;
                 } else if (uiAlertHitIgnore(tp.x, tp.y, tft.width(), tft.height())) {
@@ -4513,14 +4509,15 @@ void loop() {
             break;
         }
         case AppState::LOG: {
-            const char* infoText = s_infoShowingPrimer
-                                  ? DetectionInfo::rssiConfidencePrimer()
-                                  : DetectionInfo::explainFor(s_confirmType, s_confirmVendor, s_confirmName, engine);
+            const char* infoText =
+                s_infoPage == InfoPage::PRIMER ? DetectionInfo::rssiConfidencePrimer()
+              : s_infoPage == InfoPage::EVIDENCE ? DetectionInfo::evidenceText(s_confirmDetection)
+              : DetectionInfo::explainFor(s_confirmType, s_confirmVendor, s_confirmName, engine);
 
-            // No heading during the primer page -- it's about RSSI/
-            // confidence in general, not any one detection type.
-            const char* infoTypeName = s_infoShowingPrimer ? nullptr
-                                     : DetectionInfo::titleFor(s_confirmType, s_confirmVendor, s_confirmName);
+            const char* infoTypeName =
+                s_infoPage == InfoPage::PRIMER ? nullptr
+              : s_infoPage == InfoPage::EVIDENCE ? "EVIDENCE"
+              : DetectionInfo::titleFor(s_confirmType, s_confirmVendor, s_confirmName);
             // Nothing on LOG moves by the call -- the note about
             // drawActiveBackground in ui_log.cpp is a comment, not a call.
             drawTwoBand([&](TFT_eSPI& t, bool) {
@@ -4542,13 +4539,12 @@ void loop() {
                 } else if (tp.valid && (now - lastTouch) > TOUCH_DEBOUNCE_MS &&
                            Theme::infoPanelHitDismiss(tp.x, tp.y, tft.width(), tft.height())) {
                     lastTouch = now;
-                    if (s_infoShowingPrimer) {
-                        // First page done -- move straight to this
-                        // target's own explanation rather than closing,
-                        // and only mark the primer seen once its page
-                        // has actually been read past.
+                    if (s_infoPage == InfoPage::PRIMER) {
                         Settings::markInfoPrimerShown();
-                        s_infoShowingPrimer = false;
+                        s_infoPage = InfoPage::EVIDENCE;
+                        s_infoArmed = false;
+                    } else if (s_infoPage == InfoPage::EVIDENCE) {
+                        s_infoPage = InfoPage::EXPLAIN;
                         s_infoArmed = false;
                     } else {
                         s_infoPending = false;
@@ -4612,7 +4608,7 @@ void loop() {
                     } else if (ctap == LogConfirmTap::INFO) {
                         lastTouch = now;
                         s_confirmPending = false;
-                        s_infoShowingPrimer = !Settings::infoPrimerShown();
+                        s_infoPage = Settings::infoPrimerShown() ? InfoPage::EVIDENCE : InfoPage::PRIMER;
                         s_infoPending = true;
                         s_infoArmed   = false;
                     } else if (ctap == LogConfirmTap::CANCEL) {
@@ -4700,6 +4696,7 @@ void loop() {
                         memcpy(s_confirmMac, d->mac, 6);
                         s_confirmIsBle = (d->channel == 0);
                         s_confirmType  = d->type;
+                        s_confirmDetection = *d;
                         snprintf(s_confirmVendor, sizeof s_confirmVendor, "%s", vendorText(*d));
                         memcpy(s_confirmName,   d->name,   sizeof s_confirmName);
                         const char* lbl = d->name[0] ? d->name : vendorText(*d);
