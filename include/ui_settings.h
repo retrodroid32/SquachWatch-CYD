@@ -56,6 +56,8 @@ enum class SettingsRow : uint8_t {
     CLOCK_BACKDROP,  // on the DESK MODE page: what plays inside the clock
     WATCH_BATTERY,   // the T-Watch only: charge and voltage, under WATCH
     WATCH_RADIO,     // the T-Watch only: the radio duty cycle, under WATCH
+    WATCH_LISTEN,    // the T-Watch only: BLE LISTEN, how much of the time the receiver is open
+    WATCH_IDLE_CPU,  // the T-Watch only: SLEEP CPU, the clock while the screen is asleep
     WATCH_BUZZ,      // the T-Watch only: buzz on an alert, under WATCH
     WATCH_RADIO_RESET, // the T-Watch only: power cycle the watch to wake the radios, under WATCH
     WATCH_STEADY,    // the T-Watch only: STEADY POWER, DC1 held in PWM, under WATCH

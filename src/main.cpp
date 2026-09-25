@@ -854,6 +854,7 @@ static bool     s_onUsb = true;
 static bool s_radiosResting = false;   // the duty cycle's state; see twatchRadioTick()
 #endif
 
+static void applyCpuClock();
 static void applyBrightness() {
     uint8_t duty = s_screenDimmed ? Settings::dimLevel() : Settings::brightness();
 #if defined(TWATCH_S3)
@@ -864,6 +865,7 @@ static void applyBrightness() {
             tft.writecommand(0x10);   // SLPIN
             s_panelAsleep = true;
             Serial.println("[panel] asleep");
+            applyCpuClock();   // SLEEP CPU
         }
         return;
     }
@@ -874,6 +876,7 @@ static void applyBrightness() {
         s_panelAsleep = false;
         FramePush::invalidate();
         Serial.println("[panel] awake");
+        applyCpuClock();   // back to CPU CLOCK
     }
 #endif
     ledcWrite(BL_CH_ORIG, duty);
@@ -889,7 +892,12 @@ static void applyBrightness() {
 // would be both wasteful and a good way to find a driver's re-entrancy bug.
 static uint16_t s_cpuMhzApplied = 240;
 static void applyCpuClock() {
-    const uint16_t want = Settings::cpuMhz();
+    uint16_t want = Settings::cpuMhz();
+#if defined(TWATCH_S3)
+    // Asleep, the watch only listens and waits for a tap: SLEEP CPU, which
+    // never goes above the screen-on clock. About 25 mA at 80 instead of 240.
+    if (s_panelAsleep) { const uint16_t idle = Settings::idleCpuMhz(); if (idle < want) want = idle; }
+#endif
     if (want == s_cpuMhzApplied) return;
     setCpuFrequencyMhz(want);
     s_cpuMhzApplied = want;
@@ -2358,6 +2366,8 @@ static void twatchRadioTick(uint32_t now) {
     static uint32_t owedMs = 0, arrivalsAt = 0;
     bleArrivalsRoll(now);
     if (now - usbAt >= 2000) { usbAt = now; usb = s_pmuOk && s_pmu.isVbusIn(); s_onUsb = usb; }
+    // BLE LISTEN, on battery; the cable pays for the full 75 either way.
+    setScanWindowBase(usb ? 75 : Settings::bleListen());
     // RADIO TEST on the console forces BLE+5/30 whatever the settings say.
     const uint8_t duty = g_consoleRadioTest ? 3 : Settings::radioDuty();
     // Only a device you asked to WATCH holds the radios awake. Every alert
@@ -4885,6 +4895,8 @@ void loop() {
                         case SettingsRow::POWER_SAVER: enterPower(); break;
 #if defined(TWATCH_S3)
                         case SettingsRow::WATCH_RADIO: Settings::cycleRadioDuty(); break;
+                        case SettingsRow::WATCH_LISTEN: Settings::cycleBleListen(); break;
+                        case SettingsRow::WATCH_IDLE_CPU: Settings::cycleIdleCpu(); applyCpuClock(); break;
                         case SettingsRow::WATCH_BATTERY: break;   // a reading, not a switch
                         case SettingsRow::WATCH_RADIO_RESET: twatchRadioResetTap(); break;
                         case SettingsRow::WATCH_STEADY:
