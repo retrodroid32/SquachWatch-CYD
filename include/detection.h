@@ -413,7 +413,10 @@ public:
     }
     void noteAlertRaised(const uint8_t* mac, DetectionType type, uint32_t now) {
         const int16_t slot = findLogSlot(mac, type);
-        if (slot >= 0) _log[(uint8_t)slot].lastAlertMs = now;
+        if (slot >= 0) {
+            _log[(uint8_t)slot].lastAlertMs = now;
+            _log[(uint8_t)slot].alertReadyMs = 0;   // consume this alert-ready event once
+        }
     }
 
     bool isWatched(const uint8_t* mac, bool ble) const {
