@@ -2346,6 +2346,13 @@ const Detection* DetectionEngine::logAt(uint8_t idx) const {
     return &_log[slot];
 }
 
+const Detection* DetectionEngine::findDetection(const uint8_t* mac, DetectionType type) const {
+    if (!mac) return nullptr;
+    const int16_t slot = findLogSlot(mac, type);
+    return slot >= 0 ? &_log[(uint8_t)slot] : nullptr;
+}
+
+
 // Module-level helpers used by main / UI
 static char g_macBuf[20];
 const char* macFmt(const uint8_t* mac) {
