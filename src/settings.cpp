@@ -117,6 +117,17 @@ static uint8_t  s_dimLevel     = 16;   // ~6%, dim but not off
 static uint8_t  s_idleFpsIx    = 2;    // 12 fps
 static uint8_t  s_idleAfterIx  = 1;    // 10 s
 static uint8_t  s_cpuIx        = 0;    // 240 MHz, the stock clock
+static const uint8_t  BLE_LISTEN[] = { 25, 50, 75 };
+static const uint16_t IDLE_CPU[]   = { 80, 160, 240 };
+#if defined(TWATCH_S3)
+static const uint8_t  BLE_LISTEN_DEFAULT = 0;   // 25%
+static const uint8_t  IDLE_CPU_DEFAULT   = 0;   // 80 MHz asleep
+#else
+static const uint8_t  BLE_LISTEN_DEFAULT = 2;   // historical 75%
+static const uint8_t  IDLE_CPU_DEFAULT   = 2;   // historical 240 MHz
+#endif
+static uint8_t  s_bleIx        = BLE_LISTEN_DEFAULT;
+static uint8_t  s_idleCpuIx    = IDLE_CPU_DEFAULT;
 static bool     s_wakeOnAlert  = true;
 static bool     s_buzz         = true;
 static bool     s_steady       = false;
@@ -209,6 +220,18 @@ void cycleRadioDuty() {
 uint16_t screenTimeoutSecRaw() { return SCREEN_TIMEOUTS[s_scrTimeoutIx]; }
 uint8_t  idleFpsRaw()          { return IDLE_FPS[s_idleFpsIx]; }
 uint16_t cpuMhzRaw()           { return CPU_MHZ[s_cpuIx]; }
+uint8_t  bleListen()           { return s_powerSaver ? BLE_LISTEN[s_bleIx] : 75; }
+uint8_t  bleListenRaw()        { return BLE_LISTEN[s_bleIx]; }
+void cycleBleListen() {
+    s_bleIx = (uint8_t)((s_bleIx + 1) % 3);
+    s_prefs.putUChar("bleWin", s_bleIx);
+}
+uint16_t idleCpuMhz()          { return s_powerSaver ? IDLE_CPU[s_idleCpuIx] : 240; }
+uint16_t idleCpuMhzRaw()       { return IDLE_CPU[s_idleCpuIx]; }
+void cycleIdleCpu() {
+    s_idleCpuIx = (uint8_t)((s_idleCpuIx + 1) % 3);
+    s_prefs.putUChar("idleCpu", s_idleCpuIx);
+}
 
 void togglePowerSaver() {
     s_powerSaver = !s_powerSaver;
@@ -363,6 +386,10 @@ void load() {
     s_idleFpsIx    = s_prefs.getUChar("pwrFps", 2);
     s_idleAfterIx  = s_prefs.getUChar("pwrIdleT", 1);
     s_cpuIx        = s_prefs.getUChar("pwrCpu", 0);
+    s_bleIx        = s_prefs.getUChar("bleWin", BLE_LISTEN_DEFAULT);
+    s_idleCpuIx    = s_prefs.getUChar("idleCpu", IDLE_CPU_DEFAULT);
+    if (s_bleIx > 2)     s_bleIx = BLE_LISTEN_DEFAULT;
+    if (s_idleCpuIx > 2) s_idleCpuIx = IDLE_CPU_DEFAULT;
     s_wakeOnAlert  = s_prefs.getBool("pwrWake", true);
     s_buzz         = s_prefs.getBool("buzz", true);
     s_steady       = s_prefs.getBool("steady", false);
