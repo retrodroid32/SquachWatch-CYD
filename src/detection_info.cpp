@@ -107,4 +107,50 @@ const char* rssiConfidencePrimer() {
            "Confidence is how sure the match is: HIGH is a strong match, MED/LOW are looser guesses.";
 }
 
+const char* evidenceText(const Detection& d) {
+    static char buf[320];
+    const char* conf = d.conf == Confidence::HIGH_CONF ? "HIGH"
+                     : d.conf == Confidence::MED_CONF ? "MEDIUM" : "LOW";
+    char evidence[72];
+
+    switch (d.evidence) {
+        case EvidenceKind::BLE_MFG:
+        case EvidenceKind::BLE_UUID:
+            snprintf(evidence, sizeof evidence, "%s 0x%04X",
+                     evidenceKindName(d.evidence), (unsigned)d.evidenceCode);
+            break;
+        case EvidenceKind::BLE_FINDMY:
+        case EvidenceKind::BLE_IBEACON:
+            snprintf(evidence, sizeof evidence, "%s (Apple 0x%04X)",
+                     evidenceKindName(d.evidence), (unsigned)d.evidenceCode);
+            break;
+        case EvidenceKind::WIFI_OUI:
+            snprintf(evidence, sizeof evidence, "%s %02X:%02X:%02X",
+                     evidenceKindName(d.evidence), d.mac[0], d.mac[1], d.mac[2]);
+            break;
+        default:
+            snprintf(evidence, sizeof evidence, "%s", evidenceKindName(d.evidence));
+            break;
+    }
+
+    const RssiTrend trend = detectionRssiTrend(d);
+    const unsigned repeats = d.repeats ? (unsigned)d.repeats : 1u;
+    if (d.rssiHistCount >= 2) {
+        snprintf(buf, sizeof buf,
+                 "%s confidence. Matched by %s. Seen %u time%s this visit. "
+                 "Signal %d dBm, %s across %u samples (%d to %d dBm).",
+                 conf, evidence, repeats, repeats == 1 ? "" : "s",
+                 (int)d.rssi, rssiTrendName(trend), (unsigned)d.rssiHistCount,
+                 (int)detectionRssiAt(d, 0),
+                 (int)detectionRssiAt(d, (uint8_t)(d.rssiHistCount - 1)));
+    } else {
+        snprintf(buf, sizeof buf,
+                 "%s confidence. Matched by %s. Seen %u time%s this visit. "
+                 "Signal %d dBm; more samples are needed for a trend.",
+                 conf, evidence, repeats, repeats == 1 ? "" : "s", (int)d.rssi);
+    }
+    buf[sizeof buf - 1] = 0;
+    return buf;
+}
+
 }
