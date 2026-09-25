@@ -117,6 +117,9 @@ otherwise see all week. It is one tap away in `DETECTION FILTER`.
 - **ESP32-2432S032R / E32R32P** — the 3.2" resistive CYD.
   SquachWatch includes a dedicated 240×320 ST7798/ST7789-compatible profile,
   GPIO27 backlight control, and XPT2046 touch sharing the LCD SPI bus.
+- **Freenove FNK0103L / FNK0114L 3.2"** — a separate ST7789/XPT2046 profile
+  using Freenove's confirmed HSPI pinout, inversion-on panel baseline,
+  GPIO27 backlight and its 22/16/17 RGB status-light wiring.
 - **LilyGo T-Watch S3 (BETA)** — ESP32-S3 watch profile with a 240×240 ST7789,
   capacitive touch, battery/PMU support, haptics and a battery-backed RTC.
 
@@ -147,7 +150,8 @@ from your browser:
 > them with an unreviewed bundle.
 
 Works in Firefox, Chrome, Edge, or Brave on desktop. Pick your board (2.8" CYD,
-3.2" CYD ST7798, AWOK 2.4", RL Phantom 2.4", or LilyGo T-Watch S3 beta),
+3.2" CYD ST7798, Freenove 3.2" ST7789, AWOK 2.4", RL Phantom 2.4", or
+LilyGo T-Watch S3 beta),
 plug in, click Connect & Install, done. A T-Watch has its clock set after install.
 
 ## Build
@@ -168,6 +172,11 @@ Three steps:
    For the 3.2" CYD profile, use:
    ```sh
    pio run -e cyd32-st7798 -t upload
+   ```
+
+   For the Freenove 3.2" profile, use:
+   ```sh
+   pio run -e freenove32 -t upload
    ```
 
 The first build pulls the TFT_eSPI, XPT2046, and NimBLE-Arduino
@@ -664,3 +673,24 @@ use ST7798 terminology for closely related ST77xx panels.
 The 3.2-inch baseline uses BGR colour order with inversion off. First boot
 still presents SquachWatch's colour check and intentionally runs touch
 calibration so individual panel/digitizer variations can be corrected.
+
+### Freenove 3.2-inch (FNK0103L / FNK0114L; ST7789)
+
+Freenove is intentionally a **separate** profile from the
+ESP32-2432S032R/E32R32P target above even though both are 240×320 3.2-inch
+boards. Use:
+
+```text
+pio run -e freenove32
+pio run -e freenove32 -t upload
+```
+
+The Freenove target follows the vendor pinout: ST7789 display and XPT2046 touch
+share HSPI on GPIO 14/13/12, display CS 15, DC 2, touch CS 33, and backlight
+GPIO27. Its vendor display setup runs at 80 MHz, while XPT2046 transactions stay
+at 2.5 MHz. The panel baseline is BGR with inversion on. Touch calibration is
+stored in Freenove-specific NVS namespaces so flashing a different 3.2-inch
+profile first cannot silently reuse an incompatible calibration. The RGB status
+LED uses GPIO 22/16/17; GPIO4 is left alone because Freenove uses it for the
+audio-amplifier enable.
+

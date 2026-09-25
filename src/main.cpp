@@ -490,6 +490,10 @@ static void drawCrashCard(TFT_eSPI& t) {
 // Confirmed on the watch 2026-09-22: the ST7789 wants inversion on (as
 // LilyGo's own setup says); false showed every colour inverted.
 constexpr bool PANEL_NEEDS_INVERSION = true;
+#elif defined(FREENOVE32)
+// Freenove's own ST7789 setup specifies inversion on; upstream confirmed
+// that baseline on real FNK0103L/FNK0114L hardware.
+constexpr bool PANEL_NEEDS_INVERSION = true;
 #elif defined(CYD32)
 // E32R32P/ST7789P3 baseline: BGR colour order, no inversion.
 constexpr bool PANEL_NEEDS_INVERSION = false;
@@ -1868,6 +1872,8 @@ static bool safeNamespaceToPreserve(const char* ns) {
     return !strcmp(ns, "settings") ||
            !strcmp(ns, "touchfit") ||
            !strcmp(ns, "touchcal") ||
+           !strcmp(ns, "fn32fit") ||
+           !strcmp(ns, "fn32cal") ||
            !strcmp(ns, "awoktouch") ||
            !strcmp(ns, "cyd35touch");
 }
@@ -2771,7 +2777,9 @@ void setup() {
     pinMode(45, OUTPUT); digitalWrite(45, HIGH);
 #else
     pinMode(27, OUTPUT); digitalWrite(27, HIGH);
-    pinMode(32, OUTPUT); digitalWrite(32, HIGH);  // AWOK's real BL pin; unused GPIO on the other two boards
+#if !defined(FREENOVE32)
+    pinMode(32, OUTPUT); digitalWrite(32, HIGH);  // AWOK's real BL pin; not a known-spare Freenove GPIO
+#endif
 #endif
 
     tft.init();
@@ -2840,8 +2848,10 @@ void setup() {
 #endif
     ledcSetup(BL_CH_CAP, 5000, 8);
     ledcAttachPin(BL_PIN_CAP, BL_CH_CAP);
+#if !defined(FREENOVE32)
     ledcSetup(BL_CH_AWOK, 5000, 8);
     ledcAttachPin(BL_PIN_AWOK, BL_CH_AWOK);
+#endif
 #endif
     applyBrightness();
     // A saved core clock has to be restored here too, or the setting silently
@@ -2951,13 +2961,14 @@ void setup() {
     usingCapTouch = false;
     Serial.println("cyd35 build -- XPT2046 on shared VSPI bus via TFT_eSPI.");
 #elif defined(TOUCH_RAW_SHARED_BUS)
-    // RL Phantom, resistive variant. The chip sits on the display's own bus
-    // (TOUCH_CS=33, armed by TFT_eSPI once rlphantom_r_user_setup.h is in
-    // scope), so there is no probe, no touch.begin() and no touchSPI -- but
-    // unlike AWOK the raw values come back to us and pollTouch() does its own
-    // rotation maths on them, so touch follows the screen round.
+    // Resistive shared-bus boards: the XPT2046 sits on the display's own SPI
+    // bus, so there is no second SPI master and no capacitive probe.
     usingCapTouch = false;
+#if defined(FREENOVE32)
+    Serial.println("Freenove 3.2 -- XPT2046 on shared HSPI bus, raw reads + rotation maths.");
+#else
     Serial.println("RL Phantom (resistive) -- XPT2046 on shared bus, raw reads + rotation maths.");
+#endif
 #elif defined(TWATCH_S3)
     // The T-Watch's FT6336, on I2C SDA 39 / SCL 40 at 0x38. No reset line;
     // the AXP2101 powers it (ALDO3) in twatchPowerUp(), before this runs.
@@ -6143,7 +6154,9 @@ void loop() {
                 info.calB0 = (int16_t)lroundf(b0); info.calB1 = (int16_t)lroundf(b1);
             }
             info.usingCapTouch = usingCapTouch;
-#if defined(CYD32)
+#if defined(FREENOVE32)
+            info.boardName = "Freenove 3.2";
+#elif defined(CYD32)
             info.boardName = "CYD 3.2";
 #elif defined(TOUCH_ON_DISPLAY_BUS)
             info.boardName = "AWOK";

@@ -224,6 +224,12 @@ jobs:
             0x1000  .pio/build/rlphantom-r/bootloader.bin \
             0x8000  .pio/build/rlphantom-r/partitions.bin \
             0x10000 .pio/build/rlphantom-r/firmware.bin
+          python -m esptool --chip esp32 merge_bin \
+            -o firmware-freenove32-merged.bin \
+            --flash_mode dio --flash_freq 40m --flash_size 4MB \
+            0x1000  .pio/build/freenove32/bootloader.bin \
+            0x8000  .pio/build/freenove32/partitions.bin \
+            0x10000 .pio/build/freenove32/firmware.bin
           python -m esptool --chip esp32s3 merge_bin \
             -o firmware-twatch-s3-merged.bin \
             --flash_mode dio --flash_freq 80m --flash_size 16MB \
@@ -237,8 +243,8 @@ jobs:
           # partway through uploading when the second partitions.bin
           # collided with the first. The firmware is board-prefixed below.
           #
-          # The bootloader and the partition table are NOT. All five builds
-          # produce them byte for byte identical: they depend on the chip,
+          # The bootloader and partition table are NOT. Every shared classic-ESP32
+          # release build produces them byte for byte identical: they depend on the chip,
           # the partition CSV and the flash mode/size, and every environment
           # shares all of those. Only the display driver header and the pin
           # map differ, and both live entirely in the app. Five copies of
@@ -266,7 +272,7 @@ jobs:
               fi
             done
             cp ".pio/build/cyd/$f.bin" "esp32-$f.bin"
-            echo "esp32-$f.bin is identical across all six builds ($ref)"
+            echo "esp32-$f.bin is identical across all shared ESP32 release builds ($ref)"
           done
           # The OTA data partition (0xE000), written blank-but-valid on every
           # USB install. Without it, a board that has taken a Bluetooth update

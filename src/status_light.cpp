@@ -17,7 +17,13 @@
 
 namespace StatusLight {
 
+#if defined(FREENOVE32)
+// Freenove schematic: common-anode RGB LED on 22/16/17. GPIO4 is the
+// audio-amplifier enable and must not be modulated as the red channel.
+static const int     PIN_R = 22, PIN_G = 16, PIN_B = 17;
+#else
 static const int     PIN_R = 4, PIN_G = 16, PIN_B = 17;
+#endif
 static const uint8_t CH_R  = 3, CH_G  = 4,  CH_B  = 5;
 
 static const uint32_t TICK_MS        = 20;

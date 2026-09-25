@@ -50,6 +50,20 @@
       "fast_manifest": "manifest-cyd32-st7798-fast.json"
     },
     {
+      "id": "freenove32",
+      "label": "Freenove 3.2\" — ST7789",
+      "manifest": "manifest-freenove32.json",
+      "visible": true,
+      "ci": true,
+      "release": true,
+      "sign": true,
+      "shared_esp32": true,
+      "merged": true,
+      "lab": true,
+      "cyd28": false,
+      "note": "For Freenove FNK0103L/FNK0114L 3.2\" boards: ST7789, resistive XPT2046 on shared HSPI, GPIO27 backlight, and the Freenove RGB/status-light pinout. This is a separate hardware profile from the ESP32-2432S032R / E32R32P 3.2\" CYD."
+    },
+    {
       "id": "awok",
       "label": "AWOK 2.4\"",
       "manifest": "manifest-awok.json",
