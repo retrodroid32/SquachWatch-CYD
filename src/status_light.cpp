@@ -17,7 +17,15 @@
 
 namespace StatusLight {
 
+#if defined(FREENOVE32)
+// The Freenove 3.2": its schematic puts the RGB LED on 22, 16 and 17 (common
+// anode, lit low, like the Sunton's) and GPIO4 on the audio amplifier's
+// enable. Red on 4 would have switched the amp with every breath of the light.
+// Pins from PR #7 (DevOpsDAdams), checked against Freenove's schematic.
+static const int     PIN_R = 22, PIN_G = 16, PIN_B = 17;
+#else
 static const int     PIN_R = 4, PIN_G = 16, PIN_B = 17;
+#endif
 static const uint8_t CH_R  = 3, CH_G  = 4,  CH_B  = 5;
 
 static const uint32_t TICK_MS        = 20;

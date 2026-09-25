@@ -2652,7 +2652,9 @@ void setup() {
     pinMode(45, OUTPUT); digitalWrite(45, HIGH);
 #else
     pinMode(27, OUTPUT); digitalWrite(27, HIGH);
+#if !defined(FREENOVE32)   // not a known-spare pin on the Freenove; its backlight is 27 alone
     pinMode(32, OUTPUT); digitalWrite(32, HIGH);  // AWOK's real BL pin; unused GPIO on the other two boards
+#endif
 #endif
 
     tft.init();
@@ -2721,8 +2723,10 @@ void setup() {
 #endif
     ledcSetup(BL_CH_CAP, 5000, 8);
     ledcAttachPin(BL_PIN_CAP, BL_CH_CAP);
+#if !defined(FREENOVE32)   // see the pinMode(32) above; a channel with no pin is harmless to write
     ledcSetup(BL_CH_AWOK, 5000, 8);
     ledcAttachPin(BL_PIN_AWOK, BL_CH_AWOK);
+#endif
 #endif
     applyBrightness();
     // A saved core clock has to be restored here too, or the setting silently

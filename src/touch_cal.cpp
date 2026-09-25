@@ -14,12 +14,24 @@ void setDensityScale(float scale) { s_density = scale > 0.5f ? scale : 1.0f; }
 // The Fit lives in its own namespace, so a firmware that predates it (or a
 // rollback to one) never trips over it, and the old keys below stay exactly
 // where older firmware left them.
+#if defined(FREENOVE32)
+// The Freenove 3.2" keeps its calibration under its own names: the boards
+// that reached this build were flashed with the 2.8" build first (touch
+// never worked), and whatever that left behind must not be inherited. From
+// PR #7 (DevOpsDAdams).
+static const char* FIT_NS  = "fn32fit";
+#else
 static const char* FIT_NS  = "touchfit";
+#endif
 static const char* FIT_KEY = "fit";
 static const uint8_t FIT_VERSION = 1;
 
 // Where the calibrations written by older firmware live -- read-only now.
+#if defined(FREENOVE32)
+static const char* NS = "fn32cal";
+#else
 static const char* NS = "touchcal";
+#endif
 
 static const uint16_t GREEN = 0x07E0;
 static const uint16_t AMBER = 0xFD20;
