@@ -7,7 +7,7 @@
 #include <stdio.h>
 
 static const int TOP_MARGIN = 16;
-static const int REMOVE_W   = 74;     // width of the tappable REMOVE zone
+static const int POLICY_W   = 82;     // width of the tappable policy zone
 static int g_scroll = 0;
 
 // Same fixed-height-at-size-2 approach Settings and the detection filter
@@ -34,32 +34,45 @@ void uiIgnoreListScroll(int delta) {
     // entry alone at the top of an otherwise empty screen.
 }
 
+static const char* policyName(IgnoreList::Policy p) {
+    switch (p) {
+        case IgnoreList::Policy::IGNORE:       return "IGNORE";
+        case IgnoreList::Policy::TRUSTED:      return "TRUSTED";
+        case IgnoreList::Policy::ALWAYS_ALERT: return "ALWAYS";
+        default:                               return "NORMAL";
+    }
+}
+
 static void drawRow(TFT_eSPI& t, int w, int y, int hgt, uint8_t idx) {
     const uint8_t* mac = IgnoreList::macAt(idx);
     if (!mac) return;
 
-    // The same two-line shape a LOG row uses: the type in its own colour on
-    // top, the MAC underneath. A column of bare MACs told you that you had
-    // muted something without telling you what, and the log entry that would
-    // have answered that has usually scrolled out of the ring by then.
     const DetectionType ty = IgnoreList::typeAt(idx);
-    t.setTextSize(Theme::uiMenuTextSize(t));
+    const char* alias = IgnoreList::labelAt(idx);
+    t.setTextSize(1);
     t.setTextColor(Theme::colorFor(ty), Theme::BG);
     t.setCursor(6, y + 3);
     t.print(detectionTypeName(ty));
 
-    char buf[20];
-    snprintf(buf, sizeof(buf), "%02X:%02X:%02X:%02X:%02X:%02X",
-             mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+    char buf[28];
+    if (alias && alias[0]) {
+        snprintf(buf, sizeof buf, "%s", alias);
+    } else {
+        snprintf(buf, sizeof(buf), "%02X:%02X:%02X:%02X:%02X:%02X",
+                 mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+    }
     t.setTextSize(1);
     t.setTextColor(Theme::WHITE, Theme::BG);
-    t.setCursor(6, y + 21);
+    t.setCursor(6, y + 20);
+    // Avoid drawing under the policy button on narrow rotations.
+    const int maxW = w - POLICY_W - 12;
+    while (buf[0] && t.textWidth(buf) > maxW) buf[strlen(buf) - 1] = 0;
     t.print(buf);
 
-    // REMOVE, drawn as a real button so it reads as the one thing on the
-    // row you can press. Its rect matches uiIgnoreListHitRemove() exactly.
-    const int bw = REMOVE_W - 12, bh = 20;
-    Theme::drawButton(t, w - REMOVE_W + 4, y + (hgt - bh) / 2, bw, bh, "REMOVE", false);
+    const IgnoreList::Policy p = IgnoreList::policyAt(idx);
+    const int bw = POLICY_W - 8, bh = 20;
+    Theme::drawButton(t, w - POLICY_W + 2, y + (hgt - bh) / 2, bw, bh, policyName(p),
+                      p == IgnoreList::Policy::ALWAYS_ALERT);
 
     t.drawFastHLine(4, y + hgt - 1, w - 8, Theme::PURPLE);
 }
@@ -72,8 +85,8 @@ void uiIgnoreListTick(TFT_eSPI& t, uint32_t now) {
     computeGeom(t, h, top, bodyBottom, rowH);
 
     t.fillRect(0, 0, w, h, Theme::BG);
-    Theme::drawTitleBar(t, ">> IGNORED <<");
-    Theme::drawListHeading(t, "IGNORED", Theme::AMBER);
+    Theme::drawTitleBar(t, ">> DEVICE POLICIES <<");
+    Theme::drawListHeading(t, "DEVICES", Theme::AMBER);
     Theme::drawPinnedBack(t, "[ BACK ]");
 
     const uint8_t n = IgnoreList::count();
@@ -82,13 +95,13 @@ void uiIgnoreListTick(TFT_eSPI& t, uint32_t now) {
         // real explanation rather than a blank screen that reads as broken.
         t.setTextSize(Theme::uiMenuTextSize(t));
         t.setTextColor(Theme::WHITE, Theme::BG);
-        const char* m1 = "NOTHING MUTED";
+        const char* m1 = "NO DEVICE POLICIES";
         t.setCursor((w - t.textWidth(m1)) / 2, h / 2 - 26);
         t.print(m1);
         t.setTextSize(1);
         t.setTextColor(Theme::CYAN, Theme::BG);
-        const char* m2 = "Tap IGNORE on an alert to mute";
-        const char* m3 = "a device you own.";
+        const char* m2 = "IGNORE a detection, then manage";
+        const char* m3 = "IGNORE / TRUSTED / ALWAYS here.";
         t.setCursor((w - t.textWidth(m2)) / 2, h / 2 + 2);
         t.print(m2);
         t.setCursor((w - t.textWidth(m3)) / 2, h / 2 + 14);
@@ -118,10 +131,10 @@ void uiIgnoreListTick(TFT_eSPI& t, uint32_t now) {
     }
 }
 
-uint8_t uiIgnoreListHitRemove(TFT_eSPI& t, int x, int y, int screenW, int screenH) {
+uint8_t uiIgnoreListHitPolicy(TFT_eSPI& t, int x, int y, int screenW, int screenH) {
     int top, bodyBottom, rowH;
     computeGeom(t, screenH, top, bodyBottom, rowH);
-    if (x < screenW - REMOVE_W) return 0xFF;      // not in the REMOVE column
+    if (x < screenW - POLICY_W) return 0xFF;      // not in the policy column
 
     const uint8_t n = IgnoreList::count();
     uiClampScroll(g_scroll, (int)n, bodyBottom - top, rowH);
