@@ -75,6 +75,15 @@ const Detection* DetectionEngine::logAt(uint8_t idx) const {
     return &_log[slot];
 }
 
+const Detection* DetectionEngine::findDetection(const uint8_t* mac, DetectionType type) const {
+    if (!mac) return nullptr;
+    for (uint8_t i = 0; i < _logCount; i++) {
+        const Detection* d = logAt(i);
+        if (d && d->type == type && memcmp(d->mac, mac, 6) == 0) return d;
+    }
+    return nullptr;
+}
+
 void DetectionEngine::resetLifetime() {
     _lifetimeTotal = 0;
     memset(_typeCounts, 0, sizeof(_typeCounts));
