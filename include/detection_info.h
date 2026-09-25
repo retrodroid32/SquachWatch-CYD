@@ -21,6 +21,10 @@ namespace DetectionInfo {
     // that context already.
     const char* rssiConfidencePrimer();
 
+    // Concrete evidence for this exact sighting: which signature matched,
+    // its confidence, repeat count and the rolling RSSI trend.
+    const char* evidenceText(const Detection& d);
+
     // explain() plus whatever the device has actually decoded about this
     // detection, where there is any.
     //
