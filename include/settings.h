@@ -328,13 +328,14 @@ namespace Settings {
     // 0xFF internally to inherit the global ALERT FILTER; the public getter
     // always returns the effective grade.
     struct AlertRule {
-        uint8_t flags;       // bit0 alert enabled, bit1 wake screen
+        uint8_t flags;       // bit0 alert enabled, bit1 wake screen, bit2 haptic/signal
         uint8_t minConf;     // 0xFF inherit global, else Confidence
         uint8_t minRepeats;  // 1,2,3,5
         uint8_t cooldownIx;  // 0,30s,60s,5m,15m
     };
     bool       alertEnabled(DetectionType t);
     bool       alertWakeScreen(DetectionType t);
+    bool       alertNotify(DetectionType t);
     Confidence alertMinConfidence(DetectionType t);
     bool       alertConfidenceInherited(DetectionType t);
     uint8_t    alertMinRepeats(DetectionType t);
@@ -344,6 +345,7 @@ namespace Settings {
     const char* alertRuleCooldownLabel(DetectionType t);
     void toggleAlertEnabled(DetectionType t);
     void toggleAlertWakeScreen(DetectionType t);
+    void toggleAlertNotify(DetectionType t);
     void cycleAlertMinConfidence(DetectionType t);
     void cycleAlertMinRepeats(DetectionType t);
     void cycleAlertCooldown(DetectionType t);
