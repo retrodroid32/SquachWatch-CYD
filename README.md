@@ -27,6 +27,42 @@ the glitchy SquachWatch wordmark.
   <a href="https://retrodroid32.github.io/SquachWatch-CYD/emulator/"><b>Click it to drive it in your browser &rarr;</b></a>
 </p>
 
+
+## What changed in v1.20.1
+
+This fork's v1.20.1 work has been reconciled against the complete history since
+the v1.20.0 tag, not just the most recent commits. The detailed record is in
+`.github/release-notes/v1.20.1.md`; the major changes are:
+
+- **3.2-inch CYD support matured:** normal and experimental 80 MHz
+  ST7798/ST7789-compatible profiles are in the web flasher, release matrix and
+  CI, with the Windows helper no longer assuming a fixed COM port.
+- **T-Watch S3 became a public beta target** and gained battery-aware display
+  behavior, automatic clock setup, motion-aware snoozing, haptic standby,
+  smarter radio duty timing, radio self-heal/RESET, STEADY POWER, chip
+  temperature, radio-hearing battery records and CLOCK CHECK / `XTAL`.
+- **T-Watch radio reliability was hardened:** the watch keeps the stock Arduino
+  Wi-Fi driver after a reproduced ESP32-S3 deaf-radio failure in the slim
+  re-init path; CYD boards retain the lower-memory slim path.
+- **SquachMesh reliability improved:** invite handshakes temporarily listen
+  harder, squad members tolerate longer beacon gaps, and timestamp races that
+  made visitors/detections flicker in and out were fixed.
+- **Storage/security paths were audited:** SD logs use real calendar dates when
+  trusted time exists, security wipes remove all SquachWatch logs, and the NVS
+  wipe now preserves only an explicit safe allowlist.
+- **Radio/UI concurrency was hardened:** BLE detections are handed to the main
+  loop through a bounded mailbox, cross-task Bingo/DEX/Regulars mutations were
+  corrected, and OTA allocation/framebuffer edge cases were tightened.
+- **Release publishing was rebuilt around validated artifacts:** ordinary
+  `master` builds cannot replace production Pages, lab publishing preserves
+  the live production site, and a release is published only after firmware,
+  signatures, manifests, emulator and the exact Pages artifact validate.
+- **OTA signing is now a release gate:** production builds verify that
+  `OTA_SIGNING_KEY` matches the public key compiled into the firmware.
+- **Stage 1 performance work is measured, not guessed:** bounded BLE/Wi-Fi queue
+  work protects frame latency, while serial diagnostics now expose queue
+  pressure, drops, drain time and rolling frame p95/max jitter.
+
 ## What it detects
 
 | Type | What | How |
