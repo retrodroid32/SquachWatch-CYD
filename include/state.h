@@ -329,7 +329,9 @@ enum class AppState : uint8_t {
     // row steps it in place now.
     BINGO            = 36, // the detection bingo card, from Settings' BINGO
                             // row. See ui_bingo.h.
-    DEX              = 37  // the SQUACHY-DEX, from Settings' row. See ui_dex.h.
+    DEX              = 37, // the SQUACHY-DEX, from Settings' row. See ui_dex.h.
+    ALERT_RULES      = 38, // per-type confidence/repeats/cooldown/wake rules
+    TIMELINE         = 39  // chronological detection sightings from the black box
 };
 
 enum class ButtonId : uint8_t {
