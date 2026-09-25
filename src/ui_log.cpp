@@ -399,21 +399,34 @@ switch (Settings::background()) {
         t.setTextColor(kept ? dim : Theme::CYAN, Theme::BG);
         t.setCursor(116, y + detailY);
         t.printf("%ddBm", d->rssi);
-        // Closer or further since a couple of seconds ago, for a row that is
-        // actually here: green up for nearer, red down for further, nothing
-        // for the few dB of wobble a still device makes. The same arrow, and
-        // the same deadband, as the raw scan's NEARBY list.
+        // Prefer the rolling ~15-second trend. While fewer than three
+        // samples exist, retain the old two-point arrow so a fresh row still
+        // gives immediate directional feedback.
         if (!kept && d->active) {
-            const int delta = (int)d->rssi - (int)d->prevRssi;
             const int ax = 116 + t.textWidth("-100dBm") + 3, ay = y + detailY;
-            if (delta >= 4)       t.fillTriangle(ax, ay + 6, ax + 6, ay + 6, ax + 3, ay, Theme::GREEN);
-            else if (delta <= -4) t.fillTriangle(ax, ay, ax + 6, ay, ax + 3, ay + 6, Theme::RED);
+            const RssiTrend trend = detectionRssiTrend(*d);
+            if (trend == RssiTrend::APPROACHING) {
+                t.fillTriangle(ax, ay + 6, ax + 6, ay + 6, ax + 3, ay, Theme::GREEN);
+            } else if (trend == RssiTrend::MOVING_AWAY) {
+                t.fillTriangle(ax, ay, ax + 6, ay, ax + 3, ay + 6, Theme::RED);
+            } else if (trend == RssiTrend::STEADY) {
+                t.drawFastHLine(ax, ay + 3, 6, Theme::CYAN);
+            } else {
+                const int delta = (int)d->rssi - (int)d->prevRssi;
+                if (delta >= 4)       t.fillTriangle(ax, ay + 6, ax + 6, ay + 6, ax + 3, ay, Theme::GREEN);
+                else if (delta <= -4) t.fillTriangle(ax, ay, ax + 6, ay, ax + 3, ay + 6, Theme::RED);
+            }
         }
 
-        // Hits
+        // Uniform sighting count plus the compact evidence source. Historical
+        // BlackBox rows predate Stage A, so they fall back to hits and carry no
+        // evidence tag rather than pretending we know how they matched.
+        const unsigned repeats = d->repeats ? (unsigned)d->repeats : (unsigned)d->hits;
+        const char* ev = evidenceKindShortName(d->evidence);
         t.setTextColor(kept ? dim : Theme::VAPOR_PURPLE, Theme::BG);
         t.setCursor(168, y + detailY);
-        t.printf("x%u", d->hits);
+        if (ev[0]) t.printf("x%u %s", repeats, ev);
+        else       t.printf("x%u", repeats);
 
         // Timestamp (right edge)
         // Wall-clock once somebody has set it, minutes-since-boot until
