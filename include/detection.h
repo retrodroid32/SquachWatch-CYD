@@ -400,6 +400,22 @@ public:
     return AlertGate::ALLOW;             // not in the log: nothing to go on
     }
 
+    // Per-type cooldown support. Kept in the same Detection::lastAlertMs
+    // field AUTO SNOOZE already owns so there is one notion of "last time
+    // this device actually interrupted", regardless of which gate used it.
+    bool alertCooldownReady(const uint8_t* mac, DetectionType type,
+                            uint16_t cooldownSec, uint32_t now) const {
+        if (!cooldownSec) return true;
+        const int16_t slot = findLogSlot(mac, type);
+        if (slot < 0) return true;
+        const uint32_t last = _log[(uint8_t)slot].lastAlertMs;
+        return !last || (uint32_t)(now - last) >= (uint32_t)cooldownSec * 1000u;
+    }
+    void noteAlertRaised(const uint8_t* mac, DetectionType type, uint32_t now) {
+        const int16_t slot = findLogSlot(mac, type);
+        if (slot >= 0) _log[(uint8_t)slot].lastAlertMs = now;
+    }
+
     bool isWatched(const uint8_t* mac, bool ble) const {
         if (_watchKind != (ble ? WatchKind::BLE : WatchKind::WIFI)) return false;
         return memcmp(mac, _watchMac, 6) == 0;
