@@ -240,7 +240,7 @@ void drawBtWaiting(TFT_eSPI& t, bool connected) {
     y += lineH(t);
     label(t, y, Theme::WHITE, "open");
     t.setTextColor(Theme::CYAN, Theme::BG);
-    t.print(" squachwatch.com/update");
+    t.print(" retrodroid32.github.io/SquachWatch-CYD/update/");
     y += lineH(t);
     label(t, y, Theme::WHITE, "press CONNECT and pick");
     y += lineH(t);
