@@ -472,6 +472,32 @@ SquachWatch-CYD/
     └── web/                      (the browser build)
 ```
 
+
+## Performance and diagnostics
+
+The fork includes performance instrumentation intended for real RF-heavy
+environments, not just idle bench measurements.
+
+**Stage 1 performance work (v1.20.1):**
+
+- BLE and WiFi detection mailboxes are drained with a bounded per-loop work
+  budget so a burst of radio traffic cannot monopolize an entire UI frame.
+- The allowance expands automatically when a queue reaches half full, letting
+  the engine catch up quickly without returning to an unbounded drain.
+- Queue sizes and detection/signature behavior are unchanged; work that reaches
+  the budget stays queued for the next loop rather than being discarded.
+- Queue-full drops are now counted instead of being silent.
+- Serial performance telemetry reports BLE/WiFi queue depth, high-water mark,
+  drops, average/max drain time, and how often the budget deferred work.
+- Frame telemetry keeps a rolling 64-frame window and reports p95, maximum
+  frame time, and how many frames exceeded 50 ms.
+
+The normal ten-second serial report includes the new `[queue]` line and
+`[frame]` jitter statistics. The `RADIO` console command also reports the
+live radio-mailbox metrics. These measurements are the baseline for the next
+rendering and lookup optimizations; they let changes be judged by measured
+latency and queue pressure rather than by feel alone.
+
 ## License
 
 **GNU General Public License v3.0 (GPL-3.0).** See [LICENSE](LICENSE).
