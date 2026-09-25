@@ -2,25 +2,24 @@
 //
 // The board finds nearby networks, you pick yours and type the password on
 // the board, and it downloads the latest release for its own build straight
-// from squachwatch.com. No computer, no browser, so it works for anybody --
-// iPhone owners included. Everything that makes the install itself safe is in
+// from this fork's GitHub Pages site over HTTPS. No computer, no browser, so
+// it works for anybody -- iPhone owners included. Everything that makes the
+// install itself safe is in
 // OtaCore (ota_core.h); this file only gets the bytes there.
 //
-// WHAT AN UPDATE COSTS NOW. Nothing that cannot be given back. Until v1.10.2
-// the download came over TLS, whose handshake wants 40 KB or more of
-// CONTIGUOUS heap -- far more than a running board has -- so Bluetooth was
-// shut down and its memory handed back, and the screen's 77 KB frame buffer
-// went with it. NimBLE cannot be brought back up afterwards, so leaving
-// update mode meant restarting the board. Plain HTTP needs neither: the
-// screen keeps animating, detection comes straight back when an update is
-// cancelled or fails, and only the scan is paused while the radio is busy.
+// WHAT AN UPDATE COSTS NOW. The fork is back on TLS because GitHub Pages is
+// HTTPS-only. The updater reuses one TLS client and lends the framebuffer's
+// memory to the download when needed; Bluetooth scanning is paused while WiFi
+// owns the radio, then detection is restored if the update is cancelled or
+// fails. The install trust boundary is still the firmware's ECDSA signature,
+ // not the HTTPS certificate chain.
 //
 // THE PASSWORD. Saved only if the network joins, in its own NVS namespace
 // ("otawifi"), which the duress PIN erases along with the other secrets.
 //
 // OTA_WIFI_BASE overrides where it downloads from, for a bench test against a
 // local server: PLATFORMIO_BUILD_FLAGS='-DOTA_WIFI_BASE=\"http://192.168.4.42:8767/\"'.
-// Plain http is accepted there and nowhere else by default.
+// A local http:// override is accepted for bench testing only.
 #pragma once
 #include <stdint.h>
 #include <stddef.h>
