@@ -323,6 +323,31 @@ namespace Settings {
     // brand" fallback, not a type someone would want to blanket-mute.
     bool     typeEnabled(DetectionType t);
 
+    // Per-type ALERT behavior. Detection itself can remain enabled/logged
+    // while its full-screen alert is disabled ("LOG ONLY"). minConf uses
+    // 0xFF internally to inherit the global ALERT FILTER; the public getter
+    // always returns the effective grade.
+    struct AlertRule {
+        uint8_t flags;       // bit0 alert enabled, bit1 wake screen
+        uint8_t minConf;     // 0xFF inherit global, else Confidence
+        uint8_t minRepeats;  // 1,2,3,5
+        uint8_t cooldownIx;  // 0,30s,60s,5m,15m
+    };
+    bool       alertEnabled(DetectionType t);
+    bool       alertWakeScreen(DetectionType t);
+    Confidence alertMinConfidence(DetectionType t);
+    bool       alertConfidenceInherited(DetectionType t);
+    uint8_t    alertMinRepeats(DetectionType t);
+    uint16_t   alertCooldownSec(DetectionType t);
+    const char* alertRuleSummary(DetectionType t);
+    const char* alertRuleConfidenceLabel(DetectionType t);
+    const char* alertRuleCooldownLabel(DetectionType t);
+    void toggleAlertEnabled(DetectionType t);
+    void toggleAlertWakeScreen(DetectionType t);
+    void cycleAlertMinConfidence(DetectionType t);
+    void cycleAlertMinRepeats(DetectionType t);
+    void cycleAlertCooldown(DetectionType t);
+
     // How big Squachy is drawn, as a percentage of the size the layout
     // would otherwise give him. SMALL 70, MEDIUM 85, LARGE 100.
     //
