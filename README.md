@@ -54,6 +54,9 @@ the v1.20.0 tag, not just the most recent commits. The detailed record is in
 - **Storage/security paths were audited:** SD logs use real calendar dates when
   trusted time exists, security wipes remove all SquachWatch logs, and the NVS
   wipe now preserves only an explicit safe allowlist.
+- **Boot diagnostics were simplified:** the obsolete flash-backed short-boot
+  counter/IGNORE state was removed; panic/watchdog breadcrumbs, core-dump
+  summaries, reset reasons and the extended crash-card hold remain intact.
 - **Radio/UI concurrency was hardened:** BLE detections are handed to the main
   loop through a bounded mailbox, cross-task Bingo/DEX/Regulars mutations were
   corrected, and OTA allocation/framebuffer edge cases were tightened.
