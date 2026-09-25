@@ -96,6 +96,51 @@ inline const char* detectionTypeName(DetectionType t) {
 // protect against -- hence the _CONF suffix.
 enum class Confidence : uint8_t { LOW_CONF, MED_CONF, HIGH_CONF };
 
+
+// Compact description of the concrete radio evidence that produced a
+// detection. Numeric details such as BLE company/service IDs live in
+// Detection::evidenceCode; Wi-Fi OUI evidence is already in mac[0..2].
+enum class EvidenceKind : uint8_t {
+    UNKNOWN = 0,
+    BLE_MFG,
+    BLE_UUID,
+    BLE_NAME,
+    BLE_FINDMY,
+    BLE_IBEACON,
+    WIFI_OUI,
+    WIFI_SSID,
+    WIFI_PWNAGOTCHI,
+    WIFI_EVILTWIN,
+    WIFI_DEAUTH,
+};
+
+inline const char* evidenceKindName(EvidenceKind e) {
+    switch (e) {
+        case EvidenceKind::BLE_MFG:         return "BLE MFG ID";
+        case EvidenceKind::BLE_UUID:        return "BLE SERVICE UUID";
+        case EvidenceKind::BLE_NAME:        return "BLE NAME";
+        case EvidenceKind::BLE_FINDMY:      return "FIND MY PAYLOAD";
+        case EvidenceKind::BLE_IBEACON:     return "IBEACON PAYLOAD";
+        case EvidenceKind::WIFI_OUI:        return "WIFI OUI";
+        case EvidenceKind::WIFI_SSID:       return "WIFI SSID";
+        case EvidenceKind::WIFI_PWNAGOTCHI: return "PWNAGOTCHI FRAME";
+        case EvidenceKind::WIFI_EVILTWIN:   return "SSID/SECURITY CONFLICT";
+        case EvidenceKind::WIFI_DEAUTH:     return "DEAUTH BURST";
+        default:                            return "UNKNOWN";
+    }
+}
+
+enum class RssiTrend : uint8_t { UNKNOWN = 0, APPROACHING, STEADY, MOVING_AWAY };
+
+inline const char* rssiTrendName(RssiTrend t) {
+    switch (t) {
+        case RssiTrend::APPROACHING: return "APPROACHING";
+        case RssiTrend::STEADY:      return "STEADY";
+        case RssiTrend::MOVING_AWAY: return "MOVING AWAY";
+        default:                     return "LEARNING";
+    }
+}
+
 struct Detection {
     uint8_t        mac[6];
     int8_t         rssi;
@@ -145,6 +190,24 @@ struct Detection {
     // The grade of the signature that actually matched, not the grade of
     // the type. See lookupOui().
     Confidence     conf;
+    // Why the classifier believed this sighting. evidenceCode is used for
+    // compact numeric evidence (BLE company/service ID); restored historical
+    // rows from releases that predate this field naturally remain UNKNOWN.
+    EvidenceKind   evidence;
+    uint16_t       evidenceCode;
+
+    // Uniform raw sighting count. Unlike hits, this has the same meaning for
+    // BLE, Wi-Fi and deauth detections and saturates at 255. Stage B can use
+    // it for minimum-repeat alert rules without changing Stage A semantics.
+    uint8_t        repeats;
+
+    // Eight roughly-two-second RSSI samples: about fifteen seconds of signal
+    // history without dynamic allocation. Existing prevRssi/prevAt semantics
+    // remain intact for the LOG's legacy up/down indicator.
+    int8_t         rssiHist[8];
+    uint8_t        rssiHistHead;
+    uint8_t        rssiHistCount;
+
     bool           active;
     // When it last asked to interrupt, allowed or not, in minutes of uptime
     // (wrapping after 45 days). A device that keeps coming back keeps asking,
@@ -152,6 +215,52 @@ struct Detection {
     // what was padding.
     uint16_t       askedMin;
 };
+
+inline void detectionRssiInit(Detection& d, int8_t rssi, uint32_t nowMs) {
+    d.rssi = rssi;
+    d.prevRssi = rssi;
+    d.prevAt = (uint8_t)(nowMs >> 11);
+    d.rssiHist[0] = rssi;
+    d.rssiHistHead = 1;
+    d.rssiHistCount = 1;
+}
+
+// Sample at the same ~2.048 s cadence used by the existing closer/further
+// indicator. repeats is updated on every sighting by the detection engine;
+// history is intentionally cadence-limited so chatty beacons cannot fill the
+// whole window in milliseconds.
+inline void detectionRssiSample(Detection& d, int8_t rssi, uint32_t nowMs) {
+    const uint8_t nowAt = (uint8_t)(nowMs >> 11);
+    if (d.rssiHistCount == 0) {
+        detectionRssiInit(d, rssi, nowMs);
+        return;
+    }
+    if (d.prevAt != nowAt) {
+        d.prevRssi = d.rssi;
+        d.prevAt = nowAt;
+        d.rssiHist[d.rssiHistHead] = rssi;
+        d.rssiHistHead = (uint8_t)((d.rssiHistHead + 1u) & 7u);
+        if (d.rssiHistCount < 8) d.rssiHistCount++;
+    }
+    d.rssi = rssi;
+}
+
+inline int8_t detectionRssiAt(const Detection& d, uint8_t idx) {
+    if (d.rssiHistCount == 0 || idx >= d.rssiHistCount) return d.rssi;
+    const uint8_t first =
+        (uint8_t)((d.rssiHistHead + 8u - d.rssiHistCount) & 7u);
+    return d.rssiHist[(uint8_t)((first + idx) & 7u)];
+}
+
+inline RssiTrend detectionRssiTrend(const Detection& d) {
+    if (d.rssiHistCount < 3) return RssiTrend::UNKNOWN;
+    const int oldest = (int)detectionRssiAt(d, 0);
+    const int newest = (int)detectionRssiAt(d, (uint8_t)(d.rssiHistCount - 1));
+    const int delta = newest - oldest;
+    if (delta >= 6) return RssiTrend::APPROACHING;
+    if (delta <= -6) return RssiTrend::MOVING_AWAY;
+    return RssiTrend::STEADY;
+}
 
 // A detection's vendor, safe to print. A record is zeroed before it is
 // filled, so "no vendor" arrives here as a null pointer.
