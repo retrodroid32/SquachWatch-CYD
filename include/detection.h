@@ -644,10 +644,11 @@ private:
     // detection instead of one per type.
     uint32_t    _lifetimeByType[(uint8_t)DetectionType::COUNT] = {0};
     bool        _lifetimeDirty   = false;   // counted since the last write
-    // Detections waiting for their SD line. BLE and WiFi detections are now
-    // applied from loop(), and the SD append stays deferred here so a frame
-    // never performs more than one open/write/close. A burst past eight loses
-    // log lines, never detections.
+    // Detections waiting for their SD CSV line. BLE and WiFi detections are
+    // applied from loop(), and SD formatting stays deferred here. Stage 3C
+    // then batches those rows in SdLog's fixed write buffer, so ordinary
+    // frames do not open/write/close the card for every detection. A burst
+    // past eight loses log lines, never detections.
     static const uint8_t SD_Q_CAP = 8;
     Detection _sdQ[SD_Q_CAP];
     uint8_t   _sdQHead = 0, _sdQTail = 0;
