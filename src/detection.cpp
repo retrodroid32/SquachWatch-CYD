@@ -1217,10 +1217,109 @@ void DetectionEngine::hopChannel() {
     esp_wifi_set_channel(_wifiChannel, WIFI_SECOND_CHAN_NONE);
 }
 
+uint8_t DetectionEngine::logIndexHash(const uint8_t* mac, DetectionType type) const {
+    uint32_t h = 2166136261u;
+    for (uint8_t i = 0; i < 6; i++) h = (h ^ mac[i]) * 16777619u;
+    h = (h ^ (uint8_t)type) * 16777619u;
+    return (uint8_t)(h & (LOG_INDEX_CAP - 1));
+}
+
+int16_t DetectionEngine::findLogSlot(const uint8_t* mac, DetectionType type) const {
+    const uint8_t start = logIndexHash(mac, type);
+    for (uint8_t probe = 0; probe < LOG_INDEX_CAP; probe++) {
+        const uint8_t ix = (uint8_t)((start + probe) & (LOG_INDEX_CAP - 1));
+        const uint8_t encoded = _logIndex[ix];
+        if (encoded == 0) return -1;
+        if (encoded == LOG_INDEX_TOMBSTONE) continue;
+        const uint8_t slot = (uint8_t)(encoded - 1);
+        if (slot < LOG_CAP && _log[slot].type == type &&
+            memcmp(_log[slot].mac, mac, 6) == 0) {
+            return slot;
+        }
+    }
+    return -1;
+}
+
+void DetectionEngine::rebuildLogIndex() {
+    memset(_logIndex, 0, sizeof _logIndex);
+    _logIndexTombstones = 0;
+    for (uint8_t i = 0; i < _logCount; i++) {
+        const uint8_t slot = (uint8_t)((_logHead + LOG_CAP - 1 - i) % LOG_CAP);
+        indexLogSlot(slot);
+    }
+}
+
+void DetectionEngine::indexLogSlot(uint8_t slot) {
+    if (slot >= LOG_CAP) return;
+    if (_logIndexTombstones >= (LOG_INDEX_CAP / 4)) rebuildLogIndex();
+
+    const Detection& d = _log[slot];
+    const uint8_t start = logIndexHash(d.mac, d.type);
+    int16_t firstTombstone = -1;
+    for (uint8_t probe = 0; probe < LOG_INDEX_CAP; probe++) {
+        const uint8_t ix = (uint8_t)((start + probe) & (LOG_INDEX_CAP - 1));
+        const uint8_t encoded = _logIndex[ix];
+        if (encoded == LOG_INDEX_TOMBSTONE) {
+            if (firstTombstone < 0) firstTombstone = ix;
+            continue;
+        }
+        if (encoded == 0) {
+            const uint8_t dst = firstTombstone >= 0 ? (uint8_t)firstTombstone : ix;
+            if (_logIndex[dst] == LOG_INDEX_TOMBSTONE && _logIndexTombstones) {
+                _logIndexTombstones--;
+            }
+            _logIndex[dst] = (uint8_t)(slot + 1);
+            return;
+        }
+
+        const uint8_t other = (uint8_t)(encoded - 1);
+        if (other == slot ||
+            (other < LOG_CAP && _log[other].type == d.type &&
+             memcmp(_log[other].mac, d.mac, 6) == 0)) {
+            _logIndex[ix] = (uint8_t)(slot + 1);
+            return;
+        }
+    }
+
+    // With 128 buckets for at most 64 live rows this is only reachable if
+    // the table is saturated with tombstones. A rebuild re-indexes every
+    // valid ring row, including this slot when the ring is full.
+    rebuildLogIndex();
+    if (findLogSlot(d.mac, d.type) == slot) return;
+
+    // Defensive path for a not-yet-counted slot; normally unreachable.
+    const uint8_t retry = logIndexHash(d.mac, d.type);
+    for (uint8_t probe = 0; probe < LOG_INDEX_CAP; probe++) {
+        const uint8_t ix = (uint8_t)((retry + probe) & (LOG_INDEX_CAP - 1));
+        if (_logIndex[ix] == 0) {
+            _logIndex[ix] = (uint8_t)(slot + 1);
+            return;
+        }
+    }
+}
+
+void DetectionEngine::unindexLogSlot(uint8_t slot) {
+    if (slot >= LOG_CAP) return;
+    const Detection& d = _log[slot];
+    const uint8_t start = logIndexHash(d.mac, d.type);
+    for (uint8_t probe = 0; probe < LOG_INDEX_CAP; probe++) {
+        const uint8_t ix = (uint8_t)((start + probe) & (LOG_INDEX_CAP - 1));
+        const uint8_t encoded = _logIndex[ix];
+        if (encoded == 0) return;
+        if (encoded == (uint8_t)(slot + 1)) {
+            _logIndex[ix] = LOG_INDEX_TOMBSTONE;
+            _logIndexTombstones++;
+            return;
+        }
+    }
+}
+
 void DetectionEngine::clearLog() {
     _logCount = 0;
     _logHead  = 0;
     _latest   = nullptr;
+    memset(_logIndex, 0, sizeof _logIndex);
+    _logIndexTombstones = 0;
     for (uint8_t i = 0; i < (uint8_t)DetectionType::COUNT; i++) {
         _typeCounts[i] = 0;
     }
@@ -1323,10 +1422,9 @@ void DetectionEngine::processDeauthQ() {
             // fresh row per burst, and a noisy neighbour filled the LOG with
             // copies of one MAC. It counts and alerts again, like any device
             // that went quiet and came back.
-            for (uint8_t i = 0; i < _logCount; i++) {
-                const uint8_t slot = (_logHead + LOG_CAP - 1 - i) % LOG_CAP;
-                Detection& row = _log[slot];
-                if (row.type != DetectionType::DEAUTH || memcmp(row.mac, e.mac, 6) != 0) continue;
+            const int16_t foundSlot = findLogSlot(e.mac, DetectionType::DEAUTH);
+            if (foundSlot >= 0) {
+                Detection& row = _log[(uint8_t)foundSlot];
                 row.prevRssi  = row.rssi;
                 row.rssi      = e.rssi;
                 row.channel   = e.channel;
@@ -1438,11 +1536,10 @@ void DetectionEngine::applyBle(Detection d) {
     // the normal expireStale() path like any other device that goes
     // out of range.
     if (!Settings::typeEnabled(d.type)) return;
-    // Try to dedupe / merge with existing log entry by MAC
-    for (uint8_t i = 0; i < _logCount; i++) {
-        uint8_t slot = (_logHead + LOG_CAP - 1 - i) % LOG_CAP;
-        if (memcmp(_log[slot].mac, d.mac, 6) == 0 &&
-            _log[slot].type == d.type) {
+    // Try to dedupe / merge with existing log entry by MAC+type.
+    const int16_t foundSlot = findLogSlot(d.mac, d.type);
+    if (foundSlot >= 0) {
+        const uint8_t slot = (uint8_t)foundSlot;
             // Real bug, not a no-op: this used to be
             // `_typeCounts[...] = _typeCounts[...]`, which does
             // nothing. If the device had already gone stale (see
@@ -1491,8 +1588,7 @@ void DetectionEngine::applyBle(Detection d) {
                 _latestChangeMs = millis();
                 queueBlackBox(_log[slot], true);
             }
-            return;
-        }
+        return;
     }
     pushLog(d);
 }
@@ -1949,40 +2045,35 @@ void DetectionEngine::processWiFiQ(uint32_t budgetUs, uint8_t maxItems) {
         // merge branch — a device that went stale and comes back needs
         // active flipped back on and the counter bumped again, or it
         // silently stops being counted after its first sighting.
-        bool merged = false;
-        for (uint8_t i = 0; i < _logCount; i++) {
-            uint8_t slot = (_logHead + LOG_CAP - 1 - i) % LOG_CAP;
-            if (memcmp(_log[slot].mac, e.mac, 6) == 0 &&
-                _log[slot].type == t) {
-                bool reactivating = !_log[slot].active;
-                Bingo::note(t);
-                Dex::note(t, e.rssi);
-                Regulars::note(e.mac, t);
-                _log[slot].hits++;
-                {
-                    const uint8_t nowAt = (uint8_t)(millis() >> 11);
-                    if (_log[slot].prevAt != nowAt) {
-                        _log[slot].prevRssi = _log[slot].rssi;
-                        _log[slot].prevAt   = nowAt;
-                    }
+        const int16_t foundSlot = findLogSlot(e.mac, t);
+        if (foundSlot >= 0) {
+            const uint8_t slot = (uint8_t)foundSlot;
+            bool reactivating = !_log[slot].active;
+            Bingo::note(t);
+            Dex::note(t, e.rssi);
+            Regulars::note(e.mac, t);
+            _log[slot].hits++;
+            {
+                const uint8_t nowAt = (uint8_t)(millis() >> 11);
+                if (_log[slot].prevAt != nowAt) {
+                    _log[slot].prevRssi = _log[slot].rssi;
+                    _log[slot].prevAt   = nowAt;
                 }
-                _log[slot].rssi = e.rssi;
-                _log[slot].lastSeen = millis();
-                _log[slot].channel = e.channel;
-                if (reactivating) {
-                    _log[slot].active = true;
-                    _log[slot].restored = 0;
-                    _log[slot].firstSeen = millis();
-                    _typeCounts[(uint8_t)t]++;
-                    _latest = &_log[slot];
-                    _latestChangeMs = millis();
-                    queueBlackBox(_log[slot], true);
-                }
-                merged = true;
-                break;
             }
+            _log[slot].rssi = e.rssi;
+            _log[slot].lastSeen = millis();
+            _log[slot].channel = e.channel;
+            if (reactivating) {
+                _log[slot].active = true;
+                _log[slot].restored = 0;
+                _log[slot].firstSeen = millis();
+                _typeCounts[(uint8_t)t]++;
+                _latest = &_log[slot];
+                _latestChangeMs = millis();
+                queueBlackBox(_log[slot], true);
+            }
+            continue;
         }
-        if (merged) continue;
         Detection d;
         memset(&d, 0, sizeof(d));
         memcpy(d.mac, e.mac, 6);
@@ -2026,12 +2117,15 @@ void DetectionEngine::processWiFiQ(uint32_t budgetUs, uint8_t maxItems) {
 }
 
 void DetectionEngine::pushLog(const Detection& d) {
-    _log[_logHead] = d;
-    _log[_logHead].prevRssi = d.rssi;                 // no trend on a first sight
-    _log[_logHead].prevAt   = (uint8_t)(millis() >> 11);
+    const uint8_t slot = _logHead;
+    if (_logCount == LOG_CAP) unindexLogSlot(slot);
+    _log[slot] = d;
+    _log[slot].prevRssi = d.rssi;                 // no trend on a first sight
+    _log[slot].prevAt   = (uint8_t)(millis() >> 11);
+    indexLogSlot(slot);
     _logHead = (_logHead + 1) % LOG_CAP;
     if (_logCount < LOG_CAP) _logCount++;
-    _latest = &_log[(_logHead + LOG_CAP - 1) % LOG_CAP];
+    _latest = &_log[slot];
     _latestChangeMs = millis();
     const uint8_t typeIx = (uint8_t)d.type;
     if (typeIx < (uint8_t)DetectionType::COUNT) _typeCounts[typeIx]++;
@@ -2094,15 +2188,12 @@ void DetectionEngine::drainBlackBox(uint32_t now) {
     if (now - filled > EVERY) filled = now;      // long gap: start the clock here
     if (!tokens) return;
     tokens--;
-    for (uint8_t i = 0; i < _logCount; i++) {
-        const Detection& d = _log[(_logHead + LOG_CAP - 1 - i) % LOG_CAP];
-        if (d.type == q.type && memcmp(d.mac, q.mac, 6) == 0) {
-            BlackBox::noteDetection(d, q.again);
-            return;
-        }
+    const int16_t foundSlot = findLogSlot(q.mac, q.type);
+    if (foundSlot >= 0) {
+        BlackBox::noteDetection(_log[(uint8_t)foundSlot], q.again);
+        return;
     }
-    // Gone from the log already -- two hundred newer devices in a second and
-    // a half. Nothing left to say about it.
+    // Gone from the 64-row live log already. Nothing left to say about it.
 }
 
 // LOG on the console. Here rather than in clock.cpp because the ring is the

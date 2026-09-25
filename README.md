@@ -558,9 +558,23 @@ live radio-mailbox metrics.
 - The ten-second serial report adds a `[render]` line showing CLEAR draws,
   cadence skips, retained-static skips and sleeping-panel skips.
 
-Stage 1 and Stage 2 telemetry are intended to make later optimizations
-measurable rather than subjective: radio pressure, rendered-frame latency and
-avoided render work can all be compared directly.
+**Stage 3 performance work (v1.20.1):**
+
+- Hot-path detection dedupe now uses a fixed 128-bucket MAC+type index over
+  the 64-row live detection ring instead of repeatedly scanning the ring.
+- BLE refreshes, WiFi refreshes, deauth-burst refreshes and deferred black-box
+  lookups use the index; chronological LOG display and stale-expiry passes still
+  walk the ring because those operations genuinely need every row.
+- The index uses fixed storage only (no heap allocation), keeps stale rows
+  addressable so reactivation semantics are unchanged, and updates itself when
+  the ring overwrites an old slot.
+- Tombstones are periodically rebuilt from the live ring to keep probe lengths
+  bounded during long crowded runs.
+
+Stage 1 through Stage 3 are intended to make later optimizations measurable
+rather than subjective: the existing queue/frame/render telemetry remains the
+baseline while hot-path lookup work is reduced without changing detection
+semantics.
 
 ## License
 

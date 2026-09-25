@@ -618,6 +618,20 @@ private:
     uint32_t   _latestChangeMs = 0;
     DetectionType _lastAlertType = DetectionType::UNKNOWN;
 
+    // Fixed MAC+type index for hot-path log lookups. Bucket value 0 means
+    // empty, 0xFF is a tombstone, and 1..LOG_CAP encodes physical slot+1.
+    // The ring remains the source of truth and chronological UI/expiry scans
+    // still walk it directly; this only replaces repeated dedupe searches.
+    static const uint8_t LOG_INDEX_CAP = 128;
+    static const uint8_t LOG_INDEX_TOMBSTONE = 0xFF;
+    uint8_t _logIndex[LOG_INDEX_CAP] = {0};
+    uint8_t _logIndexTombstones = 0;
+    uint8_t logIndexHash(const uint8_t* mac, DetectionType type) const;
+    int16_t findLogSlot(const uint8_t* mac, DetectionType type) const;
+    void indexLogSlot(uint8_t slot);
+    void unindexLogSlot(uint8_t slot);
+    void rebuildLogIndex();
+
     // Live counters (one per DetectionType)
     uint16_t _typeCounts[(uint8_t)DetectionType::COUNT] = {0};
 
