@@ -1040,23 +1040,47 @@ static bool s_alertLastFree = false;
 #if defined(TWATCH_S3)
 static bool twatchStill();
 #endif
+static bool freshAlertCandidate(const Detection& d, uint32_t now) {
+    // ALWAYS ALERT means "do not suppress this device", including a per-type
+    // repeat threshold. Otherwise alertReadyMs is set exactly when that rule
+    // becomes true and consumed after the alert fires.
+    const uint32_t at = IgnoreList::alwaysAlert(d.mac) ? d.firstSeen : d.alertReadyMs;
+    return at && (uint32_t)(now - at) < 250u;
+}
+
 static bool alertMayInterrupt(const Detection& d) {
-    const bool exempt = engine.isWatched(d.mac, true) || engine.isWatched(d.mac, false);
+    const bool watched = engine.isWatched(d.mac, true) || engine.isWatched(d.mac, false);
+    const bool always  = IgnoreList::alwaysAlert(d.mac);
+    const bool explicitOverride = watched || always;
+
+    if (!explicitOverride) {
+        if (!Settings::alertEnabled(d.type)) return false;                // LOG ONLY
+        if (IgnoreList::silenced(d.mac)) return false;                    // ignored/trusted/snoozed
+        if (d.conf < Settings::alertMinConfidence(d.type)) return false;
+        if (d.repeats < Settings::alertMinRepeats(d.type)) return false;
+        if (!engine.alertCooldownReady(d.mac, d.type,
+                                       Settings::alertCooldownSec(d.type), millis()))
+            return false;
+    }
+
 #if defined(TWATCH_S3)
     const bool still = twatchStill();
 #else
     const bool still = false;
 #endif
-    const DetectionEngine::AlertGate g = engine.alertGate(d.mac, Settings::autoQuietAfter(), exempt, still);
+    // WATCH and ALWAYS ALERT are direct user intent, so AUTO SNOOZE may not
+    // overrule them. Everything else retains the existing proximity-aware gate.
+    const DetectionEngine::AlertGate g =
+        engine.alertGate(d.mac, Settings::autoQuietAfter(), explicitOverride, still);
 #if defined(TWATCH_S3)
     if (g == DetectionEngine::AlertGate::HOLD)
         Serial.printf("[snooze] %02x:%02x held, watch %s\n", d.mac[4], d.mac[5], still ? "still" : "moving");
 #endif
-    switch (g) {
-        case DetectionEngine::AlertGate::HOLD:       return false;
-        case DetectionEngine::AlertGate::ALLOW_LAST: s_alertLastFree = true;  return true;
-        default:                                     s_alertLastFree = false; return true;
-    }
+    if (g == DetectionEngine::AlertGate::HOLD) return false;
+
+    s_alertLastFree = (g == DetectionEngine::AlertGate::ALLOW_LAST);
+    engine.noteAlertRaised(d.mac, d.type, millis());
+    return true;
 }
 
 // The current alert's target, captured in enterAlert(). Kept separate
@@ -3828,9 +3852,7 @@ void loop() {
             // alert back until somebody happened to tap it.
             {
                 const Detection* latest = engine.latest();
-                if (latest && (now - latest->firstSeen) < 200 &&
-                    latest->conf >= Settings::minConfidence() && !IgnoreList::silenced(latest->mac) &&
-                    alertMayInterrupt(*latest)) {
+                if (latest && freshAlertCandidate(*latest, now) && alertMayInterrupt(*latest)) {
                     uiAlertSetRedacted(false);
                     enterAlert(*latest);
                     s_backToDesk = Settings::deskWanted();   // dismissed, back where the window was over
@@ -3995,21 +4017,7 @@ void loop() {
                 enterWatchAlert();
             } else {
                 const Detection* latest = engine.latest();
-                if (latest && (now - latest->firstSeen) < 200 &&
-                    // This sighting's grade, not the type's -- which is what
-                    // finally makes ALERT FILTER mean something. Set it to
-                    // High and an ESP32 probe request matching a
-                    // module-vendor OUI stays in the log without taking over
-                    // the screen.
-                    latest->conf >= Settings::minConfidence() &&
-                    // Your own AirTag and your own doorbell are true
-                    // positives every single time, and a detector that
-                    // shouts about them constantly is one you stop reading.
-                    // Only the ALERT is suppressed -- the detection is
-                    // still counted and still written to the LOG above, so
-                    // the device stays visible and un-ignorable.
-                    !IgnoreList::silenced(latest->mac) &&
-                    alertMayInterrupt(*latest)) {
+                if (latest && freshAlertCandidate(*latest, now) && alertMayInterrupt(*latest)) {
                     uiAlertSetRedacted(false);
                     enterAlert(*latest);
                 }
@@ -5802,9 +5810,8 @@ void loop() {
             {
                 const Security::LockAlerts la = Security::lockAlerts();
                 const Detection* latest = engine.latest();
-                if (la != Security::LockAlerts::NONE && latest && (now - latest->firstSeen) < 200 &&
-                    latest->conf >= Settings::minConfidence() && !IgnoreList::silenced(latest->mac) &&
-                    alertMayInterrupt(*latest)) {
+                if (la != Security::LockAlerts::NONE && latest &&
+                    freshAlertCandidate(*latest, now) && alertMayInterrupt(*latest)) {
                     uiAlertSetRedacted(la == Security::LockAlerts::TYPE_ONLY);
                     enterAlert(*latest);
                     break;
@@ -5973,9 +5980,7 @@ void loop() {
             // beside the clock, and Squachy's reaction, not a new screen.
             {
                 const Detection* latest = engine.latest();
-                if (latest && (now - latest->firstSeen) < 200 &&
-                    latest->conf >= Settings::minConfidence() && !IgnoreList::silenced(latest->mac) &&
-                    alertMayInterrupt(*latest)) {
+                if (latest && freshAlertCandidate(*latest, now) && alertMayInterrupt(*latest)) {
                     uiDeskAlert(*latest, now);
                     lastAlertType = latest->type;
                     squachyCatch(latest->type, latest->mac, latest->hits, latest->rssi, latest->conf);
@@ -6263,10 +6268,13 @@ void loop() {
         // An alert has to be visible. A detector that dims itself and then
         // hides the thing it just found is worse than one with no saver at all.
         const bool alerting = (state == AppState::ALERT || state == AppState::WATCH_ALERT);
+        const bool alertWantsWake = Settings::wakeOnAlert() && alerting &&
+                                    (state == AppState::WATCH_ALERT ||
+                                     Settings::alertWakeScreen(lastAlertType));
         const uint16_t timeoutSec = Settings::screenTimeoutSec();
         // Desk mode is a clock; a clock that goes dark is not there.
         bool wantDim = timeoutSec && idleMs > (uint32_t)timeoutSec * 1000UL &&
-                       !(Settings::wakeOnAlert() && alerting) && state != AppState::DESK;
+                       !alertWantsWake && state != AppState::DESK;
 #if defined(TWATCH_S3)
         // On the cable the watch stays lit; on battery the timeout always runs
         // (see Settings::screenTimeoutSec), unless it is set to NEVER.
@@ -6294,7 +6302,7 @@ void loop() {
             wasAlerting = alerting;
         }
         if (s_crownDark) {
-            const bool alertWants = Settings::wakeOnAlert() && alerting;
+            const bool alertWants = alertWantsWake;
             const bool lit = s_crownLitUntil && (int32_t)(s_crownLitUntil - now) > 0;
             wantDim = !alertWants && !lit;
         }
