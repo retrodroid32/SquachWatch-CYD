@@ -126,6 +126,13 @@ from your browser:
 
 **[https://retrodroid32.github.io/SquachWatch-CYD/](https://retrodroid32.github.io/SquachWatch-CYD/)**
 
+> **v1.20.0 OTA migration:** firmware at the v1.20.0 baseline still points its
+> Wi-Fi updater at the old `http://squachwatch.com/` endpoint. A board running
+> that build needs **one USB/browser flash** to a newer fork build before
+> Wi-Fi OTA can use this fork's GitHub Pages endpoint. After that migration,
+> future Wi-Fi OTA checks use
+> `https://retrodroid32.github.io/SquachWatch-CYD/`.
+
 > **CDN trust note.** The flasher currently pins ESP Web Tools 10.4.0 and
 > esptool-js 0.6.1 but loads those browser libraries from unpkg. Firmware
 > manifests and binaries are served from this repository's Pages site, and
