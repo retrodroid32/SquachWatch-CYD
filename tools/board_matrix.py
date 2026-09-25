@@ -55,8 +55,11 @@ def validate(boards):
     note = ROOT / ".github" / "release-notes" / f"v{version}.md"
     if not note.is_file():
         errors.append(f"missing release notes: {note.relative_to(ROOT)}")
-    if "cyd32-st7798" not in [b["id"] for b in selected(boards, "ci")]:
+    ci_ids = [b["id"] for b in selected(boards, "ci")]
+    if "cyd32-st7798" not in ci_ids:
         errors.append("cyd32-st7798 must be in normal CI")
+    if "freenove32" not in ci_ids:
+        errors.append("freenove32 must be in normal CI")
     if errors:
         for e in errors:
             print("ERROR:", e, file=sys.stderr)
