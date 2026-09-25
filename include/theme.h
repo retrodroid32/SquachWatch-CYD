@@ -198,6 +198,7 @@ namespace Theme {
     // like tapping CANCEL, so without this there is no evidence the tap did
     // anything at all. `sub` may be nullptr.
     void showToast(const char* head, const char* sub, uint16_t accent, uint32_t ms = 1500);
+    bool toastActive(uint32_t now);
 
     // No-op unless a toast is live. Call last, after the screen has drawn.
     void drawToast(TFT_eSPI& t, uint32_t now);
