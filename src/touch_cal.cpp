@@ -12,14 +12,23 @@ static float s_density = 1.0f;
 void setDensityScale(float scale) { s_density = scale > 0.5f ? scale : 1.0f; }
 
 // The Fit lives in its own namespace, so a firmware that predates it (or a
-// rollback to one) never trips over it, and the old keys below stay exactly
-// where older firmware left them.
-static const char* FIT_NS  = "touchfit";
+// rollback to one) never trips over it. Freenove gets its own namespace:
+// these boards are commonly tested first with another 3.2-inch image and must
+// not inherit a calibration taken against a different panel profile.
+#if defined(FREENOVE32)
+static const char* FIT_NS = "fn32fit";
+#else
+static const char* FIT_NS = "touchfit";
+#endif
 static const char* FIT_KEY = "fit";
 static const uint8_t FIT_VERSION = 1;
 
 // Where the calibrations written by older firmware live -- read-only now.
+#if defined(FREENOVE32)
+static const char* NS = "fn32cal";
+#else
 static const char* NS = "touchcal";
+#endif
 
 static const uint16_t GREEN = 0x07E0;
 static const uint16_t AMBER = 0xFD20;
