@@ -579,11 +579,20 @@ live radio-mailbox metrics.
   retain NimBLE's incomplete-list-before-complete-list matching order.
 - Direct name parsing also removes a dangling `c_str()` pointer that came from
   calling `adv->getName().c_str()` on a temporary string.
+- Stage 3C replaces per-detection SD `open -> write -> close` traffic with a
+  fixed 512-byte RAM write buffer. Dense traffic flushes at 384 bytes; sparse
+  traffic is committed within one second.
+- SD buffering uses no heap allocation. Full-buffer/card-failure behavior is
+  bounded: older pending rows are retained for retry and only newer log rows
+  are dropped if no room remains.
+- Daily-file rotation flushes the old buffer before changing filenames, while a
+  security/duress wipe deliberately discards pending rows before deleting log
+  files so buffered detections cannot be written back during the wipe.
 
 Stage 1 through Stage 3 are intended to make later optimizations measurable
 rather than subjective: the existing queue/frame/render telemetry remains the
-baseline while hot-path lookup and BLE parsing work are reduced without
-changing intended detection semantics.
+baseline while hot-path lookup, BLE parsing and SD write overhead are reduced
+without changing intended detection semantics.
 
 ## License
 
