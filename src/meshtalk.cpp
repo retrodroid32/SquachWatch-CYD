@@ -979,7 +979,7 @@ void tick(uint32_t now) {
         if (want && now - s_invSince > 180000) want = false;
         if (want != boosted) {
             boosted = want;
-            setScanWindow(want ? 99 : 75);
+            setScanBoost(want);
             Serial.printf("[invite] listening %s\n", want ? "all the time until it is done" : "as usual again");
         }
     }

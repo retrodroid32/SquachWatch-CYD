@@ -62,7 +62,8 @@ void twatchXtalLine(char* out, size_t n);      // main.cpp: CLOCK CHECK's state 
 static const SettingsRow ALL_ROWS[] = {
 #if defined(TWATCH_S3)
     // The watch's own group, first: what only a watch has to think about.
-    SettingsRow::WATCH_BATTERY, SettingsRow::WATCH_RADIO, SettingsRow::WATCH_BUZZ,
+    SettingsRow::WATCH_BATTERY, SettingsRow::WATCH_RADIO, SettingsRow::WATCH_LISTEN,
+    SettingsRow::WATCH_IDLE_CPU, SettingsRow::WATCH_BUZZ,
     SettingsRow::WATCH_RADIO_RESET, SettingsRow::WATCH_STEADY, SettingsRow::WATCH_TEMP,
     SettingsRow::WATCH_XTAL,
 #endif
@@ -177,6 +178,8 @@ static RowGroupId groupFor(SettingsRow r) {
     switch (r) {
         case SettingsRow::WATCH_BATTERY:
         case SettingsRow::WATCH_RADIO:
+        case SettingsRow::WATCH_LISTEN:
+        case SettingsRow::WATCH_IDLE_CPU:
         case SettingsRow::WATCH_BUZZ:
         case SettingsRow::WATCH_RADIO_RESET:
         case SettingsRow::WATCH_STEADY:
@@ -832,6 +835,12 @@ static void rowContent(SettingsRow r, const DetectionEngine& eng, char* valBuf, 
             break;
         case SettingsRow::WATCH_RADIO:
             label = "RADIOS"; value = Settings::radioDutyName(Settings::radioDutyRaw());
+            break;
+        case SettingsRow::WATCH_LISTEN:
+            label = "BLE LISTEN"; snprintf(valBuf, valBufN, "%u%%", (unsigned)Settings::bleListenRaw()); value = valBuf;
+            break;
+        case SettingsRow::WATCH_IDLE_CPU:
+            label = "SLEEP CPU"; snprintf(valBuf, valBufN, "%u MHz", (unsigned)Settings::idleCpuMhzRaw()); value = valBuf;
             break;
         case SettingsRow::WATCH_BUZZ:
             label = "BUZZ"; value = Settings::buzz() ? "ON" : "OFF";

@@ -196,6 +196,21 @@ namespace Settings {
     uint16_t   cpuMhz();
     void       cycleCpuMhz();
 
+    // The watch's two battery knobs, both only while POWER SAVER is on.
+    // BLE LISTEN: how much of each 100 ms the Bluetooth receiver is open,
+    // 25, 50 or 75 percent. The receiver is the watch's whole battery story
+    // (about 100 mA whenever it is open), and a tracker announcing itself
+    // every second or two is still caught within seconds at 25. Off the
+    // watch this reads 75, the window every board has always run.
+    uint8_t    bleListen();
+    uint8_t    bleListenRaw();
+    void       cycleBleListen();
+    // SLEEP CPU: the core clock while the screen is asleep, 80, 160 or 240.
+    // The screen-on clock is CPU CLOCK above; this one never goes above it.
+    uint16_t   idleCpuMhz();
+    uint16_t   idleCpuMhzRaw();
+    void       cycleIdleCpu();
+
     // Whether an alert pulls the backlight back up. On by default: a
     // detector that dims itself and then hides the alert it just found is
     // worse than useless.

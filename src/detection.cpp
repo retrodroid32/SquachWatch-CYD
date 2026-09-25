@@ -179,6 +179,17 @@ void radioReport(bool withScan) {
 static volatile uint8_t s_windowReq = 0;   // a WINDOW command waiting for the next restart
 static bool             s_windowPending = false;
 void setScanWindow(uint8_t w) { if (w >= 1 && w <= 100) { s_windowReq = w; s_windowPending = true; } }
+static uint8_t s_baseWindow = 75;   // matches the setWindow(75) at init
+static bool    s_boosted    = false;
+void setScanWindowBase(uint8_t w) {
+    if (w < 1 || w > 100 || w == s_baseWindow) return;
+    s_baseWindow = w;
+    if (!s_boosted) setScanWindow(w);
+}
+void setScanBoost(bool on) {
+    s_boosted = on;
+    setScanWindow(on ? 99 : s_baseWindow);
+}
 // BENCH: INTERVAL N (ms), with the window in the same message; see scanFlushOnHost.
 static volatile uint16_t s_intervalReq = 0;
 void setScanInterval(uint16_t ms, uint8_t w) {
