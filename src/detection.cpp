@@ -1490,12 +1490,15 @@ void DetectionEngine::processDeauthQ() {
             Detection d;
             memset(&d, 0, sizeof(d));
             memcpy(d.mac, e.mac, 6);
-            d.rssi    = e.rssi;
+            detectionRssiInit(d, e.rssi, now);
             d.channel = e.channel;
             d.type    = DetectionType::DEAUTH;
             d.conf    = confidenceFor(DetectionType::DEAUTH);
+            d.evidence = EvidenceKind::WIFI_DEAUTH;
             d.vendor = "Deauth";
             d.firstSeen = d.lastSeen = now;
+            d.repeats = _deauthWinCount > 255 ? 255 : (uint8_t)_deauthWinCount;
+            if (d.repeats >= Settings::alertMinRepeats(d.type)) d.alertReadyMs = now;
             // hits doubles as "how many frames triggered this" here,
             // rather than a repeat-sighting count like every other
             // type uses it for -- there's no single persistent device
@@ -1511,13 +1514,15 @@ void DetectionEngine::processDeauthQ() {
             const int16_t foundSlot = findLogSlot(e.mac, DetectionType::DEAUTH);
             if (foundSlot >= 0) {
                 Detection& row = _log[(uint8_t)foundSlot];
-                row.prevRssi  = row.rssi;
-                row.rssi      = e.rssi;
+                detectionRssiSample(row, e.rssi, now);
                 row.channel   = e.channel;
                 row.hits      = _deauthWinCount;
+                row.repeats   = _deauthWinCount > 255 ? 255 : (uint8_t)_deauthWinCount;
                 row.lastSeen  = now;
                 row.firstSeen = now;
                 row.restored  = 0;
+                row.evidence  = EvidenceKind::WIFI_DEAUTH;
+                if (row.repeats >= Settings::alertMinRepeats(row.type)) row.alertReadyMs = now;
                 if (!row.active) {
                     row.active = true;
                     _typeCounts[(uint8_t)DetectionType::DEAUTH]++;
@@ -1652,15 +1657,21 @@ void DetectionEngine::applyBle(Detection d) {
             // nearby instead of meaning anything. rssi/lastSeen still
             // update on every packet regardless, since those drive
             // "is it still actually here" freshness, not the count.
-            {
-                const uint8_t nowAt = (uint8_t)(millis() >> 11);
-                if (_log[slot].prevAt != nowAt) {
-                    _log[slot].prevRssi = _log[slot].rssi;
-                    _log[slot].prevAt   = nowAt;
-                }
+            const uint32_t nowMs = millis();
+            if (_log[slot].repeats < 255) _log[slot].repeats++;
+            detectionRssiSample(_log[slot], d.rssi, nowMs);
+            _log[slot].lastSeen = nowMs;
+            if (_log[slot].evidence == EvidenceKind::UNKNOWN && d.evidence != EvidenceKind::UNKNOWN) {
+                _log[slot].evidence = d.evidence;
+                _log[slot].evidenceCode = d.evidenceCode;
             }
-            _log[slot].rssi = d.rssi;
-            _log[slot].lastSeen = millis();
+            const bool becameReady = !_log[slot].alertReadyMs &&
+                                     _log[slot].repeats >= Settings::alertMinRepeats(d.type);
+            if (becameReady) {
+                _log[slot].alertReadyMs = nowMs;
+                _latest = &_log[slot];
+                _latestChangeMs = nowMs;
+            }
             Bingo::note(d.type);
             Dex::note(d.type, d.rssi);
             Regulars::note(d.mac, d.type);
@@ -1668,10 +1679,13 @@ void DetectionEngine::applyBle(Detection d) {
                 _log[slot].hits++;
                 _log[slot].active = true;
                 _log[slot].restored = 0;
-                _log[slot].firstSeen = millis();   // fresh sighting for alert purposes
+                _log[slot].firstSeen = nowMs;
+                _log[slot].repeats = 1;
+                detectionRssiInit(_log[slot], d.rssi, nowMs);
+                _log[slot].alertReadyMs = Settings::alertMinRepeats(d.type) <= 1 ? nowMs : 0;
                 _typeCounts[(uint8_t)d.type]++;
                 _latest = &_log[slot];
-                _latestChangeMs = millis();
+                _latestChangeMs = nowMs;
                 queueBlackBox(_log[slot], true);
             }
         return;
@@ -2096,6 +2110,7 @@ void DetectionEngine::processWiFiQ(uint32_t budgetUs, uint8_t maxItems) {
         // are the same DetectionType and very different claims.
         Confidence conf = Confidence::HIGH_CONF;
         bool matchedBySsid = false;
+        EvidenceKind evidence = EvidenceKind::UNKNOWN;
         // Ahead of everything, including the evil-twin check: a pwnagotchi
         // told us what it is, in its own words, along with how many
         // handshakes it has taken. No inference beats that, and its
@@ -2105,17 +2120,21 @@ void DetectionEngine::processWiFiQ(uint32_t budgetUs, uint8_t maxItems) {
         if (e.pwnagotchi) {
             t = DetectionType::HACKER;
             conf = Confidence::HIGH_CONF;
+            evidence = EvidenceKind::WIFI_PWNAGOTCHI;
         } else if ((evilTwin = (e.ssid[0] && noteApBeacon(e.mac, e.ssid, e.encrypted)))) {
             t = DetectionType::EVILTWIN;
+            evidence = EvidenceKind::WIFI_EVILTWIN;
         } else {
             // Check OUI first (per DESIGN.md §6.2 precedence); fall back
             // to the SSID prefix (e.g. an Axon/Flock unit in pairing
             // mode, broadcasting from a WiFi module OUI we don't
             // otherwise know) if the OUI itself didn't match anything.
             t = lookupOui(e.mac, &conf);
+            if (t != DetectionType::UNKNOWN) evidence = EvidenceKind::WIFI_OUI;
             if (t == DetectionType::UNKNOWN && e.ssid[0]) {
                 t = lookupSsid(e.ssid);
                 matchedBySsid = (t != DetectionType::UNKNOWN);
+                if (matchedBySsid) evidence = EvidenceKind::WIFI_SSID;
                 // The SSID tables have no per-row grade, so an SSID match
                 // falls back to what the type is worth.
                 if (matchedBySsid) conf = confidenceFor(t);
@@ -2139,23 +2158,29 @@ void DetectionEngine::processWiFiQ(uint32_t budgetUs, uint8_t maxItems) {
             Dex::note(t, e.rssi);
             Regulars::note(e.mac, t);
             _log[slot].hits++;
-            {
-                const uint8_t nowAt = (uint8_t)(millis() >> 11);
-                if (_log[slot].prevAt != nowAt) {
-                    _log[slot].prevRssi = _log[slot].rssi;
-                    _log[slot].prevAt   = nowAt;
-                }
-            }
-            _log[slot].rssi = e.rssi;
-            _log[slot].lastSeen = millis();
+            const uint32_t nowMs = millis();
+            if (_log[slot].repeats < 255) _log[slot].repeats++;
+            detectionRssiSample(_log[slot], e.rssi, nowMs);
+            _log[slot].lastSeen = nowMs;
             _log[slot].channel = e.channel;
+            if (_log[slot].evidence == EvidenceKind::UNKNOWN) _log[slot].evidence = evidence;
+            const bool becameReady = !_log[slot].alertReadyMs &&
+                                     _log[slot].repeats >= Settings::alertMinRepeats(t);
+            if (becameReady) {
+                _log[slot].alertReadyMs = nowMs;
+                _latest = &_log[slot];
+                _latestChangeMs = nowMs;
+            }
             if (reactivating) {
                 _log[slot].active = true;
                 _log[slot].restored = 0;
-                _log[slot].firstSeen = millis();
+                _log[slot].firstSeen = nowMs;
+                _log[slot].repeats = 1;
+                detectionRssiInit(_log[slot], e.rssi, nowMs);
+                _log[slot].alertReadyMs = Settings::alertMinRepeats(t) <= 1 ? nowMs : 0;
                 _typeCounts[(uint8_t)t]++;
                 _latest = &_log[slot];
-                _latestChangeMs = millis();
+                _latestChangeMs = nowMs;
                 queueBlackBox(_log[slot], true);
             }
             continue;
@@ -2163,10 +2188,14 @@ void DetectionEngine::processWiFiQ(uint32_t budgetUs, uint8_t maxItems) {
         Detection d;
         memset(&d, 0, sizeof(d));
         memcpy(d.mac, e.mac, 6);
-        d.rssi    = e.rssi;
+        const uint32_t nowMs = millis();
+        detectionRssiInit(d, e.rssi, nowMs);
         d.channel = e.channel;
         d.type    = t;
         d.conf    = (t == DetectionType::EVILTWIN) ? confidenceFor(t) : conf;
+        d.evidence = evidence;
+        d.repeats = 1;
+        d.alertReadyMs = Settings::alertMinRepeats(t) <= 1 ? nowMs : 0;
         // Vendor label: from the SSID-prefix table if that's what
         // matched, otherwise from the OUI table. An evil twin gets
         // neither -- what matters is which network is being
@@ -2206,8 +2235,11 @@ void DetectionEngine::pushLog(const Detection& d) {
     const uint8_t slot = _logHead;
     if (_logCount == LOG_CAP) unindexLogSlot(slot);
     _log[slot] = d;
-    _log[slot].prevRssi = d.rssi;                 // no trend on a first sight
-    _log[slot].prevAt   = (uint8_t)(millis() >> 11);
+    if (_log[slot].repeats == 0) _log[slot].repeats = 1;
+    if (_log[slot].rssiHistCount == 0) detectionRssiInit(_log[slot], d.rssi, millis());
+    if (_log[slot].alertReadyMs == 0 &&
+        _log[slot].repeats >= Settings::alertMinRepeats(_log[slot].type))
+        _log[slot].alertReadyMs = millis();
     indexLogSlot(slot);
     _logHead = (_logHead + 1) % LOG_CAP;
     if (_logCount < LOG_CAP) _logCount++;
