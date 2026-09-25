@@ -1283,7 +1283,7 @@ static void enterAlert(const Detection& d) {
     s_backToDesk = (state == AppState::DESK);
     state = AppState::ALERT;
 #if defined(TWATCH_S3)
-    twatchBuzz(Buzz::ALERT);
+    if (Settings::alertNotify(d.type)) twatchBuzz(Buzz::ALERT);
 #endif
     // FIRST. uiAlertInit() clears the card's banner flags, and it used to run
     // at the END of this function -- after the two uiAlertSet* calls below --
