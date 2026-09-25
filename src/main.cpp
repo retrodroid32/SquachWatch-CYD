@@ -4390,8 +4390,8 @@ void loop() {
                     s_confirmType        = lastAlertType;
                     memcpy(s_confirmVendor, s_alertVendor, sizeof s_confirmVendor);
                     memcpy(s_confirmName,   s_alertName,   sizeof s_confirmName);
-                    if (const Detection* live = engine.findDetection(s_alertMac, lastAlertType))
-                        s_confirmDetection = *live;
+                    const Detection* live = engine.findDetection(s_alertMac, lastAlertType);
+                    if (live) s_confirmDetection = *live;
                     s_infoPage           = Settings::infoPrimerShown() ? InfoPage::EVIDENCE : InfoPage::PRIMER;
                     s_infoPending        = true;
                     s_infoArmed          = false;
