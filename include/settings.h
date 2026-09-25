@@ -196,6 +196,15 @@ namespace Settings {
     uint16_t   cpuMhz();
     void       cycleCpuMhz();
 
+    // T-Watch battery controls. Off-watch builds return the historical
+    // values, so shared callers do not need board-specific branches.
+    uint8_t    bleListen();
+    uint8_t    bleListenRaw();
+    void       cycleBleListen();
+    uint16_t   idleCpuMhz();
+    uint16_t   idleCpuMhzRaw();
+    void       cycleIdleCpu();
+
     // Whether an alert pulls the backlight back up. On by default: a
     // detector that dims itself and then hides the alert it just found is
     // worse than useless.

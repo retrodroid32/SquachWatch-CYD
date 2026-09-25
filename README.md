@@ -44,6 +44,10 @@ the v1.20.0 tag, not just the most recent commits. The detailed record is in
 - **T-Watch radio reliability was hardened:** the watch keeps the stock Arduino
   Wi-Fi driver after a reproduced ESP32-S3 deaf-radio failure in the slim
   re-init path; CYD boards retain the lower-memory slim path.
+- **T-Watch battery controls now include BLE LISTEN and SLEEP CPU:** on battery
+  with POWER SAVER enabled, BLE receive duty can be set to 25/50/75% and the
+  sleeping CPU to 80/160/240 MHz. SquachMesh invite boosts temporarily raise
+  listening and then return to the selected base window.
 - **SquachMesh reliability improved:** invite handshakes temporarily listen
   harder, squad members tolerate longer beacon gaps, and timestamp races that
   made visitors/detections flicker in and out were fixed.
