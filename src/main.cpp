@@ -3218,6 +3218,107 @@ static uint32_t s_pushUsAvg  = 0;
 static uint32_t s_frameUsAvg = 0;
 static uint32_t s_loopsSinceSay = 0;
 static uint32_t s_pushAccumUs = 0;   // summed within a frame: cyd35 pushes twice
+
+// Stage 2: keep radio/input logic free to loop quickly without repainting the
+// animated CLEAR screen faster than a person can see. 30 fps is above the
+// mascot's own 120 ms step cadence and preserves smooth time-based background
+// motion; slower boards naturally render below this and are never delayed.
+static const uint32_t CLEAR_RENDER_MS = 33;
+static uint32_t s_clearLastRenderAt = 0;
+static uint32_t s_clearRenderScreenAt = 0;
+static bool     s_clearStaticKeyValid = false;
+static uint32_t s_clearStaticKey = 0;
+static uint32_t s_clearDrawsSinceSay = 0;
+static uint32_t s_clearCadenceSkipsSinceSay = 0;
+static uint32_t s_clearStaticSkipsSinceSay = 0;
+static uint32_t s_clearSleepSkipsSinceSay = 0;
+
+static bool clearAnyActive(const DetectionEngine& eng) {
+    for (uint8_t i = 0; i < (uint8_t)DetectionType::COUNT; i++)
+        if (eng.countByType((DetectionType)i) > 0) return true;
+    return false;
+}
+
+static inline void clearKeyMix(uint32_t& h, uint32_t v) {
+    h = (h ^ (uint8_t)v) * 16777619u;
+    h = (h ^ (uint8_t)(v >> 8)) * 16777619u;
+    h = (h ^ (uint8_t)(v >> 16)) * 16777619u;
+    h = (h ^ (uint8_t)(v >> 24)) * 16777619u;
+}
+
+static uint32_t clearStaticVisualKey(const DetectionEngine& eng, bool scanMenu) {
+    uint32_t h = 2166136261u;
+    clearKeyMix(h, (uint32_t)tft.width());
+    clearKeyMix(h, (uint32_t)tft.height());
+    clearKeyMix(h, scanMenu ? 1u : 0u);
+    clearKeyMix(h, (uint32_t)eng.watchKind());
+    clearKeyMix(h, (uint32_t)eng.huntKind());
+    clearKeyMix(h, Settings::typeEnabled(DetectionType::IBEACON) ? 1u : 0u);
+    clearKeyMix(h, Security::enabled() ? 1u : 0u);
+    clearKeyMix(h, Settings::rotationLocked() ? 1u : 0u);
+#if defined(TWATCH_S3)
+    // The only moving chrome in a truly-static T-Watch CLEAR frame is its
+    // minute clock. Wake the frame exactly when the displayed minute changes.
+    clearKeyMix(h, Clock::nowEpoch() / 60u);
+#endif
+    return h;
+}
+
+static bool clearShouldRender(uint32_t now, const DetectionEngine& eng,
+                              bool scanMenu, bool touchLive, bool forceVisual) {
+#if defined(TWATCH_S3)
+    if (s_panelAsleep) {
+        s_clearStaticKeyValid = false;
+        s_clearSleepSkipsSinceSay++;
+        return false;
+    }
+#endif
+    const bool newScreen = s_clearRenderScreenAt != transitionStart;
+    if (newScreen) {
+        s_clearRenderScreenAt = transitionStart;
+        s_clearLastRenderAt = 0;
+        s_clearStaticKeyValid = false;
+    }
+
+    const bool active = clearAnyActive(eng);
+    const bool overlay = Theme::toastActive(now) || uiZoneCardWanted() || Theme::glitchActive();
+    bool force = forceVisual || touchLive || newScreen ||
+                 (uint32_t)(now - transitionStart) < TRANSITION_MS ||
+                 Theme::glitchActive();
+
+    // BLACK + boring mode + no live event/overlay is genuinely static. In
+    // that one state there is no animated background, mascot, pet, headline,
+    // crowd or toast to advance, so retain the already-rendered framebuffer
+    // until something visible changes instead of redrawing identical pixels.
+    const bool trulyStatic = Settings::boringMode() &&
+                             Settings::background() == Settings::Background::BLACK &&
+                             !active && !overlay;
+    if (trulyStatic && !force) {
+        const uint32_t key = clearStaticVisualKey(eng, scanMenu);
+        if (s_clearStaticKeyValid && key == s_clearStaticKey) {
+            s_clearStaticSkipsSinceSay++;
+            return false;
+        }
+        s_clearStaticKey = key;
+        s_clearStaticKeyValid = true;
+        force = true;
+    } else if (!trulyStatic && s_clearStaticKeyValid) {
+        // Leaving the retained static frame must repaint immediately so a new
+        // animation/event cannot wait behind the normal cadence limiter.
+        s_clearStaticKeyValid = false;
+        force = true;
+    }
+
+    if (!force && s_clearLastRenderAt &&
+        (uint32_t)(now - s_clearLastRenderAt) < CLEAR_RENDER_MS) {
+        s_clearCadenceSkipsSinceSay++;
+        return false;
+    }
+
+    s_clearLastRenderAt = now;
+    s_clearDrawsSinceSay++;
+    return true;
+}
 #if defined(CYD35)
 static uint32_t s_bandUs[2] = {0, 0};      // measurement: the 3.5"'s two draw passes
 #endif
@@ -3318,6 +3419,7 @@ void loop() {
     FrameProf::begin();
     s_pushAccumUs = 0;
     FramePush::newFrame();
+    bool renderedThisLoop = true;
     uint32_t now = millis();
 #if defined(TWATCH_S3)
     twatchCrownTick(now);
@@ -3727,188 +3829,53 @@ void loop() {
     FrameProf::lap(FrameProf::PRE);
     switch (state) {
         case AppState::BOOT: {
-#if defined(CYD35)
-            if (frameBufferOk) {
-                // Same two-pass half-height `frame` trick CLEAR uses --
-                // reuses that same already-allocated sprite (see its
-                // setup() comment) rather than needing a second
-                // allocation, since BOOT/CLEAR/ALERT are never on
-                // screen at the same time. uiBootTick() has no internal
-                // per-call state to double-advance, so no advance flag
-                // needed here unlike uiClearTick().
-                int halfH = tft.height() / 2;
-                frame.setViewport(0, 0, tft.width(), tft.height(), true);
-                uiBootTick(frame, now);
-                pushFrame(0, 0);
-                frame.setViewport(0, -halfH, tft.width(), tft.height(), true);
-                uiBootTick(frame, now);
-                pushFrame(0, halfH);
-                frame.resetViewport();
-            } else {
-                uiBootTick(tft, now);
-            }
-#else
-            uiBootTick(*canvas, now);
-            if (crashCardWanted()) drawCrashCard(*canvas);
+            bool forceClearVisual = false;
+#if CROWD_BENCH
+            forceClearVisual = CrowdBench::active();
 #endif
-            bool leave = uiBootDone(bootStart, crashCardWanted() ? 9000 : 3000);
-            if (!leave && touchJustDown && ignoreButtonHit(tp.x, tp.y, canvas->width())) {
-                ignoreShortBoots();
-                // The finger is still down where the next screen's own
-                // bottom-right button will be (BACK on the desk); the rest
-                // of this gesture is swallowed, as the calibration hatch does.
-                s_swallowTouch = true;
-                leave = true;
-            }
-            if (leave) {
-                // First-ever boot only -- goes straight into the normal
-                // onboarding overlay once this screen's own DONE button
-                // reaches enterClear(), same as it always did before
-                // this existed.
-                if (!Settings::colorChecked())    enterColorCheck(false);
-                // Something newer is out: the window says so before the
-                // board gets on with its day. Not over the first-boot
-                // walkthrough, which has a screen of its own to finish.
-                else if (OtaCore::availableVersion()[0] && !Security::locked()) enterSysProps();
-                else if (Settings::deskWanted())  enterDesk();   // switched off on the desk: back to it
-                else                              enterClear();
-            }
-            break;
-        }
-        case AppState::BINGO: {
-            drawTwoBand([&](TFT_eSPI& t, bool advance) { uiBingoTick(t, now, engine, advance); });
-            if (touchJustDown) {
-                lastTouch = now;
-                // OK leaves for the main screen or the desk, not back into
-                // the settings menu: somebody who opened the card to look at
-                // it wants the board back, not another list.
-                if (uiBingoHitTest(*canvas, tp.x, tp.y, tft.width(), tft.height()) == BingoTap::BACK)
-                    goHome();
-            }
-            break;
-        }
-        case AppState::DEX: {
-            drawTwoBand([&](TFT_eSPI& t, bool advance) { uiDexTick(t, now, engine, advance); });
-            if (touchJustDown) {
-                lastTouch = now;
-                if (uiDexHitTest(*canvas, tp.x, tp.y, tft.width(), tft.height()) == DexTap::BACK)
-                    goHome();
-            }
-            break;
-        }
-        case AppState::SYS_PROPS: {
-            // A detection still takes the screen. The window can open on a
-            // board nobody is watching -- a squad member's hello brings the
-            // news -- and it has no timeout, so without this it held every
-            // alert back until somebody happened to tap it.
-            {
-                const Detection* latest = engine.latest();
-                if (latest && (now - latest->firstSeen) < 200 &&
-                    latest->conf >= Settings::minConfidence() && !IgnoreList::silenced(latest->mac) &&
-                    alertMayInterrupt(*latest)) {
-                    uiAlertSetRedacted(false);
-                    enterAlert(*latest);
-                    s_backToDesk = Settings::deskWanted();   // dismissed, back where the window was over
-                    break;
-                }
-                if (engine.watchHitPending()) { enterWatchAlert(); break; }
-            }
-            drawTwoBand([&](TFT_eSPI& t, bool advance) { uiSysPropsTick(t, now, engine, advance); });
-            if (touchJustDown) {
-                switch (uiSysPropsTouch(*canvas, tp.x, tp.y)) {
-                    case SysPropsHit::UPDATE_NOW:
-                        // The same start the UPDATE screen's own WiFi button
-                        // makes: the radio changes hands and the update screen
-                        // carries it from there.
-                        enterUpdate();
-                        engine.startUpdateRadio();
-                        lendFrameToDownload();
-                        if (!OtaWifi::begin()) {
-                            restoreFrameBuffer();
-                            engine.stopUpdateRadio();
-                            Theme::showToast("CAN'T START UPDATE", updateRefusedWhy(), Theme::AMBER);
-                        }
-                        break;
-                    case SysPropsHit::CLOSE: goHome(); break;
-                    case SysPropsHit::NONE:  break;
-                }
-                lastTouch = now;
-            }
-            break;
-        }
-        case AppState::CLEAR: {
-            // A newer release heard of AFTER the intro: the window, now. The
-            // intro only opens it for news that is already known when the
-            // intro ends, and on a board whose boot check could not reach the
-            // site the news comes later, in a squad member's hello -- which on
-            // the bench landed a few seconds either side of that moment, so
-            // the window came up on one boot and not the next. Once per
-            // version: takeAvailableNotice() answers once, and a newer version
-            // arms it again. Not over a visit's banter any more either: being
-            // painted over by it is why this is a window at all.
-            if (now - transitionStart > 1500 && OtaCore::takeAvailableNotice()) {
-                enterSysProps();
-                break;
-            }
-            if (now - transitionStart > 7000 && !Squachy::visiting()) {
-                // Once a day, a hello with the date in it; on the days that
-                // count, how long it has been.
-                const char* dl = Squachy::takeDayLine();
-                if (dl) Squachy::announce(dl);
-            }
-            // And the first-of-its-kind line, straight after the card.
-            if (s_firstLine[0] && now - transitionStart > 1200) {
-                Squachy::announce(s_firstLine);
-                s_firstLine[0] = '\0';
-            }
-            // Checked before drawing so the celebration takes over on the
-            // same frame it becomes due, rather than after one frame of
-            // CLEAR flashing up behind it.
-            if (maybeEnterOutfitUnlock()) break;
+            const bool drawClear = clearShouldRender(
+                now, engine, s_scanPickerOpen,
+                tp.valid || touchJustDown || touchJustUp,
+                forceClearVisual);
+
+            if (drawClear) {
 #if defined(CYD35)
-            if (frameBufferOk) {
-                // Two passes through the half-height `frame` sprite
-                // instead of one direct-to-tft pass -- see the setup()
-                // comment by its creation. advance=true only on the
-                // first pass so Squachy/digital-rain state advances once
-                // per logical frame even though this draws twice.
-                int halfH = tft.height() / 2;
-                uint32_t tBand = micros();
-                // The rows each pass can actually paint. Drawing that lands
-                // entirely outside them is declined a block at a time rather
-                // than clipped a pixel at a time -- see draw_band.h.
-                DrawBand::set(0, halfH);
-                frame.setViewport(0, 0, tft.width(), tft.height(), true);
-                uiClearTick(frame, now, engine, true, s_scanPickerOpen);
-                s_bandUs[0] = micros() - tBand;
-                pushFrame(0, 0);
-                tBand = micros();
-                DrawBand::set(halfH, tft.height());
-                frame.setViewport(0, -halfH, tft.width(), tft.height(), true);
-                uiClearTick(frame, now, engine, false, s_scanPickerOpen);
-                s_bandUs[1] = micros() - tBand;
-                pushFrame(0, halfH);
-                DrawBand::all();
-                frame.resetViewport();
-            } else {
-                // Fallback if a post-boot rotate ever failed to
-                // reallocate `frame` (see loop()) -- same direct-to-tft
-                // path this board already uses for every other screen.
-                uiClearTick(tft, now, engine, true, s_scanPickerOpen);
-            }
+                if (frameBufferOk) {
+                    // Two passes through the half-height sprite. State advances
+                    // only on the first pass; the second paints the same logical
+                    // frame into the lower physical band.
+                    int halfH = tft.height() / 2;
+                    uint32_t tBand = micros();
+                    DrawBand::set(0, halfH);
+                    frame.setViewport(0, 0, tft.width(), tft.height(), true);
+                    uiClearTick(frame, now, engine, true, s_scanPickerOpen);
+                    s_bandUs[0] = micros() - tBand;
+                    pushFrame(0, 0);
+                    tBand = micros();
+                    DrawBand::set(halfH, tft.height());
+                    frame.setViewport(0, -halfH, tft.width(), tft.height(), true);
+                    uiClearTick(frame, now, engine, false, s_scanPickerOpen);
+                    s_bandUs[1] = micros() - tBand;
+                    pushFrame(0, halfH);
+                    DrawBand::all();
+                    frame.resetViewport();
+                } else {
+                    uiClearTick(tft, now, engine, true, s_scanPickerOpen);
+                }
 #else
-            uiClearTick(*canvas, now, engine, true, s_scanPickerOpen);
+                uiClearTick(*canvas, now, engine, true, s_scanPickerOpen);
 #endif
-            FrameProf::lap(FrameProf::CHROME);
-            // Toasts on the main screen too. They were only drawn on LOG and
-            // NEARBY, so SNOOZED and READ, both raised on the way here or while
-            // here, went unseen.
-            Theme::drawToast(*canvas, now);
-            // The clock is set and no zone was ever picked: the card, over
-            // everything, until THIS IS RIGHT. A tap on it is the card's; a
-            // tap beside it is the main screen's, so he can still be poked.
+                FrameProf::lap(FrameProf::CHROME);
+                Theme::drawToast(*canvas, now);
+                if (uiZoneCardWanted()) uiZoneCardDraw(*canvas, now);
+            } else {
+                renderedThisLoop = false;
+            }
+
+            // The zone card still owns its tap on a retained frame. Its
+            // geometry is screen-derived, so hit testing does not require a
+            // redraw in the same loop.
             if (uiZoneCardWanted()) {
-                uiZoneCardDraw(*canvas, now);
                 if (touchJustDown && (now - lastTouch) > TOUCH_DEBOUNCE_MS) {
                     const ZoneHit zh = uiZoneCardHit(tp.x, tp.y, tft.width(), tft.height());
                     if (zh != ZoneHit::NONE) {
@@ -6137,7 +6104,7 @@ void loop() {
     // straight at tft and every draw this frame already landed on the
     // real screen -- pushing `frame` here would just paint stale data
     // from the sprite we stopped using back over the top of it.
-    if (frameBufferOk) {
+    if (frameBufferOk && renderedThisLoop) {
         if (now - transitionStart < TRANSITION_MS) {
             Theme::drawTransitionGlitch(frame, now - transitionStart, TRANSITION_MS);
         }
@@ -6147,18 +6114,20 @@ void loop() {
     }
 #endif
 
-    s_pushUsAvg  = emaUpdate(s_pushUsAvg, s_pushAccumUs);
     const uint32_t frameUs = micros() - frameStartUs;
-    s_frameUsAvg = emaUpdate(s_frameUsAvg, frameUs);
-    FrameProf::endFrame(frameUs);
-    if (const char* nm = timedScreenName(state)) {
-        if (now - transitionStart >= TRANSITION_MS) {
-            if (s_lastScreenAt != transitionStart) {
-                s_lastScreenAt   = transitionStart;
-                s_lastScreenName = nm;
-                s_lastScreenUs   = 0;
+    if (renderedThisLoop) {
+        s_pushUsAvg  = emaUpdate(s_pushUsAvg, s_pushAccumUs);
+        s_frameUsAvg = emaUpdate(s_frameUsAvg, frameUs);
+        FrameProf::endFrame(frameUs);
+        if (const char* nm = timedScreenName(state)) {
+            if (now - transitionStart >= TRANSITION_MS) {
+                if (s_lastScreenAt != transitionStart) {
+                    s_lastScreenAt   = transitionStart;
+                    s_lastScreenName = nm;
+                    s_lastScreenUs   = 0;
+                }
+                s_lastScreenUs = emaUpdate(s_lastScreenUs, frameUs);
             }
-            s_lastScreenUs = emaUpdate(s_lastScreenUs, frameUs);
         }
     }
     // The same two numbers DIAGNOSTICS shows, once every ten seconds on
@@ -6182,6 +6151,13 @@ void loop() {
                               (unsigned long)qp.wifiDropped, (unsigned long)qp.wifiDrainAvgUs,
                               (unsigned long)qp.wifiDrainMaxUs, (unsigned long)qp.wifiBudgetHits);
             }
+            Serial.printf("[render] clear draw %lu  cadence-skip %lu  static-skip %lu  sleep-skip %lu\n",
+                          (unsigned long)s_clearDrawsSinceSay,
+                          (unsigned long)s_clearCadenceSkipsSinceSay,
+                          (unsigned long)s_clearStaticSkipsSinceSay,
+                          (unsigned long)s_clearSleepSkipsSinceSay);
+            s_clearDrawsSinceSay = s_clearCadenceSkipsSinceSay =
+                s_clearStaticSkipsSinceSay = s_clearSleepSkipsSinceSay = 0;
 #if defined(CYD35)
             // Measurement, not a feature: where the 3.5"'s frame really goes.
             Serial.printf("[bands] draw %lu / %lu us   hash %lu us   wire %lu us   rows %ld\n",
@@ -6204,6 +6180,7 @@ void loop() {
 #if CROWD_BENCH
     CrowdBench::noteFrame(micros() - frameStartUs, s_pushAccumUs);
 #endif
+    if (!renderedThisLoop) delay(1);
 
     // ---- power saver ------------------------------------------------------
     // Both timers hang off lastTouch, which every screen already maintains.
