@@ -172,6 +172,13 @@ public:
     uint8_t  logCount() const { return _logCount; }
     const Detection* logAt(uint8_t idx) const;     // 0 = newest
     const Detection* latest() const { return _latest; }
+    // Current RAM row for a specific device/type. ALERT uses this to keep the
+    // signal trend live while retaining its immutable alert snapshot for
+    // identity and acknowledgement bookkeeping.
+    const Detection* findDetection(const uint8_t* mac, DetectionType type) const {
+        const int16_t slot = findLogSlot(mac, type);
+        return slot >= 0 ? &_log[(uint8_t)slot] : nullptr;
+    }
     uint16_t countByType(DetectionType t) const { return _typeCounts[(uint8_t)t]; }
 
     // Lifetime total across reboots (persisted to NVS), unlike the
