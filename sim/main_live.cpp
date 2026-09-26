@@ -104,6 +104,7 @@ static const char* stateName(AppState s) {
         case AppState::HUNT: return "HUNT";
         case AppState::COLOR_CHECK: return "COLOR_CHECK";
         case AppState::DETECTION_FILTER: return "DETECTION_FILTER";
+        case AppState::ALERT_RULES: return "ALERT_RULES";
         case AppState::MESH_MENU: return "MESH_MENU";
         case AppState::MESH_WARN: return "MESH_WARN";
         case AppState::BEACON_WARN: return "BEACON_WARN";
