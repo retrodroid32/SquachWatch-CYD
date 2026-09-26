@@ -112,6 +112,7 @@ UI_SRCS  := $(SRC)/theme.cpp \
             $(SRC)/ui_outfit_unlock.cpp \
             $(SRC)/ignore_list.cpp \
             $(SRC)/ui_ignorelist.cpp \
+            $(SRC)/ui_alertrules.cpp \
             $(SRC)/ui_detfilter.cpp \
             $(SRC)/ui_rawscan.cpp \
             $(SRC)/ui_watchalert.cpp \
