@@ -70,15 +70,21 @@ void begin() {
     if (len >= sizeof(PolicyRec) && (len % sizeof(PolicyRec)) == 0) {
         if (len > sizeof(s_rec)) len = sizeof(s_rec);
         const size_t got = s_prefs.getBytes(KEY, s_rec, len);
-        s_count = (uint8_t)(got / sizeof(PolicyRec));
-        sanitizeLoaded();
-        // Clean up leftovers from an interrupted older migration. The current
-        // blob is already present and valid, so deleting them cannot lose the
-        // active data.
-        s_prefs.remove(KEY_TYPED);
-        s_prefs.remove(KEY_OLD);
-        s_loaded = true;
-        return;
+        if (got == len && (got % sizeof(PolicyRec)) == 0) {
+            s_count = (uint8_t)(got / sizeof(PolicyRec));
+            sanitizeLoaded();
+            // Clean up leftovers from an interrupted older migration only
+            // after the current blob has been read completely. A short read
+            // leaves the legacy source intact so the next boot still has a
+            // recoverable copy.
+            s_prefs.remove(KEY_TYPED);
+            s_prefs.remove(KEY_OLD);
+            s_loaded = true;
+            return;
+        }
+        // Treat a short/corrupt read as unusable current data and fall through
+        // to the legacy formats below. Do not delete anything here.
+        s_count = 0;
     }
 
     // v1.20.x: MAC[6] + DetectionType. Every old entry was an IGNORE.
