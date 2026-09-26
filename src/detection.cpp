@@ -1516,6 +1516,7 @@ void DetectionEngine::processDeauthQ() {
             if (foundSlot >= 0) {
                 Detection& row = _log[(uint8_t)foundSlot];
                 const bool reactivating = !row.active;
+                const uint8_t beforeRepeats = reactivating ? 0 : row.repeats;
                 if (reactivating) {
                     row.repeats = 1;
                     detectionRssiInit(row, e.rssi, now);
@@ -1536,8 +1537,13 @@ void DetectionEngine::processDeauthQ() {
                 Bingo::note(DetectionType::DEAUTH);
                 Dex::note(DetectionType::DEAUTH, e.rssi);
                 Regulars::note(e.mac, DetectionType::DEAUTH);
-                _latest = &row;
-                _latestChangeMs = now;
+                const uint8_t need = Settings::alertMinRepeats(row.type);
+                const bool ruleEvent = need <= 1 ||
+                    (beforeRepeats < need && row.repeats >= need);
+                if (ruleEvent) {
+                    _latest = &row;
+                    _latestChangeMs = now;
+                }
                 queueBlackBox(row, true);
                 return;
             }
@@ -1664,6 +1670,7 @@ void DetectionEngine::applyBle(Detection d) {
             // update on every packet regardless, since those drive
             // "is it still actually here" freshness, not the count.
             const uint32_t nowMs = millis();
+            const uint8_t beforeRepeats = _log[slot].repeats;
             if (_log[slot].repeats < 255) _log[slot].repeats++;
             detectionRssiSample(_log[slot], d.rssi, nowMs);
             _log[slot].lastSeen = nowMs;
@@ -1675,6 +1682,11 @@ void DetectionEngine::applyBle(Detection d) {
             Bingo::note(d.type);
             Dex::note(d.type, d.rssi);
             Regulars::note(d.mac, d.type);
+            const uint8_t need = Settings::alertMinRepeats(d.type);
+            if (!reactivating && beforeRepeats < need && _log[slot].repeats >= need) {
+                _latest = &_log[slot];
+                _latestChangeMs = nowMs;
+            }
             if (reactivating) {
                 _log[slot].hits++;
                 _log[slot].active = true;
@@ -2158,12 +2170,18 @@ void DetectionEngine::processWiFiQ(uint32_t budgetUs, uint8_t maxItems) {
             Regulars::note(e.mac, t);
             _log[slot].hits++;
             const uint32_t nowMs = millis();
+            const uint8_t beforeRepeats = _log[slot].repeats;
             if (_log[slot].repeats < 255) _log[slot].repeats++;
             detectionRssiSample(_log[slot], e.rssi, nowMs);
             _log[slot].lastSeen = nowMs;
             _log[slot].channel = e.channel;
             if (_log[slot].evidence == EvidenceKind::UNKNOWN)
                 _log[slot].evidence = evidence;
+            const uint8_t need = Settings::alertMinRepeats(t);
+            if (!reactivating && beforeRepeats < need && _log[slot].repeats >= need) {
+                _latest = &_log[slot];
+                _latestChangeMs = nowMs;
+            }
             if (reactivating) {
                 _log[slot].active = true;
                 _log[slot].restored = 0;
@@ -2365,6 +2383,20 @@ const Detection* DetectionEngine::findDetection(const uint8_t* mac, DetectionTyp
     if (!mac) return nullptr;
     const int16_t slot = findLogSlot(mac, type);
     return slot >= 0 ? &_log[(uint8_t)slot] : nullptr;
+}
+
+bool DetectionEngine::alertCooldownReady(const uint8_t* mac, DetectionType type,
+                                             uint16_t cooldownSec, uint32_t now) const {
+    if (!cooldownSec) return true;
+    const int16_t slot = findLogSlot(mac, type);
+    if (slot < 0) return true;
+    const uint32_t last = _log[(uint8_t)slot].lastAlertMs;
+    return !last || (uint32_t)(now - last) >= (uint32_t)cooldownSec * 1000u;
+}
+
+void DetectionEngine::noteAlertRaised(const uint8_t* mac, DetectionType type, uint32_t now) {
+    const int16_t slot = findLogSlot(mac, type);
+    if (slot >= 0) _log[(uint8_t)slot].lastAlertMs = now;
 }
 
 

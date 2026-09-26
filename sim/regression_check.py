@@ -8,6 +8,7 @@ CASES=[
  ("clear","clear",["--bg","7","--outfit","13","--frames","60"],(320,240)),
  ("camera-alert","alert",["--alert","9","--frames","6"],(320,240)),
  ("settings","settings",[],(320,240)),
+ ("alert-rules","alertrules",[],(320,240)),
  ("log","log",[],(320,240)),
  ("colorcheck","colorcheck",[],(320,240)),
  ("camera-alert-portrait","alert",["--alert","9","--portrait","--frames","6"],(240,320)),

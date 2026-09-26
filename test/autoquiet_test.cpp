@@ -143,5 +143,21 @@ int main() {
            eng.alertGate(other, 5, false) == Gate::ALLOW);
     }
 
+    suite("Per-type cooldown shares the real interruption timestamp");
+    reset(-70);
+    ck("no prior alert means cooldown is ready",
+       eng.alertCooldownReady(MAC, DetectionType::AIRTAG, 30, millis()));
+    eng.noteAlertRaised(MAC, DetectionType::AIRTAG, millis());
+    ck("immediately after alert, cooldown blocks",
+       !eng.alertCooldownReady(MAC, DetectionType::AIRTAG, 30, millis()));
+    SimClock::nowMs += 29999;
+    ck("one millisecond early is still blocked",
+       !eng.alertCooldownReady(MAC, DetectionType::AIRTAG, 30, millis()));
+    SimClock::nowMs += 1;
+    ck("exactly thirty seconds is ready",
+       eng.alertCooldownReady(MAC, DetectionType::AIRTAG, 30, millis()));
+    ck("OFF always allows",
+       eng.alertCooldownReady(MAC, DetectionType::AIRTAG, 0, millis()));
+
     return report();
 }

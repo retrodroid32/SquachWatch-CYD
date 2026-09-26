@@ -236,6 +236,7 @@ static void drawCrashCard(TFT_eSPI& t) {
 #include "ui_outfit.h"
 #include "ui_outfit_unlock.h"
 #include "ui_ignorelist.h"
+#include "ui_alertrules.h"
 #include "frame_push.h"
 #include "draw_band.h"
 #include "frame_prof.h"
@@ -1040,23 +1041,49 @@ static bool s_alertLastFree = false;
 #if defined(TWATCH_S3)
 static bool twatchStill();
 #endif
+
+// A fresh opportunity is either a new/reactivated row or the exact packet that
+// crossed a per-type repeat threshold. The engine publishes both through its
+// existing _latest/_latestChangeMs pair, so no timestamp is added to every
+// Detection just for Stage B.
+static bool freshAlertCandidate(const Detection& d, uint32_t now) {
+    return (uint32_t)(now - engine.latestChangeMs()) < 250u &&
+           d.repeats >= Settings::alertMinRepeats(d.type);
+}
+
 static bool alertMayInterrupt(const Detection& d) {
-    const bool exempt = engine.isWatched(d.mac, true) || engine.isWatched(d.mac, false);
+    // WATCH keeps its v1.20.1 meaning: it bypasses AUTO SNOOZE only. Its
+    // dedicated WATCH_ALERT path is already separate from signature alerts,
+    // so ordinary signature rules remain ordinary rules here.
+    const bool watched = engine.isWatched(d.mac, true) || engine.isWatched(d.mac, false);
+
+    if (!Settings::alertEnabled(d.type)) return false;          // LOG ONLY
+    if (IgnoreList::silenced(d.mac)) return false;
+    if (d.conf < Settings::alertMinConfidence(d.type)) return false;
+    if (d.repeats < Settings::alertMinRepeats(d.type)) return false;
+
+    const uint32_t now = millis();
+    if (!engine.alertCooldownReady(d.mac, d.type,
+                                   Settings::alertCooldownSec(d.type), now))
+        return false;
+
 #if defined(TWATCH_S3)
     const bool still = twatchStill();
 #else
     const bool still = false;
 #endif
-    const DetectionEngine::AlertGate g = engine.alertGate(d.mac, Settings::autoQuietAfter(), exempt, still);
+    const DetectionEngine::AlertGate g =
+        engine.alertGate(d.mac, Settings::autoQuietAfter(), watched, still);
 #if defined(TWATCH_S3)
     if (g == DetectionEngine::AlertGate::HOLD)
-        Serial.printf("[snooze] %02x:%02x held, watch %s\n", d.mac[4], d.mac[5], still ? "still" : "moving");
+        Serial.printf("[snooze] %02x:%02x held, watch %s\n",
+                      d.mac[4], d.mac[5], still ? "still" : "moving");
 #endif
-    switch (g) {
-        case DetectionEngine::AlertGate::HOLD:       return false;
-        case DetectionEngine::AlertGate::ALLOW_LAST: s_alertLastFree = true;  return true;
-        default:                                     s_alertLastFree = false; return true;
-    }
+    if (g == DetectionEngine::AlertGate::HOLD) return false;
+
+    s_alertLastFree = (g == DetectionEngine::AlertGate::ALLOW_LAST);
+    engine.noteAlertRaised(d.mac, d.type, now);
+    return true;
 }
 
 // The current alert's target, captured in enterAlert(). Kept separate
@@ -1654,6 +1681,12 @@ static void enterIgnoreList() {
     state = AppState::IGNORE_LIST;
     transitionStart = millis();
     uiIgnoreListInit(*canvas);
+}
+
+static void enterAlertRules() {
+    state = AppState::ALERT_RULES;
+    transitionStart = millis();
+    uiAlertRulesInit(*canvas);
 }
 
 #if SQUACH_MESH
@@ -3827,8 +3860,7 @@ void loop() {
             // alert back until somebody happened to tap it.
             {
                 const Detection* latest = engine.latest();
-                if (latest && (now - latest->firstSeen) < 200 &&
-                    latest->conf >= Settings::minConfidence() && !IgnoreList::silenced(latest->mac) &&
+                if (latest && freshAlertCandidate(*latest, now) &&
                     alertMayInterrupt(*latest)) {
                     uiAlertSetRedacted(false);
                     enterAlert(*latest);
@@ -3994,20 +4026,7 @@ void loop() {
                 enterWatchAlert();
             } else {
                 const Detection* latest = engine.latest();
-                if (latest && (now - latest->firstSeen) < 200 &&
-                    // This sighting's grade, not the type's -- which is what
-                    // finally makes ALERT FILTER mean something. Set it to
-                    // High and an ESP32 probe request matching a
-                    // module-vendor OUI stays in the log without taking over
-                    // the screen.
-                    latest->conf >= Settings::minConfidence() &&
-                    // Your own AirTag and your own doorbell are true
-                    // positives every single time, and a detector that
-                    // shouts about them constantly is one you stop reading.
-                    // Only the ALERT is suppressed -- the detection is
-                    // still counted and still written to the LOG above, so
-                    // the device stays visible and un-ignorable.
-                    !IgnoreList::silenced(latest->mac) &&
+                if (latest && freshAlertCandidate(*latest, now) &&
                     alertMayInterrupt(*latest)) {
                     uiAlertSetRedacted(false);
                     enterAlert(*latest);
@@ -5027,6 +5046,7 @@ void loop() {
                             break;
                         case SettingsRow::CONFIDENCE: Settings::cycleMinConfidence(); break;
                         case SettingsRow::AUTO_QUIET:  Settings::cycleAutoQuiet(); break;
+                        case SettingsRow::ALERT_RULES: enterAlertRules(); break;
                         case SettingsRow::DETECTION_FILTER: enterDetFilter(); break;
                         case SettingsRow::POWER_SAVER: enterPower(); break;
 #if defined(TWATCH_S3)
@@ -5613,6 +5633,58 @@ void loop() {
             }
             break;
         }
+        case AppState::ALERT_RULES: {
+            drawTwoBand([&](TFT_eSPI& t, bool) { uiAlertRulesTick(t, now); });
+            static bool arActive = false, arMoved = false;
+            static int arStartX = 0, arStartY = 0, arLastY = -1;
+            static uint32_t arDownMs = 0;
+
+            if (touchJustDown) {
+                arActive = true;
+                arMoved = false;
+                arStartX = tp.x;
+                arStartY = tp.y;
+                arLastY = tp.y;
+                arDownMs = now;
+            }
+            if (tp.valid && arActive && !uiAlertRulesInDetail()) {
+                const int dy = tp.y - arLastY;
+                if (abs(dy) > 10) {
+                    arMoved = true;
+                    uiAlertRulesScroll(dy > 0 ? -1 : 1);
+                    arLastY = tp.y;
+                }
+            }
+            if (touchJustUp && arActive) {
+                if (!arMoved && now - arDownMs <= TAP_MAX_MS) {
+                    lastTouch = now;
+                    const AlertRuleHit hit =
+                        uiAlertRulesHitTest(*canvas, arStartX, arStartY,
+                                            tft.width(), tft.height());
+                    const DetectionType ty = uiAlertRulesSelected();
+                    switch (hit) {
+                        case AlertRuleHit::BACK:
+                            if (uiAlertRulesInDetail()) uiAlertRulesBackToList();
+                            else enterSettings();
+                            break;
+                        case AlertRuleHit::ENABLED:
+                            Settings::toggleAlertEnabled(ty); break;
+                        case AlertRuleHit::CONFIDENCE:
+                            Settings::cycleAlertMinConfidence(ty); break;
+                        case AlertRuleHit::REPEATS:
+                            Settings::cycleAlertMinRepeats(ty); break;
+                        case AlertRuleHit::COOLDOWN:
+                            Settings::cycleAlertCooldown(ty); break;
+                        case AlertRuleHit::WAKE:
+                            Settings::toggleAlertWakeScreen(ty); break;
+                        default:
+                            break;  // TYPE already opened detail
+                    }
+                }
+                arActive = false;
+            }
+            break;
+        }
         case AppState::DETECTION_FILTER: {
             drawTwoBand([&](TFT_eSPI& t, bool) { uiDetFilterTick(t, now, engine); });
             // Same drag-to-scroll / tap-on-release-to-toggle gesture
@@ -5799,9 +5871,8 @@ void loop() {
             {
                 const Security::LockAlerts la = Security::lockAlerts();
                 const Detection* latest = engine.latest();
-                if (la != Security::LockAlerts::NONE && latest && (now - latest->firstSeen) < 200 &&
-                    latest->conf >= Settings::minConfidence() && !IgnoreList::silenced(latest->mac) &&
-                    alertMayInterrupt(*latest)) {
+                if (la != Security::LockAlerts::NONE && latest &&
+                    freshAlertCandidate(*latest, now) && alertMayInterrupt(*latest)) {
                     uiAlertSetRedacted(la == Security::LockAlerts::TYPE_ONLY);
                     enterAlert(*latest);
                     break;
@@ -5970,8 +6041,7 @@ void loop() {
             // beside the clock, and Squachy's reaction, not a new screen.
             {
                 const Detection* latest = engine.latest();
-                if (latest && (now - latest->firstSeen) < 200 &&
-                    latest->conf >= Settings::minConfidence() && !IgnoreList::silenced(latest->mac) &&
+                if (latest && freshAlertCandidate(*latest, now) &&
                     alertMayInterrupt(*latest)) {
                     uiDeskAlert(*latest, now);
                     lastAlertType = latest->type;
@@ -6260,10 +6330,12 @@ void loop() {
         // An alert has to be visible. A detector that dims itself and then
         // hides the thing it just found is worse than one with no saver at all.
         const bool alerting = (state == AppState::ALERT || state == AppState::WATCH_ALERT);
+        const bool alertWantsWake = Settings::wakeOnAlert() && alerting &&
+            (state == AppState::WATCH_ALERT || Settings::alertWakeScreen(lastAlertType));
         const uint16_t timeoutSec = Settings::screenTimeoutSec();
         // Desk mode is a clock; a clock that goes dark is not there.
         bool wantDim = timeoutSec && idleMs > (uint32_t)timeoutSec * 1000UL &&
-                       !(Settings::wakeOnAlert() && alerting) && state != AppState::DESK;
+                       !alertWantsWake && state != AppState::DESK;
 #if defined(TWATCH_S3)
         // On the cable the watch stays lit; on battery the timeout always runs
         // (see Settings::screenTimeoutSec), unless it is set to NEVER.
@@ -6291,9 +6363,8 @@ void loop() {
             wasAlerting = alerting;
         }
         if (s_crownDark) {
-            const bool alertWants = Settings::wakeOnAlert() && alerting;
             const bool lit = s_crownLitUntil && (int32_t)(s_crownLitUntil - now) > 0;
-            wantDim = !alertWants && !lit;
+            wantDim = !alertWantsWake && !lit;
         }
 #endif
         if (wantDim != s_screenDimmed) {

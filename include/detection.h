@@ -172,6 +172,7 @@ public:
     uint8_t  logCount() const { return _logCount; }
     const Detection* logAt(uint8_t idx) const;     // 0 = newest
     const Detection* latest() const { return _latest; }
+    uint32_t latestChangeMs() const { return _latestChangeMs; }
     // Current RAM row for a specific device/type. ALERT uses this to keep the
     // signal trend live while retaining its immutable alert snapshot for
     // identity and acknowledgement bookkeeping.
@@ -403,6 +404,14 @@ public:
     }
     return AlertGate::ALLOW;             // not in the log: nothing to go on
     }
+
+    // Per-type cooldown shares Detection::lastAlertMs with AUTO SNOOZE: both
+    // answer the same question -- when did this device last actually
+    // interrupt? Implemented separately by firmware and emulator so neither
+    // reaches through the other's private log-index implementation.
+    bool alertCooldownReady(const uint8_t* mac, DetectionType type,
+                            uint16_t cooldownSec, uint32_t now) const;
+    void noteAlertRaised(const uint8_t* mac, DetectionType type, uint32_t now);
 
     bool isWatched(const uint8_t* mac, bool ble) const {
         if (_watchKind != (ble ? WatchKind::BLE : WatchKind::WIFI)) return false;
