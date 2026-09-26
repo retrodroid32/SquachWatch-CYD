@@ -8,11 +8,19 @@
 #include "detection.h"
 #include "log_index.h"
 #include "regulars.h"
+#include "ignore_list.h"
 #include <Arduino.h>
 #include <ctype.h>
 #include <string.h>
 
 static int g_scroll = 0;
+static LogView g_view = LogView::DEVICES;
+
+// The one flash page buffer is shared by both views. DEVICES fills it through
+// LogIndex/readDetectionsAt() (one row per device); EVENTS fills it directly
+// through readDetections() (every first/return event in chronological order).
+enum class PageKind : uint8_t { NONE = 0, DEVICES, EVENTS };
+static PageKind s_pageKind = PageKind::NONE;
 
 // ---- where a row comes from ---------------------------------------------
 // The first rows are the engine's ring in RAM -- what the board can see, or
@@ -29,8 +37,12 @@ static BlackBox::DetRecord s_page[PAGE];
 static uint16_t s_pageFrom = 0;
 static uint8_t  s_pageGot  = 0;
 static bool     s_pageOk   = false;
+static uint16_t s_eventSig  = 0;
 
-static void invalidatePage() { s_pageOk = false; }
+static void invalidatePage() {
+    s_pageOk = false;
+    s_pageKind = PageKind::NONE;
+}
 
 // ---- one row per device -----------------------------------------------------
 // The flash keeps a record every time a device is first seen or comes back,
@@ -82,7 +94,8 @@ const Detection* uiLogRow(const DetectionEngine& eng, int idx) {
 
     const uint16_t want = (uint16_t)(idx - eng.logCount());
     if (want >= LogIndex::count()) return nullptr;
-    if (!s_pageOk || want < s_pageFrom || want >= (uint16_t)(s_pageFrom + s_pageGot)) {
+    if (!s_pageOk || s_pageKind != PageKind::DEVICES ||
+        want < s_pageFrom || want >= (uint16_t)(s_pageFrom + s_pageGot)) {
         uint16_t at[PAGE];
         uint8_t n = 0;
         for (uint16_t r = want; r < LogIndex::count() && n < PAGE; r++) {
@@ -95,6 +108,7 @@ const Detection* uiLogRow(const DetectionEngine& eng, int idx) {
         // Short only if records were worn away mid-list; anything past
         // them would land on the wrong row, so the page ends there.
         s_pageOk   = s_pageGot > 0;
+        s_pageKind = s_pageOk ? PageKind::DEVICES : PageKind::NONE;
         if (!s_pageOk) return nullptr;
     }
     if (want >= (uint16_t)(s_pageFrom + s_pageGot)) return nullptr;
@@ -124,8 +138,72 @@ const Detection* uiLogRow(const DetectionEngine& eng, int idx) {
     return &row;
 }
 
+
+static const BlackBox::DetRecord* eventAt(uint16_t want) {
+    const uint16_t kept = BlackBox::detectionsKept();
+    if (kept != s_eventSig) {
+        s_eventSig = kept;
+        invalidatePage();
+    }
+    if (want >= kept) return nullptr;
+    if (!s_pageOk || s_pageKind != PageKind::EVENTS ||
+        want < s_pageFrom || want >= (uint16_t)(s_pageFrom + s_pageGot)) {
+        s_pageFrom = want;
+        s_pageGot = (uint8_t)BlackBox::readDetections(want, PAGE, s_page);
+        s_pageOk = s_pageGot > 0;
+        s_pageKind = s_pageOk ? PageKind::EVENTS : PageKind::NONE;
+        if (!s_pageOk) return nullptr;
+    }
+    if (want >= (uint16_t)(s_pageFrom + s_pageGot)) return nullptr;
+    return &s_page[want - s_pageFrom];
+}
+
+LogView uiLogView() { return g_view; }
+
+void uiLogSetView(LogView view) {
+    if (view == g_view) return;
+    g_view = view;
+    g_scroll = 0;
+    invalidatePage();
+}
+
+static void viewTabGeom(int screenW, int& y, int& h,
+                        int& devX, int& evtX, int& bw) {
+    y = 18;
+    h = 18;
+    const int gap = 4;
+    int total = screenW >= 400 ? 220 : 126;
+    // The floating Settings/rotate controls use the outer ~55 px as their
+    // finger-sized hit zones. Keep these tabs entirely in the safe center.
+    const int safe = screenW - 112;
+    if (total > safe) total = safe;
+    if (total < 92) total = 92;
+    bw = (total - gap) / 2;
+    devX = (screenW - (bw * 2 + gap)) / 2;
+    evtX = devX + bw + gap;
+}
+
+LogViewTap uiLogHitView(int x, int y, int screenW, int screenH) {
+    (void)screenH;
+    int ty, th, dx, ex, bw;
+    viewTabGeom(screenW, ty, th, dx, ex, bw);
+    if (y < ty || y >= ty + th) return LogViewTap::NONE;
+    if (x >= dx && x < dx + bw) return LogViewTap::DEVICES;
+    if (x >= ex && x < ex + bw) return LogViewTap::EVENTS;
+    return LogViewTap::NONE;
+}
+
+static void drawViewTabs(TFT_eSPI& t) {
+    int y, h, dx, ex, bw;
+    viewTabGeom(t.width(), y, h, dx, ex, bw);
+    Theme::drawButton(t, dx, y, bw, h, "DEVICES", g_view == LogView::DEVICES);
+    Theme::drawButton(t, ex, y, bw, h, "EVENTS", g_view == LogView::EVENTS);
+}
+
 void uiLogInit(TFT_eSPI& t) {
     g_scroll = 0;
+    g_view = LogView::DEVICES;
+    s_eventSig = BlackBox::detectionsKept();
     invalidatePage();
     s_indexWanted = true;
     // fillScreen() relies on TFT_eSPI's base-class width/height, which
@@ -256,7 +334,7 @@ static void rowLayout(TFT_eSPI& t, int bodyTop, int& detailY, int& rowH) {
 
 int uiLogRowAt(TFT_eSPI& t, int x, int y, int screenW, int screenH) {
     Theme::ButtonBarGeom bar = Theme::computeButtonBar(screenW, screenH);
-    const int bodyTop = 16, bodyBottom = bar.y - 4;
+    const int bodyTop = 40, bodyBottom = bar.y - 4;
     if (y < bodyTop || y >= bodyBottom) return -1;
     int detailY, rowH;
     rowLayout(t, bodyTop, detailY, rowH);
@@ -271,7 +349,7 @@ void uiLogTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, int scroll
     int h = t.height();
 
     Theme::ButtonBarGeom bar = Theme::computeButtonBar(w, h);
-    const int bodyTop    = 16;
+    const int bodyTop    = 40;
     const int bodyBottom = bar.y - 4;
     const int bodyH      = bodyBottom - bodyTop;
 
@@ -309,12 +387,14 @@ switch (Settings::background()) {
         default:                               Theme::drawDigitalRain(t, now, bgTop, bodyBottom, true); break;
     }
     Theme::restorePalette(saved);
-    // Title bar
+    // Floating corner controls plus the LOG's central view selector.
+    const uint16_t count = g_view == LogView::DEVICES
+                         ? uiLogRowCount(eng)
+                         : BlackBox::detectionsKept();
     char title[32];
-    snprintf(title, sizeof(title), ">> LOG  (%u) <<", (unsigned)uiLogRowCount(eng));
+    snprintf(title, sizeof(title), ">> LOG  (%u) <<", (unsigned)count);
     Theme::drawTitleBar(t, title);
-
-    const uint16_t count = uiLogRowCount(eng);
+    drawViewTabs(t);
 
     if (count == 0) {
         // Make the empty state impossible to mistake for a broken screen.
@@ -322,14 +402,15 @@ switch (Settings::background()) {
         uint16_t col = Theme::blend(Theme::GREEN, Theme::CYAN, (uint16_t)(pulse * 200.0f));
         t.setTextSize(3);
         t.setTextColor(col, Theme::BG);
-        const char* msg = "LOG EMPTY";
+        const char* msg = g_view == LogView::DEVICES ? "LOG EMPTY" : "NO EVENTS";
         int mw = t.textWidth(msg);
         t.setCursor((w - mw) / 2, bodyTop + bodyH / 3);
         t.print(msg);
 
         t.setTextSize(1);
         t.setTextColor(Theme::CYAN, Theme::BG);
-        const char* sub = "no detections yet";
+        const char* sub = g_view == LogView::DEVICES ? "no detections yet"
+                                                       : "first sightings and returns appear here";
         int sw = t.textWidth(sub);
         t.setCursor((w - sw) / 2, bodyTop + bodyH / 3 + 35);
         t.print(sub);
@@ -337,6 +418,111 @@ switch (Settings::background()) {
         Theme::drawButtonBar(t, ButtonId::LOG, Theme::ButtonBarMode::LOG);
         if (infoPending)        Theme::drawInfoPanel(t, w, h, now, infoTypeName, infoText);
         else if (confirmPending) drawConfirmPanel(t, w, h, confirmLabel, confirmWatched, confirmHunted);
+        return;
+    }
+
+
+    if (g_view == LogView::EVENTS) {
+        // Chronological event cards are denser than DEVICES cards: three
+        // size-1 lines are enough to show the actual event, signal/confidence,
+        // identity, live state and current policy without another buffer.
+        const int rowH = 34;
+        uiClampScroll(g_scroll, count, bodyH, rowH);
+        int y = bodyTop;
+        int idx = g_scroll;
+        const int max = bodyH / rowH;
+
+        auto confShort = [](uint8_t conf) -> const char* {
+            if (conf == (uint8_t)Confidence::HIGH_CONF) return "H";
+            if (conf == (uint8_t)Confidence::MED_CONF)  return "M";
+            return "L";
+        };
+        auto policyShort = [](IgnoreList::Policy p) -> const char* {
+            switch (p) {
+                case IgnoreList::Policy::IGNORE:       return "IGN";
+                case IgnoreList::Policy::TRUSTED:      return "TRUST";
+                case IgnoreList::Policy::ALWAYS_ALERT: return "ALWAYS";
+                default:                               return "";
+            }
+        };
+
+        for (int i = 0; i < max && idx < count; i++, idx++, y += rowH) {
+            const BlackBox::DetRecord* r = eventAt((uint16_t)idx);
+            if (!r) break;
+            const DetectionType ty =
+                r->type < (uint8_t)DetectionType::COUNT
+                    ? (DetectionType)r->type : DetectionType::UNKNOWN;
+
+            Theme::drawListRowPanel(t, w, y, rowH);
+            t.setTextSize(1);
+
+            char stamp[16];
+            if (r->epoch) Clock::formatEpochStamp(r->epoch, stamp, sizeof stamp);
+            else {
+                const unsigned long m = (unsigned long)(r->upSec / 60u);
+                const unsigned long s = (unsigned long)(r->upSec % 60u);
+                snprintf(stamp, sizeof stamp, "+%lu:%02lu", m, s);
+            }
+
+            char eventType[40];
+            snprintf(eventType, sizeof eventType, "%s %s",
+                     (r->flags & BlackBox::DET_AGAIN) ? "BACK" : "FIRST",
+                     detectionTypeName(ty));
+            t.setTextColor((r->flags & BlackBox::DET_AGAIN) ? Theme::AMBER : Theme::colorFor(ty),
+                           Theme::BG);
+            t.setCursor(6, y + 3);
+            const int stampW = t.textWidth(stamp);
+            while (eventType[0] && t.textWidth(eventType) > w - stampW - 22)
+                eventType[strlen(eventType) - 1] = 0;
+            t.print(eventType);
+            t.setTextColor(Theme::VAPOR_PINK, Theme::BG);
+            t.setCursor(w - stampW - 8, y + 3);
+            t.print(stamp);
+
+            char mac[24];
+            snprintf(mac, sizeof mac, "%02X:%02X:%02X:%02X:%02X:%02X",
+                     r->mac[0], r->mac[1], r->mac[2],
+                     r->mac[3], r->mac[4], r->mac[5]);
+            t.setTextColor(Theme::WHITE, Theme::BG);
+            t.setCursor(6, y + 13);
+            t.print(mac);
+
+            char signal[40];
+            snprintf(signal, sizeof signal, "%ddBm %s x%u",
+                     (int)r->rssi, confShort(r->conf),
+                     (unsigned)(r->hits ? r->hits : 1));
+            t.setTextColor(Theme::CYAN, Theme::BG);
+            t.setCursor(116, y + 13);
+            while (signal[0] && t.textWidth(signal) > w - 122)
+                signal[strlen(signal) - 1] = 0;
+            t.print(signal);
+
+            const Detection* live = eng.findDetection(r->mac, ty);
+            const bool here = live && live->active;
+            const char* pol = policyShort(IgnoreList::policy(r->mac));
+            char status[32];
+            if (pol[0]) snprintf(status, sizeof status, "%s %s", here ? "HERE" : "GONE", pol);
+            else        snprintf(status, sizeof status, "%s", here ? "HERE" : "GONE");
+            const int statusW = t.textWidth(status);
+
+            const char* src = r->name[0] ? r->name : (r->vendor[0] ? r->vendor : "UNKNOWN");
+            char who[40];
+            snprintf(who, sizeof who, "%s", src);
+            while (who[0] && t.textWidth(who) > w - statusW - 22)
+                who[strlen(who) - 1] = 0;
+            t.setTextColor(Theme::W95_HILIGHT, Theme::BG);
+            t.setCursor(6, y + 23);
+            t.print(who);
+            t.setTextColor(here ? Theme::GREEN : Theme::W95_SHADOW, Theme::BG);
+            t.setCursor(w - statusW - 8, y + 23);
+            t.print(status);
+        }
+
+        Theme::drawScrollbar(t, w - 4, bodyTop, bodyH, count, max, g_scroll);
+        Theme::drawButtonBar(t, ButtonId::LOG, Theme::ButtonBarMode::LOG);
+        if (infoPending) Theme::drawInfoPanel(t, w, h, now, infoTypeName, infoText);
+        // EVENTS is intentionally view-only: historical rows do not open the
+        // WATCH/HUNT/IGNORE confirm panel.
         return;
     }
 
