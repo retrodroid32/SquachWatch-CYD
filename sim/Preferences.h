@@ -114,6 +114,13 @@ public:
     // rides the same localStorage save/load path as everything else
     // instead of needing a second serialisation format.
     size_t putBytes(const char* k, const void* v, size_t len) {
+#ifndef __EMSCRIPTEN__
+        // Host-test-only failure injection. Unset in normal emulator/firmware
+        // work; lets persistence tests prove callers keep their source data
+        // when a specific blob write fails.
+        const char* failKey = getenv("SQUACHSIM_NVS_FAIL_PUTBYTES_KEY");
+        if (failKey && k && strcmp(failKey, k) == 0) return 0;
+#endif
         // The real Preferences::putBytes rejects a zero-length value and
         // returns without touching NVS, leaving whatever was stored under
         // the key intact. Reproduced here rather than "fixed", because a
