@@ -84,6 +84,27 @@ const Detection* DetectionEngine::findDetection(const uint8_t* mac, DetectionTyp
     return nullptr;
 }
 
+bool DetectionEngine::alertCooldownReady(const uint8_t* mac, DetectionType type,
+                                         uint16_t cooldownSec, uint32_t now) const {
+    if (!cooldownSec) return true;
+    const Detection* d = findDetection(mac, type);
+    if (!d) return true;
+    return !d->lastAlertMs ||
+           (uint32_t)(now - d->lastAlertMs) >= (uint32_t)cooldownSec * 1000u;
+}
+
+void DetectionEngine::noteAlertRaised(const uint8_t* mac, DetectionType type, uint32_t now) {
+    if (!mac) return;
+    for (uint8_t i = 0; i < _logCount; i++) {
+        const uint8_t slot = (uint8_t)((_logHead + LOG_CAP - 1 - i) % LOG_CAP);
+        Detection& d = _log[slot];
+        if (d.type == type && memcmp(d.mac, mac, 6) == 0) {
+            d.lastAlertMs = now;
+            return;
+        }
+    }
+}
+
 void DetectionEngine::resetLifetime() {
     _lifetimeTotal = 0;
     memset(_typeCounts, 0, sizeof(_typeCounts));
