@@ -129,7 +129,8 @@ inline void simMakeDetection(Detection& d, const SimDetectionProfile& p, uint32_
     d.mac[3] = (uint8_t)(0xA0 + (serial >> 8));
     d.mac[4] = (uint8_t)(serial & 0xFF);
     d.mac[5] = (uint8_t)(0x5C ^ serial);
-    d.rssi      = (int8_t)(rssi != 0 ? rssi : p.rssi);
+    const int8_t currentRssi = (int8_t)(rssi != 0 ? rssi : p.rssi);
+    detectionRssiInit(d, currentRssi, now);
     // A channel is what marks a WiFi sighting as one -- LOG's long-press
     // decides BLE or WiFi watching on channel == 0.
     d.channel   = p.wifi ? (uint8_t)(1 + (serial % 11)) : 0;
@@ -142,7 +143,49 @@ inline void simMakeDetection(Detection& d, const SimDetectionProfile& p, uint32_
     d.firstSeen = now;
     d.lastSeen  = now;
     d.hits      = 1;
+    d.repeats   = (uint8_t)(3 + (serial % 6));
     d.active    = true;
+
+    // Seed concrete Stage A evidence. The simulator still does not exercise
+    // signature matching (see the file header); these values only make the
+    // real ALERT/LOG/MORE INFO render paths visible and regression-testable.
+    if (p.type == DetectionType::AIRTAG) {
+        d.evidence = EvidenceKind::BLE_FINDMY;
+        d.evidenceCode = 0x004C;
+    } else if (p.type == DetectionType::IBEACON) {
+        d.evidence = EvidenceKind::BLE_IBEACON;
+        d.evidenceCode = 0x004C;
+    } else if (p.type == DetectionType::DEAUTH) {
+        d.evidence = EvidenceKind::WIFI_DEAUTH;
+    } else if (p.type == DetectionType::EVILTWIN) {
+        d.evidence = EvidenceKind::WIFI_EVILTWIN;
+    } else if (p.wifi && strcmp(p.vendor, "Pwnagotchi") == 0) {
+        d.evidence = EvidenceKind::WIFI_PWNAGOTCHI;
+    } else if (p.wifi) {
+        d.evidence = EvidenceKind::WIFI_OUI;
+    } else if (p.name && p.name[0]) {
+        d.evidence = EvidenceKind::BLE_NAME;
+    } else {
+        d.evidence = EvidenceKind::BLE_UUID;
+    }
+
+    // Five deterministic ~2-second samples ending at the requested RSSI.
+    // serial rotates through approaching / steady / moving-away examples so
+    // the emulator exercises all three trend labels without timers or radios.
+    d.rssiHistCount = 5;
+    d.rssiHistHead = 5;
+    const int mode = serial % 3;
+    for (uint8_t i = 0; i < 5; i++) {
+        int v = currentRssi;
+        if (mode == 0)      v = (int)currentRssi - 8 + (int)i * 2;
+        else if (mode == 2) v = (int)currentRssi + 8 - (int)i * 2;
+        else                v = (int)currentRssi + ((i & 1u) ? 1 : -1);
+        if (v < -127) v = -127;
+        if (v > 0) v = 0;
+        d.rssiHist[i] = (int8_t)v;
+    }
+    d.rssiHist[4] = currentRssi;
+    d.prevRssi = d.rssiHist[3];
 }
 
 inline bool simMakeDetection(Detection& d, DetectionType type, uint32_t now,

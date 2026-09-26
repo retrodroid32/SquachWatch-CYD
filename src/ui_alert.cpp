@@ -281,6 +281,11 @@ void uiAlertTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng,
     int w = t.width();
     int h = t.height();
 
+    // Keep identity/type from the alert snapshot, but read signal history
+    // from the current RAM row so the card continues learning while open.
+    const Detection* livePtr = eng.findDetection(s_last.mac, s_last.type);
+    const Detection& signalDet = livePtr ? *livePtr : s_last;
+
     uint32_t elapsed = now - s_alertStart;
     // Capped well short of wrapping the uint8_t step counter -- an
     // alert would need to sit on screen for ~10+ minutes to get here,
@@ -468,27 +473,59 @@ void uiAlertTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng,
         // line below, where the four fields together ran 174px into a 168px
         // plate and pushed the sighting count off the edge.
         t.setCursor(PLATE_X + 8, BAR_Y - LABEL_DY);
-        t.print("SIGNAL");
+        char signalLabel[18];
+        const char* ev = evidenceKindShortName(signalDet.evidence);
+        if (ev[0]) snprintf(signalLabel, sizeof signalLabel, "%s SIG", ev);
+        else       snprintf(signalLabel, sizeof signalLabel, "SIGNAL");
+        t.print(signalLabel);
         t.setTextColor(confColor, Theme::BG);
         const char* cl = confidenceLabel(conf);
         t.setCursor(PLATE_X + PLATE_W - 8 - t.textWidth(cl), BAR_Y - LABEL_DY);
         t.print(cl);
-        int v = s_last.rssi;
+        int v = signalDet.rssi;
         if (v < -90) v = -90;
         if (v > -40) v = -40;
         const int fill = (v + 90) * (BAR_W - 2) / 50;
         t.drawRect(BAR_X, BAR_Y, BAR_W, BAR_H, Theme::CYAN);
         if (fill > 0) t.fillRect(BAR_X + 1, BAR_Y + 1, fill, BAR_H - 2, Theme::CYAN);
+
+        // Rolling ~15-second history on the same honest -90..-40 dBm scale.
+        if (signalDet.rssiHistCount >= 2) {
+            int px = BAR_X + 2;
+            int py = BAR_Y + BAR_H - 3;
+            for (uint8_t i = 0; i < signalDet.rssiHistCount; i++) {
+                int rv = detectionRssiAt(signalDet, i);
+                if (rv < -90) rv = -90;
+                if (rv > -40) rv = -40;
+                const int x = BAR_X + 2 +
+                    (int)i * (BAR_W - 5) / (int)(signalDet.rssiHistCount - 1);
+                const int y = BAR_Y + BAR_H - 3 -
+                    (rv + 90) * (BAR_H - 5) / 50;
+                if (i) t.drawLine(px, py, x, y, Theme::VAPOR_PINK);
+                t.fillCircle(x, y, 1, Theme::WHITE);
+                px = x;
+                py = y;
+            }
+        }
     }
 
-    // The numbers, without the grade -- that moved up to the SIGNAL row so
-    // this line fits the narrower plate.
-    char info[40];
-    snprintf(info, sizeof(info), "%d dBm   CH %u   x%u",
-             s_last.rssi, s_last.channel, (unsigned)s_last.hits);
+    // Prefer the real multi-sample trend once three points exist. Until then,
+    // keep channel/repeat context visible while the history is learning.
+    char info[48];
+    const RssiTrend trend = detectionRssiTrend(signalDet);
+    if (trend == RssiTrend::UNKNOWN) {
+        snprintf(info, sizeof(info), "%d dBm   CH %u   x%u",
+                 signalDet.rssi, s_last.channel,
+                 (unsigned)(signalDet.repeats ? signalDet.repeats : 1));
+    } else {
+        snprintf(info, sizeof(info), "%d dBm  %s",
+                 signalDet.rssi, rssiTrendName(trend));
+    }
+    if (t.textWidth(info) > PLATE_W - 12) t.setTextSize(1);
     t.setTextColor(confColor, Theme::BG);
     t.setCursor(PLATE_X + (PLATE_W - t.textWidth(info)) / 2, PLATE_Y + PLATE_H - INFO_DY);
     t.print(info);
+    t.setTextSize(readSz);
     // The first one of its kind, ever, on this board: a line in the gap
     // between the strip and the plate, in the strip's own colour.
     if (s_first || s_night) {

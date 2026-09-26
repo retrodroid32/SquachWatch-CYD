@@ -98,7 +98,7 @@ static void seedDetections(DetectionEngine& eng) {
     for (size_t i = 0; i < sizeof(seeds) / sizeof(seeds[0]); i++) {
         Detection d{};
         for (int b = 0; b < 6; b++) d.mac[b] = (uint8_t)(0x10 * (i + 1) + b);
-        d.rssi      = seeds[i].rssi;
+        detectionRssiInit(d, seeds[i].rssi, now);
         d.channel   = (uint8_t)(1 + i);
         d.type      = seeds[i].type;
         d.conf      = confidenceFor(seeds[i].type);
@@ -107,12 +107,37 @@ static void seedDetections(DetectionEngine& eng) {
         d.firstSeen = now - 30000 - (uint32_t)i * 5000;
         d.lastSeen  = now - (uint32_t)i * 1200;
         d.hits      = seeds[i].hits;
+        d.repeats   = seeds[i].hits > 255 ? 255 : (uint8_t)seeds[i].hits;
         d.active    = true;
-        // Two of them stand in for rows the black box brought back from
-        // an earlier boot: faded, with no closer/further arrow.
-        d.restored  = (i >= 4) ? 1 : 0;
-        d.active    = (i >= 4) ? false : true;
-        d.prevRssi  = (int8_t)(d.rssi - (i % 3 == 0 ? 7 : (i % 3 == 1 ? -8 : 1)));
+        // The first four are live rows and deliberately cover the Stage A
+        // evidence/trend rendering. The rest emulate BlackBox-restored rows
+        // from v1.20.1: they carry no evidence/history, proving the UI degrades
+        // safely without changing the persistent record format.
+        if (i < 4) {
+            d.evidence = seeds[i].type == DetectionType::AIRTAG
+                       ? EvidenceKind::BLE_FINDMY : EvidenceKind::WIFI_OUI;
+            d.evidenceCode = seeds[i].type == DetectionType::AIRTAG ? 0x004C : 0;
+            d.rssiHistCount = 5;
+            d.rssiHistHead = 5;
+            for (uint8_t s = 0; s < 5; s++) {
+                int v = seeds[i].rssi;
+                if ((i % 3) == 0)      v = (int)seeds[i].rssi - 8 + (int)s * 2;
+                else if ((i % 3) == 2) v = (int)seeds[i].rssi + 8 - (int)s * 2;
+                else                   v = (int)seeds[i].rssi + ((s & 1u) ? 1 : -1);
+                d.rssiHist[s] = (int8_t)v;
+            }
+            d.rssiHist[4] = seeds[i].rssi;
+            d.prevRssi = d.rssiHist[3];
+        } else {
+            d.restored = 1;
+            d.active = false;
+            d.evidence = EvidenceKind::UNKNOWN;
+            d.evidenceCode = 0;
+            d.repeats = 0;
+            d.rssiHistHead = 0;
+            d.rssiHistCount = 0;
+            d.prevRssi = d.rssi;
+        }
         eng.postBle(d);
         // The Ring is a regular: seen on three days, so the LOG names it.
         if (seeds[i].type == DetectionType::RING)

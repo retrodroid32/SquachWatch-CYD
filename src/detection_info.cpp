@@ -107,4 +107,74 @@ const char* rssiConfidencePrimer() {
            "Confidence is how sure the match is: HIGH is a strong match, MED/LOW are looser guesses.";
 }
 
+const char* evidenceText(const Detection& d) {
+    static char buf[320];
+    const char* conf = d.conf == Confidence::HIGH_CONF ? "HIGH"
+                     : d.conf == Confidence::MED_CONF ? "MEDIUM" : "LOW";
+    char evidence[72];
+
+    switch (d.evidence) {
+        case EvidenceKind::BLE_MFG:
+        case EvidenceKind::BLE_UUID:
+            snprintf(evidence, sizeof evidence, "%s 0x%04X",
+                     evidenceKindName(d.evidence), (unsigned)d.evidenceCode);
+            break;
+        case EvidenceKind::BLE_FINDMY:
+        case EvidenceKind::BLE_IBEACON:
+            snprintf(evidence, sizeof evidence, "%s (Apple 0x%04X)",
+                     evidenceKindName(d.evidence), (unsigned)d.evidenceCode);
+            break;
+        case EvidenceKind::WIFI_OUI:
+            snprintf(evidence, sizeof evidence, "%s %02X:%02X:%02X",
+                     evidenceKindName(d.evidence), d.mac[0], d.mac[1], d.mac[2]);
+            break;
+        case EvidenceKind::BLE_NAME:
+        case EvidenceKind::WIFI_SSID:
+        case EvidenceKind::WIFI_PWNAGOTCHI:
+        case EvidenceKind::WIFI_EVILTWIN:
+            if (d.name[0])
+                snprintf(evidence, sizeof evidence, "%s '%s'",
+                         evidenceKindName(d.evidence), d.name);
+            else
+                snprintf(evidence, sizeof evidence, "%s", evidenceKindName(d.evidence));
+            break;
+        default:
+            snprintf(evidence, sizeof evidence, "%s", evidenceKindName(d.evidence));
+            break;
+    }
+
+    // BlackBox's fixed 64-byte historical record predates Stage A and does
+    // not persist evidence or the rolling RSSI samples. Be explicit rather
+    // than turning zeroed compatibility fields into made-up "one sighting"
+    // evidence.
+    if (d.restored) {
+        const unsigned hits = d.hits ? (unsigned)d.hits : 1u;
+        snprintf(buf, sizeof buf,
+                 "%s confidence historical record. Match evidence and RSSI trend "
+                 "were not stored with this event. Recorded signal %d dBm; hit count %u.",
+                 conf, (int)d.rssi, hits);
+        buf[sizeof buf - 1] = 0;
+        return buf;
+    }
+
+    const RssiTrend trend = detectionRssiTrend(d);
+    const unsigned repeats = d.repeats ? (unsigned)d.repeats : 1u;
+    if (d.rssiHistCount >= 2) {
+        snprintf(buf, sizeof buf,
+                 "%s confidence. Matched by %s. Seen %u time%s this visit. "
+                 "Signal %d dBm, %s across %u samples (%d to %d dBm).",
+                 conf, evidence, repeats, repeats == 1 ? "" : "s",
+                 (int)d.rssi, rssiTrendName(trend), (unsigned)d.rssiHistCount,
+                 (int)detectionRssiAt(d, 0),
+                 (int)detectionRssiAt(d, (uint8_t)(d.rssiHistCount - 1)));
+    } else {
+        snprintf(buf, sizeof buf,
+                 "%s confidence. Matched by %s. Seen %u time%s this visit. "
+                 "Signal %d dBm; more samples are needed for a trend.",
+                 conf, evidence, repeats, repeats == 1 ? "" : "s", (int)d.rssi);
+    }
+    buf[sizeof buf - 1] = 0;
+    return buf;
+}
+
 }
