@@ -1047,11 +1047,14 @@ static bool twatchStill();
 // existing _latest/_latestChangeMs pair, so no timestamp is added to every
 // Detection just for Stage B.
 static bool freshAlertCandidate(const Detection& d, uint32_t now) {
-    if ((uint32_t)(now - engine.latestChangeMs()) >= 250u) return false;
-    // ALWAYS ALERT is direct per-device intent and bypasses the minimum-repeat
-    // rule. DETECTION FILTER is still upstream: a disabled type never creates
-    // this row/candidate in the first place.
-    return IgnoreList::alwaysAlert(d.mac) ||
+    if (IgnoreList::alwaysAlert(d.mac)) {
+        // ALWAYS ALERT fires on the fresh visit itself, not again when the
+        // ordinary per-type repeat threshold is crossed a few packets later.
+        // firstSeen is reset on a new/reactivated visit (and on each deauth
+        // burst), so this preserves "always" without duplicate threshold alerts.
+        return (uint32_t)(now - d.firstSeen) < 250u;
+    }
+    return (uint32_t)(now - engine.latestChangeMs()) < 250u &&
            d.repeats >= Settings::alertMinRepeats(d.type);
 }
 
