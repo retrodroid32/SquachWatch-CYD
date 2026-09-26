@@ -318,6 +318,25 @@ static void drawConfirmPanel(TFT_eSPI& t, int w, int h, const char* label, bool 
 // testing) so the two can never drift apart -- same reasoning as
 // ui_rawscan.cpp's rowLayout(): rowH depends on live font metrics, not
 // a compile-time constant.
+static bool drawMiniRssiSparkline(TFT_eSPI& t, const Detection& d,
+                                  int x, int y, int w, int h) {
+    if (d.rssiHistCount < 3 || w < 18 || h < 6) return false;
+    int px = x;
+    int py = y + h - 1;
+    for (uint8_t i = 0; i < d.rssiHistCount; i++) {
+        int rv = detectionRssiAt(d, i);
+        if (rv < -90) rv = -90;
+        if (rv > -40) rv = -40;
+        const int sx = x + (int)i * (w - 1) / (int)(d.rssiHistCount - 1);
+        const int sy = y + h - 1 - (rv + 90) * (h - 1) / 50;
+        if (i) t.drawLine(px, py, sx, sy, Theme::VAPOR_PINK);
+        px = sx;
+        py = sy;
+    }
+    t.fillCircle(px, py, 1, Theme::WHITE);
+    return true;
+}
+
 static void rowLayout(TFT_eSPI& t, int bodyTop, int& detailY, int& rowH) {
     t.setTextSize(2);
     int nameH = t.fontHeight();
@@ -625,26 +644,30 @@ switch (Settings::background()) {
         if (d->restored) Clock::formatEpochStamp(d->firstSeen, ts, sizeof(ts));
         else             Clock::formatStamp(d->firstSeen, ts, sizeof(ts));
         int tw = t.textWidth(ts);
+        const int tsX = w - tw - 14;
         t.setTextColor(kept ? dim : Theme::VAPOR_PINK, Theme::BG);
-        t.setCursor(w - tw - 14, y + topPad);
+        t.setCursor(tsX, y + topPad);
         t.print(ts);
 
-        // The device's own name, in the gap between the type label and the
-        // timestamp. Detection has carried this field all along and nothing
-        // ever drew it, so a Flipper called "Ozzyx", a Pwnagotchi's name,
-        // an iBeacon's deployment and a drone's serial were all being
-        // captured and then thrown away at the last step.
-        //
-        // Truncated to whatever actually fits rather than clipped by the
-        // driver: the timestamp is drawn already and text written past it
-        // would land on top of it. Two characters of margin at each end
-        // keep the columns visibly separate at a glance.
-        // A regular's neighbour-name comes first, in pink, then whatever the
-        // device calls itself. "Gary" on its own when it calls itself nothing.
+        // The device's own name shares this top line with an optional compact
+        // RSSI-history sparkline. Text always wins: the chart is only drawn
+        // when there is a clean 30px gap between the type/name area and the
+        // timestamp, so narrow 240px layouts never lose identity information.
         const char* reg = Regulars::nameFor(d->mac);
+        const int nameX = labelEnd + 8;
+        int rightEdge = tsX - 6;
+        bool drawSpark = !kept && d->active && d->rssiHistCount >= 3;
+        int sparkX = 0;
+        const int sparkW = 30;
+        const int sparkH = 9;
+        if (drawSpark) {
+            sparkX = tsX - sparkW - 8;
+            if (sparkX < nameX + 18) drawSpark = false;
+            else rightEdge = sparkX - 5;
+        }
+
         if (d->name[0] || reg) {
-            const int nameX   = labelEnd + 8;
-            const int nameMax = (w - tw - 14) - 6 - nameX;
+            const int nameMax = rightEdge - nameX;
             if (nameMax > 0) {
                 char nm[sizeof(d->name) + 16];
                 if (reg && d->name[0]) snprintf(nm, sizeof nm, "%s: %s", reg, d->name);
@@ -652,14 +675,16 @@ switch (Settings::background()) {
                 else                   snprintf(nm, sizeof nm, "%s", d->name);
                 while (nm[0] && t.textWidth(nm) > nameMax) nm[strlen(nm) - 1] = '\0';
                 if (nm[0]) {
-                    // Centred against the size-2 type label beside it.
-                    // Sharing its top edge would leave the small text
-                    // hanging off the cap height of the big text.
                     t.setTextColor(kept ? dim : (reg ? Theme::VAPOR_PINK : Theme::WHITE), Theme::BG);
                     t.setCursor(nameX, y + topPad + (nameH - detailH) / 2);
                     t.print(nm);
                 }
             }
+        }
+
+        if (drawSpark) {
+            const int sparkY = y + topPad + (nameH - sparkH) / 2;
+            drawMiniRssiSparkline(t, *d, sparkX, sparkY, sparkW, sparkH);
         }
 
         y += rowH;
