@@ -128,6 +128,16 @@ const char* evidenceText(const Detection& d) {
             snprintf(evidence, sizeof evidence, "%s %02X:%02X:%02X",
                      evidenceKindName(d.evidence), d.mac[0], d.mac[1], d.mac[2]);
             break;
+        case EvidenceKind::BLE_NAME:
+        case EvidenceKind::WIFI_SSID:
+        case EvidenceKind::WIFI_PWNAGOTCHI:
+        case EvidenceKind::WIFI_EVILTWIN:
+            if (d.name[0])
+                snprintf(evidence, sizeof evidence, "%s '%s'",
+                         evidenceKindName(d.evidence), d.name);
+            else
+                snprintf(evidence, sizeof evidence, "%s", evidenceKindName(d.evidence));
+            break;
         default:
             snprintf(evidence, sizeof evidence, "%s", evidenceKindName(d.evidence));
             break;
