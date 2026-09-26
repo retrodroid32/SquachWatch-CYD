@@ -302,6 +302,30 @@ namespace Settings {
     void        cycleMinConfidence();
     const char* minConfidenceLabel();
 
+    // Per-detection-type alert policy. Detection itself remains enabled by
+    // DETECTION FILTER; these rules only decide whether a matched/logged row
+    // may interrupt. minConf=0xFF inherits the global ALERT FILTER.
+    struct AlertRule {
+        uint8_t flags;       // bit0 full alert enabled, bit1 wake screen
+        uint8_t minConf;     // 0xFF inherit global, else Confidence
+        uint8_t minRepeats;  // 1,2,3,5
+        uint8_t cooldownIx;  // OFF,30s,1m,5m,15m
+    };
+    bool        alertEnabled(DetectionType t);
+    bool        alertWakeScreen(DetectionType t);
+    Confidence  alertMinConfidence(DetectionType t);
+    bool        alertConfidenceInherited(DetectionType t);
+    uint8_t     alertMinRepeats(DetectionType t);
+    uint16_t    alertCooldownSec(DetectionType t);
+    const char* alertRuleSummary(DetectionType t);
+    const char* alertRuleConfidenceLabel(DetectionType t);
+    const char* alertRuleCooldownLabel(DetectionType t);
+    void        toggleAlertEnabled(DetectionType t);
+    void        toggleAlertWakeScreen(DetectionType t);
+    void        cycleAlertMinConfidence(DetectionType t);
+    void        cycleAlertMinRepeats(DetectionType t);
+    void        cycleAlertCooldown(DetectionType t);
+
     // AUTO SNOOZE: how many times one device may interrupt with the full
     // ALERT screen before it has to earn the next one by coming CLOSER.
     // 0 is off. Nothing is actually silenced -- see Detection::quietBar --
