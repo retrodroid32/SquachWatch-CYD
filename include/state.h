@@ -303,8 +303,8 @@ enum class AppState : uint8_t {
     OUTFIT_UNLOCK    = 13, // "OUTFIT UNLOCKED" celebration, pushed
                             // automatically whenever Squachy earns a new
                             // costume; returns to CLEAR when dismissed
-    IGNORE_LIST      = 14, // muted devices, reached via Settings'
-                            // "IGNORED DEVICES" row
+    IGNORE_LIST      = 14, // persistent per-device behavior, reached via
+                            // Settings' POLICIES row; name retained for compatibility
     POWER_SAVER      = 15, // battery settings, reached via Settings'
                             // "POWER SAVER" row
     PHONE            = 16, // the payphone: type a name for Squachy. Reached
