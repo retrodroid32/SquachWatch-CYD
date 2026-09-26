@@ -27,13 +27,20 @@ the glitchy SquachWatch wordmark.
   <a href="https://retrodroid32.github.io/SquachWatch-CYD/emulator/"><b>Click it to drive it in your browser &rarr;</b></a>
 </p>
 
+## Quick Start
 
-## In development: v1.21.0 detection intelligence
+For most users, no build tools are required.
 
-The released firmware is still **v1.20.1**. Development after that release is being
-merged in small, independently validated stages rather than as one large feature
-branch. The running record is in
-`.github/release-notes/v1.21.0-development.md`.
+1. Pick a supported board from **Supported hardware** below.
+2. Open the [SquachWatch web flasher](https://retrodroid32.github.io/SquachWatch-CYD/).
+3. Select the exact board/display profile, connect over USB, and install.
+4. After boot, use **SCAN** for the live detector, **LOG** for detections/history, and **DESK** for desk mode.
+
+Useful links: [browser emulator](https://retrodroid32.github.io/SquachWatch-CYD/emulator/) · [build guide](docs/BUILD.md) · [pinout](docs/PINOUT.md) · [detection provenance](docs/DETECTIONS.md) · [FAQ](docs/FAQ.md).
+
+## Current release and v1.21 development
+
+The current public release is **v1.20.1**. The v1.21 detection-intelligence feature set is now **feature-complete on `master` but unreleased**. It was merged in small, independently validated stages rather than as one large feature branch. The running record is in `.github/release-notes/v1.21.0-development.md`.
 
 - **Stage A — evidence + RSSI trend:** each live detection now records the
   concrete match source (BLE manufacturer/service/name/Find My/iBeacon or Wi-Fi
@@ -60,49 +67,52 @@ branch. The running record is in
   INFO. The chart appears only when there is safe horizontal room, so names and
   timestamps keep priority on 240px layouts.
 
-## What changed in v1.20.1
+## Supported hardware
 
-This fork's v1.20.1 work has been reconciled against the complete history since
-the v1.20.0 tag, not just the most recent commits. The detailed record is in
-`.github/release-notes/v1.20.1.md`; the major changes are:
+- **ESP32-2432S028R** ("Cheap Yellow Display" / CYD) — the original 2.8" board.
+  SquachWatch supports the ST7789 profile plus the older ILI9341 variant,
+  with XPT2046 resistive touch and the onboard microSD card slot.
+- **ESP32-2432S032R / E32R32P** — the 3.2" resistive CYD.
+  SquachWatch includes a dedicated 240×320 ST7798/ST7789-compatible profile,
+  GPIO27 backlight control, and XPT2046 touch sharing the LCD SPI bus.
+- **Freenove FNK0103L / FNK0114L 3.2"** — a separate ST7789/XPT2046 profile
+  using Freenove's confirmed HSPI pinout, inversion-on panel baseline,
+  GPIO27 backlight and its 22/16/17 RGB status-light wiring.
+- **LilyGo T-Watch S3 (BETA)** — ESP32-S3 watch profile with a 240×240 ST7789,
+  capacitive touch, battery/PMU support, haptics and a battery-backed RTC.
 
-- **3.2-inch CYD support matured:** normal and experimental 80 MHz
-  ST7798/ST7789-compatible profiles are in the web flasher, release matrix and
-  CI, with the Windows helper no longer assuming a fixed COM port.
-- **T-Watch S3 became a public beta target** and gained battery-aware display
-  behavior, automatic clock setup, motion-aware snoozing, haptic standby,
-  smarter radio duty timing, radio self-heal/RESET, STEADY POWER, chip
-  temperature, radio-hearing battery records and CLOCK CHECK / `XTAL`.
-- **T-Watch radio reliability was hardened:** the watch keeps the stock Arduino
-  Wi-Fi driver after a reproduced ESP32-S3 deaf-radio failure in the slim
-  re-init path; CYD boards retain the lower-memory slim path.
-- **T-Watch battery controls now include BLE LISTEN and SLEEP CPU:** on battery
-  with POWER SAVER enabled, BLE receive duty can be set to 25/50/75% and the
-  sleeping CPU to 80/160/240 MHz. SquachMesh invite boosts temporarily raise
-  listening and then return to the selected base window.
-- **SquachMesh reliability improved:** invite handshakes temporarily listen
-  harder, squad members tolerate longer beacon gaps, and timestamp races that
-  made visitors/detections flicker in and out were fixed.
-- **Storage/security paths were audited:** SD logs use real calendar dates when
-  trusted time exists, security wipes remove all SquachWatch logs, and the NVS
-  wipe now preserves only an explicit safe allowlist.
-- **Boot diagnostics were simplified:** the obsolete flash-backed short-boot
-  counter/IGNORE state was removed; panic/watchdog breadcrumbs, core-dump
-  summaries, reset reasons and the extended crash-card hold remain intact.
-- **Radio/UI concurrency was hardened:** BLE detections are handed to the main
-  loop through a bounded mailbox, cross-task Bingo/DEX/Regulars mutations were
-  corrected, and OTA allocation/framebuffer edge cases were tightened.
-- **Release publishing was rebuilt around validated artifacts:** ordinary
-  `master` builds cannot replace production Pages, lab publishing preserves
-  the live production site, and a release is published only after firmware,
-  signatures, manifests, emulator and the exact Pages artifact validate.
-- **OTA signing is now a release gate:** production builds verify that
-  `OTA_SIGNING_KEY` matches the public key compiled into the firmware.
-- **Stage 1 performance work is measured, not guessed:** bounded BLE/Wi-Fi queue
-  work protects frame latency, while serial diagnostics now expose queue
-  pressure, drops, drain time and rolling frame p95/max jitter.
+That's it. No buzzer, no GPS, no extra modules. The CYD is the
+whole device.
 
-## What it detects
+## Install with Web Flash
+
+No build tools, no IDE, no cloning anything — flash a board straight
+from your browser:
+
+**[https://retrodroid32.github.io/SquachWatch-CYD/](https://retrodroid32.github.io/SquachWatch-CYD/)**
+
+> **v1.20.0 OTA migration:** firmware at the v1.20.0 baseline still points its
+> Wi-Fi updater at the old `http://squachwatch.com/` endpoint. A board running
+> that build needs **one USB/browser flash** to a newer fork build before
+> Wi-Fi OTA can use this fork's GitHub Pages endpoint. After that migration,
+> future Wi-Fi OTA checks use
+> `https://retrodroid32.github.io/SquachWatch-CYD/`.
+
+> **CDN trust note.** The flasher currently pins ESP Web Tools 10.4.0 and
+> esptool-js 0.6.1 but loads those browser libraries from unpkg. Firmware
+> manifests and binaries are served from this repository's Pages site, and
+> OTA firmware is signature-verified on-device; however, the browser-flashing
+> UI still has a residual third-party CDN availability/supply-chain dependency.
+> Vendoring ESP Web Tools safely requires carrying its module/dependency graph,
+> so this audit keeps the exact vetted versions pinned rather than replacing
+> them with an unreviewed bundle.
+
+Works in Firefox, Chrome, Edge, or Brave on desktop. Pick your board (2.8" CYD,
+3.2" CYD ST7798, Freenove 3.2" ST7789, AWOK 2.4", RL Phantom 2.4", or
+LilyGo T-Watch S3 beta),
+plug in, click Connect & Install, done. A T-Watch has its clock set after install.
+
+## Detection coverage
 
 | Type | What | How |
 |---|---|---|
@@ -144,82 +154,7 @@ was being logged as a plate reader.
 volume. One shop can put more beacons in range than this device would
 otherwise see all week. It is one tap away in `DETECTION FILTER`.
 
-## Hardware
-
-- **ESP32-2432S028R** ("Cheap Yellow Display" / CYD) — the original 2.8" board.
-  SquachWatch supports the ST7789 profile plus the older ILI9341 variant,
-  with XPT2046 resistive touch and the onboard microSD card slot.
-- **ESP32-2432S032R / E32R32P** — the 3.2" resistive CYD.
-  SquachWatch includes a dedicated 240×320 ST7798/ST7789-compatible profile,
-  GPIO27 backlight control, and XPT2046 touch sharing the LCD SPI bus.
-- **Freenove FNK0103L / FNK0114L 3.2"** — a separate ST7789/XPT2046 profile
-  using Freenove's confirmed HSPI pinout, inversion-on panel baseline,
-  GPIO27 backlight and its 22/16/17 RGB status-light wiring.
-- **LilyGo T-Watch S3 (BETA)** — ESP32-S3 watch profile with a 240×240 ST7789,
-  capacitive touch, battery/PMU support, haptics and a battery-backed RTC.
-
-That's it. No buzzer, no GPS, no extra modules. The CYD is the
-whole device.
-
-## Web Flash
-
-No build tools, no IDE, no cloning anything — flash a board straight
-from your browser:
-
-**[https://retrodroid32.github.io/SquachWatch-CYD/](https://retrodroid32.github.io/SquachWatch-CYD/)**
-
-> **v1.20.0 OTA migration:** firmware at the v1.20.0 baseline still points its
-> Wi-Fi updater at the old `http://squachwatch.com/` endpoint. A board running
-> that build needs **one USB/browser flash** to a newer fork build before
-> Wi-Fi OTA can use this fork's GitHub Pages endpoint. After that migration,
-> future Wi-Fi OTA checks use
-> `https://retrodroid32.github.io/SquachWatch-CYD/`.
-
-> **CDN trust note.** The flasher currently pins ESP Web Tools 10.4.0 and
-> esptool-js 0.6.1 but loads those browser libraries from unpkg. Firmware
-> manifests and binaries are served from this repository's Pages site, and
-> OTA firmware is signature-verified on-device; however, the browser-flashing
-> UI still has a residual third-party CDN availability/supply-chain dependency.
-> Vendoring ESP Web Tools safely requires carrying its module/dependency graph,
-> so this audit keeps the exact vetted versions pinned rather than replacing
-> them with an unreviewed bundle.
-
-Works in Firefox, Chrome, Edge, or Brave on desktop. Pick your board (2.8" CYD,
-3.2" CYD ST7798, Freenove 3.2" ST7789, AWOK 2.4", RL Phantom 2.4", or
-LilyGo T-Watch S3 beta),
-plug in, click Connect & Install, done. A T-Watch has its clock set after install.
-
-## Build
-
-Three steps:
-
-1. Install [PlatformIO](https://platformio.org/) (CLI or VS Code extension).
-2. Clone the repo:
-   ```sh
-   git clone https://github.com/retrodroid32/SquachWatch-CYD
-   cd SquachWatch-CYD
-   ```
-3. Build and flash:
-   ```sh
-   pio run -t upload
-   ```
-
-   For the 3.2" CYD profile, use:
-   ```sh
-   pio run -e cyd32-st7798 -t upload
-   ```
-
-   For the Freenove 3.2" profile, use:
-   ```sh
-   pio run -e freenove32 -t upload
-   ```
-
-The first build pulls the TFT_eSPI, XPT2046, and NimBLE-Arduino
-libraries; after that it's incremental.
-
-A full beginner-friendly walkthrough is in [docs/BUILD.md](docs/BUILD.md).
-
-## Usage
+## Using SquachWatch
 
 1. Plug the CYD into USB-C.
 2. The splash runs for a second and a half, stamped with the build's own
@@ -298,7 +233,7 @@ stands, as a polaroid of the sender's Squachy with his name in the margin,
 the message on a note beside it and the time it came, until you tap it.
 The power saver never dims this screen.
 
-## The status light
+### Status light
 
 The RGB LED on the back of the 2.8" CYD (on the front of the RL Phantom)
 tells you what the screen is doing without the screen. A slow breathe in the
@@ -488,7 +423,9 @@ SECURITY screen turns that off for anyone who wants it off. A locked board
 ignores the whole thing regardless. So the order on release day is: update
 one board by hand, then UPDATE SQUAD from it.
 
-## Every outfit
+## Customization
+
+### Squachy outfits
 
 Squachy has fourteen costumes. Most are earned by detection count; four are
 hidden behind things nobody tells you about, on the background they belong
@@ -505,7 +442,91 @@ per costume, and the labels are read out of the source rather than typed
 next to it — so a renamed or newly added outfit cannot end up captioned
 wrongly. Regenerate with `python3 make_gallery.py` in `sim/`.
 
-## Project layout
+## Build from source
+
+Three steps:
+
+1. Install [PlatformIO](https://platformio.org/) (CLI or VS Code extension).
+2. Clone the repo:
+   ```sh
+   git clone https://github.com/retrodroid32/SquachWatch-CYD
+   cd SquachWatch-CYD
+   ```
+3. Build and flash:
+   ```sh
+   pio run -t upload
+   ```
+
+   For the 3.2" CYD profile, use:
+   ```sh
+   pio run -e cyd32-st7798 -t upload
+   ```
+
+   For the Freenove 3.2" profile, use:
+   ```sh
+   pio run -e freenove32 -t upload
+   ```
+
+The first build pulls the TFT_eSPI, XPT2046, and NimBLE-Arduino
+libraries; after that it's incremental.
+
+A full beginner-friendly walkthrough is in [docs/BUILD.md](docs/BUILD.md).
+
+## Hardware-specific notes
+
+### 3.2-inch CYD (ESP32-2432S032R / E32R32P; ST7798/ST7789-compatible)
+
+A dedicated PlatformIO target is included for the 3.2-inch resistive CYD:
+
+```text
+pio run -e cyd32-st7798
+pio run -e cyd32-st7798 -t upload
+```
+
+On Windows, `build_cyd32_st7798.bat` automatically finds the PlatformIO Core
+installed by the VS Code extension even when `pio` is not in PATH.
+`flash_cyd32_st7798.bat` lists the detected serial ports before upload and asks
+which COM port to use before flashing.
+
+This target uses the 3.2-inch board wiring rather than the original 2.8-inch
+CYD assumptions: 240×320 display, backlight on GPIO27, LCD SPI on GPIO
+14/13/12, and XPT2046 touch sharing that LCD SPI bus with touch CS on GPIO33.
+The shared touch/display bus runs through TFT_eSPI's HSPI path. The web flasher
+offers an optional 80 MHz display-only build; TFT_eSPI still clocks XPT2046
+touch transactions at the profile's separate 2.5 MHz touch frequency.
+
+TFT_eSPI 2.5.43 does not provide an `ST7798_DRIVER` selector, so this target
+uses its ST7789-compatible ST77xx command/init path. The common
+ESP32-2432S032R/E32R32P is documented as ST7789, while some seller listings
+use ST7798 terminology for closely related ST77xx panels.
+
+The 3.2-inch baseline uses BGR colour order with inversion off. First boot
+still presents SquachWatch's colour check and intentionally runs touch
+calibration so individual panel/digitizer variations can be corrected.
+
+### Freenove 3.2-inch (FNK0103L / FNK0114L; ST7789)
+
+Freenove is intentionally a **separate** profile from the
+ESP32-2432S032R/E32R32P target above even though both are 240×320 3.2-inch
+boards. Use:
+
+```text
+pio run -e freenove32
+pio run -e freenove32 -t upload
+```
+
+The Freenove target follows the vendor pinout: ST7789 display and XPT2046 touch
+share HSPI on GPIO 14/13/12, display CS 15, DC 2, touch CS 33, and backlight
+GPIO27. Its vendor display setup runs at 80 MHz, while XPT2046 transactions stay
+at 2.5 MHz. The panel baseline is BGR with inversion on. Touch calibration is
+stored in Freenove-specific NVS namespaces so flashing a different 3.2-inch
+profile first cannot silently reuse an incompatible calibration. The RGB status
+LED uses GPIO 22/16/17; GPIO4 is left alone because Freenove uses it for the
+audio-amplifier enable.
+
+## Developer reference
+
+### Project layout
 
 ```
 SquachWatch-CYD/
@@ -563,8 +584,7 @@ SquachWatch-CYD/
     └── web/                      (the browser build)
 ```
 
-
-## Performance and diagnostics
+### Performance and diagnostics
 
 The fork includes performance instrumentation intended for real RF-heavy
 environments, not just idle bench measurements.
@@ -642,23 +662,51 @@ rather than subjective: the existing queue/frame/render telemetry remains the
 baseline while hot-path lookup, BLE parsing and SD write overhead are reduced
 without changing intended detection semantics.
 
-## License
+## Release history
 
-**GNU General Public License v3.0 (GPL-3.0).** See [LICENSE](LICENSE).
+### v1.20.1
 
-## Credits
+This fork's v1.20.1 work has been reconciled against the complete history since
+the v1.20.0 tag, not just the most recent commits. The detailed record is in
+`.github/release-notes/v1.20.1.md`; the major changes are:
 
-- Flock Safety OUI research: [@NitekryDPaul](https://x.com/NitekryDPaul),
-  DeFlockJoplin, [`colonelpanichacks/flock-you`](https://github.com/colonelpanichacks/flock-you)
-  (MIT).
-- Axon / skimmer / SSID prefix data: compiled with assistance from
-  Gemini (Google), expanded against public sources.
-- AirTag manufacturer-data format: public Apple FindMy spec.
-- AWOK 2.4" board port (ESP32-Marauder V6.1 hardware): **bkbroiler**,
-  who did the actual pin-mapping and shared-bus touch-calibration work
-  that made this board possible.
+- **3.2-inch CYD support matured:** normal and experimental 80 MHz
+  ST7798/ST7789-compatible profiles are in the web flasher, release matrix and
+  CI, with the Windows helper no longer assuming a fixed COM port.
+- **T-Watch S3 became a public beta target** and gained battery-aware display
+  behavior, automatic clock setup, motion-aware snoozing, haptic standby,
+  smarter radio duty timing, radio self-heal/RESET, STEADY POWER, chip
+  temperature, radio-hearing battery records and CLOCK CHECK / `XTAL`.
+- **T-Watch radio reliability was hardened:** the watch keeps the stock Arduino
+  Wi-Fi driver after a reproduced ESP32-S3 deaf-radio failure in the slim
+  re-init path; CYD boards retain the lower-memory slim path.
+- **T-Watch battery controls now include BLE LISTEN and SLEEP CPU:** on battery
+  with POWER SAVER enabled, BLE receive duty can be set to 25/50/75% and the
+  sleeping CPU to 80/160/240 MHz. SquachMesh invite boosts temporarily raise
+  listening and then return to the selected base window.
+- **SquachMesh reliability improved:** invite handshakes temporarily listen
+  harder, squad members tolerate longer beacon gaps, and timestamp races that
+  made visitors/detections flicker in and out were fixed.
+- **Storage/security paths were audited:** SD logs use real calendar dates when
+  trusted time exists, security wipes remove all SquachWatch logs, and the NVS
+  wipe now preserves only an explicit safe allowlist.
+- **Boot diagnostics were simplified:** the obsolete flash-backed short-boot
+  counter/IGNORE state was removed; panic/watchdog breadcrumbs, core-dump
+  summaries, reset reasons and the extended crash-card hold remain intact.
+- **Radio/UI concurrency was hardened:** BLE detections are handed to the main
+  loop through a bounded mailbox, cross-task Bingo/DEX/Regulars mutations were
+  corrected, and OTA allocation/framebuffer edge cases were tightened.
+- **Release publishing was rebuilt around validated artifacts:** ordinary
+  `master` builds cannot replace production Pages, lab publishing preserves
+  the live production site, and a release is published only after firmware,
+  signatures, manifests, emulator and the exact Pages artifact validate.
+- **OTA signing is now a release gate:** production builds verify that
+  `OTA_SIGNING_KEY` matches the public key compiled into the firmware.
+- **Stage 1 performance work is measured, not guessed:** bounded BLE/Wi-Fi queue
+  work protects frame latency, while serial diagnostics now expose queue
+  pressure, drops, drain time and rolling frame p95/max jitter.
 
-## Status
+## Project status
 
 **Shipping.** Releases are cut by pushing a `v*.*.*` tag. The release
 workflow builds, signs, validates, and assembles the exact Pages artifact,
@@ -678,54 +726,18 @@ compiles the actual `src/` against shims, and a host test suite in `test/`
 (`make -C test`) covering the decoders, the signature tables and the
 emulator's own fidelity to the display library.
 
+## License
 
-### 3.2-inch CYD (ESP32-2432S032R / E32R32P; ST7798/ST7789-compatible)
+**GNU General Public License v3.0 (GPL-3.0).** See [LICENSE](LICENSE).
 
-A dedicated PlatformIO target is included for the 3.2-inch resistive CYD:
+## Credits
 
-```text
-pio run -e cyd32-st7798
-pio run -e cyd32-st7798 -t upload
-```
-
-On Windows, `build_cyd32_st7798.bat` automatically finds the PlatformIO Core
-installed by the VS Code extension even when `pio` is not in PATH.
-`flash_cyd32_st7798.bat` lists the detected serial ports before upload and asks
-which COM port to use before flashing.
-
-This target uses the 3.2-inch board wiring rather than the original 2.8-inch
-CYD assumptions: 240×320 display, backlight on GPIO27, LCD SPI on GPIO
-14/13/12, and XPT2046 touch sharing that LCD SPI bus with touch CS on GPIO33.
-The shared touch/display bus runs through TFT_eSPI's HSPI path. The web flasher
-offers an optional 80 MHz display-only build; TFT_eSPI still clocks XPT2046
-touch transactions at the profile's separate 2.5 MHz touch frequency.
-
-TFT_eSPI 2.5.43 does not provide an `ST7798_DRIVER` selector, so this target
-uses its ST7789-compatible ST77xx command/init path. The common
-ESP32-2432S032R/E32R32P is documented as ST7789, while some seller listings
-use ST7798 terminology for closely related ST77xx panels.
-
-The 3.2-inch baseline uses BGR colour order with inversion off. First boot
-still presents SquachWatch's colour check and intentionally runs touch
-calibration so individual panel/digitizer variations can be corrected.
-
-### Freenove 3.2-inch (FNK0103L / FNK0114L; ST7789)
-
-Freenove is intentionally a **separate** profile from the
-ESP32-2432S032R/E32R32P target above even though both are 240×320 3.2-inch
-boards. Use:
-
-```text
-pio run -e freenove32
-pio run -e freenove32 -t upload
-```
-
-The Freenove target follows the vendor pinout: ST7789 display and XPT2046 touch
-share HSPI on GPIO 14/13/12, display CS 15, DC 2, touch CS 33, and backlight
-GPIO27. Its vendor display setup runs at 80 MHz, while XPT2046 transactions stay
-at 2.5 MHz. The panel baseline is BGR with inversion on. Touch calibration is
-stored in Freenove-specific NVS namespaces so flashing a different 3.2-inch
-profile first cannot silently reuse an incompatible calibration. The RGB status
-LED uses GPIO 22/16/17; GPIO4 is left alone because Freenove uses it for the
-audio-amplifier enable.
-
+- Flock Safety OUI research: [@NitekryDPaul](https://x.com/NitekryDPaul),
+  DeFlockJoplin, [`colonelpanichacks/flock-you`](https://github.com/colonelpanichacks/flock-you)
+  (MIT).
+- Axon / skimmer / SSID prefix data: compiled with assistance from
+  Gemini (Google), expanded against public sources.
+- AirTag manufacturer-data format: public Apple FindMy spec.
+- AWOK 2.4" board port (ESP32-Marauder V6.1 hardware): **bkbroiler**,
+  who did the actual pin-mapping and shared-bus touch-calibration work
+  that made this board possible.
