@@ -510,7 +510,7 @@ switch (Settings::background()) {
             snprintf(who, sizeof who, "%s", src);
             while (who[0] && t.textWidth(who) > w - statusW - 22)
                 who[strlen(who) - 1] = 0;
-            t.setTextColor(Theme::W95_HILIGHT, Theme::BG);
+            t.setTextColor(Theme::W95_HILITE, Theme::BG);
             t.setCursor(6, y + 23);
             t.print(who);
             t.setTextColor(here ? Theme::GREEN : Theme::W95_SHADOW, Theme::BG);
