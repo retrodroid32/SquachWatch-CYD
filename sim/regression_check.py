@@ -10,6 +10,7 @@ CASES=[
  ("settings","settings",[],(320,240)),
  ("alert-rules","alertrules",[],(320,240)),
  ("log","log",[],(320,240)),
+ ("log-portrait","log",["--portrait"],(240,320)),
  ("log-events","log",["--pose","1"],(320,240)),
  ("log-events-portrait","log",["--pose","1","--portrait"],(240,320)),
  ("colorcheck","colorcheck",[],(320,240)),
