@@ -55,6 +55,10 @@ branch. The running record is in
   EVENTS reuses LOG's BlackBox page cache and shows FIRST/BACK, time, MAC,
   RSSI, confidence, hits, name/vendor, live HERE/GONE state and current policy
   without a second event database or persistent-format change.
+- **Stage E — RSSI trend UI:** live DEVICES rows now add a compact fixed-scale
+  sparkline for the same ~15-second RSSI history already used by ALERT and MORE
+  INFO. The chart appears only when there is safe horizontal room, so names and
+  timestamps keep priority on 240px layouts.
 
 ## What changed in v1.20.1
 
