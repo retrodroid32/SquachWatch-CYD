@@ -778,7 +778,18 @@ int main(int argc, char** argv) {
             }
         }
         uiLogInit(frame);
-        if (poseIdx == 1) uiLogSetView(LogView::EVENTS);
+        if (poseIdx == 1) {
+            // Reach EVENTS through the real central-tab hit test, not by
+            // mutating the view directly. This makes the screenshot regression
+            // catch selector geometry drift as well as renderer regressions.
+            const LogViewTap tap = uiLogHitView(frame.width() / 2 + 32, 27,
+                                                frame.width(), frame.height());
+            if (tap != LogViewTap::EVENTS) {
+                fprintf(stderr, "[log] EVENTS selector hit-test failed\n");
+                return 2;
+            }
+            uiLogSetView(LogView::EVENTS);
+        }
     }
     else if (screen == "settings")   {
         uiSettingsInit(frame);
