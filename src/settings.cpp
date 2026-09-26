@@ -88,6 +88,41 @@ static uint32_t    s_typeMask = 0;
 static uint8_t     s_sqSizeIx = 1;
 static uint8_t     s_brightness = 255;
 static Confidence  s_minConf    = Confidence::LOW_CONF;
+
+// Four bytes per detection type. This is settings state, not per-detection
+// state, so adding rules does not enlarge the 64-row live log or radio queues.
+static AlertRule   s_alertRules[(uint8_t)DetectionType::COUNT];
+static const uint8_t AR_ALERT   = 0x01;
+static const uint8_t AR_WAKE    = 0x02;
+static const uint8_t AR_INHERIT = 0xFF;
+static const uint16_t ALERT_COOLDOWN_SEC[] = { 0, 30, 60, 300, 900 };
+static const uint8_t ALERT_COOLDOWN_N =
+    sizeof(ALERT_COOLDOWN_SEC) / sizeof(ALERT_COOLDOWN_SEC[0]);
+
+static void initAlertRuleDefaults() {
+    for (uint8_t i = 0; i < (uint8_t)DetectionType::COUNT; i++) {
+        s_alertRules[i].flags = AR_ALERT | AR_WAKE;
+        s_alertRules[i].minConf = AR_INHERIT;
+        s_alertRules[i].minRepeats = 1;
+        s_alertRules[i].cooldownIx = 0;
+    }
+}
+
+static void saveAlertRules() {
+    s_prefs.putBytes("alrules", s_alertRules, sizeof(s_alertRules));
+}
+
+static AlertRule& ruleFor(DetectionType t) {
+    uint8_t i = (uint8_t)t;
+    if (i >= (uint8_t)DetectionType::COUNT) i = 0;
+    return s_alertRules[i];
+}
+static const AlertRule& ruleForConst(DetectionType t) {
+    uint8_t i = (uint8_t)t;
+    if (i >= (uint8_t)DetectionType::COUNT) i = 0;
+    return s_alertRules[i];
+}
+
 static bool        s_boringMode = false;
 
 // ---- power saver ---------------------------------------------------------
@@ -296,6 +331,24 @@ void setHuntProgress(Hunt h, uint8_t v) {
 
 void load() {
     s_prefs.begin("settings", false);
+    initAlertRuleDefaults();
+    {
+        const size_t n = s_prefs.getBytesLength("alrules");
+        if (n == sizeof(s_alertRules)) {
+            s_prefs.getBytes("alrules", s_alertRules, sizeof(s_alertRules));
+            for (uint8_t i = 0; i < (uint8_t)DetectionType::COUNT; i++) {
+                AlertRule& r = s_alertRules[i];
+                r.flags &= (AR_ALERT | AR_WAKE);
+                if (r.minConf != AR_INHERIT &&
+                    r.minConf > (uint8_t)Confidence::HIGH_CONF)
+                    r.minConf = AR_INHERIT;
+                if (r.minRepeats != 1 && r.minRepeats != 2 &&
+                    r.minRepeats != 3 && r.minRepeats != 5)
+                    r.minRepeats = 1;
+                if (r.cooldownIx >= ALERT_COOLDOWN_N) r.cooldownIx = 0;
+            }
+        }
+    }
     s_hunt       = s_prefs.getUInt("hunt", 0);
     s_palette    = (uint8_t)s_prefs.getUChar("pal", 0);
     if (s_palette >= Theme::PALETTE_COUNT) s_palette = 0;
@@ -717,6 +770,82 @@ const char* minConfidenceLabel() {
         case Confidence::HIGH_CONF: return "HIGH ONLY";
         default:                    return "?";
     }
+}
+
+bool alertEnabled(DetectionType t) {
+    return (ruleForConst(t).flags & AR_ALERT) != 0;
+}
+bool alertWakeScreen(DetectionType t) {
+    return (ruleForConst(t).flags & AR_WAKE) != 0;
+}
+bool alertConfidenceInherited(DetectionType t) {
+    return ruleForConst(t).minConf == AR_INHERIT;
+}
+Confidence alertMinConfidence(DetectionType t) {
+    const uint8_t c = ruleForConst(t).minConf;
+    return c == AR_INHERIT ? s_minConf : (Confidence)c;
+}
+uint8_t alertMinRepeats(DetectionType t) {
+    return ruleForConst(t).minRepeats;
+}
+uint16_t alertCooldownSec(DetectionType t) {
+    const uint8_t i = ruleForConst(t).cooldownIx;
+    return ALERT_COOLDOWN_SEC[i < ALERT_COOLDOWN_N ? i : 0];
+}
+const char* alertRuleConfidenceLabel(DetectionType t) {
+    const AlertRule& r = ruleForConst(t);
+    if (r.minConf == AR_INHERIT) return "GLOBAL";
+    switch ((Confidence)r.minConf) {
+        case Confidence::LOW_CONF:  return "ALL";
+        case Confidence::MED_CONF:  return "MED+";
+        case Confidence::HIGH_CONF: return "HIGH";
+        default:                    return "GLOBAL";
+    }
+}
+const char* alertRuleCooldownLabel(DetectionType t) {
+    switch (alertCooldownSec(t)) {
+        case 30:  return "30 SEC";
+        case 60:  return "1 MIN";
+        case 300: return "5 MIN";
+        case 900: return "15 MIN";
+        default:  return "OFF";
+    }
+}
+const char* alertRuleSummary(DetectionType t) {
+    static char b[24];
+    if (!alertEnabled(t)) return "LOG ONLY >";
+    snprintf(b, sizeof b, "%ux %s >",
+             (unsigned)alertMinRepeats(t), alertRuleConfidenceLabel(t));
+    return b;
+}
+void toggleAlertEnabled(DetectionType t) {
+    AlertRule& r = ruleFor(t);
+    r.flags ^= AR_ALERT;
+    saveAlertRules();
+}
+void toggleAlertWakeScreen(DetectionType t) {
+    AlertRule& r = ruleFor(t);
+    r.flags ^= AR_WAKE;
+    saveAlertRules();
+}
+void cycleAlertMinConfidence(DetectionType t) {
+    AlertRule& r = ruleFor(t);
+    if (r.minConf == AR_INHERIT) r.minConf = (uint8_t)Confidence::LOW_CONF;
+    else if (r.minConf >= (uint8_t)Confidence::HIGH_CONF) r.minConf = AR_INHERIT;
+    else r.minConf++;
+    saveAlertRules();
+}
+void cycleAlertMinRepeats(DetectionType t) {
+    AlertRule& r = ruleFor(t);
+    r.minRepeats = r.minRepeats == 1 ? 2 :
+                   r.minRepeats == 2 ? 3 :
+                   r.minRepeats == 3 ? 5 : 1;
+    saveAlertRules();
+}
+void cycleAlertCooldown(DetectionType t) {
+    AlertRule& r = ruleFor(t);
+    r.cooldownIx = (uint8_t)((r.cooldownIx + 1u) % ALERT_COOLDOWN_N);
+    saveAlertRules();
 }
 
 // SMALL / MEDIUM / LARGE. LARGE is 100 and is the default, so a board that
