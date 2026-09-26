@@ -2200,6 +2200,11 @@ void DetectionEngine::processWiFiQ(uint32_t budgetUs, uint8_t maxItems) {
         } else if (matchedBySsid) {
             const char* name = ssidVendorName(e.ssid);
             if (name) d.vendor = name;
+            // The SSID itself is the concrete evidence on this path. Keep it
+            // in the row's existing fixed name field so MORE INFO/LOG can say
+            // what actually matched without allocating or enlarging Detection.
+            strncpy(d.name, e.ssid, sizeof(d.name) - 1);
+            d.name[sizeof(d.name) - 1] = 0;
         } else {
             for (uint16_t k = 0; k < kOuiCount; k++) {
                 if (e.mac[0] == kOuiTable[k].b[0] &&
