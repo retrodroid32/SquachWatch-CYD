@@ -45,8 +45,13 @@ branch. The running record is in
   require 1/2/3/5 sightings, enforce OFF/30s/1m/5m/15m cooldowns, and choose
   whether a normal signature alert wakes a sleeping display. Defaults preserve
   v1.20.1 behavior.
-- Device policies and the chronological EVENTS/Timeline view are being kept as
-  later stages so their storage/UI changes can be tested separately.
+- **Stage C — device policies:** persistent per-device behavior now distinguishes
+  IGNORE, TRUSTED and ALWAYS ALERT. The compact 8-byte records migrate the older
+  ignore-list formats transactionally; TRUSTED/IGNORE suppress interruption
+  while detections remain logged, and ALWAYS ALERT bypasses alert rules,
+  cooldown and snooze without overriding the detection filter or lock security.
+- The chronological EVENTS/Timeline view remains a later stage and will reuse
+  the existing LOG/BlackBox history path rather than creating a second database.
 
 ## What changed in v1.20.1
 

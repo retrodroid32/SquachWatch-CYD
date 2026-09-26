@@ -825,11 +825,10 @@ static void rowContent(SettingsRow r, const DetectionEngine& eng, char* valBuf, 
             value = valBuf;
             break;
         case SettingsRow::IGNORED_DEVICES:
-            // "IGNORED DEVICES" is the destination screen's title; the row
-            // itself is shortened for the same reason TYPE FILTER above is
-            // -- the full name collides with its own value on the 240px
-            // portrait rotation at this row's size-2 text.
-            label = "IGNORED";
+            // The enum name stays for storage/navigation compatibility; this
+            // screen now manages IGNORE / TRUSTED / ALWAYS ALERT policies.
+            // Keep the row short enough for 240px portrait.
+            label = "POLICIES";
             snprintf(valBuf, valBufN, "%u", (unsigned)IgnoreList::count());
             value = valBuf;
             break;

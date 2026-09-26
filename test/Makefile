@@ -23,7 +23,7 @@ CXX      ?= g++
 CXXFLAGS := -std=c++17 -O1 -g -Wall -Wextra -Wno-unused-parameter \
             -I$(SIM) -I$(INC)
 
-TESTS := remote_id_test ibeacon_test signatures_test emitter_roundtrip_test ignore_list_test hacker_test pwnagotchi_test shim_fidelity_test squachmesh_test qwerty_test meshmsg_test device_info_test security_test emote_script_test blackbox_test bingo_test hunt_test bgretire_test autoquiet_test framepush_test touchfit_test logindex_test dex_test regulars_test detection_labels_test detection_vectors_test detection_evidence_test alert_rules_test
+TESTS := remote_id_test ibeacon_test signatures_test emitter_roundtrip_test ignore_list_test hacker_test pwnagotchi_test shim_fidelity_test squachmesh_test qwerty_test meshmsg_test device_info_test security_test emote_script_test blackbox_test bingo_test hunt_test bgretire_test autoquiet_test framepush_test touchfit_test logindex_test dex_test regulars_test detection_labels_test detection_vectors_test detection_evidence_test alert_rules_test ignore_migrate_dev_test ignore_migrate_macs_test ignore_migrate_fail_test
 
 # Only the units under test get linked in. Pulling the whole firmware
 # would drag in TFT_eSPI, NimBLE and the UI, and a test that needs a
@@ -34,6 +34,9 @@ signatures_test_SRCS         := $(SRC)/signatures.cpp
 detection_vectors_test_SRCS  := $(SRC)/signatures.cpp
 emitter_roundtrip_test_SRCS  := $(SRC)/remote_id.cpp
 ignore_list_test_SRCS        := $(SRC)/ignore_list.cpp
+ignore_migrate_dev_test_SRCS := $(SRC)/ignore_list.cpp
+ignore_migrate_macs_test_SRCS := $(SRC)/ignore_list.cpp
+ignore_migrate_fail_test_SRCS := $(SRC)/ignore_list.cpp
 hacker_test_SRCS             := $(SRC)/signatures.cpp
 pwnagotchi_test_SRCS         := $(SRC)/signatures.cpp
 squachmesh_test_SRCS         := $(SRC)/squachmesh.cpp

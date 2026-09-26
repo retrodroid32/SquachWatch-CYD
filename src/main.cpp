@@ -1047,23 +1047,35 @@ static bool twatchStill();
 // existing _latest/_latestChangeMs pair, so no timestamp is added to every
 // Detection just for Stage B.
 static bool freshAlertCandidate(const Detection& d, uint32_t now) {
+    if (IgnoreList::alwaysAlert(d.mac)) {
+        // ALWAYS ALERT fires on the fresh visit itself, not again when the
+        // ordinary per-type repeat threshold is crossed a few packets later.
+        // firstSeen is reset on a new/reactivated visit (and on each deauth
+        // burst), so this preserves "always" without duplicate threshold alerts.
+        return (uint32_t)(now - d.firstSeen) < 250u;
+    }
     return (uint32_t)(now - engine.latestChangeMs()) < 250u &&
            d.repeats >= Settings::alertMinRepeats(d.type);
 }
 
 static bool alertMayInterrupt(const Detection& d) {
-    // WATCH keeps its v1.20.1 meaning: it bypasses AUTO SNOOZE only. Its
-    // dedicated WATCH_ALERT path is already separate from signature alerts,
-    // so ordinary signature rules remain ordinary rules here.
+    // WATCH keeps its v1.20.1 meaning: it bypasses AUTO SNOOZE only. ALWAYS
+    // ALERT is stronger direct per-device intent: it bypasses per-type alert
+    // rules, confidence/repeats/cooldown and device snooze, but still cannot
+    // resurrect a disabled detection type or override lock-screen security.
     const bool watched = engine.isWatched(d.mac, true) || engine.isWatched(d.mac, false);
+    const bool always  = IgnoreList::alwaysAlert(d.mac);
 
-    if (!Settings::alertEnabled(d.type)) return false;          // LOG ONLY
-    if (IgnoreList::silenced(d.mac)) return false;
-    if (d.conf < Settings::alertMinConfidence(d.type)) return false;
-    if (d.repeats < Settings::alertMinRepeats(d.type)) return false;
+    if (!always) {
+        if (!Settings::alertEnabled(d.type)) return false;      // LOG ONLY
+        if (IgnoreList::silenced(d.mac)) return false;
+        if (d.conf < Settings::alertMinConfidence(d.type)) return false;
+        if (d.repeats < Settings::alertMinRepeats(d.type)) return false;
+    }
 
     const uint32_t now = millis();
-    if (!engine.alertCooldownReady(d.mac, d.type,
+    if (!always &&
+        !engine.alertCooldownReady(d.mac, d.type,
                                    Settings::alertCooldownSec(d.type), now))
         return false;
 
@@ -1073,7 +1085,7 @@ static bool alertMayInterrupt(const Detection& d) {
     const bool still = false;
 #endif
     const DetectionEngine::AlertGate g =
-        engine.alertGate(d.mac, Settings::autoQuietAfter(), watched, still);
+        engine.alertGate(d.mac, Settings::autoQuietAfter(), watched || always, still);
 #if defined(TWATCH_S3)
     if (g == DetectionEngine::AlertGate::HOLD)
         Serial.printf("[snooze] %02x:%02x held, watch %s\n",
@@ -5589,7 +5601,7 @@ void loop() {
             drawTwoBand([&](TFT_eSPI& t, bool) { uiIgnoreListTick(t, now); });
             // Same drag-to-scroll / act-on-release gesture the detection
             // filter uses: committing on press would make a swipe that
-            // starts on a REMOVE button fire it before the drag is
+            // starts on a policy button fire it before the drag is
             // recognised as a scroll.
             static bool ilActive = false, ilMoved = false;
             static int  ilStartX = 0, ilStartY = 0, ilLastY = -1;
@@ -5613,19 +5625,34 @@ void loop() {
                     break;
                 }
                 if (!ilMoved) {
-                    uint8_t hit = uiIgnoreListHitRemove(*canvas, ilStartX, ilStartY,
+                    uint8_t hit = uiIgnoreListHitPolicy(*canvas, ilStartX, ilStartY,
                                                         tft.width(), tft.height());
                     if (hit != 0xFF) {
                         lastTouch = now;
                         const uint8_t* mac = IgnoreList::macAt(hit);
                         if (mac) {
-                            // Copy first: remove() backfills the hole with
-                            // the last entry, so the pointer it was read
-                            // from stops meaning what it meant.
+                            // Copy first: cycling ALWAYS -> NORMAL removes the
+                            // row and may backfill its slot.
                             uint8_t tmp[6];
                             memcpy(tmp, mac, 6);
-                            IgnoreList::remove(tmp);
-                            uiIgnoreListScroll(0);   // re-clamp after shrink
+                            const DetectionType ty = IgnoreList::typeAt(hit);
+                            const IgnoreList::Policy cur = IgnoreList::policyAt(hit);
+                            IgnoreList::Policy next = IgnoreList::Policy::NORMAL;
+                            const char* toast = "NORMAL";
+                            if (cur == IgnoreList::Policy::IGNORE) {
+                                next = IgnoreList::Policy::TRUSTED; toast = "TRUSTED";
+                            } else if (cur == IgnoreList::Policy::TRUSTED) {
+                                next = IgnoreList::Policy::ALWAYS_ALERT; toast = "ALWAYS ALERT";
+                            } else if (cur == IgnoreList::Policy::ALWAYS_ALERT) {
+                                next = IgnoreList::Policy::NORMAL; toast = "NORMAL";
+                            }
+                            if (IgnoreList::setPolicy(tmp, ty, next)) {
+                                Theme::showToast(toast, detectionTypeName(ty),
+                                                 Theme::colorFor(ty));
+                                uiIgnoreListScroll(0);   // re-clamp after removal
+                            } else {
+                                Theme::showToast("POLICY SAVE FAILED", nullptr, Theme::AMBER);
+                            }
                         }
                     }
                 }
