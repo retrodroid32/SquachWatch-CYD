@@ -6,6 +6,7 @@
 #include "state.h"
 #include "sd_log.h"
 #include "remote_id.h"
+#include "spam_watch.h"
 #include <Preferences.h>
 #include <cstring>   // memcmp, for the inline isWatched()/isHunted() below
 
@@ -330,6 +331,10 @@ public:
     // (sim/detection_sim.cpp) and this is pure arithmetic over the log --
     // one copy here means the emulator gates alerts exactly as the board
     // does, instead of a second implementation drifting from this one.
+    // The spam-flood watch: see spam_watch.h. The alert gate in main.cpp asks
+    // it; the engine feeds it from expireStale() and a once-a-minute count.
+    SpamWatch& spam() { return _spam; }
+
     AlertGate alertGate(const uint8_t* mac, uint8_t afterN, bool exempt, bool still = false) {
     if (afterN == 0 || exempt) return AlertGate::ALLOW;
     const uint32_t now = millis();
@@ -618,6 +623,8 @@ private:
     uint8_t     _wifiChannel = 1;
     uint32_t    _lastHopMs   = 0;
     uint16_t    _dwellMs     = 300;   // how long this channel gets, set on arrival
+    SpamWatch   _spam;
+    uint16_t    _newBle[SpamWatch::TYPES] = {0};   // new Bluetooth rows by type, counted in pushLog
 
     // Index 1..13; 0 is unused. Fed from every captured mgmt/data
     // frame in processWiFiQ() (not just ones that match a known

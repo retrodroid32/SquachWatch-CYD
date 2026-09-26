@@ -1147,6 +1147,24 @@ void DetectionEngine::loop() {
         processDeauthQ();
     }
     expireStale();
+    // A flood too fast for its fakes to go stale: more new addresses of one
+    // type in a minute than a crowd makes. Counted on the host task in
+    // pushLog, read here once a minute; a lost increment is one fake fewer.
+    {
+        static uint32_t at = 0;
+        static uint16_t seen[SpamWatch::TYPES];
+        const uint32_t now = millis();
+        if (now - at >= 60000) {
+            at = now;
+            for (uint8_t k = 0; k < SpamWatch::TYPES; k++) {
+                const uint16_t n = _newBle[k], fresh = (uint16_t)(n - seen[k]);
+                seen[k] = n;
+                if (_spam.noteBurst(k, fresh, now))
+                    Serial.printf("[spam] %s flood: %u new addresses in a minute; one alert, then quiet\n",
+                                  detectionTypeName((DetectionType)k), (unsigned)fresh);
+            }
+        }
+    }
     decayChannelActivity();
     saveLifetime(millis());
     drainBlackBox(millis());
@@ -1953,6 +1971,7 @@ void DetectionEngine::pushLog(const Detection& d) {
     _latest = &_log[(_logHead + LOG_CAP - 1) % LOG_CAP];
     _latestChangeMs = millis();
     _typeCounts[(uint8_t)d.type]++;
+    if (d.channel == 0 && (uint8_t)d.type < SpamWatch::TYPES) _newBle[(uint8_t)d.type]++;
     _lifetimeTotal++;
     if ((uint8_t)d.type < (uint8_t)DetectionType::COUNT) _lifetimeByType[(uint8_t)d.type]++;
     // Counted here, on the Bluetooth host task, and written to flash from
@@ -2055,6 +2074,8 @@ void DetectionEngine::saveLifetime(uint32_t now) {
     saveLifetimeByType();
 }
 
+static_assert((uint8_t)DetectionType::COUNT <= SpamWatch::TYPES, "SpamWatch is sized for 32 types");
+
 void DetectionEngine::expireStale() {
     uint32_t now = millis();
     for (uint8_t i = 0; i < _logCount; i++) {
@@ -2063,6 +2084,14 @@ void DetectionEngine::expireStale() {
         // moment after `now` was read.
         if (_log[slot].active && (int32_t)(now - _log[slot].lastSeen) > (int32_t)STALE_MS) {
             _log[slot].active = false;
+            // A Bluetooth address heard for a burst and never again is what a
+            // fake tag looks like; enough of one type and the type goes quiet.
+            {
+                const Detection& g = _log[slot];
+                if (g.channel == 0 && _spam.noteVanish((uint8_t)g.type, g.lastSeen - g.firstSeen, g.hits, now))
+                    Serial.printf("[spam] %s flood: short-lived addresses piling up; one alert, then quiet\n",
+                                  detectionTypeName(g.type));
+            }
             if (_typeCounts[(uint8_t)_log[slot].type] > 0) {
                 _typeCounts[(uint8_t)_log[slot].type]--;
             }

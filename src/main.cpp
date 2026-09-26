@@ -1018,6 +1018,7 @@ static char    s_confirmLabel[24];
 // touch this, only LOG's do.
 static bool    s_confirmIsBle = true;
 static bool s_alertLastFree = false;
+static bool s_alertSpam     = false;   // this alert is a spam flood's one announcement
 
 // Whether a sighting may take the screen, and AUTO SNOOZE's bookkeeping
 // with it. Call it once for each alert about to be raised and obey the
@@ -1031,6 +1032,18 @@ static bool twatchStill();
 #endif
 static bool alertMayInterrupt(const Detection& d) {
     const bool exempt = engine.isWatched(d.mac, true) || engine.isWatched(d.mac, false);
+    // A flood of fake tags of this type: one alert says so, and the rest are
+    // logged without interrupting until it has been quiet five minutes. See
+    // spam_watch.h. A device you asked to WATCH still always gets through.
+    s_alertSpam = false;
+    if (!exempt && d.channel == 0 && engine.spam().active((uint8_t)d.type, millis())) {
+        if (!engine.spam().takeAnnounce((uint8_t)d.type)) return false;
+        s_alertSpam     = true;
+        s_alertLastFree = false;
+        Serial.printf("[spam] %s flood announced: %u fakes so far\n", detectionTypeName(d.type),
+                      (unsigned)engine.spam().fakes((uint8_t)d.type));
+        return true;
+    }
 #if defined(TWATCH_S3)
     const bool still = twatchStill();
 #else
@@ -1266,6 +1279,10 @@ static void enterAlert(const Detection& d) {
         const bool night = Clock::night();
         uiAlertSetNight(night);
         uiAlertSetLastFree(s_alertLastFree);
+        // Spent here: a card opened by hand (NEARBY) must not inherit a
+        // flood's banner from the last automatic one.
+        uiAlertSetSpam(s_alertSpam, engine.spam().fakes((uint8_t)d.type));
+        s_alertSpam = false;
         if (night && !first) {
             static const char* const NIGHT_LINES[] = {
                 "A %s at this hour. That's not nothing.", "%s. At night. I don't love it.",

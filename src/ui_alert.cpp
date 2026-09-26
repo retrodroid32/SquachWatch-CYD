@@ -145,12 +145,16 @@ static bool s_lastFree = false;
 void uiAlertSetFirst(bool first) { s_first = first; }
 void uiAlertSetNight(bool night) { s_night = night; }
 void uiAlertSetLastFree(bool lastFree) { s_lastFree = lastFree; }
+static bool     s_spam      = false;
+static uint16_t s_spamFakes = 0;
+void uiAlertSetSpam(bool spam, uint16_t fakes) { s_spam = spam; s_spamFakes = fakes; }
 
 void uiAlertInit(TFT_eSPI& t, const Detection& d) {
     s_last = d;
     s_first = false;
     s_night = false;
     s_lastFree = false;
+    s_spam     = false;
     s_touched = false;
     s_alertStart = millis();
     s_glitchStep = 0;
@@ -512,7 +516,16 @@ void uiAlertTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng,
     t.print(info);
     // The first one of its kind, ever, on this board: a line in the gap
     // between the strip and the plate, in the strip's own colour.
-    if (s_first || s_night) {
+    if (s_spam) {
+        // A flood of fake tags, and this is its one alert. Beats FIRST and
+        // AT NIGHT: they are about one catch, and this is about the room.
+        char fl[32];
+        snprintf(fl, sizeof fl, "* SPAM: %u FAKE TAGS *", (unsigned)s_spamFakes);
+        t.setTextSize(1);
+        t.setTextColor(Theme::RED, Theme::BG);
+        t.setCursor(PLATE_X + (PLATE_W - t.textWidth(fl)) / 2, stripHOf(w) + 2);
+        t.print(fl);
+    } else if (s_first || s_night) {
         const char* fl = (s_first && s_night) ? "* FIRST, AND AT NIGHT *"
                        : s_first ? "* FIRST OF ITS KIND *" : "* AT NIGHT *";
         t.setTextSize(1);

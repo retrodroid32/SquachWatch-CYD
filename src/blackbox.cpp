@@ -453,7 +453,19 @@ void dump() {
         return true;
     }, nullptr);
     Serial.println("boot,epoch,up_s,type,mac,rssi,channel,hits,again,vendor,name");
-    forEachDetection([](const DetRecord& r, void*) {
+    // Everything the ring holds, CLR or not. The LOG screen stops at the mark
+    // a CLR leaves (a restart must not bring back what was cleared), but this
+    // is the record: it prints the mark as a line and carries on, so a
+    // morning cleared at lunch is still here to read (2026-09-26).
+    s_dets.walk([](const uint8_t* p, void*) {
+        if (p[0] == KIND_CLEAR) {
+            const DetRecord& c = *(const DetRecord*)p;
+            Serial.printf("# LOG CLEARED here (boot %u, epoch %lu): the rows below were hidden from the LOG screen\n",
+                          (unsigned)c.boot, (unsigned long)c.epoch);
+            return true;
+        }
+        if (p[0] != KIND_DET) return true;
+        const DetRecord& r = *(const DetRecord*)p;
         Serial.printf("%u,%lu,%lu,%s,%02x:%02x:%02x:%02x:%02x:%02x,%d,%u,%u,%u,%s,%s\n",
                       (unsigned)r.boot, (unsigned long)r.epoch, (unsigned long)r.upSec,
                       detectionTypeName((DetectionType)r.type),
