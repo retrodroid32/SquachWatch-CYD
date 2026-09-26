@@ -1,130 +1,228 @@
-// SquachWatch-CYD — per-device alert suppression ("IGNORE") implementation
+// SquachWatch-CYD — persistent per-device alert policies
 #include "ignore_list.h"
 #include <Preferences.h>
 #include <string.h>
 
 namespace IgnoreList {
 
-static const uint8_t REC = 7;      // mac[6] + DetectionType
+struct __attribute__((packed)) PolicyRec {
+    uint8_t mac[6];
+    uint8_t type;
+    uint8_t policy;
+};
+static_assert(sizeof(PolicyRec) == 8, "device policy record must remain 8 bytes");
 
 static Preferences s_prefs;
 static bool        s_loaded = false;
-static uint8_t     s_rec[MAX * REC];
+static PolicyRec   s_rec[MAX];
 static uint8_t     s_count = 0;
 
-static const char* NS      = "ignore";
-static const char* KEY     = "dev";    // 7-byte records
-static const char* KEY_OLD = "macs";   // pre-type format, 6-byte MACs
+static const char* NS        = "ignore";
+static const char* KEY       = "dev2";   // current 8-byte policy records
+static const char* KEY_TYPED = "dev";    // v1.20.x: 7-byte MAC + type
+static const char* KEY_OLD   = "macs";   // oldest: 6-byte MAC only
 
-static void save() {
-    if (s_count == 0) {
-        // Preferences::putBytes returns early on a zero-length value without
-        // touching NVS, so saving an empty list is a silent no-op and the old
-        // blob survives. Removing the last device therefore left it on disk
-        // and it came back on the next boot. Emptying the list has to delete
-        // the key instead.
-        s_prefs.remove(KEY);
-        return;
-    }
-    s_prefs.putBytes(KEY, s_rec, (size_t)s_count * REC);
+static bool validPolicy(uint8_t p) {
+    return p >= (uint8_t)Policy::IGNORE && p <= (uint8_t)Policy::ALWAYS_ALERT;
 }
 
-void begin() {
-    if (s_loaded) return;
-    s_prefs.begin(NS, false);
-    // getBytesLength on a missing key is 0, which is exactly the empty
-    // list -- no separate "has it ever been written" flag needed.
-    size_t len = s_prefs.getBytesLength(KEY);
-    if (len > sizeof(s_rec)) len = sizeof(s_rec);
-    if (len >= REC) {
-        s_prefs.getBytes(KEY, s_rec, len);
-        s_count = (uint8_t)(len / REC);
-        s_loaded = true;
-        return;
+static bool saveCurrent() {
+    if (s_count == 0) {
+        // putBytes(0) is a no-op on the real Preferences API. Removing the key
+        // is the only way an empty list really survives a reboot.
+        return s_prefs.remove(KEY);
     }
-
-    // Nothing in the new key: migrate anything left in the old one, giving
-    // those entries UNKNOWN. A separate key rather than sniffing the blob
-    // length, because 6- and 7-byte records share lengths at 42, 84 and 126 --
-    // length alone cannot tell the two formats apart, and guessing wrong would
-    // shred somebody's list.
-    size_t old = s_prefs.getBytesLength(KEY_OLD);
-    s_count = 0;
-    if (old >= 6) {
-        uint8_t tmp[MAX * 6];
-        if (old > sizeof(tmp)) old = sizeof(tmp);
-        s_prefs.getBytes(KEY_OLD, tmp, old);
-        s_count = (uint8_t)(old / 6u);
-        for (uint8_t i = 0; i < s_count; i++) {
-            memcpy(&s_rec[(size_t)i * REC], &tmp[(size_t)i * 6u], 6);
-            s_rec[(size_t)i * REC + 6] = (uint8_t)DetectionType::UNKNOWN;
-        }
-        save();
-        s_prefs.remove(KEY_OLD);
-    }
-    s_loaded = true;
+    const size_t want = (size_t)s_count * sizeof(PolicyRec);
+    return s_prefs.putBytes(KEY, s_rec, want) == want;
 }
 
 static int indexOf(const uint8_t* mac) {
     if (!mac) return -1;
     for (uint8_t i = 0; i < s_count; i++)
-        if (memcmp(&s_rec[(size_t)i * REC], mac, 6) == 0) return (int)i;
+        if (memcmp(s_rec[i].mac, mac, 6) == 0) return (int)i;
     return -1;
 }
 
-bool contains(const uint8_t* mac) {
+static void sanitizeLoaded() {
+    bool dirty = false;
+    for (uint8_t i = 0; i < s_count; i++) {
+        if (s_rec[i].type >= (uint8_t)DetectionType::COUNT) {
+            s_rec[i].type = (uint8_t)DetectionType::UNKNOWN;
+            dirty = true;
+        }
+        // NORMAL is never stored; an unknown/corrupt policy fails safe to the
+        // historical behavior (IGNORE) rather than unexpectedly interrupting.
+        if (!validPolicy(s_rec[i].policy)) {
+            s_rec[i].policy = (uint8_t)Policy::IGNORE;
+            dirty = true;
+        }
+    }
+    if (dirty) (void)saveCurrent();
+}
+
+void begin() {
+    if (s_loaded) return;
+    s_prefs.begin(NS, false);
+    s_count = 0;
+
+    // Current format is authoritative when it is structurally valid.
+    size_t len = s_prefs.getBytesLength(KEY);
+    if (len >= sizeof(PolicyRec) && (len % sizeof(PolicyRec)) == 0) {
+        if (len > sizeof(s_rec)) len = sizeof(s_rec);
+        const size_t got = s_prefs.getBytes(KEY, s_rec, len);
+        s_count = (uint8_t)(got / sizeof(PolicyRec));
+        sanitizeLoaded();
+        // Clean up leftovers from an interrupted older migration. The current
+        // blob is already present and valid, so deleting them cannot lose the
+        // active data.
+        s_prefs.remove(KEY_TYPED);
+        s_prefs.remove(KEY_OLD);
+        s_loaded = true;
+        return;
+    }
+
+    // v1.20.x: MAC[6] + DetectionType. Every old entry was an IGNORE.
+    size_t old = s_prefs.getBytesLength(KEY_TYPED);
+    if (old >= 7) {
+        uint8_t tmp[MAX * 7];
+        if (old > sizeof(tmp)) old = sizeof(tmp);
+        const size_t got = s_prefs.getBytes(KEY_TYPED, tmp, old);
+        s_count = (uint8_t)(got / 7u);
+        for (uint8_t i = 0; i < s_count; i++) {
+            memcpy(s_rec[i].mac, &tmp[(size_t)i * 7u], 6);
+            const uint8_t ty = tmp[(size_t)i * 7u + 6];
+            s_rec[i].type = ty < (uint8_t)DetectionType::COUNT
+                          ? ty : (uint8_t)DetectionType::UNKNOWN;
+            s_rec[i].policy = (uint8_t)Policy::IGNORE;
+        }
+        // Critical migration rule: never destroy the source until the new blob
+        // has actually been written in full.
+        if (saveCurrent()) {
+            s_prefs.remove(KEY_TYPED);
+            s_prefs.remove(KEY_OLD);
+        }
+        s_loaded = true;
+        return;
+    }
+
+    // Pre-type format: MACs only. Same verified-write rule.
+    old = s_prefs.getBytesLength(KEY_OLD);
+    if (old >= 6) {
+        uint8_t tmp[MAX * 6];
+        if (old > sizeof(tmp)) old = sizeof(tmp);
+        const size_t got = s_prefs.getBytes(KEY_OLD, tmp, old);
+        s_count = (uint8_t)(got / 6u);
+        for (uint8_t i = 0; i < s_count; i++) {
+            memcpy(s_rec[i].mac, &tmp[(size_t)i * 6u], 6);
+            s_rec[i].type = (uint8_t)DetectionType::UNKNOWN;
+            s_rec[i].policy = (uint8_t)Policy::IGNORE;
+        }
+        if (saveCurrent()) s_prefs.remove(KEY_OLD);
+    }
+
+    s_loaded = true;
+}
+
+Policy policy(const uint8_t* mac) {
     begin();
-    return indexOf(mac) >= 0;
+    const int idx = indexOf(mac);
+    return idx < 0 ? Policy::NORMAL : (Policy)s_rec[(uint8_t)idx].policy;
+}
+
+bool contains(const uint8_t* mac) { return policy(mac) == Policy::IGNORE; }
+bool trusted(const uint8_t* mac) { return policy(mac) == Policy::TRUSTED; }
+bool alwaysAlert(const uint8_t* mac) { return policy(mac) == Policy::ALWAYS_ALERT; }
+
+bool setPolicy(const uint8_t* mac, DetectionType type, Policy p) {
+    begin();
+    if (!mac) return false;
+    if (p < Policy::NORMAL || p > Policy::ALWAYS_ALERT) return false;
+
+    const int idx = indexOf(mac);
+
+    if (p == Policy::NORMAL) {
+        if (idx < 0) return true;
+        const uint8_t at = (uint8_t)idx;
+        const PolicyRec removed = s_rec[at];
+        const uint8_t last = (uint8_t)(s_count - 1);
+        if (at != last) s_rec[at] = s_rec[last];
+        s_count--;
+        if (saveCurrent()) return true;
+
+        // Roll the in-memory mutation back if persistence failed.
+        s_count++;
+        s_rec[at] = removed;
+        return false;
+    }
+
+    if (idx >= 0) {
+        const uint8_t at = (uint8_t)idx;
+        const PolicyRec before = s_rec[at];
+        s_rec[at].policy = (uint8_t)p;
+        // A raw-scan action has no classification; do not erase a useful type
+        // we already learned from a classified detection.
+        if (type != DetectionType::UNKNOWN ||
+            s_rec[at].type == (uint8_t)DetectionType::UNKNOWN)
+            s_rec[at].type = (uint8_t)type;
+
+        if (saveCurrent()) return true;
+        s_rec[at] = before;
+        return false;
+    }
+
+    if (s_count >= MAX) return false;
+    PolicyRec& r = s_rec[s_count];
+    memcpy(r.mac, mac, 6);
+    r.type = (uint8_t)type;
+    r.policy = (uint8_t)p;
+    s_count++;
+    if (saveCurrent()) return true;
+    s_count--;
+    return false;
 }
 
 bool add(const uint8_t* mac, DetectionType type) {
-    begin();
-    if (!mac || s_count >= MAX) return false;
-    if (indexOf(mac) >= 0) return false;
-    memcpy(&s_rec[(size_t)s_count * REC], mac, 6);
-    s_rec[(size_t)s_count * REC + 6] = (uint8_t)type;
-    s_count++;
-    save();
-    return true;
+    if (contains(mac)) return false;
+    return setPolicy(mac, type, Policy::IGNORE);
 }
 
 bool remove(const uint8_t* mac) {
     begin();
-    const int idx = indexOf(mac);
-    if (idx < 0) return false;
-    // Order carries no meaning here, so the last entry backfills the hole
-    // rather than shifting the tail down.
-    const uint8_t last = (uint8_t)(s_count - 1);
-    if ((uint8_t)idx != last)
-        memcpy(&s_rec[(size_t)idx * REC], &s_rec[(size_t)last * REC], REC);
-    s_count--;
-    save();
-    return true;
+    if (indexOf(mac) < 0) return false;
+    return setPolicy(mac, DetectionType::UNKNOWN, Policy::NORMAL);
 }
 
 uint8_t count() { begin(); return s_count; }
 
 const uint8_t* macAt(uint8_t idx) {
     begin();
-    if (idx >= s_count) return nullptr;
-    return &s_rec[(size_t)idx * REC];
+    return idx < s_count ? s_rec[idx].mac : nullptr;
 }
 
 DetectionType typeAt(uint8_t idx) {
     begin();
     if (idx >= s_count) return DetectionType::UNKNOWN;
-    const uint8_t v = s_rec[(size_t)idx * REC + 6];
-    return (v < (uint8_t)DetectionType::COUNT) ? (DetectionType)v
-                                               : DetectionType::UNKNOWN;
+    const uint8_t v = s_rec[idx].type;
+    return v < (uint8_t)DetectionType::COUNT ? (DetectionType)v
+                                             : DetectionType::UNKNOWN;
+}
+
+Policy policyAt(uint8_t idx) {
+    begin();
+    return idx < s_count ? (Policy)s_rec[idx].policy : Policy::NORMAL;
 }
 
 void clear() {
     begin();
     s_count = 0;
+    // Remove every historical key as well; otherwise a failed/partial old
+    // migration could resurrect devices after a later downgrade/upgrade.
     s_prefs.remove(KEY);
+    s_prefs.remove(KEY_TYPED);
+    s_prefs.remove(KEY_OLD);
 }
 
-// ---- SNOOZE: RAM only, gone at restart --------------------------------------
+// ---- SNOOZE: RAM only, gone at restart ----------------------------------
 static const uint8_t SNOOZE_MAX = 32;
 static uint8_t s_snz[SNOOZE_MAX][6];
 static uint8_t s_snzN = 0, s_snzNext = 0;
@@ -143,6 +241,11 @@ void snooze(const uint8_t* mac) {
     if (s_snzN < SNOOZE_MAX) s_snzN++;
 }
 
-bool silenced(const uint8_t* mac) { return contains(mac) || snoozed(mac); }
+bool silenced(const uint8_t* mac) {
+    const Policy p = policy(mac);
+    if (p == Policy::ALWAYS_ALERT) return false;
+    if (p == Policy::IGNORE || p == Policy::TRUSTED) return true;
+    return snoozed(mac);
+}
 
 }  // namespace IgnoreList
