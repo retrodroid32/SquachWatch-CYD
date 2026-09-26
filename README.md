@@ -38,51 +38,54 @@ For most users, no build tools are required.
 
 Useful links: [browser emulator](https://retrodroid32.github.io/SquachWatch-CYD/emulator/) · [build guide](docs/BUILD.md) · [pinout](docs/PINOUT.md) · [detection provenance](docs/DETECTIONS.md) · [FAQ](docs/FAQ.md).
 
-## Current release and v1.21 development
+## Contents
 
-The current public release is **v1.20.1**. The v1.21 detection-intelligence feature set is now **feature-complete on `master` but unreleased**. It was merged in small, independently validated stages rather than as one large feature branch. The running record is in `.github/release-notes/v1.21.0-development.md`.
+- [Quick Start](#quick-start)
+- [Release status](#release-status)
+- [Supported hardware](#supported-hardware)
+- [Install with Web Flash](#install-with-web-flash)
+- [Using SquachWatch](#using-squachwatch)
+  - [v1.21 Detection intelligence](#v121-detection-intelligence)
+  - [Detection coverage](#detection-coverage)
+  - [The clock](#the-clock)
+  - [Desk mode](#desk-mode)
+  - [Status light](#status-light)
+- [SquachMesh](#squachmesh)
+- [Customization](#customization)
+- [Build from source](#build-from-source)
+- [Hardware-specific notes](#hardware-specific-notes)
+- [Developer reference](#developer-reference)
+- [Release history](#release-history)
+- [Project status](#project-status)
 
-- **Stage A — evidence + RSSI trend:** each live detection now records the
-  concrete match source (BLE manufacturer/service/name/Find My/iBeacon or Wi-Fi
-  OUI/SSID/Pwnagotchi/evil-twin/deauth), a uniform sighting count, and an
-  allocation-free eight-sample RSSI history. ALERT, LOG and MORE INFO expose
-  that evidence and ~15-second APPROACHING / STEADY / MOVING AWAY trend.
-- **Stage B — per-type alert rules:** each detection type can independently be
-  full-alert or log-only, inherit or override the global confidence threshold,
-  require 1/2/3/5 sightings, enforce OFF/30s/1m/5m/15m cooldowns, and choose
-  whether a normal signature alert wakes a sleeping display. Defaults preserve
-  v1.20.1 behavior.
-- **Stage C — device policies:** persistent per-device behavior now distinguishes
-  IGNORE, TRUSTED and ALWAYS ALERT. The compact 8-byte records migrate the older
-  ignore-list formats transactionally; TRUSTED/IGNORE suppress interruption
-  while detections remain logged, and ALWAYS ALERT bypasses alert rules,
-  cooldown and snooze without overriding the detection filter or lock security.
-- **Stage D — Detection Timeline / EVENTS:** LOG now switches between the
-  existing one-row-per-device DEVICES view and a chronological EVENTS view.
-  EVENTS reuses LOG's BlackBox page cache and shows FIRST/BACK, time, MAC,
-  RSSI, confidence, hits, name/vendor, live HERE/GONE state and current policy
-  without a second event database or persistent-format change.
-- **Stage E — RSSI trend UI:** live DEVICES rows now add a compact fixed-scale
-  sparkline for the same ~15-second RSSI history already used by ALERT and MORE
-  INFO. The chart appears only when there is safe horizontal room, so names and
-  timestamps keep priority on 240px layouts.
+## Release status
+
+The current public release is **v1.20.1**. The v1.21 detection-intelligence
+feature set is **feature-complete on `master` but unreleased**. It was merged
+in small, independently validated stages rather than as one large feature branch.
+
+See [v1.21.0 development notes](.github/release-notes/v1.21.0-development.md)
+for the implementation and validation record.
 
 ## Supported hardware
 
-- **ESP32-2432S028R** ("Cheap Yellow Display" / CYD) — the original 2.8" board.
-  SquachWatch supports the ST7789 profile plus the older ILI9341 variant,
-  with XPT2046 resistive touch and the onboard microSD card slot.
-- **ESP32-2432S032R / E32R32P** — the 3.2" resistive CYD.
-  SquachWatch includes a dedicated 240×320 ST7798/ST7789-compatible profile,
-  GPIO27 backlight control, and XPT2046 touch sharing the LCD SPI bus.
-- **Freenove FNK0103L / FNK0114L 3.2"** — a separate ST7789/XPT2046 profile
-  using Freenove's confirmed HSPI pinout, inversion-on panel baseline,
-  GPIO27 backlight and its 22/16/17 RGB status-light wiring.
-- **LilyGo T-Watch S3 (BETA)** — ESP32-S3 watch profile with a 240×240 ST7789,
-  capacitive touch, battery/PMU support, haptics and a battery-backed RTC.
+| Board | Display/profile | Status |
+|---|---|---|
+| **ESP32-2432S028R / 2.8" CYD** | ST7789 default or older ILI9341, XPT2046 touch, microSD | Released |
+| **ESP32-2432S032R / E32R32P / 3.2" CYD** | 240x320 ST7798/ST7789-compatible, XPT2046, GPIO27 backlight | Released |
+| **Freenove FNK0103L / FNK0114L 3.2"** | ST7789, XPT2046, vendor HSPI pinout, RGB status light | Released |
+| **AWOK 2.4"** | ESP32-Marauder V6.1-style hardware profile | Released |
+| **RL Phantom 2.4"** | Resistive-touch release profile | Released |
+| **LilyGo T-Watch S3** | 240x240 ST7789, capacitive touch, PMU/battery, haptics, RTC | **Beta**, released |
 
-That's it. No buzzer, no GPS, no extra modules. The CYD is the
-whole device.
+The web flasher also offers optional 80 MHz display-clock variants for the
+2.8" CYD and 3.2" CYD. Those are separate experimental performance profiles,
+not different physical boards. The RL Phantom capacitive profile is compile-only,
+and the 3.5" ST7796 profile remains excluded from release/CI while its hardware
+issue is unresolved.
+
+Most CYD installations need no add-on hardware: no GPS, buzzer, or external
+radio module is required.
 
 ## Install with Web Flash
 
@@ -111,48 +114,6 @@ Works in Firefox, Chrome, Edge, or Brave on desktop. Pick your board (2.8" CYD,
 3.2" CYD ST7798, Freenove 3.2" ST7789, AWOK 2.4", RL Phantom 2.4", or
 LilyGo T-Watch S3 beta),
 plug in, click Connect & Install, done. A T-Watch has its clock set after install.
-
-## Detection coverage
-
-| Type | What | How |
-|---|---|---|
-| `FLOCK` | Flock Safety ALPR cameras | 29 WiFi OUI prefixes + BLE name + company ID `0x09C8` |
-| `AXON` | Axon body cameras, TASERs, LE equipment | 3 WiFi OUI + SSID prefixes `AB2-`/`AB3-`/`AB4-`/`AXON-` |
-| `META` | Camera glasses — Ray-Ban Meta, Snap Spectacles | BLE service UUID `0xFD5F` + Meta / Luxottica / Snap company IDs |
-| `SKIMMER` | Bluetooth card skimmers (HC-05/06/03, RN42, BT04-A) | BT Classic name match + SPP UUID `0x1101` + 3 OUI |
-| `RAVEN` | Raven gunshot detector | Service UUIDs `0x3100`–`0x3500` |
-| `AIRTAG` | Apple AirTag / Find My trackers | Company ID `0x004C` + Find My payload check |
-| `DRONE` | Remote ID drones | Service UUID `0xFFFA`, then the ASTM F3411 message **decoded** — aircraft position, altitude, serial, and the operator's location |
-| `ALPR` | Motorola Solutions / Genetec plate readers | 6 WiFi OUI |
-| `CAMERA` | Generic / covert IP cameras | 17 WiFi OUI (Wyze, Amazon, Tuya, Verkada, Avigilon, Axis, …) |
-| `SAMSUNG_TAG` | Samsung Galaxy SmartTag / SmartTag+ | BLE service UUID `0xFD5A` |
-| `GOOGLE_TAG` | Google Find My Device trackers (Chipolo, Pebblebee, Moto Tag) | BLE service UUID `0xFEAA` |
-| `TILE` | Tile BLE trackers | BLE service UUID `0xFEED` / `0xFEEC` |
-| `RING` | Ring doorbells / cameras | 15 WiFi OUI (Ring LLC's registered block + Amazon's) |
-| `DEAUTH` | WiFi deauthentication floods | Rate-detected burst, not a signature |
-| `EVILTWIN` | Rogue / spoofed access points | One SSID beaconing from two BSSIDs that disagree about encryption |
-| `IBEACON` | Retail proximity beacons | Exact Apple header `4C 00 02 15` — **off by default**, see below |
-| `HACKER` | Flipper Zero, Pwnagotchi, WiFi Pineapple, ESP deauthers | Flipper's service UUIDs `0x3081`–`0x3083`, company ID `0x0E29` and OUI `0C:FA:22`; the Pwnagotchi's own beacon payload; `Pineapple_` and `pwned` SSIDs |
-
-### Confidence is per signature, not per type
-
-Every hardware prefix in the firmware was checked against the IEEE registry
-rather than against other detectors. Of 77 rows: **33 High, 4 Medium, 40
-Low**.
-
-That grading matters most on `FLOCK`, where exactly **one** of 29 prefixes is
-registered to Flock Safety and the rest are the generic Espressif and Liteon
-parts they build on — real evidence, shared with every dev board on earth.
-`ALERT FILTER` is a minimum-confidence gate, so setting it to High keeps a
-passing ESP32 in the log without taking over the screen.
-
-The audit also removed `00:0E:58`, which sat here for eleven releases
-labelled "Vigilant" and is registered to **Sonos**. Every speaker in range
-was being logged as a plate reader.
-
-`IBEACON` ships switched off — not a judgement about importance, one about
-volume. One shop can put more beacons in range than this device would
-otherwise see all week. It is one tap away in `DETECTION FILTER`.
 
 ## Using SquachWatch
 
@@ -250,6 +211,81 @@ the theme, the background, or one of nine fixed colours, brightness in five
 steps, and a TEST row that plays the lot in six seconds. Boards whose LED pins
 have not been checked (the AWOK and the 3.5") compile it out and say so on
 that screen.
+
+## v1.21 Detection intelligence
+
+The v1.21 detection-intelligence work is feature-complete on `master` but is
+not yet the public release. The five staged areas are:
+
+- **Stage A — evidence + RSSI trend:** each live detection now records the
+  concrete match source (BLE manufacturer/service/name/Find My/iBeacon or Wi-Fi
+  OUI/SSID/Pwnagotchi/evil-twin/deauth), a uniform sighting count, and an
+  allocation-free eight-sample RSSI history. ALERT, LOG and MORE INFO expose
+  that evidence and ~15-second APPROACHING / STEADY / MOVING AWAY trend.
+- **Stage B — per-type alert rules:** each detection type can independently be
+  full-alert or log-only, inherit or override the global confidence threshold,
+  require 1/2/3/5 sightings, enforce OFF/30s/1m/5m/15m cooldowns, and choose
+  whether a normal signature alert wakes a sleeping display. Defaults preserve
+  v1.20.1 behavior.
+- **Stage C — device policies:** persistent per-device behavior now distinguishes
+  IGNORE, TRUSTED and ALWAYS ALERT. The compact 8-byte records migrate the older
+  ignore-list formats transactionally; TRUSTED/IGNORE suppress interruption
+  while detections remain logged, and ALWAYS ALERT bypasses alert rules,
+  cooldown and snooze without overriding the detection filter or lock security.
+- **Stage D — Detection Timeline / EVENTS:** LOG now switches between the
+  existing one-row-per-device DEVICES view and a chronological EVENTS view.
+  EVENTS reuses LOG's BlackBox page cache and shows FIRST/BACK, time, MAC,
+  RSSI, confidence, hits, name/vendor, live HERE/GONE state and current policy
+  without a second event database or persistent-format change.
+- **Stage E — RSSI trend UI:** live DEVICES rows now add a compact fixed-scale
+  sparkline for the same ~15-second RSSI history already used by ALERT and MORE
+  INFO. The chart appears only when there is safe horizontal room, so names and
+  timestamps keep priority on 240px layouts.
+
+These features were developed and validated independently so the released
+v1.20.1 baseline remained recoverable throughout the work.
+
+## Detection coverage
+
+| Type | What | How |
+|---|---|---|
+| `FLOCK` | Flock Safety ALPR cameras | 29 WiFi OUI prefixes + BLE name + company ID `0x09C8` |
+| `AXON` | Axon body cameras, TASERs, LE equipment | 3 WiFi OUI + SSID prefixes `AB2-`/`AB3-`/`AB4-`/`AXON-` |
+| `META` | Camera glasses — Ray-Ban Meta, Snap Spectacles | BLE service UUID `0xFD5F` + Meta / Luxottica / Snap company IDs |
+| `SKIMMER` | Bluetooth card skimmers (HC-05/06/03, RN42, BT04-A) | BT Classic name match + SPP UUID `0x1101` + 3 OUI |
+| `RAVEN` | Raven gunshot detector | Service UUIDs `0x3100`–`0x3500` |
+| `AIRTAG` | Apple AirTag / Find My trackers | Company ID `0x004C` + Find My payload check |
+| `DRONE` | Remote ID drones | Service UUID `0xFFFA`, then the ASTM F3411 message **decoded** — aircraft position, altitude, serial, and the operator's location |
+| `ALPR` | Motorola Solutions / Genetec plate readers | 6 WiFi OUI |
+| `CAMERA` | Generic / covert IP cameras | 17 WiFi OUI (Wyze, Amazon, Tuya, Verkada, Avigilon, Axis, …) |
+| `SAMSUNG_TAG` | Samsung Galaxy SmartTag / SmartTag+ | BLE service UUID `0xFD5A` |
+| `GOOGLE_TAG` | Google Find My Device trackers (Chipolo, Pebblebee, Moto Tag) | BLE service UUID `0xFEAA` |
+| `TILE` | Tile BLE trackers | BLE service UUID `0xFEED` / `0xFEEC` |
+| `RING` | Ring doorbells / cameras | 15 WiFi OUI (Ring LLC's registered block + Amazon's) |
+| `DEAUTH` | WiFi deauthentication floods | Rate-detected burst, not a signature |
+| `EVILTWIN` | Rogue / spoofed access points | One SSID beaconing from two BSSIDs that disagree about encryption |
+| `IBEACON` | Retail proximity beacons | Exact Apple header `4C 00 02 15` — **off by default**, see below |
+| `HACKER` | Flipper Zero, Pwnagotchi, WiFi Pineapple, ESP deauthers | Flipper's service UUIDs `0x3081`–`0x3083`, company ID `0x0E29` and OUI `0C:FA:22`; the Pwnagotchi's own beacon payload; `Pineapple_` and `pwned` SSIDs |
+
+### Confidence is per signature, not per type
+
+Every hardware prefix in the firmware was checked against the IEEE registry
+rather than against other detectors. Of 77 rows: **33 High, 4 Medium, 40
+Low**.
+
+That grading matters most on `FLOCK`, where exactly **one** of 29 prefixes is
+registered to Flock Safety and the rest are the generic Espressif and Liteon
+parts they build on — real evidence, shared with every dev board on earth.
+`ALERT FILTER` is a minimum-confidence gate, so setting it to High keeps a
+passing ESP32 in the log without taking over the screen.
+
+The audit also removed `00:0E:58`, which sat here for eleven releases
+labelled "Vigilant" and is registered to **Sonos**. Every speaker in range
+was being logged as a plate reader.
+
+`IBEACON` ships switched off — not a judgement about importance, one about
+volume. One shop can put more beacons in range than this device would
+otherwise see all week. It is one tap away in `DETECTION FILTER`.
 
 ## SquachMesh
 
