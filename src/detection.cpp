@@ -2385,6 +2385,20 @@ const Detection* DetectionEngine::findDetection(const uint8_t* mac, DetectionTyp
     return slot >= 0 ? &_log[(uint8_t)slot] : nullptr;
 }
 
+bool DetectionEngine::alertCooldownReady(const uint8_t* mac, DetectionType type,
+                                             uint16_t cooldownSec, uint32_t now) const {
+    if (!cooldownSec) return true;
+    const int16_t slot = findLogSlot(mac, type);
+    if (slot < 0) return true;
+    const uint32_t last = _log[(uint8_t)slot].lastAlertMs;
+    return !last || (uint32_t)(now - last) >= (uint32_t)cooldownSec * 1000u;
+}
+
+void DetectionEngine::noteAlertRaised(const uint8_t* mac, DetectionType type, uint32_t now) {
+    const int16_t slot = findLogSlot(mac, type);
+    if (slot >= 0) _log[(uint8_t)slot].lastAlertMs = now;
+}
+
 
 // Module-level helpers used by main / UI
 static char g_macBuf[20];
