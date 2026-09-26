@@ -172,6 +172,7 @@ public:
     uint8_t  logCount() const { return _logCount; }
     const Detection* logAt(uint8_t idx) const;     // 0 = newest
     const Detection* latest() const { return _latest; }
+    uint32_t latestChangeMs() const { return _latestChangeMs; }
     // Current RAM row for a specific device/type. ALERT uses this to keep the
     // signal trend live while retaining its immutable alert snapshot for
     // identity and acknowledgement bookkeeping.
@@ -402,6 +403,23 @@ public:
         return AlertGate::HOLD;
     }
     return AlertGate::ALLOW;             // not in the log: nothing to go on
+    }
+
+    // Per-type cooldown shares Detection::lastAlertMs with AUTO SNOOZE: both
+    // are answering the same question -- when did this device last actually
+    // interrupt? No second per-row timestamp is needed.
+    bool alertCooldownReady(const uint8_t* mac, DetectionType type,
+                            uint16_t cooldownSec, uint32_t now) const {
+        if (!cooldownSec) return true;
+        const int16_t slot = findLogSlot(mac, type);
+        if (slot < 0) return true;
+        const uint32_t last = _log[(uint8_t)slot].lastAlertMs;
+        return !last || (uint32_t)(now - last) >= (uint32_t)cooldownSec * 1000u;
+    }
+
+    void noteAlertRaised(const uint8_t* mac, DetectionType type, uint32_t now) {
+        const int16_t slot = findLogSlot(mac, type);
+        if (slot >= 0) _log[(uint8_t)slot].lastAlertMs = now;
     }
 
     bool isWatched(const uint8_t* mac, bool ble) const {
