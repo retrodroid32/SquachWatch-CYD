@@ -575,6 +575,7 @@ SquachWatch-CYD/
 │   ├── BUILD.md                  (friendly walkthrough)
 │   ├── PINOUT.md                 (CYD pin map)
 │   ├── DETECTIONS.md             (per-signature provenance)
+│   ├── V1.21.0_HARDWARE_REGRESSION.md (v1.21 release hardware gate)
 │   └── SQUACHWARE-AESTHETIC.md   (CSS → RGB565 mapping)
 ├── include/
 │   ├── state.h                   (DetectionType, Detection, Confidence)
