@@ -4681,15 +4681,26 @@ void loop() {
             if (touchJustUp && gestureActive) {
                 if (!gestureMoved && now - gestureDownMs <= TAP_MAX_MS) {
                     lastTouch = now;
-                    ButtonId b = Theme::hitTestButtonBar(gestureStartX, gestureStartY, tft.width(), tft.height());
-                    if (b == ButtonId::SCAN) { enterClear(); }
-                    if (b == ButtonId::CLR)  {
-                        engine.clearLog();
-                        BlackBox::markCleared();   // or a restart brings it all back
-                        Squachy::trigger(Squachy::Event::LOG_CLEARED);
-                        enterClear();
+                    const LogViewTap viewTap =
+                        uiLogHitView(gestureStartX, gestureStartY, tft.width(), tft.height());
+                    if (viewTap == LogViewTap::DEVICES) {
+                        uiLogSetView(LogView::DEVICES);
+                    } else if (viewTap == LogViewTap::EVENTS) {
+                        s_confirmPending = false;
+                        s_infoPending = false;
+                        uiLogSetView(LogView::EVENTS);
+                    } else {
+                        ButtonId b = Theme::hitTestButtonBar(gestureStartX, gestureStartY,
+                                                            tft.width(), tft.height());
+                        if (b == ButtonId::SCAN) { enterClear(); }
+                        if (b == ButtonId::CLR)  {
+                            engine.clearLog();
+                            BlackBox::markCleared();   // or a restart brings it all back
+                            Squachy::trigger(Squachy::Event::LOG_CLEARED);
+                            enterClear();
+                        }
+                        if (b == ButtonId::LOG)  { enterClear(); }   // toggle off
                     }
-                    if (b == ButtonId::LOG)  { enterClear(); }   // toggle off
                 }
                 gestureActive = false;
             }
@@ -4714,7 +4725,7 @@ void loop() {
                 rowHoldX = tp.x;
                 rowHoldY = tp.y;
             }
-            if (tp.valid && !rowHoldFired) {
+            if (uiLogView() == LogView::DEVICES && tp.valid && !rowHoldFired) {
                 int32_t hdx = tp.x - rowHoldX, hdy = tp.y - rowHoldY;
                 if ((hdx * hdx + hdy * hdy) <= ROW_MOVE_PX_SQ && (now - rowHoldStart) >= ROW_HOLD_MS) {
                     int row = uiLogRowAt(*canvas, tp.x, tp.y, tft.width(), tft.height());
