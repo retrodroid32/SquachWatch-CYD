@@ -4,7 +4,14 @@
 #include <stdint.h>
 #include "detection.h"
 
+enum class LogView : uint8_t { DEVICES = 0, EVENTS = 1 };
+enum class LogViewTap : uint8_t { NONE = 0, DEVICES, EVENTS };
+
 void uiLogInit(TFT_eSPI& t);
+LogView uiLogView();
+void uiLogSetView(LogView view);
+// Central two-tab selector beneath the floating corner controls.
+LogViewTap uiLogHitView(int x, int y, int screenW, int screenH);
 // confirmPending/confirmLabel: draws a modal "TRACK THIS TARGET?"
 // panel with WATCH/HUNT/MORE INFO/CANCEL over everything else instead
 // of the normal list -- see uiLogHitConfirm() below. confirmLabel is
@@ -32,7 +39,7 @@ void uiLogTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng,
                bool confirmWatched, bool confirmHunted);
 void uiLogScroll(int delta);          // positive = scroll down (older)
 
-// One row of the list, newest first, and how many rows there are. The first
+// One DEVICES row, newest first, and how many device rows there are. The first
 // LOG_CAP of them are the engine's ring; past that they come from the black
 // box, which is where the board's older sightings live now. A row read from
 // flash is carried in a buffer of this screen's, so the pointer is good until
@@ -40,8 +47,8 @@ void uiLogScroll(int delta);          // positive = scroll down (older)
 const Detection* uiLogRow(const DetectionEngine& eng, int idx);
 uint16_t         uiLogRowCount(const DetectionEngine& eng);
 
-// Row index (0 = topmost visible, already adjusted for scroll) a tap
-// at (x,y) falls within, or -1 if outside the list entirely -- used by
+// DEVICES row index (0 = topmost visible, already adjusted for scroll) a tap
+// at (x,y) falls within, or -1 if outside the device list -- used by
 // main.cpp to long-press-select an entry to watch/hunt (see
 // DetectionEngine::watchBle/watchWifi/huntBle/huntWifi). Needs a live
 // TFT_eSPI& since row height depends on actual font metrics.

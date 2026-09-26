@@ -50,8 +50,11 @@ branch. The running record is in
   ignore-list formats transactionally; TRUSTED/IGNORE suppress interruption
   while detections remain logged, and ALWAYS ALERT bypasses alert rules,
   cooldown and snooze without overriding the detection filter or lock security.
-- The chronological EVENTS/Timeline view remains a later stage and will reuse
-  the existing LOG/BlackBox history path rather than creating a second database.
+- **Stage D — Detection Timeline / EVENTS:** LOG now switches between the
+  existing one-row-per-device DEVICES view and a chronological EVENTS view.
+  EVENTS reuses LOG's BlackBox page cache and shows FIRST/BACK, time, MAC,
+  RSSI, confidence, hits, name/vendor, live HERE/GONE state and current policy
+  without a second event database or persistent-format change.
 
 ## What changed in v1.20.1
 

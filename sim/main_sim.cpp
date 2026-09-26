@@ -751,19 +751,45 @@ int main(int argc, char** argv) {
     // Per-screen init, where the screen has one.
     if      (screen == "clear" || screen == "zonecard") uiClearInit(frame);
     else if (screen == "log") {
-        // Three sightings in the black box, so the list shows the rows held
-        // in RAM and then carries on into the ones kept in flash.
+        // Historical first/return events for both DEVICES and EVENTS views.
+        // --pose 1 opens EVENTS after seeding so screenshot regression covers
+        // the chronological renderer without a second simulator screen.
         BlackBox::begin();
+        static const char* const OLD_VENDOR[] = { "Apple", "Flipper", "Flock" };
         for (uint8_t i = 0; i < 3; i++) {
             Detection old{};
             for (int b2 = 0; b2 < 6; b2++) old.mac[b2] = (uint8_t)(0xA0 + i * 8 + b2);
             old.type = (DetectionType)(1 + i * 5);
             old.rssi = (int8_t)(-70 - i * 4);
+            old.channel = (uint8_t)(i ? 6 + i : 0);
             old.hits = (uint16_t)(2 + i);
+            old.conf = (Confidence)(i % 3);
+            old.vendor = OLD_VENDOR[i];
             snprintf(old.name, sizeof old.name, "%s", i == 1 ? "Old Flipper" : "");
-            BlackBox::noteDetection(old, false);
+            BlackBox::noteDetection(old, i == 2);   // include a real BACK row
+        }
+        // One event for a device that is still live so EVENTS renders HERE,
+        // not only historical GONE rows.
+        for (uint8_t i = 0; i < engine.logCount(); i++) {
+            const Detection* live = engine.logAt(i);
+            if (live && live->active) {
+                BlackBox::noteDetection(*live, true);
+                break;
+            }
         }
         uiLogInit(frame);
+        if (poseIdx == 1) {
+            // Reach EVENTS through the real central-tab hit test, not by
+            // mutating the view directly. This makes the screenshot regression
+            // catch selector geometry drift as well as renderer regressions.
+            const LogViewTap tap = uiLogHitView(frame.width() / 2 + 32, 27,
+                                                frame.width(), frame.height());
+            if (tap != LogViewTap::EVENTS) {
+                fprintf(stderr, "[log] EVENTS selector hit-test failed\n");
+                return 2;
+            }
+            uiLogSetView(LogView::EVENTS);
+        }
     }
     else if (screen == "settings")   {
         uiSettingsInit(frame);
