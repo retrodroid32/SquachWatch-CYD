@@ -1495,7 +1495,11 @@ void DetectionEngine::processDeauthQ() {
             d.evidence = EvidenceKind::WIFI_DEAUTH;
             d.vendor = "Deauth";
             d.firstSeen = d.lastSeen = now;
-            d.repeats = _deauthWinCount > 255 ? 255 : (uint8_t)_deauthWinCount;
+            // One qualifying burst is one sighting. Keep raw frame count in
+            // hits; repeats must retain the same meaning across radios so a
+            // future "alert after N sightings" rule cannot be satisfied by
+            // one noisy deauth burst.
+            d.repeats = 1;
             // hits doubles as "how many frames triggered this" here,
             // rather than a repeat-sighting count like every other
             // type uses it for -- there's no single persistent device
@@ -1511,15 +1515,21 @@ void DetectionEngine::processDeauthQ() {
             const int16_t foundSlot = findLogSlot(e.mac, DetectionType::DEAUTH);
             if (foundSlot >= 0) {
                 Detection& row = _log[(uint8_t)foundSlot];
-                detectionRssiSample(row, e.rssi, now);
+                const bool reactivating = !row.active;
+                if (reactivating) {
+                    row.repeats = 1;
+                    detectionRssiInit(row, e.rssi, now);
+                } else {
+                    if (row.repeats < 255) row.repeats++;
+                    detectionRssiSample(row, e.rssi, now);
+                }
                 row.channel   = e.channel;
                 row.hits      = _deauthWinCount;
-                row.repeats   = _deauthWinCount > 255 ? 255 : (uint8_t)_deauthWinCount;
                 row.lastSeen  = now;
                 row.firstSeen = now;
                 row.restored  = 0;
                 row.evidence  = EvidenceKind::WIFI_DEAUTH;
-                if (!row.active) {
+                if (reactivating) {
                     row.active = true;
                     _typeCounts[(uint8_t)DetectionType::DEAUTH]++;
                 }
