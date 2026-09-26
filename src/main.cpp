@@ -236,6 +236,7 @@ static void drawCrashCard(TFT_eSPI& t) {
 #include "ui_outfit.h"
 #include "ui_outfit_unlock.h"
 #include "ui_ignorelist.h"
+#include "ui_alertrules.h"
 #include "frame_push.h"
 #include "draw_band.h"
 #include "frame_prof.h"
@@ -1680,6 +1681,12 @@ static void enterIgnoreList() {
     state = AppState::IGNORE_LIST;
     transitionStart = millis();
     uiIgnoreListInit(*canvas);
+}
+
+static void enterAlertRules() {
+    state = AppState::ALERT_RULES;
+    transitionStart = millis();
+    uiAlertRulesInit(*canvas);
 }
 
 #if SQUACH_MESH
@@ -5039,6 +5046,7 @@ void loop() {
                             break;
                         case SettingsRow::CONFIDENCE: Settings::cycleMinConfidence(); break;
                         case SettingsRow::AUTO_QUIET:  Settings::cycleAutoQuiet(); break;
+                        case SettingsRow::ALERT_RULES: enterAlertRules(); break;
                         case SettingsRow::DETECTION_FILTER: enterDetFilter(); break;
                         case SettingsRow::POWER_SAVER: enterPower(); break;
 #if defined(TWATCH_S3)
@@ -5622,6 +5630,58 @@ void loop() {
                     }
                 }
                 ilActive = false;
+            }
+            break;
+        }
+        case AppState::ALERT_RULES: {
+            drawTwoBand([&](TFT_eSPI& t, bool) { uiAlertRulesTick(t, now); });
+            static bool arActive = false, arMoved = false;
+            static int arStartX = 0, arStartY = 0, arLastY = -1;
+            static uint32_t arDownMs = 0;
+
+            if (touchJustDown) {
+                arActive = true;
+                arMoved = false;
+                arStartX = tp.x;
+                arStartY = tp.y;
+                arLastY = tp.y;
+                arDownMs = now;
+            }
+            if (tp.valid && arActive && !uiAlertRulesInDetail()) {
+                const int dy = tp.y - arLastY;
+                if (abs(dy) > 10) {
+                    arMoved = true;
+                    uiAlertRulesScroll(dy > 0 ? -1 : 1);
+                    arLastY = tp.y;
+                }
+            }
+            if (touchJustUp && arActive) {
+                if (!arMoved && now - arDownMs <= TAP_MAX_MS) {
+                    lastTouch = now;
+                    const AlertRuleHit hit =
+                        uiAlertRulesHitTest(*canvas, arStartX, arStartY,
+                                            tft.width(), tft.height());
+                    const DetectionType ty = uiAlertRulesSelected();
+                    switch (hit) {
+                        case AlertRuleHit::BACK:
+                            if (uiAlertRulesInDetail()) uiAlertRulesBackToList();
+                            else enterSettings();
+                            break;
+                        case AlertRuleHit::ENABLED:
+                            Settings::toggleAlertEnabled(ty); break;
+                        case AlertRuleHit::CONFIDENCE:
+                            Settings::cycleAlertMinConfidence(ty); break;
+                        case AlertRuleHit::REPEATS:
+                            Settings::cycleAlertMinRepeats(ty); break;
+                        case AlertRuleHit::COOLDOWN:
+                            Settings::cycleAlertCooldown(ty); break;
+                        case AlertRuleHit::WAKE:
+                            Settings::toggleAlertWakeScreen(ty); break;
+                        default:
+                            break;  // TYPE already opened detail
+                    }
+                }
+                arActive = false;
             }
             break;
         }
