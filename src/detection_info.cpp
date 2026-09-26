@@ -133,6 +133,20 @@ const char* evidenceText(const Detection& d) {
             break;
     }
 
+    // BlackBox's fixed 64-byte historical record predates Stage A and does
+    // not persist evidence or the rolling RSSI samples. Be explicit rather
+    // than turning zeroed compatibility fields into made-up "one sighting"
+    // evidence.
+    if (d.restored) {
+        const unsigned hits = d.hits ? (unsigned)d.hits : 1u;
+        snprintf(buf, sizeof buf,
+                 "%s confidence historical record. Match evidence and RSSI trend "
+                 "were not stored with this event. Recorded signal %d dBm; hit count %u.",
+                 conf, (int)d.rssi, hits);
+        buf[sizeof buf - 1] = 0;
+        return buf;
+    }
+
     const RssiTrend trend = detectionRssiTrend(d);
     const unsigned repeats = d.repeats ? (unsigned)d.repeats : 1u;
     if (d.rssiHistCount >= 2) {
