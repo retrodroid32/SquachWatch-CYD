@@ -60,27 +60,32 @@ Useful links: [browser emulator](https://retrodroid32.github.io/SquachWatch-CYD/
 
 ## Release status
 
-The current public release is **v1.20.1**. The v1.21 detection-intelligence feature set is now **feature-complete on `master` but unreleased**. It was merged in small, independently validated stages rather than as one large feature branch. The running record is in `.github/release-notes/v1.21.0-development.md`.
+The current public release is **v1.20.1**. The v1.21 detection-intelligence
+feature set is **feature-complete on `master` but unreleased**. It was merged
+in small, independently validated stages rather than as one large feature branch.
 
-The detailed staged-development record is in
-[`.github/release-notes/v1.21.0-development.md`](.github/release-notes/v1.21.0-development.md).
+See [v1.21.0 development notes](.github/release-notes/v1.21.0-development.md)
+for the implementation and validation record.
 
 ## Supported hardware
 
-- **ESP32-2432S028R** ("Cheap Yellow Display" / CYD) — the original 2.8" board.
-  SquachWatch supports the ST7789 profile plus the older ILI9341 variant,
-  with XPT2046 resistive touch and the onboard microSD card slot.
-- **ESP32-2432S032R / E32R32P** — the 3.2" resistive CYD.
-  SquachWatch includes a dedicated 240×320 ST7798/ST7789-compatible profile,
-  GPIO27 backlight control, and XPT2046 touch sharing the LCD SPI bus.
-- **Freenove FNK0103L / FNK0114L 3.2"** — a separate ST7789/XPT2046 profile
-  using Freenove's confirmed HSPI pinout, inversion-on panel baseline,
-  GPIO27 backlight and its 22/16/17 RGB status-light wiring.
-- **LilyGo T-Watch S3 (BETA)** — ESP32-S3 watch profile with a 240×240 ST7789,
-  capacitive touch, battery/PMU support, haptics and a battery-backed RTC.
+| Board | Display/profile | Status |
+|---|---|---|
+| **ESP32-2432S028R / 2.8" CYD** | ST7789 default or older ILI9341, XPT2046 touch, microSD | Released |
+| **ESP32-2432S032R / E32R32P / 3.2" CYD** | 240x320 ST7798/ST7789-compatible, XPT2046, GPIO27 backlight | Released |
+| **Freenove FNK0103L / FNK0114L 3.2"** | ST7789, XPT2046, vendor HSPI pinout, RGB status light | Released |
+| **AWOK 2.4"** | ESP32-Marauder V6.1-style hardware profile | Released |
+| **RL Phantom 2.4"** | Resistive-touch release profile | Released |
+| **LilyGo T-Watch S3** | 240x240 ST7789, capacitive touch, PMU/battery, haptics, RTC | **Beta**, released |
 
-That's it. No buzzer, no GPS, no extra modules. The CYD is the
-whole device.
+The web flasher also offers optional 80 MHz display-clock variants for the
+2.8" CYD and 3.2" CYD. Those are separate experimental performance profiles,
+not different physical boards. The RL Phantom capacitive profile is compile-only,
+and the 3.5" ST7796 profile remains excluded from release/CI while its hardware
+issue is unresolved.
+
+Most CYD installations need no add-on hardware: no GPS, buzzer, or external
+radio module is required.
 
 ## Install with Web Flash
 
