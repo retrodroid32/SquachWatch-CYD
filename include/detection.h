@@ -406,21 +406,12 @@ public:
     }
 
     // Per-type cooldown shares Detection::lastAlertMs with AUTO SNOOZE: both
-    // are answering the same question -- when did this device last actually
-    // interrupt? No second per-row timestamp is needed.
+    // answer the same question -- when did this device last actually
+    // interrupt? Implemented separately by firmware and emulator so neither
+    // reaches through the other's private log-index implementation.
     bool alertCooldownReady(const uint8_t* mac, DetectionType type,
-                            uint16_t cooldownSec, uint32_t now) const {
-        if (!cooldownSec) return true;
-        const int16_t slot = findLogSlot(mac, type);
-        if (slot < 0) return true;
-        const uint32_t last = _log[(uint8_t)slot].lastAlertMs;
-        return !last || (uint32_t)(now - last) >= (uint32_t)cooldownSec * 1000u;
-    }
-
-    void noteAlertRaised(const uint8_t* mac, DetectionType type, uint32_t now) {
-        const int16_t slot = findLogSlot(mac, type);
-        if (slot >= 0) _log[(uint8_t)slot].lastAlertMs = now;
-    }
+                            uint16_t cooldownSec, uint32_t now) const;
+    void noteAlertRaised(const uint8_t* mac, DetectionType type, uint32_t now);
 
     bool isWatched(const uint8_t* mac, bool ble) const {
         if (_watchKind != (ble ? WatchKind::BLE : WatchKind::WIFI)) return false;
