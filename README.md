@@ -28,6 +28,26 @@ the glitchy SquachWatch wordmark.
 </p>
 
 
+## In development: v1.21.0 detection intelligence
+
+The released firmware is still **v1.20.1**. Development after that release is being
+merged in small, independently validated stages rather than as one large feature
+branch. The running record is in
+`.github/release-notes/v1.21.0-development.md`.
+
+- **Stage A — evidence + RSSI trend:** each live detection now records the
+  concrete match source (BLE manufacturer/service/name/Find My/iBeacon or Wi-Fi
+  OUI/SSID/Pwnagotchi/evil-twin/deauth), a uniform sighting count, and an
+  allocation-free eight-sample RSSI history. ALERT, LOG and MORE INFO expose
+  that evidence and ~15-second APPROACHING / STEADY / MOVING AWAY trend.
+- **Stage B — per-type alert rules:** each detection type can independently be
+  full-alert or log-only, inherit or override the global confidence threshold,
+  require 1/2/3/5 sightings, enforce OFF/30s/1m/5m/15m cooldowns, and choose
+  whether a normal signature alert wakes a sleeping display. Defaults preserve
+  v1.20.1 behavior.
+- Device policies and the chronological EVENTS/Timeline view are being kept as
+  later stages so their storage/UI changes can be tested separately.
+
 ## What changed in v1.20.1
 
 This fork's v1.20.1 work has been reconciled against the complete history since
