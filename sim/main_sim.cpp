@@ -59,6 +59,7 @@
 #include "ui_power.h"
 #include "ui_security.h"
 #include "ui_ignorelist.h"
+#include "ui_alertrules.h"
 #include "ui_light.h"
 #include "ui_nudge.h"
 #include "ui_squadupdate.h"
@@ -634,6 +635,7 @@ int main(int argc, char** argv) {
         else if (screen == "power")    uiPowerTick(frame, t, engine);
         else if (screen == "security") uiSecurityTick(frame, t, engine);
         else if (screen == "ignorelist") uiIgnoreListTick(frame, t);
+        else if (screen == "alertrules") uiAlertRulesTick(frame, t);
         else if (screen == "light")    uiLightTick(frame, t, engine);
         else if (screen == "diary")    uiDiaryTick(frame, t, engine);
         else if (screen == "desk")     uiDeskTick(frame, t, engine);
@@ -769,6 +771,7 @@ int main(int argc, char** argv) {
         if (const char* pg = getenv("SQUACHSIM_PAGE")) uiSettingsOpenPage((SettingsPage)atoi(pg));
     }
     else if (screen == "detfilter")  uiDetFilterInit(frame);
+    else if (screen == "alertrules") uiAlertRulesInit(frame);
     else if (screen == "diary")      uiDiaryInit(frame);
     else if (screen == "desk")       {
         uiDeskInit(frame);
@@ -1009,6 +1012,7 @@ int main(int argc, char** argv) {
         else if (screen == "light")      uiLightScroll(1);
         else if (screen == "detfilter")  uiDetFilterScroll(1);
         else if (screen == "ignorelist") uiIgnoreListScroll(1);
+        else if (screen == "alertrules") uiAlertRulesScroll(1);
         else                             uiSettingsScroll(1);
     }
 
