@@ -2262,14 +2262,8 @@ void DetectionEngine::processWiFiQ(uint32_t budgetUs, uint8_t maxItems) {
             strncpy(d.name, e.ssid, sizeof(d.name) - 1);
             d.name[sizeof(d.name) - 1] = 0;
         } else {
-            for (uint16_t k = 0; k < kOuiCount; k++) {
-                if (e.mac[0] == kOuiTable[k].b[0] &&
-                    e.mac[1] == kOuiTable[k].b[1] &&
-                    e.mac[2] == kOuiTable[k].b[2]) {
-                    d.vendor = kOuiTable[k].name;
-                    break;
-                }
-            }
+            const char* vendor = ouiVendorName(e.mac);
+            if (vendor) d.vendor = vendor;
         }
         d.firstSeen = d.lastSeen = nowMs;
         d.hits   = 1;
