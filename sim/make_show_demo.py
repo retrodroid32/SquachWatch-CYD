@@ -32,6 +32,14 @@ CYAN  = (0, 214, 214)
 # ---- the clips ----
 
 CLIPS = {
+    # v1.23.0 "Locked On": the new watch-list alert. One scene per line
+    # Squachy says (they change every 7 s), each started a little after its
+    # line so the bubble has typed out and the sweep has come round.
+    "locked-on": [
+        ("watchalert", 20,  60, [], {}, 1200, "SOMETHING ON YOUR WATCH LIST IS BACK"),
+        ("watchalert", 250, 50, [], {}, 1200, "THE NEARER THE MIDDLE, THE NEARER TO YOU"),
+        ("watchalert", 460, 50, [], {}, 1600, "AND IT WAITS UNTIL YOU TAP. NO RUSH."),
+    ],
     # v1.22.0 "Costume Drama": the wardrobe, redrawn. One outfit a scene on
     # CLEAR, long enough for each one's moving part (the propeller, the
     # headband, the blinking chest lights) to do its thing. Warm-up 200 so
