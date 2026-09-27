@@ -50,6 +50,13 @@ DetectionType lookupUuid(uint16_t uuid16);
 DetectionType lookupBtName(const char* name);
 DetectionType lookupSsid(const char* ssid);   // case-insensitive prefix
 
+// Flock firmware/behavior corroboration helpers. 00:03:7F is Qualcomm's
+// generic QCA9377 default prefix found in the Flock firmware dump, so it is
+// intentionally NOT part of lookupOui(); it only means something when paired
+// with the wildcard-probe behavior below.
+bool isFlockFirmwareWifiPrefix(const uint8_t* mac);
+bool isWifiWildcardProbe(const uint8_t* frame, uint32_t len);
+
 // Friendly vendor label for whichever kSsidPrefixes entry matched
 // (e.g. "Axon-Body2"), or nullptr if none did. Same matching rule as
 // lookupSsid — kept separate rather than changing that function's
