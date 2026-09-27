@@ -65,6 +65,12 @@ struct SpamWatch {
         return x.active != 0;
     }
 
+    bool announcementPending(DetectionType type) const {
+        if (!eligible(type)) return false;
+        const Type& x = t[(uint8_t)type];
+        return x.active && !x.announced;
+    }
+
     bool takeAnnounce(DetectionType type) {
         if (!eligible(type)) return false;
         Type& x = t[(uint8_t)type];
