@@ -125,6 +125,39 @@ int main() {
     ck("random 10-char name does not match",
        lookupBtName("12345abcde") == DetectionType::UNKNOWN);
 
+    suite("Flock wildcard-probe corroboration");
+
+    const uint8_t qca[6] = {0x00,0x03,0x7F,0x50,0x00,0x01};
+    ck("firmware-derived QCA prefix is recognized only by helper",
+       isFlockFirmwareWifiPrefix(qca));
+    conf = Confidence::HIGH_CONF;
+    ck("generic QCA prefix is not a blanket FLOCK OUI",
+       lookupOui(qca, &conf) == DetectionType::UNKNOWN);
+
+    uint8_t probe[32] = {};
+    probe[0] = 0x40;            // management / probe request
+    probe[24] = 0x00;           // SSID IE
+    probe[25] = 0x00;           // wildcard: empty SSID
+    ck("empty-SSID probe is recognized",
+       isWifiWildcardProbe(probe, 26));
+
+    probe[25] = 0x03;
+    probe[26] = 'a'; probe[27] = 'b'; probe[28] = 'c';
+    ck("directed probe is not wildcard",
+       !isWifiWildcardProbe(probe, 29));
+
+    probe[0] = 0x80;            // beacon, not probe request
+    probe[25] = 0x00;
+    ck("empty SSID in a beacon is not a wildcard probe",
+       !isWifiWildcardProbe(probe, 26));
+
+    // Malformed/truncated IE must fail closed rather than reading past input.
+    probe[0] = 0x40;
+    probe[24] = 0xDD;
+    probe[25] = 10;
+    ck("truncated probe IE fails closed",
+       !isWifiWildcardProbe(probe, 28));
+
     suite("Drone manufacturer OUIs");
 
     ck("DJI current MA-L block is DRONE",
