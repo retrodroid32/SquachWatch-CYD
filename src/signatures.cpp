@@ -539,11 +539,12 @@ bool isAirTagPayload(const uint8_t* payload, uint8_t len) {
 }
 
 Confidence confidenceFor(DetectionType t) {
-    // Per docs/DETECTIONS.md. FLOCK/AXON/META/SKIMMER/CAMERA are graded
-    // High there for the signature path actually active in v1.0 (the
-    // wildcard-probe and ESP32-generic-fallback ideas mentioned in that
-    // doc as lower-confidence alternates aren't implemented — see the
-    // note at the top of kOuiTable). RAVEN/AIRTAG/DRONE/ALPR are graded
+    // Per docs/DETECTIONS.md. This is the type-level fallback only;
+    // paths with stronger/weaker evidence override it in the detector or in
+    // the OUI table. FLOCK is therefore High here for its own registered
+    // block/company-ID paths, while field OUIs are LOW and wildcard-
+    // corroborated field/QCA probes are MED. AXON/SKIMMER/CAMERA retain
+    // their documented defaults. RAVEN/AIRTAG/DRONE/ALPR are graded
     // Medium — unverified against real hardware, address rotation, or
     // thin OUI coverage, respectively. SAMSUNG_TAG is High: 0xFD5A is
     // Samsung's own dedicated SIG-assigned UUID, not shared with
