@@ -234,32 +234,16 @@ void drawOperator(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, int hin
     // Drawn as a cameo, standing still: the live Squachy has his own ideas
     // about walking off and what to talk about. 53 units runs from the top
     // of his head to his soles, so his feet go half that below the centre.
-    int sh = 2 * R + 8;
+    // A little under the scope's height, so the headset band clears his bubble.
+    int sh = 2 * R - 6;
     if (sh > gap * 13 / 10) sh = gap * 13 / 10;
     const float sc = (float)sh / 60.0f;
     const int feet = rcy + (int)(26.5f * sc);
     (void)advance;
+    Squachy::setHeadset(true);
     Squachy::drawWaving(t, sx, feet, now, sc, s_line, now - s_lineAt < 2500, 0, false);
+    Squachy::setHeadset(false);
     headline(t, rcx, bandBot + 2, "LOCKED ON", g3);
-
-    // The headset, from the size and place he was drawn at.
-    const int crown = feet - (int)(53.0f * sc);
-    auto S = [sc](float u) { return (int)(u * sc); };
-    const uint16_t band = t.color565(182, 182, 170), cup = t.color565(73, 73, 85);
-    for (int k = 0; k < 2; k++) {
-        const int r = S(17) - k;
-        for (int i = 0; i <= 90; i++) {
-            const float a = 3.14159265f + 3.14159265f * (float)i / 90.0f;
-            t.drawPixel(sx + (int)(cosf(a) * r), crown + S(11) + (int)(sinf(a) * (float)r * 0.9f), band);
-        }
-    }
-    for (int sg = -1; sg <= 1; sg += 2) {
-        t.fillRoundRect(sx + sg * S(16) - S(3), crown + S(9), S(6), S(9), S(2), Theme::BLACK);
-        t.fillRoundRect(sx + sg * S(16) - S(3) + 1, crown + S(9) + 1, S(6) - 2, S(9) - 2, S(2), cup);
-    }
-    // The mic boom off his left cup, round to his mouth.
-    t.drawLine(sx - S(16), crown + S(16), sx - S(8), crown + S(21), band);
-    t.fillCircle(sx - S(7), crown + S(21), S(1) + 1, Theme::BLACK);
 
     // Beside the headline: what it is and how strong, then which way.
     const int nx = rcx + Theme::bangersTextWidth("LOCKED ON", Theme::BangersSize::MD) / 2 + 10;
