@@ -15,6 +15,17 @@ int main() {
     ck("compact evidence label", std::strcmp(evidenceKindShortName(EvidenceKind::BLE_FINDMY), "FINDMY") == 0);
     ck("unknown evidence stays explicit", std::strcmp(evidenceKindName(EvidenceKind::UNKNOWN), "UNKNOWN") == 0);
 
+    ck("shared trend needs three samples",
+       classifyRssiTrend(-70, -60, 2) == RssiTrend::UNKNOWN);
+    ck("shared +6 dB means approaching",
+       classifyRssiTrend(-70, -64, 3) == RssiTrend::APPROACHING);
+    ck("shared +5 dB remains steady",
+       classifyRssiTrend(-70, -65, 3) == RssiTrend::STEADY);
+    ck("shared -6 dB means moving away",
+       classifyRssiTrend(-60, -66, 3) == RssiTrend::MOVING_AWAY);
+    ck("shared -5 dB remains steady",
+       classifyRssiTrend(-60, -65, 3) == RssiTrend::STEADY);
+
     Detection approaching = blankDetection();
     detectionRssiInit(approaching, -70, 0);
     detectionRssiSample(approaching, -66, 2048);
