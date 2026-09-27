@@ -82,7 +82,7 @@ The web flasher also offers optional 80 MHz display-clock variants for the
 2.8" CYD and 3.2" CYD. Those are separate experimental performance profiles,
 not different physical boards. The CYD profiles also offer an independent
 **GPS / GNSS firmware** checkbox, so 40 MHz + GPS and 80 MHz + GPS are both
-available. GPS uses UART2 with module TX → GPIO35 and module RX → GPIO26.
+available. GPS uses UART2 with module TX → GPIO35 and module RX → GPIO22.
 The RL Phantom capacitive profile is compile-only,
 and the 3.5" ST7796 profile remains excluded from release/CI while its hardware
 issue is unresolved.
@@ -146,7 +146,7 @@ On a GPS firmware build, the same row appends
 
 GPS is a firmware choice in the web flasher, independent of the 80 MHz
 display option. On supported CYD profiles wire the module's **TX to GPIO35**
-and **RX to GPIO26**. The GPS build listens at 115200 baud, uses valid GNSS
+and **RX to GPIO22**. The GPS build listens at 115200 baud, uses valid GNSS
 UTC to establish the board clock when it does not already have trusted time,
 shows fix status under **System Properties → Board**, and geotags SD detection
 rows. The fixed-size BlackBox record is deliberately unchanged.
