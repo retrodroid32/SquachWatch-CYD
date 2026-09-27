@@ -213,8 +213,13 @@ namespace Settings {
     // The T-Watch's buzz on an alert (the DRV2605 haptic motor). Kept on
     // every board so the settings file reads the same; only the watch has
     // a motor to use it.
-    bool       buzz();
-    void       toggleBuzz();
+    // One row: OFF, HIGH, MED, LOW. buzz() is "not OFF"; buzzStrength() is
+    // 0 LOW, 1 MED, 2 HIGH, which selects the motor driver's effect library
+    // and drive level.
+    bool        buzz();
+    uint8_t     buzzStrength();
+    const char* buzzModeName();
+    void        cycleBuzz();
     // STEADY POWER on the watch: the power chip's DC1, which feeds the
     // ESP32 and its radio, held in PWM instead of dropping to PFM at light
     // load. A test for the deaf radios: PFM ripple is the kind of noise a
