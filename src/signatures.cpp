@@ -334,6 +334,39 @@ bool isIBeacon(const uint8_t* mfg, uint8_t len) {
     return mfg[2] == 0x02 && mfg[3] == 0x15;
 }
 
+// --- Flock firmware/behavior corroboration ------------------------------
+//
+// 00:03:7F is Qualcomm Atheros, not Flock. It appears as the QCA9377
+// default MAC prefix in the analyzed Flock camera firmware, so it is useful
+// only when the observed frame behavior also matches the camera's wildcard
+// probe pattern. Keeping it out of kOuiTable prevents every generic Qualcomm
+// device from becoming a Flock hit.
+bool isFlockFirmwareWifiPrefix(const uint8_t* mac) {
+    return mac && mac[0] == 0x00 && mac[1] == 0x03 && mac[2] == 0x7F;
+}
+
+// Probe requests carry only information elements after the 24-byte management
+// header. Flock cameras were observed repeatedly sending wildcard probes:
+// an SSID IE (tag 0) whose length is zero. Parse the IE chain rather than
+// assuming SSID is first so malformed/vendor fields cannot shift the test.
+bool isWifiWildcardProbe(const uint8_t* frame, uint32_t len) {
+    if (!frame || len < 26) return false;
+    const uint8_t type = (frame[0] & 0x0C) >> 2;
+    const uint8_t subtype = (frame[0] & 0xF0) >> 4;
+    if (type != 0 || subtype != 4) return false;
+
+    uint32_t p = 24;
+    while (p + 2 <= len) {
+        const uint8_t id = frame[p];
+        const uint8_t n = frame[p + 1];
+        p += 2;
+        if (p + n > len) return false;
+        if (id == 0x00) return n == 0;
+        p += n;
+    }
+    return false;
+}
+
 // --- lookups ---
 
 DetectionType lookupOui(const uint8_t* mac, Confidence* conf) {
