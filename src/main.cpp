@@ -1030,6 +1030,7 @@ static char    s_confirmLabel[24];
 // touch this, only LOG's do.
 static bool    s_confirmIsBle = true;
 static bool s_alertLastFree = false;
+static bool s_alertSpam     = false;
 
 // Whether a sighting may take the screen, and AUTO SNOOZE's bookkeeping
 // with it. Call it once for each alert about to be raised and obey the
@@ -1065,6 +1066,7 @@ static bool alertMayInterrupt(const Detection& d) {
     // resurrect a disabled detection type or override lock-screen security.
     const bool watched = engine.isWatched(d.mac, true) || engine.isWatched(d.mac, false);
     const bool always  = IgnoreList::alwaysAlert(d.mac);
+    s_alertSpam = false;
 
     if (!always) {
         if (!Settings::alertEnabled(d.type)) return false;      // LOG ONLY
@@ -1077,6 +1079,15 @@ static bool alertMayInterrupt(const Detection& d) {
     if (!always &&
         !engine.alertCooldownReady(d.mac, d.type,
                                    Settings::alertCooldownSec(d.type), now))
+        return false;
+
+    // If this flood already spent its one explanatory alert, stop here --
+    // before alertGate() mutates AUTO SNOOZE counters for an interruption
+    // that will never happen. A pending first announcement is allowed to
+    // continue through AUTO SNOOZE and is only consumed if that gate passes.
+    const bool spamActive =
+        !watched && !always && engine.spam().active(d.type, now);
+    if (spamActive && !engine.spam().announcementPending(d.type))
         return false;
 
 #if defined(TWATCH_S3)
@@ -1094,6 +1105,19 @@ static bool alertMayInterrupt(const Detection& d) {
     if (g == DetectionEngine::AlertGate::HOLD) return false;
 
     s_alertLastFree = (g == DetectionEngine::AlertGate::ALLOW_LAST);
+
+    // Consume the one flood announcement only after every ordinary policy
+    // gate, including AUTO SNOOZE, has actually allowed this interruption.
+    // That keeps SpamWatch suppression from spending AUTO SNOOZE allowance
+    // and keeps a blocked first announcement available for the next eligible
+    // tracker identity.
+    if (spamActive) {
+        if (!engine.spam().takeAnnounce(d.type)) return false;
+        s_alertSpam = true;
+        Serial.printf("[spam] %s flood announced: %u tracker identities; later ones stay in LOG\n",
+                      detectionTypeName(d.type), (unsigned)engine.spam().fakes(d.type));
+    }
+
     engine.noteAlertRaised(d.mac, d.type, now);
     return true;
 }
@@ -1314,6 +1338,10 @@ static void enterAlert(const Detection& d) {
         const bool night = Clock::night();
         uiAlertSetNight(night);
         uiAlertSetLastFree(s_alertLastFree);
+        // Spent here so manually opened cards can never inherit the banner
+        // from the last automatic tracker-flood announcement.
+        uiAlertSetSpam(s_alertSpam, engine.spam().fakes(d.type));
+        s_alertSpam = false;
         if (night && !first) {
             static const char* const NIGHT_LINES[] = {
                 "A %s at this hour. That's not nothing.", "%s. At night. I don't love it.",
@@ -6104,6 +6132,13 @@ void loop() {
                 if (latest && freshAlertCandidate(*latest, now) &&
                     alertMayInterrupt(*latest)) {
                     uiDeskAlert(*latest, now);
+                    if (s_alertSpam) {
+                        char sub[40];
+                        snprintf(sub, sizeof sub, "%u IDs; later ones stay in LOG",
+                                 (unsigned)engine.spam().fakes(latest->type));
+                        Theme::showToast("TRACKER SPAM", sub, Theme::RED, 3500);
+                        s_alertSpam = false;
+                    }
                     lastAlertType = latest->type;
                     squachyCatch(latest->type, latest->mac, latest->hits, latest->rssi, latest->conf);
                 }

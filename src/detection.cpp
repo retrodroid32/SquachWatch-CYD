@@ -1284,6 +1284,27 @@ void DetectionEngine::loop() {
         processDeauthQ();
     }
     expireStale();
+
+    // A flood can be faster than STALE_MS: if forty genuinely new tracker
+    // identities arrived in the last minute, trip the same per-type guard
+    // without waiting for each row to age out. Only pushLog() feeds this
+    // counter, so repeats/reactivations do not inflate it.
+    {
+        const uint32_t now = millis();
+        if (!_spamMinuteAt) _spamMinuteAt = now;
+        if ((uint32_t)(now - _spamMinuteAt) >= 60000u) {
+            _spamMinuteAt = now;
+            for (uint8_t k = 0; k < SpamWatch::TYPES; k++) {
+                const uint16_t n = _newBleThisMinute[k];
+                _newBleThisMinute[k] = 0;
+                if (n && _spam.noteBurst((DetectionType)k, n, now)) {
+                    Serial.printf("[spam] %s flood: %u new tracker identities in a minute\n",
+                                  detectionTypeName((DetectionType)k), (unsigned)n);
+                }
+            }
+        }
+    }
+
     decayChannelActivity();
     saveLifetime(millis());
     drainBlackBox(millis());
@@ -2348,6 +2369,13 @@ void DetectionEngine::pushLog(const Detection& d) {
     _latestChangeMs = millis();
     const uint8_t typeIx = (uint8_t)d.type;
     if (typeIx < (uint8_t)DetectionType::COUNT) _typeCounts[typeIx]++;
+    // channel 0 is BLE in the live detector. Count only brand-new eligible
+    // tracker identities; pushLog is not reached by ordinary repeats or
+    // reactivations, which is exactly what the burst detector needs.
+    if (d.channel == 0 && SpamWatch::eligible(d.type) &&
+        typeIx < SpamWatch::TYPES && _newBleThisMinute[typeIx] != 0xFFFFu) {
+        _newBleThisMinute[typeIx]++;
+    }
     _lifetimeTotal++;
     if (typeIx < (uint8_t)DetectionType::COUNT) _lifetimeByType[typeIx]++;
     // Counted here, on the Bluetooth host task, and written to flash from
@@ -2454,9 +2482,24 @@ void DetectionEngine::expireStale() {
         // Signed: lastSeen is written from the radio tasks and can land a
         // moment after `now` was read.
         if (_log[slot].active && (int32_t)(now - _log[slot].lastSeen) > (int32_t)STALE_MS) {
-            _log[slot].active = false;
-            if (_typeCounts[(uint8_t)_log[slot].type] > 0) {
-                _typeCounts[(uint8_t)_log[slot].type]--;
+            Detection& gone = _log[slot];
+            gone.active = false;
+
+            // One short BLE visit from an eligible tracker identity is weak
+            // evidence; enough different identities in a short span becomes
+            // a flood. hits, not repeats, is the distinct-visit counter in
+            // this fork, so a real address that disappears and later returns
+            // stops contributing as a throw-away identity.
+            if (gone.channel == 0 &&
+                _spam.noteVanish(gone.type,
+                                 (uint32_t)(gone.lastSeen - gone.firstSeen),
+                                 gone.hits, now)) {
+                Serial.printf("[spam] %s flood: short-lived tracker identities piling up\n",
+                              detectionTypeName(gone.type));
+            }
+
+            if (_typeCounts[(uint8_t)gone.type] > 0) {
+                _typeCounts[(uint8_t)gone.type]--;
             }
         }
     }
