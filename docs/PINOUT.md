@@ -62,7 +62,7 @@ display, touch, SD or status-light assignments used by this fork:
 | Signal | CYD GPIO |
 |---|---:|
 | GPS module TX -> ESP32 RX | 35 |
-| GPS module RX <- ESP32 TX | 26 |
+| GPS module RX <- ESP32 TX | 22 |
 
 GPIO35 is input-only on the ESP32, which is intentional here: it receives the
 GNSS module's serial output. The GPS firmware defaults to 115200 baud.

@@ -120,6 +120,12 @@ Snapshot snapshot() {
     out.fix = s_fixAt && (uint32_t)(now - s_fixAt) <= 10000u;
     out.ageMs = s_fixAt ? (uint32_t)(now - s_fixAt) : 0xFFFFFFFFu;
     out.timeValid = s_timeAt && (uint32_t)(now - s_timeAt) <= 10000u && out.epoch != 0;
+    // GGA-derived quality fields can outlive a later RMC/location update in
+    // TinyGPSPlus. Never attach stale quality/altitude to a fresh detection.
+    out.altValid = out.fix && s_gps.altitude.isValid() && s_gps.altitude.age() <= 10000u;
+    out.hdopValid = out.fix && s_gps.hdop.isValid() && s_gps.hdop.age() <= 10000u;
+    if (!out.fix || !s_gps.satellites.isValid() || s_gps.satellites.age() > 10000u)
+        out.sats = 0;
     return out;
 }
 

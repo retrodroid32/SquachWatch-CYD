@@ -165,8 +165,10 @@ void SdLog::logEvent(const Detection& d) {
     // the uptime fallback to the dated file immediately instead of waiting
     // for the hourly rotation check.
     if (Clock::trusted() && strncmp(_filename, "/squachwatch-up-", 16) == 0) {
-        flushPending();
-        _filename[0] = '\0';
+        // Keep the old filename until its buffered rows are safely committed.
+        // A temporarily missing card must not relabel older pending rows as
+        // though they happened after the clock became trusted.
+        if (flushPending()) _filename[0] = '\0';
     }
     if (_filename[0] == '\0') openDaily();
 
