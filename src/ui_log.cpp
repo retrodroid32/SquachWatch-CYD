@@ -272,7 +272,8 @@ LogConfirmTap uiLogHitConfirm(int x, int y, int screenW, int screenH) {
     return LogConfirmTap::NONE;
 }
 
-static void drawConfirmPanel(TFT_eSPI& t, int w, int h, const char* label, bool watched, bool hunted) {
+static void drawConfirmPanel(TFT_eSPI& t, int w, int h, const char* label,
+                             bool watched, bool hunted, bool ignored) {
     int px, py, pw, ph, wX, wY, wW, wH, huX, huY, huW, huH, infX, infY, infW, infH,
         igX, igY, igW, igH, cnX, cnY, cnW, cnH;
     confirmRects(w, h, px, py, pw, ph, wX, wY, wW, wH, huX, huY, huW, huH,
@@ -309,7 +310,7 @@ static void drawConfirmPanel(TFT_eSPI& t, int w, int h, const char* label, bool 
     Theme::drawButton(t, wX, wY, wW, wH, watched ? "UNWATCH" : "WATCH", watched);
     // Toggles like WATCH beside it -- see that button's comment.
     Theme::drawButton(t, huX, huY, huW, huH, hunted ? "STOP HUNT" : "HUNT", hunted);
-    Theme::drawButton(t, igX, igY, igW, igH, "IGNORE", false);
+    Theme::drawButton(t, igX, igY, igW, igH, ignored ? "UNIGNORE" : "IGNORE", ignored);
     Theme::drawButton(t, infX, infY, infW, infH, "MORE INFO", false);
     Theme::drawButton(t, cnX, cnY, cnW, cnH, "CANCEL", false);
 }
@@ -363,7 +364,7 @@ int uiLogRowAt(TFT_eSPI& t, int x, int y, int screenW, int screenH) {
 void uiLogTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, int scrollOffset,
                bool confirmPending, const char* confirmLabel,
                bool infoPending, const char* infoTypeName, const char* infoText,
-               bool confirmWatched, bool confirmHunted) {
+               bool confirmWatched, bool confirmHunted, bool confirmIgnored) {
     int w = t.width();
     int h = t.height();
 
@@ -436,7 +437,7 @@ switch (Settings::background()) {
 
         Theme::drawButtonBar(t, ButtonId::LOG, Theme::ButtonBarMode::LOG);
         if (infoPending)        Theme::drawInfoPanel(t, w, h, now, infoTypeName, infoText);
-        else if (confirmPending) drawConfirmPanel(t, w, h, confirmLabel, confirmWatched, confirmHunted);
+        else if (confirmPending) drawConfirmPanel(t, w, h, confirmLabel, confirmWatched, confirmHunted, confirmIgnored);
         return;
     }
 
@@ -586,7 +587,24 @@ switch (Settings::background()) {
         t.setTextColor(kept ? dim : Theme::colorFor(d->type), Theme::BG);
         t.setCursor(8, y + topPad);
         t.print(detectionTypeName(d->type));
-        const int labelEnd = 8 + t.textWidth(detectionTypeName(d->type));
+        int labelEnd = 8 + t.textWidth(detectionTypeName(d->type));
+
+        // IGNORE is persistent but used to be invisible from the device list.
+        // Keep the badge compact so even 240px rotations retain the identity
+        // fields; the full action word appears as UNIGNORE in the modal.
+        if (IgnoreList::contains(d->mac)) {
+            t.setTextSize(1);
+            const char* badge = t.width() >= 300 ? "IGNORED" : "IGN";
+            const int badgeW = t.textWidth(badge) + 6;
+            const int badgeH = 10;
+            const int bx = labelEnd + 4;
+            const int by = y + topPad + (nameH - badgeH) / 2;
+            t.fillRoundRect(bx, by, badgeW, badgeH, 2, Theme::RED);
+            t.setTextColor(Theme::WHITE, Theme::RED);
+            t.setCursor(bx + 3, by + 1);
+            t.print(badge);
+            labelEnd = bx + badgeW;
+        }
 
         // MAC + RSSI line
         t.setTextSize(1);
@@ -700,5 +718,5 @@ switch (Settings::background()) {
     Theme::drawButtonBar(t, ButtonId::LOG, Theme::ButtonBarMode::LOG);
 
     if (infoPending)        Theme::drawInfoPanel(t, w, h, now, infoTypeName, infoText);
-    else if (confirmPending) drawConfirmPanel(t, w, h, confirmLabel, confirmWatched, confirmHunted);
+    else if (confirmPending) drawConfirmPanel(t, w, h, confirmLabel, confirmWatched, confirmHunted, confirmIgnored);
 }
