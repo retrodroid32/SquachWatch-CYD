@@ -397,6 +397,14 @@ public:
     // target that just sits nearby doesn't re-fire every single
     // advertisement/frame.
     bool watchHitPending();
+    // A hit on the current watch as though it had just been heard at this
+    // signal, cooldown and all -- for the console's WATCHTEST, which picks
+    // a device out of the log rather than waiting for one to be heard.
+    void forceWatchHit(int8_t rssi) {
+        recordWatchRssi(rssi);
+        _watchLastHitMs = millis();
+        _watchHitFlag   = true;
+    }
 
     // ---- Hunt target (HUNT MODE's live gauge) -------------------------
     // A second, completely independent slot from the watch target above

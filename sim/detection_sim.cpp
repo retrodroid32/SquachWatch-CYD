@@ -154,7 +154,11 @@ int8_t DetectionEngine::watchRssiAt(uint8_t idx) const {
     return _watchRssiHist[slot];
 }
 bool DetectionEngine::watchHitPending() { bool f = _watchHitFlag; _watchHitFlag = false; return f; }
-void DetectionEngine::checkWatchBle(const uint8_t*, int8_t) {}
+// Records the signal when the address is the watched one, as the firmware
+// does, so the emulator's watch alert has a trend to draw.
+void DetectionEngine::checkWatchBle(const uint8_t* mac, int8_t rssi) {
+    if (mac && isWatched(mac, true)) recordWatchRssi(rssi);
+}
 void DetectionEngine::checkWatchWifi(const uint8_t*, int8_t) {}
 void DetectionEngine::recordWatchRssi(int8_t rssi) {
     _watchRssiHist[_watchRssiHead] = rssi;
