@@ -478,8 +478,21 @@ class BleScanCallbacks : public NimBLEScanCallbacks {
             det.evidenceCode = 0x004C;
         }
 
-        // Service UUIDs. Parse 16-bit UUID-list AD fields directly from
-        // the payload, avoiding temporary NimBLEUUID objects in the scan path.
+        // OpenDroneID Bluetooth Legacy does NOT advertise 0xFFFA in the
+        // ordinary UUID-list fields above. ASTM F3411 carries it inside
+        // AD type 0x16 (Service Data - 16-bit UUID), followed by app code
+        // 0x0D and the Remote ID message. Recognize that transport before
+        // the generic UUID-list matcher or compliant drones are invisible.
+        if (det.type == DetectionType::UNKNOWN &&
+            RemoteId::isBluetoothLegacy(payload.data(), (uint8_t)payload.size())) {
+            det.type = DetectionType::DRONE;
+            label = "DroneID";
+            det.evidence = EvidenceKind::BLE_UUID;
+            det.evidenceCode = 0xFFFA;
+        }
+
+        // Other service UUIDs. Parse 16-bit UUID-list AD fields directly
+        // from the payload, avoiding temporary NimBLEUUID objects in the scan path.
         if (det.type == DetectionType::UNKNOWN) {
             uint16_t matchedUuid = 0;
             if (matchKnownServiceUuid16(payload, det.type, label, &matchedUuid)) {
@@ -689,6 +702,13 @@ bool DetectionEngine::init() {
             // Data frame: addr1 (DA) and addr2 (SA) both interesting
             g_engine->postWiFi(frame + 4,  pkt->rx_ctrl.rssi, pkt->rx_ctrl.channel);
             g_engine->postWiFi(frame + 10, pkt->rx_ctrl.rssi, pkt->rx_ctrl.channel);
+        } else if (type == 0 && subtype == 13 &&
+                   RemoteId::isWifiNanAction(frame, (uint16_t)pkt->rx_ctrl.sig_len)) {
+            // OpenDroneID Wi-Fi NAN public-action frame. Use addr2 as the
+            // aircraft radio identity and route it through the same bounded
+            // Wi-Fi queue as beacon-form Remote ID.
+            g_engine->postWiFi(frame + 10, pkt->rx_ctrl.rssi,
+                               pkt->rx_ctrl.channel, nullptr, false, false, true);
         } else if (type == 0 && subtype == 8) {
             // Beacon: fixed params (timestamp+interval+capability) run
             // 12 bytes after the 24-byte header, then the SSID is the
@@ -719,8 +739,15 @@ bool DetectionEngine::init() {
             // device announcing itself to its own kind, not an access point
             // offering a network, and its SSID is throwaway. Its name goes
             // where the SSID would have.
+            const bool remoteId = RemoteId::isWifiBeacon(frame, (uint16_t)sigLen);
             char pwnName[33];
-            if (pwnagotchiName(frame, sigLen, pwnName, sizeof(pwnName))) {
+            if (remoteId) {
+                // Use addr2 (the transmitter) as the device identity. In a
+                // normal beacon addr2 and BSSID are the same, but Remote ID
+                // is about the aircraft radio, not the network abstraction.
+                g_engine->postWiFi(frame + 10, pkt->rx_ctrl.rssi,
+                                   pkt->rx_ctrl.channel, ssid, enc, false, true);
+            } else if (pwnagotchiName(frame, sigLen, pwnName, sizeof(pwnName))) {
                 g_engine->postWiFi(frame + 10, pkt->rx_ctrl.rssi,
                                    pkt->rx_ctrl.channel, pwnName, false, true);
             } else {
@@ -1411,7 +1438,7 @@ void DetectionEngine::clearLog() {
 
 void IRAM_ATTR DetectionEngine::postWiFi(const uint8_t* mac, int8_t rssi, uint8_t channel,
                                          const char* ssid, bool encrypted,
-                                         bool pwnagotchi) {
+                                         bool pwnagotchi, bool remoteId) {
     if (!mac) return;
     // Group-addressed (broadcast/multicast) destinations can never be a
     // real device: bit 0 of byte 0 is the I/G bit, and every OUI in
@@ -1442,6 +1469,7 @@ void IRAM_ATTR DetectionEngine::postWiFi(const uint8_t* mac, int8_t rssi, uint8_
     }
     e.encrypted = encrypted;
     e.pwnagotchi = pwnagotchi;
+    e.remoteId = remoteId;
     _wifiQHead = next;
     const uint8_t depth = (uint8_t)((_wifiQHead + WIFI_Q_CAP - _wifiQTail) % WIFI_Q_CAP);
     if (depth > _wifiQHighWater) _wifiQHighWater = depth;
@@ -2128,7 +2156,11 @@ void DetectionEngine::processWiFiQ(uint32_t budgetUs, uint8_t maxItems) {
         // throwaway SSID must not be fed to the AP tracker as if it were a
         // network somebody might be impersonating.
         bool evilTwin = false;
-        if (e.pwnagotchi) {
+        if (e.remoteId) {
+            t = DetectionType::DRONE;
+            conf = confidenceFor(t);
+            evidence = EvidenceKind::WIFI_REMOTEID;
+        } else if (e.pwnagotchi) {
             t = DetectionType::HACKER;
             conf = Confidence::HIGH_CONF;
             evidence = EvidenceKind::WIFI_PWNAGOTCHI;
@@ -2212,6 +2244,12 @@ void DetectionEngine::processWiFiQ(uint32_t budgetUs, uint8_t maxItems) {
         if (t == DetectionType::EVILTWIN) {
             d.vendor = "EvilTwin";
             strncpy(d.name, e.ssid, sizeof(d.name) - 1);
+        } else if (e.remoteId) {
+            d.vendor = "DroneID";
+            if (e.ssid[0]) {
+                strncpy(d.name, e.ssid, sizeof(d.name) - 1);
+                d.name[sizeof(d.name) - 1] = 0;
+            }
         } else if (e.pwnagotchi) {
             d.vendor = "Pwnagotchi";
             strncpy(d.name, e.ssid, sizeof(d.name) - 1);
@@ -2224,14 +2262,8 @@ void DetectionEngine::processWiFiQ(uint32_t budgetUs, uint8_t maxItems) {
             strncpy(d.name, e.ssid, sizeof(d.name) - 1);
             d.name[sizeof(d.name) - 1] = 0;
         } else {
-            for (uint16_t k = 0; k < kOuiCount; k++) {
-                if (e.mac[0] == kOuiTable[k].b[0] &&
-                    e.mac[1] == kOuiTable[k].b[1] &&
-                    e.mac[2] == kOuiTable[k].b[2]) {
-                    d.vendor = kOuiTable[k].name;
-                    break;
-                }
-            }
+            const char* vendor = ouiVendorName(e.mac);
+            if (vendor) d.vendor = vendor;
         }
         d.firstSeen = d.lastSeen = nowMs;
         d.hits   = 1;

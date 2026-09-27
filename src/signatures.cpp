@@ -50,6 +50,39 @@ const OuiEntry kOuiTable[] = {
     // Low-confidence guess it always was.
     {{0x00, 0xA0, 0xD8}, "Flock-OEM",    DetectionType::FLOCK,      Confidence::LOW_CONF},
 
+
+    // ---- Drone manufacturers (IEEE-assigned MA-L blocks) ----------------
+    // These are registered directly to drone/UAS manufacturers, so an exact
+    // OUI match is strong vendor evidence. It is still not proof that the
+    // observed radio is airborne; several vendors also make controllers,
+    // docks, cameras, gimbals or related networked equipment.
+    //
+    // DJI: current public registry set (10 MA-L blocks).
+    {{0x04, 0xA8, 0x5A}, "DJI",          DetectionType::DRONE,      Confidence::HIGH_CONF},
+    {{0x0C, 0x9A, 0xE6}, "DJI",          DetectionType::DRONE,      Confidence::HIGH_CONF},
+    {{0x34, 0xD2, 0x62}, "DJI",          DetectionType::DRONE,      Confidence::HIGH_CONF},
+    {{0x48, 0x1C, 0xB9}, "DJI",          DetectionType::DRONE,      Confidence::HIGH_CONF},
+    {{0x4C, 0x43, 0xF6}, "DJI",          DetectionType::DRONE,      Confidence::HIGH_CONF},
+    {{0x58, 0xB8, 0x58}, "DJI",          DetectionType::DRONE,      Confidence::HIGH_CONF},
+    {{0x60, 0x60, 0x1F}, "DJI",          DetectionType::DRONE,      Confidence::HIGH_CONF},
+    {{0x88, 0x29, 0x85}, "DJI",          DetectionType::DRONE,      Confidence::HIGH_CONF},
+    {{0x8C, 0x58, 0x23}, "DJI",          DetectionType::DRONE,      Confidence::HIGH_CONF},
+    {{0xE4, 0x7A, 0x2C}, "DJI",          DetectionType::DRONE,      Confidence::HIGH_CONF},
+
+    // Parrot SA: five MA-L blocks in the current registry.
+    {{0x00, 0x12, 0x1C}, "Parrot",       DetectionType::DRONE,      Confidence::HIGH_CONF},
+    {{0x00, 0x26, 0x7E}, "Parrot",       DetectionType::DRONE,      Confidence::HIGH_CONF},
+    {{0x90, 0x03, 0xB7}, "Parrot",       DetectionType::DRONE,      Confidence::HIGH_CONF},
+    {{0x90, 0x3A, 0xE6}, "Parrot",       DetectionType::DRONE,      Confidence::HIGH_CONF},
+    {{0xA0, 0x14, 0x3D}, "Parrot",       DetectionType::DRONE,      Confidence::HIGH_CONF},
+
+    {{0x38, 0x1D, 0x14}, "Skydio",       DetectionType::DRONE,      Confidence::HIGH_CONF},
+    {{0xB0, 0x30, 0xC8}, "Teal",         DetectionType::DRONE,      Confidence::HIGH_CONF},
+    {{0xEC, 0x71, 0x5E}, "Freefly",      DetectionType::DRONE,      Confidence::HIGH_CONF},
+    {{0x00, 0x1A, 0xF9}, "AeroViron",    DetectionType::DRONE,      Confidence::HIGH_CONF},
+    {{0x54, 0x7D, 0x40}, "PowerVis",     DetectionType::DRONE,      Confidence::HIGH_CONF},
+    {{0x74, 0xB8, 0x0F}, "Zipline",      DetectionType::DRONE,      Confidence::HIGH_CONF},
+
     // ---- ALPR and fixed surveillance camera vendors ----
     //
     // 00:0E:58 used to be the only entry here, labelled Vigilant. It is not
@@ -156,6 +189,21 @@ const OuiEntry kOuiTable[] = {
     {{0x02,0x13,0x37}, "Hak5-LA",    DetectionType::HACKER, Confidence::LOW_CONF},
 };
 const uint16_t kOuiCount = sizeof(kOuiTable) / sizeof(kOuiTable[0]);
+
+// Drone manufacturers whose IEEE allocation is MA-M (28 bits), not MA-L.
+// Keeping the fourth high nibble is mandatory: using only the first 24 bits
+// would claim fifteen neighboring registrants as drones.
+const OuiMamEntry kOuiMamTable[] = {
+    {{0xEC, 0x5B, 0xCD}, 0xE, "Autel",      DetectionType::DRONE, Confidence::HIGH_CONF},
+    {{0x98, 0xAA, 0xFC}, 0x7, "Hubsan",     DetectionType::DRONE, Confidence::HIGH_CONF},
+    {{0xE0, 0xB6, 0xF5}, 0x8, "Yuneec",     DetectionType::DRONE, Confidence::HIGH_CONF},
+    {{0xAC, 0x86, 0xD1}, 0x7, "QuantumSys", DetectionType::DRONE, Confidence::HIGH_CONF},
+    {{0x34, 0xB5, 0xF3}, 0x2, "InspFlight", DetectionType::DRONE, Confidence::HIGH_CONF},
+    {{0x6C, 0xDF, 0xFB}, 0xE, "FIMI",       DetectionType::DRONE, Confidence::HIGH_CONF},
+    {{0xC8, 0x63, 0x14}, 0x4, "ZeroZero",   DetectionType::DRONE, Confidence::HIGH_CONF},
+};
+const uint16_t kOuiMamCount = sizeof(kOuiMamTable) / sizeof(kOuiMamTable[0]);
+
 
 // 16-bit BLE service UUIDs. Note: SPP 0x1101 is the *16-bit* form of
 // 00001101-0000-1000-8000-00805F9B34FB. Caller extracts the 16-bit
@@ -282,6 +330,18 @@ bool isIBeacon(const uint8_t* mfg, uint8_t len) {
 
 DetectionType lookupOui(const uint8_t* mac, Confidence* conf) {
     if (!mac) return DetectionType::UNKNOWN;
+
+    // Most-specific first. An MA-M row is 28 bits and must win over any
+    // broader 24-bit row sharing the same first three octets.
+    for (uint16_t i = 0; i < kOuiMamCount; i++) {
+        if (mac[0] == kOuiMamTable[i].b[0] &&
+            mac[1] == kOuiMamTable[i].b[1] &&
+            mac[2] == kOuiMamTable[i].b[2] &&
+            ((mac[3] >> 4) & 0x0F) == kOuiMamTable[i].nibble) {
+            if (conf) *conf = kOuiMamTable[i].conf;
+            return kOuiMamTable[i].type;
+        }
+    }
     for (uint16_t i = 0; i < kOuiCount; i++) {
         if (mac[0] == kOuiTable[i].b[0] &&
             mac[1] == kOuiTable[i].b[1] &&
@@ -293,6 +353,24 @@ DetectionType lookupOui(const uint8_t* mac, Confidence* conf) {
     // Left alone rather than zeroed on a miss: the caller seeds it with the
     // type-level default before asking, so a non-OUI match keeps that.
     return DetectionType::UNKNOWN;
+}
+
+const char* ouiVendorName(const uint8_t* mac) {
+    if (!mac) return nullptr;
+    for (uint16_t i = 0; i < kOuiMamCount; i++) {
+        if (mac[0] == kOuiMamTable[i].b[0] &&
+            mac[1] == kOuiMamTable[i].b[1] &&
+            mac[2] == kOuiMamTable[i].b[2] &&
+            ((mac[3] >> 4) & 0x0F) == kOuiMamTable[i].nibble)
+            return kOuiMamTable[i].name;
+    }
+    for (uint16_t i = 0; i < kOuiCount; i++) {
+        if (mac[0] == kOuiTable[i].b[0] &&
+            mac[1] == kOuiTable[i].b[1] &&
+            mac[2] == kOuiTable[i].b[2])
+            return kOuiTable[i].name;
+    }
+    return nullptr;
 }
 
 DetectionType lookupUuid(uint16_t uuid16) {

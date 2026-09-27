@@ -112,6 +112,7 @@ enum class EvidenceKind : uint8_t {
     WIFI_PWNAGOTCHI,
     WIFI_EVILTWIN,
     WIFI_DEAUTH,
+    WIFI_REMOTEID,
 };
 
 inline const char* evidenceKindName(EvidenceKind e) {
@@ -124,6 +125,7 @@ inline const char* evidenceKindName(EvidenceKind e) {
         case EvidenceKind::WIFI_OUI:        return "WIFI OUI";
         case EvidenceKind::WIFI_SSID:       return "WIFI SSID";
         case EvidenceKind::WIFI_PWNAGOTCHI: return "PWNAGOTCHI FRAME";
+        case EvidenceKind::WIFI_REMOTEID:   return "REMOTE ID BEACON";
         case EvidenceKind::WIFI_EVILTWIN:   return "SSID/SECURITY CONFLICT";
         case EvidenceKind::WIFI_DEAUTH:     return "DEAUTH BURST";
         default:                            return "UNKNOWN";
@@ -140,6 +142,7 @@ inline const char* evidenceKindShortName(EvidenceKind e) {
         case EvidenceKind::WIFI_OUI:        return "OUI";
         case EvidenceKind::WIFI_SSID:       return "SSID";
         case EvidenceKind::WIFI_PWNAGOTCHI: return "PWN";
+        case EvidenceKind::WIFI_REMOTEID:   return "RID";
         case EvidenceKind::WIFI_EVILTWIN:   return "EVIL";
         case EvidenceKind::WIFI_DEAUTH:     return "DEAUTH";
         default:                            return "";

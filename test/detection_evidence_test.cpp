@@ -13,6 +13,8 @@ int main() {
 
     ck("full evidence label", std::strcmp(evidenceKindName(EvidenceKind::WIFI_OUI), "WIFI OUI") == 0);
     ck("compact evidence label", std::strcmp(evidenceKindShortName(EvidenceKind::BLE_FINDMY), "FINDMY") == 0);
+    ck("Wi-Fi Remote ID evidence label", std::strcmp(evidenceKindName(EvidenceKind::WIFI_REMOTEID), "REMOTE ID BEACON") == 0);
+    ck("Wi-Fi Remote ID compact label", std::strcmp(evidenceKindShortName(EvidenceKind::WIFI_REMOTEID), "RID") == 0);
     ck("unknown evidence stays explicit", std::strcmp(evidenceKindName(EvidenceKind::UNKNOWN), "UNKNOWN") == 0);
 
     ck("shared trend needs three samples",

@@ -42,8 +42,8 @@ of the matched signature rather than of the type:
 | **Medium** | Registered to a parent whose range is far wider than the product — Amazon owns Ring, and also Echo, Fire TV and Kindle. |
 | **Low** | A module or ODM vendor whose parts are in everything, or a block not in the IEEE registry. |
 
-Across all 77 OUI rows in the firmware that comes out at 33 High, 4
-Medium, 40 Low.
+Across the current 105 manufacturer-prefix rules (98 MA-L/24-bit rows plus
+7 exact MA-M/28-bit rows) that comes out at 61 High, 4 Medium, 40 Low.
 
 **This is what makes ALERT FILTER work.** It has always been a minimum-
 confidence filter, and until now confidence was constant per type, so it
@@ -162,33 +162,68 @@ frequently, so detection may flicker in and out.
 
 ---
 
-## OpenDroneID drones — `DRONE` — **Medium confidence**
+## Drones / OpenDroneID — `DRONE` — **path-dependent confidence**
 
-**Why it works:** ASTM F3411 Remote ID broadcasts over BLE using
-the service UUID `0xFFFA`.
+**Remote ID protocol detection:** ASTM F3411 Bluetooth Legacy broadcasts
+are recognized from AD type `0x16` Service Data under UUID `0xFFFA`, including
+single-message and Message Pack payloads. Wi-Fi Remote ID is also recognized
+in Beacon vendor IEs (ASD-STAN `FA:0B:BC` / type `0x0D`, plus the Parrot
+`90:3A:E6` form when a structurally valid OpenDroneID Message Pack follows)
+and in OpenDroneID NAN public-action frames.
 
-**Source:** [ASTM F3411 spec](https://www.astm.org/f3411-22.html) +
-[Eye Spy](https://simeononsecurity.com/articles/eye-spy-passive-surveillance-detector-esp32-2026/).
+**Manufacturer-prefix detection:** the Wi-Fi promiscuous path also identifies
+radios whose IEEE allocation is registered directly to a drone/UAS
+manufacturer. These are **High-confidence vendor matches**, but they mean
+"radio registered to this manufacturer," not necessarily "aircraft currently
+in flight" — the same companies may also ship controllers, docks and related
+equipment.
 
-**What it reports:** the payload is decoded now, not just flagged.
-An ASTM F3411 advert carries a 25-byte message, and three of the types
-are worth reading: Basic ID gives the aircraft serial and airframe
-type, Location gives its position and altitude, and System gives the
-**operator's** position — where the pilot is standing. A drone sends
-those as separate adverts, so the decoder accumulates them per MAC.
-Offsets and scaling taken from
-[opendroneid-core-c](https://github.com/opendroneid/opendroneid-core-c);
-coordinates are degrees x 10^7, altitude is half-metres offset by 1000.
+Current full 24-bit MA-L set:
+- **DJI (10):** `04:A8:5A`, `0C:9A:E6`, `34:D2:62`, `48:1C:B9`,
+  `4C:43:F6`, `58:B8:58`, `60:60:1F`, `88:29:85`, `8C:58:23`,
+  `E4:7A:2C`
+- **Parrot (5):** `00:12:1C`, `00:26:7E`, `90:03:B7`, `90:3A:E6`,
+  `A0:14:3D`
+- **Skydio:** `38:1D:14`
+- **Teal Drones:** `B0:30:C8`
+- **Freefly Systems:** `EC:71:5E`
+- **AeroVironment:** `00:1A:F9`
+- **PowerVision:** `54:7D:40`
+- **Zipline International:** `74:B8:0F`
 
-**What it cannot reach:** the Bluetooth *Legacy* form only. Bluetooth 5
-Long Range is out of scope permanently on this board — the ESP32-WROOM
-is BLE 4.2 and Espressif document no hardware support for Coded PHY or
-extended advertising. The WiFi Beacon form, which packs several
-messages into one frame, would need the promiscuous path rather than
-the NimBLE one and is not implemented.
+Current exact 28-bit MA-M set:
+- **Autel Robotics:** `EC:5B:CD:E/28`
+- **Hubsan:** `98:AA:FC:7/28`
+- **Yuneec:** `E0:B6:F5:8/28`
+- **Quantum-Systems:** `AC:86:D1:7/28`
+- **Inspired Flight:** `34:B5:F3:2/28`
+- **FIMI:** `6C:DF:FB:E/28`
+- **HOVERAir / Zero Zero Robotics:** `C8:63:14:4/28`
 
-**Confidence:** **Medium**. Compliance is rolling out so detection is
-opportunistic, and half the transport is unreachable per above.
+The 28-bit distinction is deliberate. Those manufacturers share their first
+24 bits with unrelated IEEE MA-M registrants; treating `EC:5B:CD`,
+`98:AA:FC`, `E0:B6:F5`, `6C:DF:FB`, `C8:63:14`, etc. as ordinary
+OUIs would create predictable false positives.
+
+Additional brands reviewed but not added yet include Walkera, EHang, Wingtra,
+Flyability, BRINC, Holy Stone, and senseFly/AgEagle. No manufacturer-owned
+IEEE prefix was verified for those names in this audit, so the table does not
+guess from commodity Wi-Fi module vendors.
+
+**Sources:** OpenDroneID reference implementation
+([opendroneid-core-c](https://github.com/opendroneid/opendroneid-core-c)),
+[Sky-Spy](https://github.com/colonelpanichacks/Sky-Spy), and current public
+IEEE-registry mirrors (maclookup.app / MAC Address Vendor Lookup), cross-checked
+per registrant. OUI-SPY's curated drone list was also used as a comparison,
+then extended with newer DJI registrations and exact MA-M allocations.
+
+**What the decoder reports:** Basic ID gives the aircraft serial and airframe
+type, Location gives aircraft position and altitude, and System gives operator
+position. These messages are accumulated across BLE advertisements.
+
+**Confidence:** Remote ID transport matches retain the type's conservative
+**Medium** base grade; exact IEEE blocks registered directly to the named
+manufacturer are carried as **High** per-signature evidence.
 
 ---
 

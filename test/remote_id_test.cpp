@@ -33,6 +33,21 @@ static void put16(uint8_t* p, uint16_t v) {
     p[0] = (uint8_t)(v & 0xFF); p[1] = (uint8_t)((v >> 8) & 0xFF);
 }
 
+static uint16_t wifiBeacon(uint8_t* out, const uint8_t* msg) {
+    memset(out, 0, 96);
+    uint16_t i = 36;  // management header + fixed beacon fields
+    out[i++] = 0xDD;  // vendor-specific IE
+    out[i++] = 33;    // OUI/type + counter + pack header + one 25-byte message
+    out[i++] = 0xFA; out[i++] = 0x0B; out[i++] = 0xBC;
+    out[i++] = 0x0D;  // ASTM/OpenDroneID OUI type
+    out[i++] = 0x01;  // service message counter
+    out[i++] = 0xF2;  // Message Pack, protocol version 2
+    out[i++] = 25;    // SingleMessageSize
+    out[i++] = 1;     // one message
+    memcpy(out + i, msg, 25); i = (uint16_t)(i + 25);
+    return i;
+}
+
 int main() {
     RemoteId::Info info;
     uint8_t m[25];
@@ -43,6 +58,7 @@ int main() {
     m[1] = (uint8_t)(0x1 << 4) | 0x2;     // IDType 1 high, UAType 2 low
     memcpy(m + 2, "SQUACH1234567890ABCD", 20);
     frame(m);
+    ck("BLE transport recognized", RemoteId::isBluetoothLegacy(adv, advLen));
     ck("decoded", RemoteId::merge(adv, advLen, info, 1000));
     ck("haveBasic set", info.haveBasic);
     ck("serial", strcmp(info.serial, "SQUACH1234567890ABCD") == 0);
@@ -97,8 +113,64 @@ int main() {
     badapp[0] = 1 + 2 + 1 + 1 + 25; badapp[1] = 0x16;
     badapp[2] = 0xFA; badapp[3] = 0xFF; badapp[4] = 0x0E; badapp[5] = 0x01;
     ck("wrong application code", !RemoteId::merge(badapp, 31, fresh, 1));
+    ck("wrong application code is not BLE Remote ID",
+       !RemoteId::isBluetoothLegacy(badapp, 31));
     ck("nothing written by any reject",
        !fresh.haveBasic && !fresh.haveLoc && !fresh.haveOperator);
+
+    suite("Wi-Fi Beacon Remote ID transport");
+    memset(m, 0, sizeof(m));
+    m[0] = (uint8_t)(0x0 << 4) | 0x2;
+    memcpy(m + 2, "WIFIRID1234567890ABCD", 20);
+    uint8_t wifi[96];
+    uint16_t wifiLen = wifiBeacon(wifi, m);
+    ck("ASTM vendor IE recognized", RemoteId::isWifiBeacon(wifi, wifiLen));
+    uint8_t wrongOui[96];
+    memcpy(wrongOui, wifi, wifiLen);
+    wrongOui[38] = 0xFB;
+    ck("wrong OUI rejected", !RemoteId::isWifiBeacon(wrongOui, wifiLen));
+    uint8_t wrongPack[96];
+    memcpy(wrongPack, wifi, wifiLen);
+    wrongPack[43] = 0x02;  // pack byte 0: not Message Pack type 0xF
+    ck("non-message-pack vendor IE rejected", !RemoteId::isWifiBeacon(wrongPack, wifiLen));
+    ck("truncated vendor IE rejected", !RemoteId::isWifiBeacon(wifi, (uint16_t)(wifiLen - 10)));
+
+    uint8_t parrot[96];
+    memcpy(parrot, wifi, wifiLen);
+    parrot[38] = 0x90; parrot[39] = 0x3A; parrot[40] = 0xE6;
+    ck("Parrot Remote ID beacon recognized", RemoteId::isWifiBeacon(parrot, wifiLen));
+
+    suite("Packed BLE Remote ID");
+    uint8_t packedMsg[25];
+    memset(packedMsg, 0, sizeof(packedMsg));
+    packedMsg[0] = (uint8_t)(0x0 << 4) | 0x2;
+    packedMsg[1] = 0x2;
+    memcpy(packedMsg + 2, "PACKED1234567890ABCDE", 20);
+    uint8_t packedAdv[64] = {0};
+    uint8_t pi = 0;
+    packedAdv[pi++] = (uint8_t)(1 + 2 + 1 + 1 + 3 + 25);
+    packedAdv[pi++] = 0x16;
+    packedAdv[pi++] = 0xFA; packedAdv[pi++] = 0xFF;
+    packedAdv[pi++] = 0x0D; packedAdv[pi++] = 0x01;
+    packedAdv[pi++] = 0xF2; packedAdv[pi++] = 25; packedAdv[pi++] = 1;
+    memcpy(packedAdv + pi, packedMsg, 25); pi = (uint8_t)(pi + 25);
+    RemoteId::Info packedInfo;
+    ck("packed BLE transport recognized", RemoteId::isBluetoothLegacy(packedAdv, pi));
+    ck("packed BLE decoded", RemoteId::merge(packedAdv, pi, packedInfo, 4000));
+    ck("packed Basic ID decoded", packedInfo.haveBasic);
+
+    suite("Wi-Fi NAN Remote ID");
+    uint8_t nan[64] = {0};
+    nan[0] = 0xD0;
+    const uint8_t nanDest[6] = {0x51,0x6F,0x9A,0x01,0x00,0x00};
+    memcpy(nan + 4, nanDest, 6);
+    nan[24] = 0x04; nan[25] = 0x09;
+    nan[26] = 0x50; nan[27] = 0x6F; nan[28] = 0x9A; nan[29] = 0x13;
+    const uint8_t serviceId[6] = {0x88,0x69,0x19,0x9D,0x92,0x09};
+    memcpy(nan + 36, serviceId, 6);
+    ck("OpenDroneID NAN action recognized", RemoteId::isWifiNanAction(nan, 42));
+    nan[36] ^= 0x01;
+    ck("wrong NAN service hash rejected", !RemoteId::isWifiNanAction(nan, 42));
 
     suite("Zero coordinates are not a fix");
     memset(m, 0, sizeof(m));
