@@ -83,6 +83,27 @@ static void wideLine(TFT_eSPI& t, float ax, float ay, float bx, float by, float 
 #endif
 }
 
+// A costume piece with a one-pixel ink keyline, the way his own head and torso
+// have one. `shape(ox, oy, colour)` draws every part of the piece nudged by
+// (ox, oy); it runs four times in ink, a pixel out each way, then once in its
+// own colour. Drawing ALL the parts in ink before any of the fill is what gives
+// a piece made of several shapes one outline round the outside and none across
+// its own seams.
+template <typename F> static void inked(uint16_t ink, uint16_t col, F shape) {
+    static const int8_t O[4][2] = { {-1, 0}, {1, 0}, {0, -1}, {0, 1} };
+    for (uint8_t i = 0; i < 4; i++) shape(O[i][0], O[i][1], ink);
+    shape(0, 0, col);
+}
+
+// The cap letter, 3x5, in pixels of p. Too small to read below p = 1, so the
+// caller skips it there and the emblem is a plain disc.
+static void capGlyph(TFT_eSPI& t, int x, int y, int p, uint16_t col) {
+    static const uint8_t S_[5] = { 0b111, 0b100, 0b111, 0b001, 0b111 };
+    for (int r = 0; r < 5; r++)
+        for (int c = 0; c < 3; c++)
+            if (S_[r] & (4 >> c)) t.fillRect(x + c * p, y + r * p, p, p, col);
+}
+
 enum class Mood : uint8_t { IDLE, WAVE, SHOCKED, BOUNCE, SLEEPY, WALK, DANCE, WINK,
                             STRETCH,   // waking out of a nap -- see the nap-exit branch
                             GUM,       // blowing a bubble, rare idle flourish
@@ -3980,12 +4001,58 @@ static void drawOutfit(TFT_eSPI& t, int cx2, int hy, uint32_t now, Mood m, float
             break;
         }
         case OutfitId::TINFOIL: {
-            uint16_t foil   = blend(WHITE, BLACK, 90);
-            uint16_t foilHi = blend(WHITE, BLACK, 40);
-            t.fillTriangle(cx2 - S(14), hy + S(2), cx2 + S(14), hy + S(2), cx2, hy - S(16), foil);
-            t.fillRoundRect(cx2 - S(15), hy, S(30), S(4), 2, foil);
-            t.drawLine(cx2 - S(6), hy - S(2), cx2 - S(2), hy - S(9), foilHi);
-            t.drawLine(cx2 + S(2), hy - S(3), cx2 + S(6), hy - S(10), foilHi);
+            // Crumpled by hand, not stamped: the cone is four facets in
+            // alternating tones round an apex pushed off centre, on a rolled
+            // brim, with an antenna on top that picks something up now and
+            // then. Greys from the same RGB332 ramp SHARK SUIT uses -- the only
+            // cool neutrals the frame buffer has.
+            const uint16_t ink = BLACK;
+            const uint16_t fDk = t.color565( 73,  73,  85);
+            const uint16_t fMd = t.color565(146, 146, 170);
+            const uint16_t fLt = t.color565(219, 219, 255);
+            const int ax = cx2 + S(2), ay = hy - S(12);
+            const int by = hy + S(1);
+            const int bx[5] = { cx2 - S(14), cx2 - S(6), cx2 + S(1), cx2 + S(8), cx2 + S(14) };
+            const int tx = ax + S(1), ty = ay - S(4);          // antenna tip
+            inked(ink, fMd, [&](int ox, int oy, uint16_t c) {
+                t.fillTriangle(bx[0] + ox, by + oy, bx[4] + ox, by + oy, ax + ox, ay + oy, c);
+                t.fillRoundRect(cx2 - S(16) + ox, hy - S(1) + oy, S(32), S(5), S(2), c);
+                t.drawLine(ax + ox, ay + oy, tx + ox, ty + oy, c);
+                t.fillCircle(tx + ox, ty + oy, S(1) + 1, c);
+            });
+            // Facets: lit from the upper left, with one crumple in the middle
+            // catching the light the wrong way, which is what reads as foil.
+            const uint16_t fc[4] = { fLt, fMd, fLt, fDk };
+            for (uint8_t i = 0; i < 4; i++)
+                t.fillTriangle(bx[i], by, bx[i + 1], by, ax, ay, fc[i]);
+            t.drawLine(cx2 - S(9), hy - S(2), cx2 - S(4), hy - S(5), fDk);
+            t.drawLine(cx2 + S(4), hy - S(1), cx2 + S(6), hy - S(6), fMd);
+            t.drawLine(bx[0] + S(3), by - S(2), ax - S(1), ay + S(2), WHITE);
+            // The rolled brim: lit along the top, shaded underneath, crinkled.
+            t.fillRoundRect(cx2 - S(16), hy - S(1), S(32), S(5), S(2), fMd);
+            t.fillRect(cx2 - S(15), hy - S(1), S(30), S(1) > 0 ? S(1) : 1, fLt);
+            t.fillRect(cx2 - S(15), hy + S(3), S(30), 1, fDk);
+            for (int k = -12; k <= 12; k += 4)
+                t.drawFastVLine(cx2 + S(k), hy + S(1), S(2), (k & 4) ? fDk : fLt);
+            // The antenna: a wire and a bead that lights up every couple of
+            // seconds, with two ticks of "signal" either side while it does.
+            t.drawLine(ax, ay, tx, ty, fDk);
+            const bool lit = (now % 2400) < 300;
+            t.fillCircle(tx, ty, S(1) + 1, lit ? t.color565(255, 36, 0) : t.color565(109, 0, 0));
+            if (lit && S(1) > 0) {
+                t.drawFastVLine(tx - S(3), ty - S(1), S(2), fLt);
+                t.drawFastVLine(tx + S(3), ty - S(1), S(2), fLt);
+            }
+            // A glint that jumps between facets every few seconds.
+            const uint32_t gp = now % 4200;
+            if (gp < 360) {
+                static const int8_t G[3][2] = { {-8, -2}, {-2, -7}, {5, -2} };
+                const uint8_t k = (uint8_t)((now / 4200) % 3);
+                const int gx = cx2 + S(G[k][0]), gy = hy + S(G[k][1]);
+                const int arm = S(2) < 2 ? 2 : S(2);
+                t.drawFastHLine(gx - arm, gy, arm * 2 + 1, WHITE);
+                t.drawFastVLine(gx, gy - arm, arm * 2 + 1, WHITE);
+            }
             break;
         }
         case OutfitId::SHADOW: {
@@ -4003,32 +4070,55 @@ static void drawOutfit(TFT_eSPI& t, int cx2, int hy, uint32_t now, Mood m, float
             t.fillRect(cx2 - S(torsoHalf()), hy + S(32), S(2 * torsoHalf()), S(4), RED);
             break;
         }
-        case OutfitId::PLUMBER: {
-            uint16_t cap = RED;
-            t.fillRoundRect(cx2 - S(15), hy - S(4), S(30), S(9), S(4), cap);
-            t.fillRoundRect(cx2 - S(4),  hy - S(2), S(16), S(6), S(3), cap);
-            t.fillCircle(cx2 - S(2), hy - S(1), S(3), WHITE);
-            t.fillRoundRect(cx2 - S(9), hy + S(14), S(18), S(4), S(2), blend(BLACK, FUR_DARK, 80));
-            // Full bib front, not just two thin straps -- a much
-            // stronger "overalls" silhouette.
-            t.fillRoundRect(cx2 - S(9), hy + S(28), S(18), S(9), S(2), VAPOR_BLUE);
-            t.fillRect(cx2 - S(10), hy + S(23), S(3), S(14), VAPOR_BLUE);
-            t.fillRect(cx2 + S(7),  hy + S(23), S(3), S(14), VAPOR_BLUE);
-            t.fillCircle(cx2 - S(9), hy + S(25), S(1), AMBER);
-            t.fillCircle(cx2 + S(9), hy + S(25), S(1), AMBER);
-            break;
-        }
+        case OutfitId::PLUMBER:
         case OutfitId::TALLBRO: {
-            uint16_t cap = GREEN;
-            t.fillRoundRect(cx2 - S(15), hy - S(6), S(30), S(11), S(4), cap);
-            t.fillRoundRect(cx2 - S(4),  hy - S(3), S(16), S(6), S(3), cap);
-            t.fillCircle(cx2 - S(2), hy - S(1), S(3), WHITE);
-            t.fillRoundRect(cx2 - S(10), hy + S(13), S(20), S(5), S(2), blend(BLACK, FUR_DARK, 80));
-            t.fillRoundRect(cx2 - S(9), hy + S(28), S(18), S(9), S(2), GREEN);
-            t.fillRect(cx2 - S(10), hy + S(23), S(3), S(14), GREEN);
-            t.fillRect(cx2 + S(7),  hy + S(23), S(3), S(14), GREEN);
-            t.fillCircle(cx2 - S(9), hy + S(25), S(1), AMBER);
-            t.fillCircle(cx2 + S(9), hy + S(25), S(1), AMBER);
+            // A cap with a dome, a bill and a letter on the front, a moustache
+            // in two lobes, and white gloves on the hands themselves. The
+            // overalls are on his torso and legs, in drawBody(), so his arms
+            // go over them. TALL BRO's cap is the taller of the two.
+            const bool tall = (outfit == OutfitId::TALLBRO);
+            const uint16_t ink   = BLACK;
+            const uint16_t cap   = tall ? t.color565(  0, 182,   0) : t.color565(219,   0,   0);
+            const uint16_t capDk = tall ? t.color565(  0, 109,   0) : t.color565(146,   0,   0);
+            const uint16_t capHi = tall ? t.color565(109, 255,  85) : t.color565(255, 109,  85);
+            const int top = tall ? S(9) : S(7);
+            // The corner radius is held to half the dome's height: a round
+            // rect asked for more than that folds its corners over each other
+            // and the cap came out as two lobes with a dip between them.
+            const int domeH = top + S(4);
+            const int domeR = S(7) < domeH / 2 ? S(7) : domeH / 2;
+            inked(ink, cap, [&](int ox, int oy, uint16_t c) {
+                t.fillRoundRect(cx2 - S(15) + ox, hy - top + oy, S(30), domeH, domeR, c);
+                t.fillEllipse(cx2 + S(3) + ox, hy + S(3) + oy, S(13), S(2) + 1, c);
+            });
+            t.fillRect(cx2 - S(14), hy + S(1), S(28), S(2), capDk);              // under the dome
+            t.fillEllipse(cx2 - S(8), hy - top + S(3), S(3), S(1) + 1, capHi);   // light on it
+            t.fillEllipse(cx2 + S(3), hy + S(3), S(13), S(2) + 1, capDk);        // the bill
+            t.drawFastHLine(cx2 - S(9), hy + S(2), S(22), capHi);
+            // The emblem: an S, for Squachy.
+            // Inside the dome, not riding its top edge: sized off the dome's
+            // own height so it never pokes out above the cap.
+            const int er = S(3) + 1;
+            const int ex = cx2 - S(1), ey = hy - top + er + S(1) + 1;
+            t.fillCircle(ex, ey, er + 1, ink);
+            t.fillCircle(ex, ey, er, WHITE);
+            const int p = (S(2) * 3) / 5;
+            if (p >= 1) capGlyph(t, ex - (3 * p) / 2, ey - (5 * p) / 2, p, cap);
+            // The moustache, two lobes over the top of his mouth.
+            const uint16_t tash = t.color565(73, 36, 0);
+            inked(ink, tash, [&](int ox, int oy, uint16_t c) {
+                t.fillEllipse(cx2 - S(4) + ox, hy + S(15) + oy, S(5), S(2), c);
+                t.fillEllipse(cx2 + S(4) + ox, hy + S(15) + oy, S(5), S(2), c);
+            });
+            // Gloves on the hands drawBody() published, so they follow a wave.
+            const uint16_t crease = t.color565(182, 182, 170);
+            const int gr = S(4);
+            t.fillCircle(s_armL1x, s_armL1y, gr + 1, ink);
+            t.fillCircle(s_armR1x, s_armR1y, gr + 1, ink);
+            t.fillCircle(s_armL1x, s_armL1y, gr, WHITE);
+            t.fillCircle(s_armR1x, s_armR1y, gr, WHITE);
+            t.drawFastHLine(s_armL1x - gr / 2, s_armL1y + gr / 3, gr, crease);
+            t.drawFastHLine(s_armR1x - gr / 2, s_armR1y + gr / 3, gr, crease);
             break;
         }
         case OutfitId::SPACE: {
@@ -4094,10 +4184,44 @@ static void drawOutfit(TFT_eSPI& t, int cx2, int hy, uint32_t now, Mood m, float
             break;
         }
         case OutfitId::CAPTAIN: {
-            t.fillTriangle(cx2 - S(17), hy - S(2), cx2, hy - S(16), cx2 - S(2), hy - S(2), BLACK);
-            t.fillTriangle(cx2 + S(2),  hy - S(2), cx2, hy - S(16), cx2 + S(17), hy - S(2), BLACK);
-            t.fillRect(cx2 - S(16), hy - S(4), S(32), S(4), BLACK);
-            t.fillCircle(cx2, hy - S(4), S(2), AMBER);
+            // A pirate's hat, front on: the crown behind, the front brim turned
+            // up into two horns and a hump, gold braid along its edge and the
+            // skull and crossbones in the middle. The old one was two black
+            // triangles, which from across a room was a tent.
+            const uint16_t ink    = BLACK;
+            const uint16_t felt   = t.color565( 36,  36,  85);
+            const uint16_t feltHi = t.color565( 73,  73, 170);
+            const uint16_t gold   = t.color565(255, 219,   0);
+            // The brim's outline, left to right along the top.
+            static const int8_t B[9][2] = { {-17, 2}, {-19, -11}, {-9, -3}, {-5, -7}, {0, -8},
+                                            {5, -7}, {9, -3}, {19, -11}, {17, 2} };
+            auto brim = [&](int ox, int oy, uint16_t c) {
+                const int fx = cx2 + ox, fy = hy + S(1) + oy;
+                for (uint8_t i = 0; i < 9; i++) {
+                    const uint8_t j = (uint8_t)((i + 1) % 9);
+                    t.fillTriangle(fx, fy, cx2 + S(B[i][0]) + ox, hy + S(B[i][1]) + oy,
+                                   cx2 + S(B[j][0]) + ox, hy + S(B[j][1]) + oy, c);
+                }
+            };
+            inked(ink, felt, [&](int ox, int oy, uint16_t c) {
+                t.fillEllipse(cx2 + ox, hy - S(5) + oy, S(12), S(9), c);
+                brim(ox, oy, c);
+            });
+            t.fillEllipse(cx2 - S(4), hy - S(11), S(4), S(1) + 1, feltHi);   // light on the crown
+            brim(0, 0, felt);
+            for (uint8_t i = 1; i < 7; i++)
+                wideLine(t, cx2 + S(B[i][0]), hy + S(B[i][1]), cx2 + S(B[i + 1][0]), hy + S(B[i + 1][1]),
+                         S(1) + 1, gold);
+            // Crossbones, then the skull over them.
+            const int kx = cx2, ky = hy - S(3);
+            const int bw = S(1) + 1;
+            wideLine(t, kx - S(5), ky - S(3), kx + S(5), ky + S(3), bw, WHITE);
+            wideLine(t, kx + S(5), ky - S(3), kx - S(5), ky + S(3), bw, WHITE);
+            t.fillCircle(kx, ky - S(1), S(3), WHITE);
+            t.fillRect(kx - S(2), ky + S(1), S(4), S(2), WHITE);
+            const int ep = S(1) > 0 ? S(1) : 1;
+            t.fillRect(kx - S(2), ky - S(2), ep, ep, ink);
+            t.fillRect(kx + S(1), ky - S(2), ep, ep, ink);
             // Eye patch strap only, not a filled patch, so the shades
             // underneath stay visible.
             wideLine(t, cx2 - S(11), hy + S(5), cx2 + S(14), hy + S(3), S(2), BLACK);
@@ -4181,8 +4305,9 @@ static int outfitReach(OutfitId o) {
     switch (o) {
         case OutfitId::WOLFPELT: return 26;
         case OutfitId::UNICORN:  return 24;
-        case OutfitId::TINFOIL:  return 16;
+        case OutfitId::TINFOIL:  return 18;   // the antenna bead
         case OutfitId::CAPTAIN:  return 16;
+        case OutfitId::TALLBRO:  return 10;
         case OutfitId::PARKA:    return 16;
         case OutfitId::SHARK:    return 18;
         case OutfitId::SPACE:    return  9;
@@ -4206,8 +4331,8 @@ static int topHatSeat(OutfitId o) {
         case OutfitId::SHARK:    return 13;   // on the shark hood, under the fin
         case OutfitId::SPACE:    return  9;   // on the dome
         case OutfitId::WOLFPELT: return  7;   // on the pelt, between the ears
-        case OutfitId::TALLBRO:  return  6;   // on the cap
-        case OutfitId::PLUMBER:  return  4;
+        case OutfitId::TALLBRO:  return  9;   // on the cap
+        case OutfitId::PLUMBER:  return  7;
         case OutfitId::VOIDEYE:  return  4;   // perched on the sphere
         case OutfitId::UNICORN:  return  2;   // the horn comes up through it
         default:                 return  3;   // on his hair, over the tuft tips
@@ -4592,6 +4717,10 @@ static void drawBody(TFT_eSPI& t, int cx, int hy, int headTopY, uint32_t now, Mo
     }
     }
 
+    // The bros' overalls come down the legs: denim from the hip to the ankle.
+    const bool bros = (outfitNow == OutfitId::PLUMBER || outfitNow == OutfitId::TALLBRO);
+    const uint16_t legCol = bros ? t.color565(36, 73, 170) : furMain;
+
     // Legs + big bigfoot feet — a simple alternating step lift while
     // walking (TFT_eSPI has no canvas-style transforms to pivot a real
     // leg swing on, so this just varies each leg's vertical offset in
@@ -4607,8 +4736,8 @@ static void drawBody(TFT_eSPI& t, int cx, int hy, int headTopY, uint32_t now, Mo
         keyR(cx2 + S(2) + kR,  hy + S(40), S(8), S(12));
         keyRR(cx2 - S(13) + kL, hy + S(51), S(12), S(6), 2);
         keyRR(cx2 + S(1) + kR,  hy + S(51), S(12), S(6), 2);
-        t.fillRect(cx2 - S(10) + kL, hy + S(40), S(8), S(12), furMain);
-        t.fillRect(cx2 + S(2) + kR,  hy + S(40), S(8), S(12), furMain);
+        t.fillRect(cx2 - S(10) + kL, hy + S(40), S(8), S(12), legCol);
+        t.fillRect(cx2 + S(2) + kR,  hy + S(40), S(8), S(12), legCol);
         s_footLx = cx2 - S(13) + kL; s_footLy = hy + S(51);
         s_footRx = cx2 + S(1)  + kR; s_footRy = hy + S(51);
         t.fillRoundRect(s_footLx, s_footLy, S(12), S(6), 2, furLight);
@@ -4635,8 +4764,8 @@ static void drawBody(TFT_eSPI& t, int cx, int hy, int headTopY, uint32_t now, Mo
         keyR(cx2 + S(2),  hy + S(40), S(8), S(10) + legR);
         keyRR(cx2 - S(13), hy + S(49) + legL, S(12), S(6), 2);
         keyRR(cx2 + S(1),  hy + S(49) + legR, S(12), S(6), 2);
-        t.fillRect(cx2 - S(10), hy + S(40), S(8), S(10) + legL, furMain);
-        t.fillRect(cx2 + S(2),  hy + S(40), S(8), S(10) + legR, furMain);
+        t.fillRect(cx2 - S(10), hy + S(40), S(8), S(10) + legL, legCol);
+        t.fillRect(cx2 + S(2),  hy + S(40), S(8), S(10) + legR, legCol);
         s_footLx = cx2 - S(13); s_footLy = hy + S(49) + legL;
         s_footRx = cx2 + S(1);  s_footRy = hy + S(49) + legR;
         t.fillRoundRect(s_footLx, s_footLy, S(12), S(6), 2, furLight);
@@ -4647,8 +4776,8 @@ static void drawBody(TFT_eSPI& t, int cx, int hy, int headTopY, uint32_t now, Mo
         keyR(cx2 + S(2),  hy + S(40), S(8), legH);
         keyRR(cx2 - S(13), footY, S(12), S(6), 2);
         keyRR(cx2 + S(1),  footY, S(12), S(6), 2);
-        t.fillRect(cx2 - S(10), hy + S(40), S(8), legH, furMain);
-        t.fillRect(cx2 + S(2),  hy + S(40), S(8), legH, furMain);
+        t.fillRect(cx2 - S(10), hy + S(40), S(8), legH, legCol);
+        t.fillRect(cx2 + S(2),  hy + S(40), S(8), legH, legCol);
         s_footLx = cx2 - S(13); s_footLy = footY;
         s_footRx = cx2 + S(1);  s_footRy = footY;
         t.fillRoundRect(s_footLx, s_footLy, S(12), S(6), 2, furLight);
@@ -4673,6 +4802,45 @@ static void drawBody(TFT_eSPI& t, int cx, int hy, int headTopY, uint32_t now, Mo
         t.fillRoundRect(cx2 - S(5), hy + S(33), S(10), S(6), 2, t.color565(40, 44, 60));
         t.fillRect(cx2 - S(3), hy + S(35), S(2), S(2), t.color565(0, 255, 136));
         t.fillRect(cx2 + S(1), hy + S(35), S(2), S(2), t.color565(255, 60, 60));
+    } else if (bros) {
+        // Shirt the cap's colour, then the bib and straps over it, lit on the
+        // left and shaded on the right like the cap.
+        const bool tall = (outfitNow == OutfitId::TALLBRO);
+        const uint16_t shirt = tall ? t.color565(0, 182, 0) : t.color565(219, 0, 0);
+        const uint16_t den   = legCol;
+        const uint16_t denDk = t.color565(0, 36, 85);
+        const uint16_t denHi = t.color565(73, 146, 255);
+        const uint16_t gold  = t.color565(255, 219, 0);
+        const int th = torsoHalf();
+        t.fillRoundRect(cx2 - S(th), hy + S(23), S(2 * th), S(18), S(5), shirt);
+        t.fillRoundRect(cx2 - S(th), hy + S(33), S(2 * th), S(8), S(4), den);    // the seat
+        t.fillRoundRect(cx2 - S(8), hy + S(27), S(16), S(10), S(2), den);        // the bib
+        t.fillRect(cx2 - S(9), hy + S(23), S(3), S(5), den);                     // straps
+        t.fillRect(cx2 + S(6), hy + S(23), S(3), S(5), den);
+        t.fillRect(cx2 - S(8), hy + S(27), S(1) > 0 ? S(1) : 1, S(8), denHi);
+        t.fillRect(cx2 + S(7), hy + S(28), S(1) > 0 ? S(1) : 1, S(12), denDk);
+        t.fillRoundRect(cx2 - S(3), hy + S(29), S(6), S(4), 1, denDk);          // pocket
+        for (int8_t sg = -1; sg <= 1; sg += 2) {
+            const int bx = cx2 + sg * S(6) - (sg > 0 ? S(1) : 0);
+            t.fillCircle(bx, hy + S(28), S(1) + 1, BLACK);
+            t.fillCircle(bx, hy + S(28), S(1), gold);
+        }
+    } else if (outfitNow == OutfitId::CAPTAIN) {
+        // A red coat: white shirt in a V at the neck, lapels either side of
+        // it, a black belt with a gold buckle and gold buttons above.
+        const uint16_t coat   = t.color565(182, 36, 0);
+        const uint16_t coatDk = t.color565(109, 0, 0);
+        const uint16_t gold   = t.color565(255, 219, 0);
+        const int th = torsoHalf();
+        t.fillRoundRect(cx2 - S(th), hy + S(23), S(2 * th), S(18), S(5), coat);
+        t.fillTriangle(cx2 - S(5), hy + S(23), cx2 + S(5), hy + S(23), cx2, hy + S(32), WHITE);
+        t.fillTriangle(cx2 - S(5), hy + S(23), cx2 - S(9), hy + S(23), cx2 - S(1), hy + S(33), coatDk);
+        t.fillTriangle(cx2 + S(5), hy + S(23), cx2 + S(9), hy + S(23), cx2 + S(1), hy + S(33), coatDk);
+        t.fillRect(cx2 - S(th), hy + S(35), S(2 * th), S(3), BLACK);
+        t.fillRect(cx2 - S(2), hy + S(35), S(4), S(3), gold);
+        t.fillRect(cx2 - S(1), hy + S(36), S(2) > 1 ? S(2) - 1 : 1, 1, BLACK);
+        for (int8_t sg = -1; sg <= 1; sg += 2)
+            for (int k = 0; k < 2; k++) t.fillCircle(cx2 + sg * S(6), hy + S(27) + k * S(4), S(1), gold);
     } else if (outfitNow == OutfitId::TANOOKI) {
         t.fillEllipse(cx2, hy + S(34), S(11), S(8), t.color565(238, 222, 190));
     } else if (outfitNow == OutfitId::PARKA) {
