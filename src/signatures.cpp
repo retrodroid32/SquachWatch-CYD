@@ -81,6 +81,7 @@ const OuiEntry kOuiTable[] = {
     {{0xEC, 0x71, 0x5E}, "Freefly",      DetectionType::DRONE,      Confidence::HIGH_CONF},
     {{0x00, 0x1A, 0xF9}, "AeroViron",    DetectionType::DRONE,      Confidence::HIGH_CONF},
     {{0x54, 0x7D, 0x40}, "PowerVis",     DetectionType::DRONE,      Confidence::HIGH_CONF},
+    {{0x74, 0xB8, 0x0F}, "Zipline",      DetectionType::DRONE,      Confidence::HIGH_CONF},
 
     // ---- ALPR and fixed surveillance camera vendors ----
     //
@@ -198,6 +199,8 @@ const OuiMamEntry kOuiMamTable[] = {
     {{0xE0, 0xB6, 0xF5}, 0x8, "Yuneec",     DetectionType::DRONE, Confidence::HIGH_CONF},
     {{0xAC, 0x86, 0xD1}, 0x7, "QuantumSys", DetectionType::DRONE, Confidence::HIGH_CONF},
     {{0x34, 0xB5, 0xF3}, 0x2, "InspFlight", DetectionType::DRONE, Confidence::HIGH_CONF},
+    {{0x6C, 0xDF, 0xFB}, 0xE, "FIMI",       DetectionType::DRONE, Confidence::HIGH_CONF},
+    {{0xC8, 0x63, 0x14}, 0x4, "ZeroZero",   DetectionType::DRONE, Confidence::HIGH_CONF},
 };
 const uint16_t kOuiMamCount = sizeof(kOuiMamTable) / sizeof(kOuiMamTable[0]);
 
