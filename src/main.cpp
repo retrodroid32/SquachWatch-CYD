@@ -1030,6 +1030,7 @@ static char    s_confirmLabel[24];
 // touch this, only LOG's do.
 static bool    s_confirmIsBle = true;
 static bool s_alertLastFree = false;
+static bool s_alertSpam     = false;
 
 // Whether a sighting may take the screen, and AUTO SNOOZE's bookkeeping
 // with it. Call it once for each alert about to be raised and obey the
@@ -1065,6 +1066,7 @@ static bool alertMayInterrupt(const Detection& d) {
     // resurrect a disabled detection type or override lock-screen security.
     const bool watched = engine.isWatched(d.mac, true) || engine.isWatched(d.mac, false);
     const bool always  = IgnoreList::alwaysAlert(d.mac);
+    s_alertSpam = false;
 
     if (!always) {
         if (!Settings::alertEnabled(d.type)) return false;      // LOG ONLY
@@ -1094,6 +1096,18 @@ static bool alertMayInterrupt(const Detection& d) {
     if (g == DetectionEngine::AlertGate::HOLD) return false;
 
     s_alertLastFree = (g == DetectionEngine::AlertGate::ALLOW_LAST);
+
+    // SpamWatch is intentionally the LAST policy gate. It cannot create an
+    // alert that LOG ONLY / confidence / repeat / cooldown / device snooze /
+    // AUTO SNOOZE would have blocked. WATCH and ALWAYS ALERT are explicit
+    // per-device intent, so they bypass flood suppression.
+    if (!watched && !always && engine.spam().active(d.type, now)) {
+        if (!engine.spam().takeAnnounce(d.type)) return false;
+        s_alertSpam = true;
+        Serial.printf("[spam] %s flood announced: %u tracker identities; later ones stay in LOG\n",
+                      detectionTypeName(d.type), (unsigned)engine.spam().fakes(d.type));
+    }
+
     engine.noteAlertRaised(d.mac, d.type, now);
     return true;
 }
@@ -1314,6 +1328,10 @@ static void enterAlert(const Detection& d) {
         const bool night = Clock::night();
         uiAlertSetNight(night);
         uiAlertSetLastFree(s_alertLastFree);
+        // Spent here so manually opened cards can never inherit the banner
+        // from the last automatic tracker-flood announcement.
+        uiAlertSetSpam(s_alertSpam, engine.spam().fakes(d.type));
+        s_alertSpam = false;
         if (night && !first) {
             static const char* const NIGHT_LINES[] = {
                 "A %s at this hour. That's not nothing.", "%s. At night. I don't love it.",
