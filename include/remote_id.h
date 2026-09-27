@@ -7,14 +7,14 @@
 // the reason this file exists. Everything else on this device tells you a
 // thing is nearby; this tells you where the person holding it is.
 //
-// Scope, honestly: this decodes the Bluetooth LEGACY form only, which is
-// AD type 0x16 service data under UUID 0xFFFA carrying one message per
-// advertisement. It does not decode Bluetooth 5 Long Range, and it cannot:
-// the ESP32-WROOM in this board is BLE 4.2 and Espressif document that it
-// has no hardware support for Coded PHY or extended advertising, which is
-// where the second half of the drones are. Nor does it decode the WiFi
-// Beacon form, which packs several messages together -- that would need
-// the promiscuous path rather than the NimBLE one, and is a separate job.
+// Scope, honestly: this decodes the Bluetooth LEGACY form, which is AD type
+// 0x16 service data under UUID 0xFFFA carrying one message per
+// advertisement, and the WiFi Beacon form, a vendor element packing several
+// messages together (mergeBeacon). It does not decode Bluetooth 5 Long
+// Range, and it cannot: the ESP32-WROOM in this board is BLE 4.2 and
+// Espressif document that it has no hardware support for Coded PHY or
+// extended advertising, which is where the second half of the drones are.
+// Nor the WiFi NAN form, which rides action frames, not beacons.
 //
 // Source for every offset and constant below: opendroneid-core-c, the
 // reference implementation of the standard.
@@ -53,6 +53,16 @@ const char* uaTypeName(uint8_t t);
 // Merging rather than returning a fresh struct is the whole point: the
 // caller keeps one Info per aircraft and feeds every advert through it.
 bool merge(const uint8_t* payload, uint8_t len, Info& out, uint32_t now);
+
+// Whether a legacy advert carries Remote ID at all. The service data is the
+// only place it can be: the 25-byte message fills the whole 31-byte advert,
+// so a real drone has no room left to list 0xFFFA as a service UUID too.
+bool present(const uint8_t* payload, uint8_t len);
+
+// The WiFi Beacon form: `ies` is a beacon's tagged parameters (everything
+// after the 12 fixed bytes). True when a Remote ID element was found, with
+// whatever it carried merged into `out`.
+bool mergeBeacon(const uint8_t* ies, uint16_t len, Info& out, uint32_t now);
 
 void reset(Info& out);
 

@@ -118,33 +118,73 @@ static bool mergeMessage(const uint8_t* m, Info& out, uint32_t now) {
     return false;
 }
 
-bool merge(const uint8_t* payload, uint8_t len, Info& out, uint32_t now) {
-    if (!payload || len < 4) return false;
-
+// The Remote ID service data in a legacy advert: the pointer just past the
+// AD type (UUID, app code, counter, message) and its size, or null.
+static const uint8_t* findServiceData(const uint8_t* payload, uint8_t len, uint8_t& size) {
+    if (!payload || len < 4) return nullptr;
     uint8_t i = 0;
     while (i < len) {
         const uint8_t adLen = payload[i];
-        // A zero length is the standard's end-of-data padding, and any
-        // structure claiming to run past the buffer is malformed. Both mean
-        // stop rather than continue: this is attacker-reachable input.
         if (adLen == 0) break;
         if ((uint16_t)i + 1u + adLen > (uint16_t)len) break;
-
         const uint8_t  adType = payload[i + 1];
         const uint8_t* adData = payload + i + 2;
-        const uint8_t  adSize = (uint8_t)(adLen - 1);   // type byte excluded
-
+        const uint8_t  adSize = (uint8_t)(adLen - 1);
         if (adType == AD_SERVICE_DATA_16 && adSize >= 3 &&
             rd16(adData) == ODID_UUID && adData[2] == ODID_APP_CODE) {
-            // UUID, app code, counter, then the message itself.
-            if (adSize >= 4 + MSG_SIZE) {
-                return mergeMessage(adData + 4, out, now);
-            }
-            return false;
+            size = adSize;
+            return adData;
         }
         i = (uint8_t)(i + 1 + adLen);
     }
+    return nullptr;
+}
+
+bool present(const uint8_t* payload, uint8_t len) {
+    uint8_t size = 0;
+    return findServiceData(payload, len, size) != nullptr;
+}
+
+// ---- the WiFi Beacon form -------------------------------------------------
+// A vendor-specific element (ID 221) under the ASD-STAN OUI FA:0B:BC, OUI
+// type 0x0D, then a counter and a Message Pack: a header byte (type 0xF in
+// the top nibble), the size of one message (25), how many follow (1-9),
+// then the messages themselves back to back.
+static const uint8_t IE_VENDOR = 221;
+static const uint8_t ASD_OUI[3] = { 0xFA, 0x0B, 0xBC };
+static const uint8_t MSG_PACK = 0xF;
+static const uint8_t PACK_MAX = 9;
+
+bool mergeBeacon(const uint8_t* ies, uint16_t len, Info& out, uint32_t now) {
+    if (!ies) return false;
+    uint16_t i = 0;
+    while ((uint32_t)i + 2u <= len) {
+        const uint8_t id = ies[i], ieLen = ies[i + 1];
+        const uint8_t* body = ies + i + 2;
+        if ((uint32_t)i + 2u + ieLen > len) break;       // runs off the frame: stop
+        // OUI (3), OUI type, counter, pack header, message size, count.
+        if (id == IE_VENDOR && ieLen >= 8 && memcmp(body, ASD_OUI, 3) == 0 && body[3] == ODID_APP_CODE) {
+            const uint8_t* pack = body + 5;
+            const uint8_t  room = (uint8_t)(ieLen - 5);
+            if (((pack[0] >> 4) & 0x0F) != MSG_PACK || pack[1] != MSG_SIZE) return false;
+            uint8_t n = pack[2];
+            if (n > PACK_MAX) n = PACK_MAX;
+            // Only the messages the element really holds.
+            if (3u + (uint16_t)n * MSG_SIZE > room) n = (uint8_t)((room - 3) / MSG_SIZE);
+            for (uint8_t k = 0; k < n; k++) mergeMessage(pack + 3 + k * MSG_SIZE, out, now);
+            return true;
+        }
+        i = (uint16_t)(i + 2 + ieLen);
+    }
     return false;
+}
+
+bool merge(const uint8_t* payload, uint8_t len, Info& out, uint32_t now) {
+    // UUID, app code, counter, then the message itself.
+    uint8_t size = 0;
+    const uint8_t* d = findServiceData(payload, len, size);
+    if (!d || size < 4 + MSG_SIZE) return false;
+    return mergeMessage(d + 4, out, now);
 }
 
 }  // namespace RemoteId
