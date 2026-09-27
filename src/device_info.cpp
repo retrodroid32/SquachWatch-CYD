@@ -1,10 +1,10 @@
 // SquachWatch-CYD — the device pages. See include/device_info.h.
 //
 // Every claim here has to survive being read by somebody standing next to the
-// thing. Where the evidence is a chip rather than a product, the page says so:
-// an Espressif prefix under FLOCK is "maybe a Flock camera", never "a Flock
-// camera", and the grades in docs/DETECTIONS.md are the source for which is
-// which. Kept to seven lines of 34 characters -- the MORE INFO panel in
+// thing. Where the evidence is a field-observed/module address rather than a
+// product-owned registration, the page says so: a LOW Flock field prefix is a
+// lead, not proof of a camera. The grades in docs/DETECTIONS.md are the source
+// for which is which. Kept to seven lines of 34 characters -- the MORE INFO panel in
 // portrait -- which the host test checks by wrapping each one.
 #include "device_info.h"
 #include <string.h>
