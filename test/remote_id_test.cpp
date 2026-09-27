@@ -135,6 +135,43 @@ int main() {
     ck("non-message-pack vendor IE rejected", !RemoteId::isWifiBeacon(wrongPack, wifiLen));
     ck("truncated vendor IE rejected", !RemoteId::isWifiBeacon(wifi, (uint16_t)(wifiLen - 10)));
 
+    uint8_t parrot[96];
+    memcpy(parrot, wifi, wifiLen);
+    parrot[38] = 0x90; parrot[39] = 0x3A; parrot[40] = 0xE6;
+    ck("Parrot Remote ID beacon recognized", RemoteId::isWifiBeacon(parrot, wifiLen));
+
+    suite("Packed BLE Remote ID");
+    uint8_t packedMsg[25];
+    memset(packedMsg, 0, sizeof(packedMsg));
+    packedMsg[0] = (uint8_t)(0x0 << 4) | 0x2;
+    packedMsg[1] = 0x2;
+    memcpy(packedMsg + 2, "PACKED1234567890ABCDE", 20);
+    uint8_t packedAdv[64] = {0};
+    uint8_t pi = 0;
+    packedAdv[pi++] = (uint8_t)(1 + 2 + 1 + 1 + 3 + 25);
+    packedAdv[pi++] = 0x16;
+    packedAdv[pi++] = 0xFA; packedAdv[pi++] = 0xFF;
+    packedAdv[pi++] = 0x0D; packedAdv[pi++] = 0x01;
+    packedAdv[pi++] = 0xF2; packedAdv[pi++] = 25; packedAdv[pi++] = 1;
+    memcpy(packedAdv + pi, packedMsg, 25); pi = (uint8_t)(pi + 25);
+    RemoteId::Info packedInfo;
+    ck("packed BLE transport recognized", RemoteId::isBluetoothLegacy(packedAdv, pi));
+    ck("packed BLE decoded", RemoteId::merge(packedAdv, pi, packedInfo, 4000));
+    ck("packed Basic ID decoded", packedInfo.haveBasic);
+
+    suite("Wi-Fi NAN Remote ID");
+    uint8_t nan[64] = {0};
+    nan[0] = 0xD0;
+    const uint8_t nanDest[6] = {0x51,0x6F,0x9A,0x01,0x00,0x00};
+    memcpy(nan + 4, nanDest, 6);
+    nan[24] = 0x04; nan[25] = 0x09;
+    nan[26] = 0x50; nan[27] = 0x6F; nan[28] = 0x9A; nan[29] = 0x13;
+    const uint8_t serviceId[6] = {0x88,0x69,0x19,0x9D,0x92,0x09};
+    memcpy(nan + 36, serviceId, 6);
+    ck("OpenDroneID NAN action recognized", RemoteId::isWifiNanAction(nan, 42));
+    nan[36] ^= 0x01;
+    ck("wrong NAN service hash rejected", !RemoteId::isWifiNanAction(nan, 42));
+
     suite("Zero coordinates are not a fix");
     memset(m, 0, sizeof(m));
     m[0] = (uint8_t)(0x1 << 4) | 0x2;      // Location, both coords zero
