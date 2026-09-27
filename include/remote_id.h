@@ -54,6 +54,13 @@ const char* uaTypeName(uint8_t t);
 // caller keeps one Info per aircraft and feeds every advert through it.
 bool merge(const uint8_t* payload, uint8_t len, Info& out, uint32_t now);
 
+// Presence checks used by the detection engine before it decides which
+// DetectionType a frame belongs to. These validate the transport framing,
+// not just a magic number, so random 0xFFFA bytes or vendor IEs do not
+// become DRONE alerts.
+bool isBluetoothLegacy(const uint8_t* payload, uint8_t len);
+bool isWifiBeacon(const uint8_t* frame, uint16_t len);
+
 void reset(Info& out);
 
 }  // namespace RemoteId
