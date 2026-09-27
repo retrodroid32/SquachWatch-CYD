@@ -12,7 +12,7 @@ static const char* const EXPLAIN_TEXT[] = {
     // UNKNOWN
     "Nothing in the signature tables matched this one. It is the fallback the panel falls back TO, so if you are reading it about a real sighting, that sighting got logged under a type with no explanation of its own -- which is a bug worth reporting.",
     // FLOCK
-    "Flock Safety makes automated license-plate-reader cameras, usually mounted on poles at neighborhood entrances. They log every plate that passes, suspect or not. Check the confidence: of the 29 hardware prefixes filed here exactly ONE is registered to Flock, and the rest are the generic Espressif and Liteon parts they build on -- shared with every dev board and smart plug on earth. A LOW reading here means a radio Flock might use, not a Flock camera.",
+    "Flock Safety makes automated license-plate-reader cameras, usually mounted on poles at neighborhood entrances. One WiFi block is Flock-owned; 32 field-observed prefixes are low-confidence by address alone and get stronger when the same radio sends Flock's wildcard-probe pattern. A Qualcomm firmware-default prefix is accepted only with that behavior. Check the confidence: a weak radio clue is not proof of a camera.",
     // AXON
     "Axon makes body cameras and TASERs for law enforcement. This picks up a body cam's own wireless signal, not necessarily an officer's exact location.",
     // META
