@@ -33,10 +33,12 @@ LogViewTap uiLogHitView(int x, int y, int screenW, int screenH);
 // button is Theme::infoPanelHitDismiss(), not owned here.
 // confirmWatched: see ui_rawscan.h's copy -- the panel's WATCH button becomes
 // UNWATCH when the device it is asking about is the one already being watched.
+// confirmIgnored does the same for the persistent IGNORE policy: the action
+// button becomes UNIGNORE so the current state is visible before the user taps.
 void uiLogTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng,
                int scrollOffset, bool confirmPending, const char* confirmLabel,
                bool infoPending, const char* infoTypeName, const char* infoText,
-               bool confirmWatched, bool confirmHunted);
+               bool confirmWatched, bool confirmHunted, bool confirmIgnored);
 void uiLogScroll(int delta);          // positive = scroll down (older)
 
 // One DEVICES row, newest first, and how many device rows there are. The first
