@@ -305,11 +305,50 @@ static const Zone ZONES[] = {
     { "AUS EASTERN", "AEST-10AEDT,M10.1.0,M4.1.0/3" },
     { "AUS WESTERN", "AWST-8" },
     { "NEW ZEALAND", "NZST-12NZDT,M9.5.0,M4.1.0/3" },
+    // The rest came with issue #19. Appended, never inserted: a board keeps
+    // its zone as an index in NVS and sends it to the squad as one, so a
+    // zone that moved would put every board already set to it an hour or
+    // more out. ORDER below is where they show up.
+    { "MEXICO",      "CST6" },                            // no daylight saving since 2022
+    { "COLOMBIA",    "<-05>5" },                          // and Peru, Ecuador, Panama, Cancun
+    { "CHILE",       "<-04>4<-03>,M9.1.6/24,M4.1.6/24" },
+    { "ARGENTINA",   "<-03>3" },
+    { "W AFRICA",    "WAT-1" },                           // Nigeria, Algeria, Tunisia: no summer time
+    { "S AFRICA",    "SAST-2" },
+    { "E AFRICA",    "EAT-3" },
+    { "ISRAEL",      "IST-2IDT,M3.4.4/26,M10.5.0" },
+    { "TURKEY",      "<+03>-3" },
+    { "GULF",        "<+04>-4" },                         // Dubai, Oman, the Caucasus
+    { "PAKISTAN",    "PKT-5" },
+    { "BANGLADESH",  "<+06>-6" },
+    { "SE ASIA",     "<+07>-7" },                         // Thailand, Vietnam, Jakarta
+    { "SINGAPORE",   "<+08>-8" },                         // and Malaysia, the Philippines
+    { "KOREA",       "KST-9" },
+    { "QUEENSLAND",  "AEST-10" },                         // Brisbane: AUS EASTERN's hour, no summer time
+    { "AUS CENTRAL", "ACST-9:30ACDT,M10.1.0,M4.1.0/3" },
+    { "DARWIN",      "ACST-9:30" },
 };
 static const uint8_t ZONES_N = sizeof(ZONES) / sizeof(ZONES[0]);
 
+// The order PREV/NEXT and the settings row walk them: west to east from the
+// US, the way the list always started. Indexes into ZONES.
+static const uint8_t ORDER[] = {
+    0, 1, 2, 3, 4, 5, 6,                 // the US
+    21, 22, 23, 7, 8, 9, 24,             // Mexico to Argentina
+    10, 11, 25, 12, 26, 13, 28, 27,      // UTC, UK, Africa, Europe, Israel
+    29, 14, 30, 31, 15, 32, 33,          // Turkey to SE Asia
+    16, 34, 19, 35, 17,                  // China to Japan
+    38, 37, 36, 18, 20,                  // Australia, New Zealand
+};
+static_assert(sizeof(ORDER) == ZONES_N, "every zone once in ORDER");
+
 uint8_t     zoneCount()        { return ZONES_N; }
 const char* zoneName(uint8_t i){ return ZONES[i < ZONES_N ? i : 0].name; }
+uint8_t zoneStep(uint8_t i, int dir) {
+    uint8_t at = 0;
+    for (uint8_t k = 0; k < ZONES_N; k++) if (ORDER[k] == i) { at = k; break; }
+    return ORDER[(at + ZONES_N + (dir < 0 ? -1 : 1)) % ZONES_N];
+}
 void applyZone(uint8_t i) {
     setenv("TZ", ZONES[i < ZONES_N ? i : 0].rule, 1);
     tzset();
