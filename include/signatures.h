@@ -19,6 +19,10 @@
 // evidence shared with every dev board on earth, and saying so is the
 // difference between a detector and a rumour.
 struct OuiEntry   { uint8_t  b[3];     const char* name; DetectionType type; Confidence conf; };
+// IEEE MA-M allocations are 28 bits. They cannot be safely represented as
+// ordinary 24-bit OUIs because up to sixteen unrelated registrants share the
+// same first three bytes. nibble is the HIGH nibble of MAC byte 3.
+struct OuiMamEntry { uint8_t b[3]; uint8_t nibble; const char* name; DetectionType type; Confidence conf; };
 struct UuidEntry  { uint16_t uuid;     const char* name; DetectionType type; };
 struct NameEntry  { const char* name;  DetectionType type; };
 struct SsidEntry  { const char* prefix; const char* name; DetectionType type; };
@@ -26,6 +30,8 @@ struct MfgIdEntry { uint16_t mfgId;    const char* name; DetectionType type; };
 
 extern const OuiEntry    kOuiTable[];
 extern const uint16_t    kOuiCount;
+extern const OuiMamEntry kOuiMamTable[];
+extern const uint16_t    kOuiMamCount;
 extern const UuidEntry   kUuidTable[];
 extern const uint16_t    kUuidCount;
 extern const NameEntry   kBtClassicNames[];
@@ -39,6 +45,7 @@ extern const uint16_t    kMfgIdCount;
 // Yields the matched entry's own confidence through `conf` when given one.
 // Callers that do not care keep the old one-argument form.
 DetectionType lookupOui(const uint8_t* mac, Confidence* conf = nullptr);
+const char* ouiVendorName(const uint8_t* mac);
 DetectionType lookupUuid(uint16_t uuid16);
 DetectionType lookupBtName(const char* name);
 DetectionType lookupSsid(const char* ssid);   // case-insensitive prefix
