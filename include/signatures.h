@@ -14,10 +14,11 @@
 //         Liteon, Murata, Realtek, Telink), or a block that is not in the
 //         IEEE registry at all.
 //
-// The LOW rows are not mistakes and are not being deleted: Flock really
-// does build on ESP32, so the prefix really is evidence. It is just
-// evidence shared with every dev board on earth, and saying so is the
-// difference between a detector and a rumour.
+// LOW rows are retained only when there is a current source for the specific
+// prefix. A generic module vendor is weak evidence even when the product
+// really uses that module; stale guesses are removed rather than inherited
+// forever. Saying that distinction out loud is the difference between a
+// detector and a rumour.
 struct OuiEntry   { uint8_t  b[3];     const char* name; DetectionType type; Confidence conf; };
 // IEEE MA-M allocations are 28 bits. They cannot be safely represented as
 // ordinary 24-bit OUIs because up to sixteen unrelated registrants share the
