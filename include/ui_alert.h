@@ -18,6 +18,10 @@ void uiAlertSetNight(bool night);
 // device -- and a board that goes quieter without saying so is the failure
 // this whole thing exists to avoid.
 void uiAlertSetLastFree(bool lastFree);
+// This is the one announcement for an active tracker-identity flood. Normal
+// alert rules have already allowed the card; the banner explains why later
+// tracker identities of this type will stay in LOG without interrupting.
+void uiAlertSetSpam(bool spam, uint16_t identities);
 // SNOOZE (this device, until restart), bottom centre between HUNT and MORE INFO.
 bool uiAlertHitSnooze(int x, int y, int screenW, int screenH);
 // While the device is locked with ALERTS WHEN LOCKED at TYPE ONLY: the type
