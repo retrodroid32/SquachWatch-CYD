@@ -232,11 +232,8 @@ bool merge(const uint8_t* payload, uint8_t len, Info& out, uint32_t now) {
 
     if ((odid[0] >> 4) == 0x0F) {
         const uint8_t count = odid[2];
-        bool any = false;
-        for (uint8_t i = 0; i < count; ++i) {
-            if (mergeMessage(odid + 3u + (uint16_t)i * MSG_SIZE, out, now))
-                any = true;
-        }
+        for (uint8_t i = 0; i < count; ++i)
+            mergeMessage(odid + 3u + (uint16_t)i * MSG_SIZE, out, now);
         // Transport recognition is still a successful Remote ID sighting even
         // if this pack only contains message types we do not display yet.
         return true;
