@@ -64,10 +64,22 @@ int main() {
         ck("announcement resets with next flood", !w.takeAnnounce(DetectionType::SAMSUNG_TAG));
     }
 
-    suite("Old strays decay instead of accumulating forever");
+    suite("New evidence after quiet starts a fresh flood");
     {
         SpamWatch w;
         uint32_t now = 6000000;
+        for (int i = 0; i < 8; i++) { now += 3000; w.noteVanish(DetectionType::AIRTAG, 800, 1, now); }
+        ck("first flood announces", w.takeAnnounce(DetectionType::AIRTAG));
+        now += SpamWatch::QUIET_MS + 1;
+        for (int i = 0; i < 8; i++) { now += 3000; w.noteVanish(DetectionType::AIRTAG, 800, 1, now); }
+        ck("new evidence can trip a new flood without an active() poll",
+           w.active(DetectionType::AIRTAG, now) && w.takeAnnounce(DetectionType::AIRTAG));
+    }
+
+    suite("Old strays decay instead of accumulating forever");
+    {
+        SpamWatch w;
+        uint32_t now = 7000000;
         for (int i = 0; i < 12; i++) { now += 4 * 60000; w.noteVanish(DetectionType::AIRTAG, 1000, 1, now); }
         ck("one stray every four minutes never trips", !w.active(DetectionType::AIRTAG, now));
     }
