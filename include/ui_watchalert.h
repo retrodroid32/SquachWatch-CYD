@@ -20,3 +20,7 @@ void uiWatchAlertTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, boo
 // is the one place the target is ever named on screen, so it is the one place
 // you can act on it without finding it in a scan again.
 bool uiWatchAlertHitRemove(TFT_eSPI& t, int x, int y);
+
+// Design studies for this screen: 0 is the shipped look, 1 RED ALERT,
+// 2 WANTED, 3 RADAR LOCK. See ui_watchalert.cpp.
+void uiWatchAlertSetStyle(uint8_t s);
