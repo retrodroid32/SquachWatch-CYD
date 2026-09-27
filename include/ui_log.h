@@ -25,11 +25,12 @@ void uiLogInit(TFT_eSPI& t);
 // hands them through to Theme:: unchanged. Hit-testing its dismiss
 // button is Theme::infoPanelHitDismiss(), not owned here.
 // confirmWatched: see ui_rawscan.h's copy -- the panel's WATCH button becomes
-// UNWATCH when the device it is asking about is the one already being watched.
+// UNWATCH when the device it is asking about is the one already being watched,
+// and IGNORE becomes UN-IGNORE when it is on the ignore list.
 void uiLogTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng,
                int scrollOffset, bool confirmPending, const char* confirmLabel,
                bool infoPending, const char* infoTypeName, const char* infoText,
-               bool confirmWatched, bool confirmHunted);
+               bool confirmWatched, bool confirmHunted, bool confirmIgnored);
 void uiLogScroll(int delta);          // positive = scroll down (older)
 
 // One row of the list, newest first, and how many rows there are. The first

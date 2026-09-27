@@ -49,6 +49,7 @@
 #include "meshmsg.h"
 #include "meshcrypto.h"
 #include "ui_watchalert.h"
+#include "ignore_list.h"
 #include "ui_colorcheck.h"
 #include "ui_diagnostics.h"
 #include "ui_desk.h"
@@ -600,7 +601,7 @@ int main(int argc, char** argv) {
             uiLogTick(frame, t, engine, 0, false, "", info,
                       info ? detectionTypeName(it) : nullptr,
                       info ? DetectionInfo::explainLive(it, engine) : "",
-                      false, false);   // no confirm panel in the sim: nothing watched, nothing hunted
+                      false, false, false);   // no confirm panel in the sim: nothing watched, nothing hunted
         }
         else if (screen == "alert")    uiAlertTick(frame, t, engine, false, nullptr, "");
         else if (screen == "settings") uiSettingsTick(frame, t, engine);
@@ -613,7 +614,7 @@ int main(int argc, char** argv) {
         else if (screen == "desk")     uiDeskTick(frame, t, engine);
         else if (screen == "zonecard") { uiClearTick(frame, t, engine, true, false); uiZoneCardDraw(frame, t); }
         else if (screen == "hunt")     uiHuntTick(frame, t, engine);
-        else if (screen == "rawscan")  uiRawScanTick(frame, t, engine, true, true, false, "", false, false);
+        else if (screen == "rawscan")  uiRawScanTick(frame, t, engine, true, true, false, "", false, false, false);
         else if (screen == "phone")    uiPhoneTick(frame, t, engine);
         else if (screen == "bingo")    uiBingoTick(frame, t, engine);
         else if (screen == "dex")      uiDexTick(frame, t, engine);
@@ -723,6 +724,11 @@ int main(int argc, char** argv) {
     // Per-screen init, where the screen has one.
     if      (screen == "clear" || screen == "zonecard") uiClearInit(frame);
     else if (screen == "log") {
+        // The second row ignored, so the screen shows its IGNORED tag. The
+        // sim's NVS is in memory unless SQUACHSIM_NVS says otherwise, so
+        // this does not follow any other render around.
+        IgnoreList::begin();
+        if (const Detection* d = engine.logAt(1)) IgnoreList::add(d->mac, d->type);
         // Three sightings in the black box, so the list shows the rows held
         // in RAM and then carries on into the ones kept in flash.
         BlackBox::begin();

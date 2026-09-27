@@ -8,6 +8,7 @@
 #include "detection.h"
 #include "log_index.h"
 #include "regulars.h"
+#include "ignore_list.h"
 #include <Arduino.h>
 #include <ctype.h>
 #include <string.h>
@@ -194,7 +195,7 @@ LogConfirmTap uiLogHitConfirm(int x, int y, int screenW, int screenH) {
     return LogConfirmTap::NONE;
 }
 
-static void drawConfirmPanel(TFT_eSPI& t, int w, int h, const char* label, bool watched, bool hunted) {
+static void drawConfirmPanel(TFT_eSPI& t, int w, int h, const char* label, bool watched, bool hunted, bool ignored) {
     int px, py, pw, ph, wX, wY, wW, wH, huX, huY, huW, huH, infX, infY, infW, infH,
         igX, igY, igW, igH, cnX, cnY, cnW, cnH;
     confirmRects(w, h, px, py, pw, ph, wX, wY, wW, wH, huX, huY, huW, huH,
@@ -231,7 +232,9 @@ static void drawConfirmPanel(TFT_eSPI& t, int w, int h, const char* label, bool 
     Theme::drawButton(t, wX, wY, wW, wH, watched ? "UNWATCH" : "WATCH", watched);
     // Toggles like WATCH beside it -- see that button's comment.
     Theme::drawButton(t, huX, huY, huW, huH, hunted ? "STOP HUNT" : "HUNT", hunted);
-    Theme::drawButton(t, igX, igY, igW, igH, "IGNORE", false);
+    // Toggles too (issue #18): the only way to tell a device was ignored used
+    // to be tapping IGNORE again and reading which toast came back.
+    Theme::drawButton(t, igX, igY, igW, igH, ignored ? "UN-IGNORE" : "IGNORE", ignored);
     Theme::drawButton(t, infX, infY, infW, infH, "MORE INFO", false);
     Theme::drawButton(t, cnX, cnY, cnW, cnH, "CANCEL", false);
 }
@@ -266,7 +269,7 @@ int uiLogRowAt(TFT_eSPI& t, int x, int y, int screenW, int screenH) {
 void uiLogTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, int scrollOffset,
                bool confirmPending, const char* confirmLabel,
                bool infoPending, const char* infoTypeName, const char* infoText,
-               bool confirmWatched, bool confirmHunted) {
+               bool confirmWatched, bool confirmHunted, bool confirmIgnored) {
     int w = t.width();
     int h = t.height();
 
@@ -336,7 +339,7 @@ switch (Settings::background()) {
 
         Theme::drawButtonBar(t, ButtonId::LOG, Theme::ButtonBarMode::LOG);
         if (infoPending)        Theme::drawInfoPanel(t, w, h, now, infoTypeName, infoText);
-        else if (confirmPending) drawConfirmPanel(t, w, h, confirmLabel, confirmWatched, confirmHunted);
+        else if (confirmPending) drawConfirmPanel(t, w, h, confirmLabel, confirmWatched, confirmHunted, confirmIgnored);
         return;
     }
 
@@ -413,7 +416,27 @@ switch (Settings::background()) {
         // Hits
         t.setTextColor(kept ? dim : Theme::VAPOR_PURPLE, Theme::BG);
         t.setCursor(168, y + detailY);
-        t.printf("x%u", d->hits);
+        char hitsTxt[8];
+        snprintf(hitsTxt, sizeof hitsTxt, "x%u", d->hits);
+        t.print(hitsTxt);
+        const int hitsEnd = 168 + t.textWidth(hitsTxt);
+
+        // An ignored device says so on its row (issue #18): a grey tag at the
+        // end of the detail line, IGNORED where it fits and IGN where the
+        // screen is narrow. Grey, because an ignored device is one that has
+        // been told to be quiet.
+        if (IgnoreList::contains(d->mac)) {
+            const char* tag = "IGNORED";
+            if (w - 14 - t.textWidth(tag) - 4 < hitsEnd + 6) tag = "IGN";
+            const int tw2 = t.textWidth(tag) + 4;
+            const int tx  = w - 14 - tw2;
+            if (tx >= hitsEnd + 6) {
+                t.fillRoundRect(tx, y + detailY - 1, tw2, detailH + 1, 2, Theme::W95_SHADOW);
+                t.setTextColor(Theme::WHITE, Theme::W95_SHADOW);
+                t.setCursor(tx + 2, y + detailY);
+                t.print(tag);
+            }
+        }
 
         // Timestamp (right edge)
         // Wall-clock once somebody has set it, minutes-since-boot until
@@ -476,5 +499,5 @@ switch (Settings::background()) {
     Theme::drawButtonBar(t, ButtonId::LOG, Theme::ButtonBarMode::LOG);
 
     if (infoPending)        Theme::drawInfoPanel(t, w, h, now, infoTypeName, infoText);
-    else if (confirmPending) drawConfirmPanel(t, w, h, confirmLabel, confirmWatched, confirmHunted);
+    else if (confirmPending) drawConfirmPanel(t, w, h, confirmLabel, confirmWatched, confirmHunted, confirmIgnored);
 }

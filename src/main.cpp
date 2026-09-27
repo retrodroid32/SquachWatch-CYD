@@ -4691,7 +4691,8 @@ void loop() {
                 uiLogTick(t, now, engine, 0, s_confirmPending, s_confirmLabel,
                           s_infoPending, infoTypeName, infoText,
                           engine.isWatched(s_confirmMac, s_confirmIsBle),
-                          engine.isHunted(s_confirmMac, s_confirmIsBle));
+                          engine.isHunted(s_confirmMac, s_confirmIsBle),
+                          IgnoreList::contains(s_confirmMac));
                 Theme::drawToast(t, now);
             });
 
@@ -4881,7 +4882,8 @@ void loop() {
             drawTwoBand([&](TFT_eSPI& t, bool advance) {
                 uiRawScanTick(t, now, engine, s_rawScanIsBle, done, s_confirmPending, s_confirmLabel,
                               engine.isWatched(s_confirmMac, s_rawScanIsBle),
-                              engine.isHunted(s_confirmMac, s_rawScanIsBle), advance);
+                              engine.isHunted(s_confirmMac, s_rawScanIsBle),
+                              IgnoreList::contains(s_confirmMac), advance);
                 Theme::drawToast(t, now);
             });
 
