@@ -11,52 +11,71 @@ Confidence:
 
 ---
 
-## Flock Safety — `FLOCK` — **one High prefix, the rest Low**
+## Flock Safety — `FLOCK` — **path-dependent confidence**
 
-**Why it works:** Flock Safety cameras have on-board WiFi modules
-(typically ESP32) that periodically emit probe requests searching for
-available networks. The `addr1` (receiver) trick catches "sleeper"
-cameras that aren't actively transmitting — they still leak their MAC
-when the promiscuous listener sends them a frame.
+**Current Wi-Fi database:** SquachWatch now tracks the 32 active field prefixes
+in Flock-You's `datasets/NitekryDPaul_wifi_ouis.md` (last synced there
+2026-07-16), plus Flock Safety's own IEEE MA-L block `B4:1E:52`.
 
-**What the audit found.** Every prefix in this table was checked against
-the IEEE registry. Of 29 entries, exactly **one** is registered to Flock
-Safety: `B4:1E:52`. The rest break down as sixteen Espressif blocks, nine
-Liteon, one Shenzhen Intellirocks, one SPECTRA - TEK (labelled
-"Flock-Sierra" for a long time, which is neither Sierra nor Flock), one
-not in the registry at all, and one locally-administered address, which
-by definition identifies no vendor.
+The 32 field-observed prefixes are:
 
-That is not an argument for deleting them. Flock really does build on
-ESP32, so an Espressif prefix really is evidence — it is just evidence
-shared with every dev board, smart plug and hobby project on earth,
-including **another SquachWatch**. Two of these devices in a room would
-otherwise flag each other as ALPR cameras.
+`70:C9:4E`, `3C:91:80`, `D8:F3:BC`, `80:30:49`,
+`B8:35:32`, `14:5A:FC`, `74:4C:A1`, `08:3A:88`,
+`9C:2F:9D`, `C0:35:32`, `94:08:53`, `E4:AA:EA`,
+`F4:6A:DD`, `E0:0A:F6`, `24:B2:B9`, `00:F4:8D`,
+`D0:39:57`, `E8:D0:FC`, `E0:4F:43`, `B8:1E:A4`,
+`70:08:94`, `58:8E:81`, `EC:1B:BD`, `3C:71:BF`,
+`58:00:E3`, `90:35:EA`, `5C:93:A2`, `64:6E:69`,
+`48:27:EA`, `A4:CF:12`, `14:B5:CD`, `82:6B:F2`.
 
-So the rows stay and the *grading* changed. Confidence is now a property
-of the matched signature rather than of the type:
+**Confidence rules:**
 
-| Grade | Meaning |
-|---|---|
-| **High** | The block is registered to the company that makes the product. |
-| **Medium** | Registered to a parent whose range is far wider than the product — Amazon owns Ring, and also Echo, Fire TV and Kindle. |
-| **Low** | A module or ODM vendor whose parts are in everything, or a block not in the IEEE registry. |
+- `B4:1E:52` is **High** because the IEEE block is registered directly to
+  Flock Safety.
+- The 32 community/field prefixes are **Low by themselves**. They are observed
+  on Flock infrastructure, but many are module/vendor addresses rather than
+  Flock-owned IEEE registrations. `82:6B:F2` is locally administered and is
+  retained because DeFlockJoplin field-tested a camera using it.
+- A field-prefix hit in a **wildcard probe request** (SSID IE tag 0 with
+  zero length) is promoted to **Medium**. Flock-You documents that behavior as
+  characteristic of deployed cameras; combining address evidence with frame
+  behavior is stronger than either alone.
+- `00:03:7F` is a Qualcomm Atheros prefix found as QCA9377 default MACs
+  directly in the analyzed Flock firmware. It is **not** in the global OUI
+  table because Qualcomm hardware is generic. SquachWatch only classifies it
+  as Flock when the same frame is a wildcard probe, and then grades the result
+  **Medium**.
+- SSIDs beginning `Flock-` / `FLOCK-` remain a separate SSID evidence path.
 
-Across the current 105 manufacturer-prefix rules (98 MA-L/24-bit rows plus
-7 exact MA-M/28-bit rows) that comes out at 61 High, 4 Medium, 40 Low.
+The older generic ESP32 guesses that were not in the current field set were
+removed instead of being carried forever. This avoids flagging ordinary
+Espressif devices simply because Flock has used Espressif modules in some
+hardware generations.
 
-**This is what makes ALERT FILTER work.** It has always been a minimum-
-confidence filter, and until now confidence was constant per type, so it
-had nothing to filter on. Set it to High and a passing ESP32 stays in the
-log without taking over the screen.
+**BLE / battery signatures:** firmware-derived Penguin battery advertisements
+are recognized from `Penguin-` followed by exactly ten digits, a bare
+ten-digit local name, `FS Ext Battery`, and manufacturer company ID
+`0x09C8`. Name-only matches are **Medium** because advertised names are
+user-controlled text; the company-ID path remains stronger.
 
-**Source:** [`colonelpanichacks/flock-you`](https://github.com/colonelpanichacks/flock-you)
-(MIT) — the canonical Flock detector project. OUI research by
-`@NitekryDPaul` and the DeFlockJoplin community. Registrant for every
-prefix verified against the IEEE MA-L registry.
+The firmware dump also contains Flock accessory 128-bit GATT UUIDs and generic
+Qualcomm/Android Bluetooth Classic defaults. SquachWatch does not treat those
+generic classic names as standalone Flock detections, and it does not claim
+that non-advertised GATT services are visible to the passive scanner.
 
-**Note:** Flock has reportedly turned off Bluetooth on newer hardware, so
-BLE-name based detection is opportunistic.
+**Sources:** `colonelpanichacks/flock-you`,
+`datasets/NitekryDPaul_wifi_ouis.md`, and
+`datasets/firmware_derived_signatures.md`. The field list credits
+@NitekryDPaul / @nitekry and DeFlockJoplin; the firmware-derived set comes
+from analysis of Flock's MSM8953 + QCA9377 Android 8.1 camera image.
+
+Across the current 109 manufacturer-prefix rules (102 MA-L/24-bit rows plus
+7 exact MA-M/28-bit rows), the grades are 61 High, 4 Medium, and 44 Low.
+
+**This is what makes ALERT FILTER useful:** Low-confidence module/field
+matches can stay in the LOG without necessarily taking over the screen, while
+Flock-owned or independently corroborated evidence can be treated more
+strongly.
 
 ---
 
