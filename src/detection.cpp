@@ -522,6 +522,14 @@ class BleScanCallbacks : public NimBLEScanCallbacks {
         if (det.type == DetectionType::HACKER) {
             det.conf = matchedByName ? Confidence::MED_CONF : Confidence::HIGH_CONF;
         }
+        // A Flock/Penguin advertised name is useful, including the firmware-
+        // derived battery serial forms, but it is still user-controlled text.
+        // Company-ID and other non-name Flock evidence keep their stronger
+        // grade; name-only hits stay MED rather than pretending the string is
+        // cryptographic identity.
+        if (det.type == DetectionType::FLOCK && matchedByName) {
+            det.conf = Confidence::MED_CONF;
+        }
         // A Remote ID advert carries far more than the fact that it exists.
         // Decode it before the entry is posted so the log row can be named
         // after the actual aircraft rather than after a service UUID.
@@ -696,8 +704,14 @@ bool DetectionEngine::init() {
         uint8_t subtype = (fc0 & 0xF0) >> 4;
         // Management frame probe request: type=0, subtype=4
         if (type == 0 && subtype == 4) {
-            // addr2 (transmitter) is at offset 10
-            g_engine->postWiFi(frame + 10, pkt->rx_ctrl.rssi, pkt->rx_ctrl.channel);
+            // addr2 (transmitter) is at offset 10. Flock-You's field research
+            // found Flock cameras repeatedly sending wildcard probes (empty
+            // SSID IE), so carry that frame-level corroboration with the MAC.
+            const bool flockWildcard =
+                isWifiWildcardProbe(frame, (uint32_t)pkt->rx_ctrl.sig_len);
+            g_engine->postWiFi(frame + 10, pkt->rx_ctrl.rssi,
+                               pkt->rx_ctrl.channel, nullptr, false, false,
+                               false, flockWildcard);
         } else if (type == 2) {
             // Data frame: addr1 (DA) and addr2 (SA) both interesting
             g_engine->postWiFi(frame + 4,  pkt->rx_ctrl.rssi, pkt->rx_ctrl.channel);
@@ -1438,7 +1452,8 @@ void DetectionEngine::clearLog() {
 
 void IRAM_ATTR DetectionEngine::postWiFi(const uint8_t* mac, int8_t rssi, uint8_t channel,
                                          const char* ssid, bool encrypted,
-                                         bool pwnagotchi, bool remoteId) {
+                                         bool pwnagotchi, bool remoteId,
+                                         bool flockWildcardProbe) {
     if (!mac) return;
     // Group-addressed (broadcast/multicast) destinations can never be a
     // real device: bit 0 of byte 0 is the I/G bit, and every OUI in
@@ -1470,6 +1485,7 @@ void IRAM_ATTR DetectionEngine::postWiFi(const uint8_t* mac, int8_t rssi, uint8_
     e.encrypted = encrypted;
     e.pwnagotchi = pwnagotchi;
     e.remoteId = remoteId;
+    e.flockWildcardProbe = flockWildcardProbe;
     _wifiQHead = next;
     const uint8_t depth = (uint8_t)((_wifiQHead + WIFI_Q_CAP - _wifiQTail) % WIFI_Q_CAP);
     if (depth > _wifiQHighWater) _wifiQHighWater = depth;
@@ -2149,6 +2165,7 @@ void DetectionEngine::processWiFiQ(uint32_t budgetUs, uint8_t maxItems) {
         // are the same DetectionType and very different claims.
         Confidence conf = Confidence::HIGH_CONF;
         bool matchedBySsid = false;
+        bool flockFirmwareProbe = false;
         EvidenceKind evidence = EvidenceKind::UNKNOWN;
         // Ahead of everything, including the evil-twin check: a pwnagotchi
         // told us what it is, in its own words, along with how many
@@ -2173,7 +2190,28 @@ void DetectionEngine::processWiFiQ(uint32_t budgetUs, uint8_t maxItems) {
             // mode, broadcasting from a WiFi module OUI we don't
             // otherwise know) if the OUI itself didn't match anything.
             t = lookupOui(e.mac, &conf);
-            if (t != DetectionType::UNKNOWN) evidence = EvidenceKind::WIFI_OUI;
+            if (t != DetectionType::UNKNOWN) {
+                evidence = EvidenceKind::WIFI_OUI;
+                // The community Flock prefixes are intentionally LOW by
+                // themselves. An empty-SSID probe is the independent behavior
+                // Flock-You observed in the field, so the combination earns
+                // MED -- still below Flock Safety's own MA-L block.
+                if (e.flockWildcardProbe && t == DetectionType::FLOCK &&
+                    conf == Confidence::LOW_CONF) {
+                    conf = Confidence::MED_CONF;
+                }
+            }
+            // QCA9377 default MACs with 00:03:7F were extracted directly
+            // from Flock camera firmware. Qualcomm uses that prefix elsewhere,
+            // so never classify it by OUI alone: require the wildcard-probe
+            // behavior in the same captured frame.
+            if (t == DetectionType::UNKNOWN && e.flockWildcardProbe &&
+                isFlockFirmwareWifiPrefix(e.mac)) {
+                t = DetectionType::FLOCK;
+                conf = Confidence::MED_CONF;
+                evidence = EvidenceKind::WIFI_OUI;
+                flockFirmwareProbe = true;
+            }
             if (t == DetectionType::UNKNOWN && e.ssid[0]) {
                 t = lookupSsid(e.ssid);
                 matchedBySsid = (t != DetectionType::UNKNOWN);
@@ -2253,6 +2291,8 @@ void DetectionEngine::processWiFiQ(uint32_t budgetUs, uint8_t maxItems) {
         } else if (e.pwnagotchi) {
             d.vendor = "Pwnagotchi";
             strncpy(d.name, e.ssid, sizeof(d.name) - 1);
+        } else if (flockFirmwareProbe) {
+            d.vendor = "Flock-QCA";
         } else if (matchedBySsid) {
             const char* name = ssidVendorName(e.ssid);
             if (name) d.vendor = name;
