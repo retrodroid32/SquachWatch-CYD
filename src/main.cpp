@@ -1448,6 +1448,7 @@ static void enterInvite() {
 // INVERT and ROT on the console -- see clock.cpp. Consumed in loop().
 volatile bool g_consoleInvert = false;
 volatile bool g_consoleRotate = false;
+volatile bool g_consoleWatchTest = false; // WATCHTEST: watch the newest Bluetooth device, fire its alert
 volatile bool g_consoleRadioTest = false; // RADIO TEST: cycle even on the cable with the screen on (bench)
 volatile bool g_consoleBatt    = false;   // BATT: one reading, now
 volatile bool g_consoleBattLog = false;   // BATTLOG: every sample kept, newest first
@@ -3516,6 +3517,29 @@ void loop() {
         Serial.printf("[console] invert setting %s (panel baseline %s)\n", Settings::inverted() ? "ON" : "OFF",
                       PANEL_NEEDS_INVERSION ? "inverted" : "normal");
     }
+    // WATCHTEST: put the newest device in the log on the watch list and count
+    // this as its first hit, so the LOCKED ON screen comes up at the next
+    // home-screen tick and then fills in from its real signal. Bluetooth only
+    // (a WiFi hit has no public way in): live first, then one the black box
+    // brought back. It is a real watch: REMOVE FROM WATCH LIST ends it.
+    if (g_consoleWatchTest) {
+        g_consoleWatchTest = false;
+        const Detection* pick = nullptr;
+        for (uint8_t pass = 0; pass < 2 && !pick; pass++)
+            for (uint8_t i = 0; i < engine.logCount() && !pick; i++) {
+                const Detection* d = engine.logAt(i);
+                if (d && d->channel == 0 && (pass == 1 || !d->restored)) pick = d;
+            }
+        if (!pick) {
+            Serial.println("[watch] test: no Bluetooth device in the log yet; wait for one");
+        } else {
+            engine.watchBle(pick->mac, pick->name[0] ? pick->name : detectionTypeName(pick->type));
+            engine.checkWatchBle(pick->mac, pick->rssi);
+            Serial.printf("[watch] test: watching %s (%s, %d dBm%s); the alert shows on the home screen\n",
+                          engine.watchLabel(), detectionTypeName(pick->type), (int)pick->rssi,
+                          pick->restored ? ", from before this boot" : "");
+        }
+    }
     if (g_consoleRotate || (tp.valid && !Settings::rotationLocked() && !Squachy::isHeld() &&
         (state == AppState::CLEAR || state == AppState::LOG ||
                       state == AppState::SETTINGS || state == AppState::OUTFIT ||
@@ -4403,9 +4427,9 @@ void loop() {
                     Theme::showToast("UNWATCHED", nullptr, Theme::CYAN);
                 }
                 enterClear();
-            } else if ((now - watchAlertStart) > ALERT_AUTO_DISMISS_MS) {
-                enterClear();
             }
+            // No timeout: the thing you asked to be told about is here, and
+            // the alert stays until you have seen it and tapped.
             break;
         }
         case AppState::LOG: {

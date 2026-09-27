@@ -41,6 +41,18 @@ static const char* removeLabel(TFT_eSPI& t, int w) {
 // Squachy beside it on the headphones. The radar's distance is the signal,
 // not a direction: the blip's angle is fixed per target, its radius is how
 // strong it is, and its last few positions draw the approach.
+// What Squachy says here, and when the line changed. He used to get one quip
+// ("Back again, huh?") for three seconds from his own mood machine, which was
+// gone before anyone had read it, said nothing about what had happened, and
+// then left him free to wander off and chat about patrols. Here he stands
+// still at the scope and explains, a line every few seconds, round and round
+// until the alert is tapped.
+static uint8_t  s_lineStep = 0;
+static uint32_t s_lineAt   = 0;
+static bool     s_lineFirst = true;
+static char     s_line[96];
+static const uint32_t LINE_MS = 7000;
+
 namespace {
 
 struct WatchView {
@@ -193,8 +205,9 @@ void scope(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, const WatchVie
 }
 
 // The scope on the left and Squachy on the right on headphones, running it
-// himself, the two sharing one vertical centre in the band between the
-// headline and the name line.
+// himself, the two sharing one vertical centre. His speech bubble owns the
+// top of the screen, so LOCKED ON goes under the scope, with the name and
+// the trend beside it.
 void drawOperator(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, int hintY, bool advance) {
     const int w = t.width(), h = t.height();
     const WatchView v = gather(eng);
@@ -204,7 +217,7 @@ void drawOperator(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, int hin
     for (int y = 0; y < h; y += 20) t.drawFastHLine(0, y, w, g1);
     const bool wide = w >= 300;
 
-    const int bandTop = 34, bandBot = hintY - 16;
+    const int bandTop = 34, bandBot = hintY - 32;   // LOCKED ON is 24 rows, plus a gap over the hint
     const int bandH = bandBot - bandTop;
     int R = bandH / 2 - 2;
     // Narrow screens: the scope gives up width so he still fits beside it.
@@ -218,14 +231,19 @@ void drawOperator(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, int hin
     // he is tall.
     const int gap = w - (rcx + R);
     const int sx = rcx + R + gap / 2;
+    // Drawn as a cameo, standing still: the live Squachy has his own ideas
+    // about walking off and what to talk about. 53 units runs from the top
+    // of his head to his soles, so his feet go half that below the centre.
     int sh = 2 * R + 8;
     if (sh > gap * 13 / 10) sh = gap * 13 / 10;
-    Squachy::tick(t, sx, rcy - sh / 2, sh, now, advance, 0.4f);
-    headline(t, rcx, 6, "LOCKED ON", g3);
+    const float sc = (float)sh / 60.0f;
+    const int feet = rcy + (int)(26.5f * sc);
+    (void)advance;
+    Squachy::drawWaving(t, sx, feet, now, sc, s_line, now - s_lineAt < 2500, 0, false);
+    headline(t, rcx, bandBot + 2, "LOCKED ON", g3);
 
-    // The headset, from the size and place he was actually drawn.
-    const int crown = Squachy::crownY();
-    const float sc = Squachy::lastScale();
+    // The headset, from the size and place he was drawn at.
+    const int crown = feet - (int)(53.0f * sc);
     auto S = [sc](float u) { return (int)(u * sc); };
     const uint16_t band = t.color565(182, 182, 170), cup = t.color565(73, 73, 85);
     for (int k = 0; k < 2; k++) {
@@ -243,26 +261,33 @@ void drawOperator(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, int hin
     t.drawLine(sx - S(16), crown + S(16), sx - S(8), crown + S(21), band);
     t.fillCircle(sx - S(7), crown + S(21), S(1) + 1, Theme::BLACK);
 
-    // One line under both: what it is, how strong, which way.
-    t.setTextSize(1);
-    char tb[32];
-    snprintf(tb, sizeof tb, "%d dBm  %s", (int)v.rssi,
-             v.trend > 0 ? "CLOSER" : v.trend < 0 ? "FURTHER" : "HOLDING");
-    const int trendW = v.haveRssi ? t.textWidth(tb) + 10 : 0;
-    int labelW = t.textWidth(v.label);
-    const int room = w - 8 - (trendW ? trendW + 12 : 0);
-    if (labelW > room) labelW = room;
-    const int total = labelW + (trendW ? 12 + trendW : 0);
-    const int lx = (w - total) / 2;
-    fitPrint(t, lx, bandBot + 2, v.label, labelW, 1, t.color565(182, 255, 170), false);
-    if (v.haveRssi) trendLine(t, lx + labelW + 12, bandBot + 2, v, g3, false, 0);
+    // Beside the headline: what it is and how strong, then which way.
+    const int nx = rcx + Theme::bangersTextWidth("LOCKED ON", Theme::BangersSize::MD) / 2 + 10;
+    const int nw = w - nx - 6;
+    char nb[40];
+    if (v.haveRssi) snprintf(nb, sizeof nb, "%s  %d dBm", v.label, (int)v.rssi);
+    else            snprintf(nb, sizeof nb, "%s", v.label);
+    fitPrint(t, nx, bandBot + 4, nb, nw, 1, t.color565(182, 255, 170), false);
+    if (v.haveRssi) {
+        const char* word = v.trend > 0 ? "CLOSER" : v.trend < 0 ? "FURTHER" : "HOLDING";
+        const uint16_t ac = v.trend > 0 ? t.color565(255, 36, 0) : v.trend < 0 ? g3 : t.color565(182, 255, 170);
+        const int ay = bandBot + 16;
+        if (v.trend > 0)      t.fillTriangle(nx, ay + 7, nx + 6, ay + 7, nx + 3, ay, ac);
+        else if (v.trend < 0) t.fillTriangle(nx, ay, nx + 6, ay, nx + 3, ay + 7, ac);
+        else                  t.fillRect(nx, ay + 3, 7, 2, ac);
+        t.setTextSize(1);
+        t.setTextColor(g3);
+        t.setCursor(nx + 10, ay);
+        t.print(word);
+    }
 }
 
 }  // namespace
 
 void uiWatchAlertInit(TFT_eSPI& t) {
     t.fillRect(0, 0, t.width(), t.height(), Theme::BLACK);
-    Squachy::watchAlertReaction();
+    s_lineStep = 0;
+    s_lineFirst = true;
 }
 
 void uiWatchAlertTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool advance) {
@@ -271,6 +296,27 @@ void uiWatchAlertTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, boo
     // the alert and leaves the watch running, the button ends the watch.
     // The hint sits clear of the button by the font height plus a gap.
     const int hintY = h - REMOVE_H - 10 - 8 - 6;
+    // The next line, on the pass that advances (see advance).
+    if (advance && (s_lineFirst || now - s_lineAt >= LINE_MS)) {
+        const WatchView v = gather(eng);
+        switch (s_lineStep) {
+            case 0:
+                snprintf(s_line, sizeof s_line, "Heads up! The %s you're watching is back in range.", v.label);
+                break;
+            case 1:
+                snprintf(s_line, sizeof s_line, "%s",
+                         v.trend > 0 ? "It's getting closer. The nearer the middle, the nearer to you."
+                       : v.trend < 0 ? "It's moving away. The dot drifts out as it goes."
+                                     : "It's holding still. The nearer the middle, the nearer to you.");
+                break;
+            default:
+                snprintf(s_line, sizeof s_line, "Tap anywhere to close this. The button stops watching it.");
+                break;
+        }
+        s_lineStep = (uint8_t)((s_lineStep + 1) % 3);
+        s_lineAt = now;
+        s_lineFirst = false;
+    }
     drawOperator(t, now, eng, hintY, advance);
     const char* tapMsg = "tap anywhere to dismiss";
     t.setTextSize(1);
