@@ -268,14 +268,23 @@ inline int8_t detectionRssiAt(const Detection& d, uint8_t idx) {
     return d.rssiHist[(uint8_t)((first + idx) & 7u)];
 }
 
-inline RssiTrend detectionRssiTrend(const Detection& d) {
-    if (d.rssiHistCount < 3) return RssiTrend::UNKNOWN;
-    const int oldest = (int)detectionRssiAt(d, 0);
-    const int newest = (int)detectionRssiAt(d, (uint8_t)(d.rssiHistCount - 1));
+// One classifier for every live signal-trend surface. Callers may keep
+// different fixed-size histories, but APPROACHING / STEADY / MOVING_AWAY must
+// always mean the same thing: at least three cadence-limited samples and a
+// six-dB end-to-end change before we call movement.
+inline RssiTrend classifyRssiTrend(int oldest, int newest, uint8_t sampleCount) {
+    if (sampleCount < 3) return RssiTrend::UNKNOWN;
     const int delta = newest - oldest;
     if (delta >= 6) return RssiTrend::APPROACHING;
     if (delta <= -6) return RssiTrend::MOVING_AWAY;
     return RssiTrend::STEADY;
+}
+
+inline RssiTrend detectionRssiTrend(const Detection& d) {
+    if (d.rssiHistCount == 0) return RssiTrend::UNKNOWN;
+    return classifyRssiTrend((int)detectionRssiAt(d, 0),
+                             (int)detectionRssiAt(d, (uint8_t)(d.rssiHistCount - 1)),
+                             d.rssiHistCount);
 }
 
 // A detection's vendor, safe to print. A record is zeroed before it is
