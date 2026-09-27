@@ -2035,12 +2035,21 @@ static uint8_t drvRead(uint8_t reg) {
     return Wire1.read();
 }
 
+// Apply the selected haptic strength. Library 1 is the driver's 1.3 V
+// ERM table; library 2 is the 3 V table appropriate for the T-Watch motor.
+// HIGH also raises the overdrive clamp slightly for short alert effects.
+static void twatchHapticApply() {
+    const uint8_t lvl = Settings::buzzStrength(); // 0 LOW, 1 MED, 2 HIGH
+    drvWrite(0x03, lvl == 0 ? 0x01 : 0x02);
+    drvWrite(0x17, lvl == 2 ? 0xA5 : 0x8C);
+}
+
 static void twatchHapticBegin() {
     if (!s_pmuOk) return;
     s_drvOk = drvWrite(0x01, 0x00);          // MODE: out of standby, internal trigger
     if (!s_drvOk) { Serial.println("[buzz] DRV2605 did not answer"); return; }
     drvWrite(0x02, 0x00);                    // no real-time input
-    drvWrite(0x03, 0x01);                    // effect library 1: ERM
+    twatchHapticApply();
     drvWrite(0x1A, drvRead(0x1A) & 0x7F);    // FEEDBACK: ERM, not LRA
     drvWrite(0x1D, drvRead(0x1D) | 0x20);    // CONTROL3: ERM open loop
     drvWrite(0x01, 0x40);                    // STANDBY until a buzz: a few uA instead of ~0.5 mA
@@ -2057,10 +2066,15 @@ static void twatchBuzz(Buzz kind) {
     if (kind == Buzz::ALERT && lastAt && now - lastAt < 10000) return;
     lastAt = now;
     uint8_t seq[8] = { 0 };
+    // Effect library numbers: 1 strong click, 14 strong buzz,
+    // 15 ~750 ms alert, 16 ~1000 ms alert, 47 buzz.
+    const uint8_t lvl = Settings::buzzStrength();
     if (kind == Buzz::WATCH) {               // three long buzzes
-        seq[0] = 47; seq[1] = 0x80 | 12; seq[2] = 47; seq[3] = 0x80 | 12; seq[4] = 47;
-    } else {                                 // a double click
-        seq[0] = 1; seq[1] = 0x80 | 10; seq[2] = 1;
+        const uint8_t e = lvl == 2 ? 16 : 47;
+        seq[0] = e; seq[1] = 0x80 | 12; seq[2] = e; seq[3] = 0x80 | 12; seq[4] = e;
+    } else {                                 // a double click, or double buzz
+        const uint8_t e = lvl == 0 ? 1 : lvl == 1 ? 14 : 15;
+        seq[0] = e; seq[1] = 0x80 | 10; seq[2] = e;
     }
     drvWrite(0x01, 0x00);                    // out of standby for this one
     s_drvAwakeAt = millis();
@@ -5086,13 +5100,20 @@ void loop() {
                             break;
                         case SettingsRow::WATCH_TEMP: break;   // a reading, not a switch
                         case SettingsRow::WATCH_XTAL: twatchXtalStart(); break;
+                        case SettingsRow::WATCH_SETTINGS:
+                            uiSettingsOpenPage(SettingsPage::WATCH);
+                            break;
                         case SettingsRow::WATCH_BUZZ:
-                            Settings::toggleBuzz();
-                            // The sample only when turning it ON: playing it on
-                            // the way off too made the tap feel like a test that
-                            // passed, and left alerts silent.
-                            if (Settings::buzz()) twatchBuzz(Buzz::SAMPLE);
-                            Serial.printf("[buzz] alerts %s\n", Settings::buzz() ? "ON" : "OFF");
+                            Settings::cycleBuzz();
+                            // Every enabled level demonstrates itself. OFF is
+                            // deliberately silent so the UI never says one
+                            // thing while the motor suggests another.
+                            if (Settings::buzz()) {
+                                drvWrite(0x01, 0x00);
+                                twatchHapticApply();
+                                twatchBuzz(Buzz::SAMPLE);
+                            }
+                            Serial.printf("[buzz] %s\n", Settings::buzzModeName());
                             break;
 #endif
                         case SettingsRow::STATUS_LIGHT: enterLight(); break;
