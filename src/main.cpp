@@ -387,7 +387,7 @@ static void drawCrashCard(TFT_eSPI& t) {
 #define BL_PIN_ORIG 21
 #define BL_PIN_CAP  27
 #define BL_PIN_AWOK 32
-#define BL_PIN_TWATCH 45
+#define BL_PIN_S3   45   // the T-Watch S3's and the Freenove S3's, both
 #define BL_CH_ORIG  0
 #define BL_CH_CAP   1
 #define BL_CH_AWOK  2
@@ -408,6 +408,10 @@ static void drawCrashCard(TFT_eSPI& t) {
 #if defined(TWATCH_S3)
 // Confirmed on the watch 2026-09-22: the ST7789 wants inversion on (as
 // LilyGo's own setup says); false showed every colour inverted.
+constexpr bool PANEL_NEEDS_INVERSION = true;
+#elif defined(FREENOVE_S3)
+// Freenove's own setup for the S3 2.8" (FNK0104AB) turns inversion on, and
+// confirmed on an FNK0104B 2026-09-25: colours right with INVERT untouched.
 constexpr bool PANEL_NEEDS_INVERSION = true;
 #elif defined(FREENOVE32)
 // Freenove's own setup for the 3.2" turns inversion on. UNCONFIRMED here
@@ -1191,7 +1195,7 @@ static bool    s_confirmArmed = false;
 // The compiled-in ranges are a 2.8" board's. Anywhere else -- the digitisers
 // on the display's own bus -- they put taps nowhere near the finger, so a
 // board with nothing better has no SKIP to offer.
-#if defined(TOUCH_SHARES_DISPLAY_BUS) || defined(CYD35) || defined(TWATCH_S3)
+#if defined(TOUCH_SHARES_DISPLAY_BUS) || defined(CYD35) || defined(SQW_S3)
 static const bool DEFAULT_TOUCH_USABLE = false;
 #else
 static const bool DEFAULT_TOUCH_USABLE = true;
@@ -2050,6 +2054,43 @@ static void twatchPowerUp() {
 }
 #endif
 
+#if defined(FREENOVE_S3)
+// The Freenove S3's battery: a 1-cell LiPo on its JST, a TP4054 charging it
+// from USB, and a 200K/200K divider from the cell to GPIO9 (ADC1, so WiFi does
+// not take it away). No fuel gauge, and the charger's CHRG line goes to an LED
+// rather than a GPIO -- so a voltage and an estimate from it, never "charging".
+// On the cable the cell reads the charger's ~4.2 V, which is the honest reading.
+static uint16_t boardBatteryMv() {
+    uint32_t sum = 0;
+    for (int i = 0; i < 8; i++) sum += analogReadMilliVolts(9);
+    return (uint16_t)(sum / 8 * 2);   // the divider halves it
+}
+// Resting LiPo, per cell: rough, but a percent that moves the right way.
+static uint8_t boardBatteryPct(uint16_t mv) {
+    static const uint16_t MV[]  = { 3300, 3500, 3600, 3700, 3750, 3800, 3850, 3900, 4000, 4100, 4200 };
+    static const uint8_t  PCT[] = {    0,    5,   10,   20,   30,   40,   50,   60,   75,   90,  100 };
+    if (mv <= MV[0]) return 0;
+    for (uint8_t i = 1; i < sizeof MV / sizeof MV[0]; i++)
+        if (mv <= MV[i]) return (uint8_t)(PCT[i-1] + (uint32_t)(PCT[i] - PCT[i-1]) * (mv - MV[i-1]) / (MV[i] - MV[i-1]));
+    return 100;
+}
+// The SYSTEM page's BATTERY row: "81% 4.12V". Under 2.5 V there is no cell on
+// the connector at all (the divider just floats), and it says so.
+void boardBatteryLine(char* out, size_t n) {
+    static uint32_t at = 0;
+    static char     line[16] = "";
+    const uint32_t now = millis();
+    if (!line[0] || now - at >= 2000) {   // eight ADC reads, not eight per frame
+        at = now;
+        const uint16_t mv = boardBatteryMv();
+        if (mv < 2500) snprintf(line, sizeof line, "NONE");
+        else snprintf(line, sizeof line, "%u%% %u.%02uV", (unsigned)boardBatteryPct(mv),
+                      (unsigned)(mv / 1000), (unsigned)(mv % 1000 / 10));
+    }
+    snprintf(out, n, "%s", line);
+}
+#endif
+
 #if defined(TWATCH_S3)
 // One battery sample into the black box. See BattRecord for what it holds
 // and why. Printed too, so a bench run shows the same line the ring keeps.
@@ -2740,7 +2781,7 @@ void setup() {
     // while it is still the previous life's, not this one's.
     crashReportInit();
     Serial.begin(SERIAL_BAUD);
-#if defined(TWATCH_S3)
+#if defined(SQW_S3)
     // Native USB: with nothing reading the port, every print would otherwise
     // wait its full timeout for a host, and after the chatty first-boot
     // calibration the loop crawled so slowly the screen looked frozen black.
@@ -2780,13 +2821,13 @@ void setup() {
 // ... and not on the CrowPanel 7, where GPIO21 is the panel's BLUE-0 data
 // line. Driving it high before the panel driver claims it is a stripe down the
 // picture at best.
-#if !defined(AWOK) && !defined(RLPHANTOM) && !defined(RLPHANTOM_R) && !defined(TWATCH_S3) && !defined(CROWPANEL7)
+#if !defined(AWOK) && !defined(RLPHANTOM) && !defined(RLPHANTOM_R) && !defined(SQW_S3) && !defined(CROWPANEL7)
     pinMode(21, OUTPUT); digitalWrite(21, HIGH);
 #endif
-#if defined(TWATCH_S3)
+#if defined(SQW_S3)
     // GPIO27 and GPIO32 are the S3's PSRAM lines: touching either hangs the
-    // chip until the watchdog reboots it. The watch's backlight is GPIO45.
-    pinMode(45, OUTPUT); digitalWrite(45, HIGH);
+    // chip until the watchdog reboots it. Both S3 boards' backlight is GPIO45.
+    pinMode(BL_PIN_S3, OUTPUT); digitalWrite(BL_PIN_S3, HIGH);
 #elif defined(CROWPANEL7)
     // Nothing at all. This board's backlight is not a GPIO -- it is an I2C
     // command to the helper MCU, sent once Wire is up. GPIO27/32 are the same
@@ -2867,11 +2908,11 @@ void setup() {
 #if defined(CROWPANEL7)
     // No LEDC at all: the backlight is an I2C command byte. Claiming channels
     // here would only take them away from something that has a pin.
-#elif defined(TWATCH_S3)
+#elif defined(SQW_S3)
     // One backlight, GPIO45, on the first channel. The CYD pins below are
     // flash/PSRAM lines and the power chip's interrupt on an S3.
     ledcSetup(BL_CH_ORIG, 5000, 8);
-    ledcAttachPin(BL_PIN_TWATCH, BL_CH_ORIG);
+    ledcAttachPin(BL_PIN_S3, BL_CH_ORIG);
 #else
 #if !defined(AWOK) && !defined(RLPHANTOM) && !defined(RLPHANTOM_R)
     ledcSetup(BL_CH_ORIG, 5000, 8);
@@ -2955,8 +2996,8 @@ void setup() {
     // 16-bit — the full 16-bit buffer didn't fit in the available
     // contiguous heap on this board.
     frame.setColorDepth(8);
-#if defined(TWATCH_S3) || (defined(CROWPANEL7) && CROWPANEL_FRAME_INTERNAL)
-    // 57.6 KB fits in internal RAM with room to spare, and a sprite in
+#if defined(SQW_S3) || (defined(CROWPANEL7) && CROWPANEL_FRAME_INTERNAL)
+    // 57.6 KB fits in internal RAM with room to spare (75 KB at 320x240), and a sprite in
     // PSRAM pushes slower and cannot go by DMA. Keep it inside.
     //
     // CrowPanel: not an economy but the fix for a twitching picture -- the
@@ -3046,6 +3087,16 @@ void setup() {
     usingCapTouch = CapTouch::probe();
     Serial.println(usingCapTouch ? "T-Watch S3 -- FT6336 capacitive touch answered."
                                  : "T-Watch S3 -- FT6336 did not answer; no touch.");
+#elif defined(FREENOVE_S3)
+    // The Freenove S3 2.8"'s FT6336, on I2C SDA 16 / SCL 15 at 0x38, reset on
+    // GPIO18 (active low). The ES8311 codec shares the bus at 0x18. FNK0104A
+    // is the same board with no touch panel: nothing answers, and the screen
+    // runs without touch rather than on a guessed fallback.
+    CapTouch::begin(16, 15, 18, 0x38);
+    usingCapTouch = CapTouch::probe();
+    Serial.println(usingCapTouch ? "Freenove S3 -- FT6336 capacitive touch answered."
+                                 : "Freenove S3 -- FT6336 did not answer; no touch (FNK0104A?).");
+    { char b[16]; boardBatteryLine(b, sizeof b); Serial.printf("[batt] %s (raw GPIO9 %u mV)\n", b, (unsigned)analogReadMilliVolts(9)); }
 #elif defined(TOUCH_ON_DISPLAY_BUS)
     // AWOK's XPT2046 sits on the display's own shared VSPI bus (TOUCH_CS=21,
     // already armed by TFT_eSPI itself once awok_user_setup.h's #define
@@ -3156,10 +3207,12 @@ void setup() {
 
     // Seed the PRNG so the digital rain starts in a fresh-looking state
     // on every boot.
-#if defined(CROWPANEL7)
-    // Not analogRead(34) here: GPIO34 is an OPI PSRAM data line on this
-    // board's N16R8 module, and not an ADC pin on the S3 at all. The
-    // hardware RNG is a fine seed and is already fed by the radios.
+#if defined(SQW_S3) || defined(CROWPANEL7)
+    // GPIO34 is not an ADC pin on an S3 (it is an octal PSRAM line on these
+    // boards, the CrowPanel's N16R8 module included): analogRead() refuses
+    // it and the seed was a constant. The hardware RNG instead -- before WiFi
+    // starts it is running on the bootloader's entropy rather than radio
+    // noise, still no constant.
     randomSeed(esp_random());
 #else
     // Analog read on a floating pin is plenty.
