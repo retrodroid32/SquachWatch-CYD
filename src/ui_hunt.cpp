@@ -143,7 +143,7 @@ void uiHuntTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool adva
     uint8_t rssiN = eng.huntRssiCount();
 
     // First-ever sample for this target -- fires once, well before
-    // there's enough history for a warmer/colder trend (needs 2+).
+    // there's enough history for a warmer/colder trend (needs 3+).
     if (rssiN > 0 && !s_gotFirstSignal) {
         s_gotFirstSignal = true;
         Squachy::huntReaction(Squachy::HuntMoment::FIRST_SIGNAL);
