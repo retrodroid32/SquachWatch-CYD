@@ -712,6 +712,14 @@ bool DetectionEngine::init() {
             g_engine->postWiFi(frame + 10, pkt->rx_ctrl.rssi,
                                pkt->rx_ctrl.channel, nullptr, false, false,
                                false, flockWildcard);
+        } else if (type == 0 && subtype == 5) {
+            // Probe Response: addr1 is the receiver. A sleeping Flock camera
+            // may be silent during our dwell yet still appear here when a
+            // nearby AP answers its wildcard probe. This is second-hand
+            // evidence, so no wildcard flag is attached; community prefixes
+            // therefore remain LOW on this receiver-only path.
+            g_engine->postWiFi(frame + 4, pkt->rx_ctrl.rssi,
+                               pkt->rx_ctrl.channel);
         } else if (type == 2) {
             // Data frame: addr1 (DA) and addr2 (SA) both interesting
             g_engine->postWiFi(frame + 4,  pkt->rx_ctrl.rssi, pkt->rx_ctrl.channel);
