@@ -14,42 +14,50 @@ const OuiEntry kOuiTable[] = {
     {{0xE4, 0x05, 0x40}, "Axon-Body",    DetectionType::AXON,       Confidence::LOW_CONF},
     {{0x28, 0x24, 0xFF}, "Axon-Signal",  DetectionType::AXON,       Confidence::LOW_CONF},
 
-    // ---- Flock Safety (ESP32 modules + LTE backhaul) ----
-    // Source: colonelpanichacks/flock-you, @NitekryDPaul, DeFlockJoplin
-    {{0x24, 0x0A, 0xC4}, "Flock-ESP32",  DetectionType::FLOCK,      Confidence::LOW_CONF},
-    {{0x30, 0xAE, 0xA4}, "Flock-ESP32",  DetectionType::FLOCK,      Confidence::LOW_CONF},
-    {{0x24, 0x6F, 0x28}, "Flock-ESP32",  DetectionType::FLOCK,      Confidence::LOW_CONF},
-    {{0xCC, 0x50, 0xE3}, "Flock-ESP32",  DetectionType::FLOCK,      Confidence::LOW_CONF},
-    {{0xDC, 0x54, 0x75}, "Flock-ESP32",  DetectionType::FLOCK,      Confidence::LOW_CONF},
-    {{0xE8, 0x9F, 0x6D}, "Flock-ESP32",  DetectionType::FLOCK,      Confidence::LOW_CONF},
-    {{0x8C, 0xAA, 0xB5}, "Flok-ESP-S3", DetectionType::FLOCK,      Confidence::LOW_CONF},
-    {{0x34, 0x85, 0x18}, "Flok-ESP-S3", DetectionType::FLOCK,      Confidence::LOW_CONF},
+    // ---- Flock Safety ---------------------------------------------------
+    // Current field-tested WiFi set from colonelpanichacks/flock-you,
+    // datasets/NitekryDPaul_wifi_ouis.md (synced there 2026-07-16).
+    //
+    // Only B4:1E:52 is registered directly to Flock Safety, so it is HIGH.
+    // The 32 community prefixes below are deployment observations, not claims
+    // that IEEE assigned those blocks to Flock. Keep them LOW unless a
+    // stronger frame-level signature corroborates the hit.
     {{0xB4, 0x1E, 0x52}, "Flock-MA-L",   DetectionType::FLOCK,      Confidence::HIGH_CONF},
-    {{0xD4, 0xAD, 0xFC}, "Flock-ESP32",  DetectionType::FLOCK,      Confidence::LOW_CONF},
-    {{0xAC, 0x67, 0xB2}, "Flock-ESP32",  DetectionType::FLOCK,      Confidence::LOW_CONF},
-    {{0x84, 0xF3, 0xEB}, "Flok-ESP-S3", DetectionType::FLOCK,      Confidence::LOW_CONF},
-    {{0xB4, 0xE6, 0x2D}, "Flock-ESP32",  DetectionType::FLOCK,      Confidence::LOW_CONF},
-    {{0xCC, 0xDB, 0xA7}, "Flock-ESP32",  DetectionType::FLOCK,      Confidence::LOW_CONF},
-    {{0x94, 0xB9, 0x7E}, "Flock-ESP32",  DetectionType::FLOCK,      Confidence::LOW_CONF},
-    {{0xA4, 0xCF, 0x12}, "Flok-ESP-S2", DetectionType::FLOCK,      Confidence::LOW_CONF},
-    {{0xC0, 0x49, 0xEF}, "Flok-ESP-C6", DetectionType::FLOCK,      Confidence::LOW_CONF},
-    {{0x24, 0xB2, 0xB9}, "Flock-Liteo", DetectionType::FLOCK,      Confidence::LOW_CONF},
-    {{0xD0, 0x39, 0x57}, "Flock",        DetectionType::FLOCK,      Confidence::LOW_CONF},
-    {{0x00, 0xF4, 0x8D}, "Flock",        DetectionType::FLOCK,      Confidence::LOW_CONF},
-    {{0x14, 0x5A, 0xFC}, "Flock",        DetectionType::FLOCK,      Confidence::LOW_CONF},
-    {{0x80, 0x30, 0x49}, "Flock",        DetectionType::FLOCK,      Confidence::LOW_CONF},
-    {{0xE0, 0x0A, 0xF6}, "Flock",        DetectionType::FLOCK,      Confidence::LOW_CONF},
-    {{0x70, 0xC9, 0x4E}, "Flock",        DetectionType::FLOCK,      Confidence::LOW_CONF},
-    {{0x3C, 0x91, 0x80}, "Flock",        DetectionType::FLOCK,      Confidence::LOW_CONF},
-    {{0xD8, 0xF3, 0xBC}, "Flock",        DetectionType::FLOCK,      Confidence::LOW_CONF},
-    {{0xB8, 0x35, 0x32}, "Flock",        DetectionType::FLOCK,      Confidence::LOW_CONF},
-    {{0x82, 0x6B, 0xF2}, "Flock-DeFlk",  DetectionType::FLOCK,      Confidence::LOW_CONF},
-    // Labelled as Sierra Wireless, the LTE modem in a Flock camera. The
-    // registry says SPECTRA - TEK, which is neither Sierra nor Flock. The
-    // prefix may still turn up on Flock hardware, so it stays -- as the
-    // Low-confidence guess it always was.
-    {{0x00, 0xA0, 0xD8}, "Flock-OEM",    DetectionType::FLOCK,      Confidence::LOW_CONF},
 
+    {{0x70, 0xC9, 0x4E}, "Flock-Field",  DetectionType::FLOCK,      Confidence::LOW_CONF},
+    {{0x3C, 0x91, 0x80}, "Flock-Field",  DetectionType::FLOCK,      Confidence::LOW_CONF},
+    {{0xD8, 0xF3, 0xBC}, "Flock-Field",  DetectionType::FLOCK,      Confidence::LOW_CONF},
+    {{0x80, 0x30, 0x49}, "Flock-Field",  DetectionType::FLOCK,      Confidence::LOW_CONF},
+    {{0xB8, 0x35, 0x32}, "Flock-Field",  DetectionType::FLOCK,      Confidence::LOW_CONF},
+    {{0x14, 0x5A, 0xFC}, "Flock-Field",  DetectionType::FLOCK,      Confidence::LOW_CONF},
+    {{0x74, 0x4C, 0xA1}, "Flock-Field",  DetectionType::FLOCK,      Confidence::LOW_CONF},
+    {{0x08, 0x3A, 0x88}, "Flock-Field",  DetectionType::FLOCK,      Confidence::LOW_CONF},
+    {{0x9C, 0x2F, 0x9D}, "Flock-Field",  DetectionType::FLOCK,      Confidence::LOW_CONF},
+    {{0xC0, 0x35, 0x32}, "Flock-Field",  DetectionType::FLOCK,      Confidence::LOW_CONF},
+    {{0x94, 0x08, 0x53}, "Flock-Field",  DetectionType::FLOCK,      Confidence::LOW_CONF},
+    {{0xE4, 0xAA, 0xEA}, "Flock-Field",  DetectionType::FLOCK,      Confidence::LOW_CONF},
+    {{0xF4, 0x6A, 0xDD}, "Flock-Field",  DetectionType::FLOCK,      Confidence::LOW_CONF},
+    {{0xE0, 0x0A, 0xF6}, "Flock-Field",  DetectionType::FLOCK,      Confidence::LOW_CONF},
+    {{0x24, 0xB2, 0xB9}, "Flock-Field",  DetectionType::FLOCK,      Confidence::LOW_CONF},
+    {{0x00, 0xF4, 0x8D}, "Flock-Field",  DetectionType::FLOCK,      Confidence::LOW_CONF},
+    {{0xD0, 0x39, 0x57}, "Flock-Field",  DetectionType::FLOCK,      Confidence::LOW_CONF},
+    {{0xE8, 0xD0, 0xFC}, "Flock-Field",  DetectionType::FLOCK,      Confidence::LOW_CONF},
+    {{0xE0, 0x4F, 0x43}, "Flock-Field",  DetectionType::FLOCK,      Confidence::LOW_CONF},
+    {{0xB8, 0x1E, 0xA4}, "Flock-Field",  DetectionType::FLOCK,      Confidence::LOW_CONF},
+    {{0x70, 0x08, 0x94}, "Flock-Field",  DetectionType::FLOCK,      Confidence::LOW_CONF},
+    {{0x58, 0x8E, 0x81}, "Flock-Field",  DetectionType::FLOCK,      Confidence::LOW_CONF},
+    {{0xEC, 0x1B, 0xBD}, "Flock-Field",  DetectionType::FLOCK,      Confidence::LOW_CONF},
+    {{0x3C, 0x71, 0xBF}, "Flock-Field",  DetectionType::FLOCK,      Confidence::LOW_CONF},
+    {{0x58, 0x00, 0xE3}, "Flock-Field",  DetectionType::FLOCK,      Confidence::LOW_CONF},
+    {{0x90, 0x35, 0xEA}, "Flock-Field",  DetectionType::FLOCK,      Confidence::LOW_CONF},
+    {{0x5C, 0x93, 0xA2}, "Flock-Field",  DetectionType::FLOCK,      Confidence::LOW_CONF},
+    {{0x64, 0x6E, 0x69}, "Flock-Field",  DetectionType::FLOCK,      Confidence::LOW_CONF},
+    {{0x48, 0x27, 0xEA}, "Flock-Field",  DetectionType::FLOCK,      Confidence::LOW_CONF},
+    {{0xA4, 0xCF, 0x12}, "Flock-Field",  DetectionType::FLOCK,      Confidence::LOW_CONF},
+    {{0x14, 0xB5, 0xCD}, "Flock-Field",  DetectionType::FLOCK,      Confidence::LOW_CONF},
+    // Locally administered, but retained because DeFlockJoplin's 12th
+    // field-tested camera used it. The table-wide test enforces LOW for LA.
+    {{0x82, 0x6B, 0xF2}, "Flock-Field",  DetectionType::FLOCK,      Confidence::LOW_CONF},
 
     // ---- Drone manufacturers (IEEE-assigned MA-L blocks) ----------------
     // These are registered directly to drone/UAS manufacturers, so an exact
@@ -387,10 +395,24 @@ DetectionType lookupBtName(const char* name) {
             return kBtClassicNames[i].type;
         }
     }
-    // Substring matches for BLE advertised names
-    if (strcasestr(name, "Flock"))    return DetectionType::FLOCK;
-    if (strcasestr(name, "Penguin"))  return DetectionType::FLOCK;
-    if (strcasestr(name, "Pigvision"))return DetectionType::FLOCK;
+    // Firmware-derived Flock/Penguin names. Penguin packs advertise
+    // either "Penguin-" + exactly 10 digits, a bare 10-digit serial, or
+    // "FS Ext Battery" (the exact form is already in kBtClassicNames).
+    // Keep the older Flock/Pigvision fallbacks for deployed units.
+    if (strcasestr(name, "Flock")) return DetectionType::FLOCK;
+    if (strncasecmp(name, "Penguin-", 8) == 0 && strlen(name) == 18) {
+        bool digits = true;
+        for (uint8_t i = 8; i < 18; i++)
+            if (name[i] < '0' || name[i] > '9') { digits = false; break; }
+        if (digits) return DetectionType::FLOCK;
+    }
+    if (strlen(name) == 10) {
+        bool digits = true;
+        for (uint8_t i = 0; i < 10; i++)
+            if (name[i] < '0' || name[i] > '9') { digits = false; break; }
+        if (digits) return DetectionType::FLOCK;
+    }
+    if (strcasestr(name, "Pigvision")) return DetectionType::FLOCK;
     if (strcasestr(name, "Axon"))     return DetectionType::AXON;
     // A Flipper advertises "Flipper " followed by the unit's name. The
     // owner can change it, which is exactly why a name match is graded
