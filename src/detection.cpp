@@ -2245,6 +2245,15 @@ void DetectionEngine::processWiFiQ(uint32_t budgetUs, uint8_t maxItems) {
             detectionRssiSample(_log[slot], e.rssi, nowMs);
             _log[slot].lastSeen = nowMs;
             _log[slot].channel = e.channel;
+            // A field-prefix sighting may arrive before the camera's
+            // characteristic wildcard probe. Preserve the row, but let that
+            // later independent behavior upgrade the confidence from LOW to
+            // MEDIUM instead of freezing the first weaker classification.
+            if (t == DetectionType::FLOCK && e.flockWildcardProbe &&
+                _log[slot].conf == Confidence::LOW_CONF &&
+                conf >= Confidence::MED_CONF) {
+                _log[slot].conf = Confidence::MED_CONF;
+            }
             if (_log[slot].evidence == EvidenceKind::UNKNOWN)
                 _log[slot].evidence = evidence;
             const uint8_t need = Settings::alertMinRepeats(t);
