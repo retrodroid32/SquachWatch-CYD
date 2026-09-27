@@ -594,7 +594,7 @@ switch (Settings::background()) {
         // fields; the full action word appears as UNIGNORE in the modal.
         if (IgnoreList::contains(d->mac)) {
             t.setTextSize(1);
-            const char* badge = "IGN";
+            const char* badge = t.width() >= 300 ? "IGNORED" : "IGN";
             const int badgeW = t.textWidth(badge) + 6;
             const int badgeH = 10;
             const int bx = labelEnd + 4;
