@@ -6,6 +6,7 @@
 #include "state.h"
 #include "sd_log.h"
 #include "remote_id.h"
+#include "spam_watch.h"
 #include <Preferences.h>
 #include <cstring>   // memcmp, for the inline isWatched()/isHunted() below
 
@@ -369,6 +370,10 @@ public:
     // (sim/detection_sim.cpp) and this is pure arithmetic over the log --
     // one copy here means the emulator gates alerts exactly as the board
     // does, instead of a second implementation drifting from this one.
+    // Tracker flood state. main.cpp consults this only after the normal
+    // alert-policy gates have already allowed the sighting to interrupt.
+    SpamWatch& spam() { return _spam; }
+
     AlertGate alertGate(const uint8_t* mac, uint8_t afterN, bool exempt, bool still = false) {
     if (afterN == 0 || exempt) return AlertGate::ALLOW;
     const uint32_t now = millis();
@@ -695,6 +700,10 @@ private:
     // radio is currently tuned to — without actively hopping, the
     // sniffer stays parked on one channel and misses anything
     // transmitting on the other 12. See hopChannel().
+    SpamWatch   _spam;
+    uint16_t    _newBleThisMinute[SpamWatch::TYPES] = {0};
+    uint32_t    _spamMinuteAt = 0;
+
     uint8_t     _wifiChannel = 1;
     uint32_t    _lastHopMs   = 0;
     uint16_t    _dwellMs     = 300;   // how long this channel gets, set on arrival
