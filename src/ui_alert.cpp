@@ -489,38 +489,17 @@ void uiAlertTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng,
         t.drawRect(BAR_X, BAR_Y, BAR_W, BAR_H, Theme::CYAN);
         if (fill > 0) t.fillRect(BAR_X + 1, BAR_Y + 1, fill, BAR_H - 2, Theme::CYAN);
 
-        // Rolling ~15-second history on the same honest -90..-40 dBm scale.
-        if (signalDet.rssiHistCount >= 2) {
-            int px = BAR_X + 2;
-            int py = BAR_Y + BAR_H - 3;
-            for (uint8_t i = 0; i < signalDet.rssiHistCount; i++) {
-                int rv = detectionRssiAt(signalDet, i);
-                if (rv < -90) rv = -90;
-                if (rv > -40) rv = -40;
-                const int x = BAR_X + 2 +
-                    (int)i * (BAR_W - 5) / (int)(signalDet.rssiHistCount - 1);
-                const int y = BAR_Y + BAR_H - 3 -
-                    (rv + 90) * (BAR_H - 5) / 50;
-                if (i) t.drawLine(px, py, x, y, Theme::VAPOR_PINK);
-                t.fillCircle(x, y, 1, Theme::WHITE);
-                px = x;
-                py = y;
-            }
-        }
     }
 
-    // Prefer the real multi-sample trend once three points exist. Until then,
-    // keep channel/repeat context visible while the history is learning.
+    // ALERT is an immediate notification, not a tracking screen. A fresh
+    // detection usually has too little cadence history for a trustworthy
+    // movement trend, so keep the alert honest and useful: current strength,
+    // channel and repeat count. HUNT owns the sustained warmer/steady/colder
+    // guidance; LOG keeps its compact live trend indicator.
     char info[48];
-    const RssiTrend trend = detectionRssiTrend(signalDet);
-    if (trend == RssiTrend::UNKNOWN) {
-        snprintf(info, sizeof(info), "%d dBm   CH %u   x%u",
-                 signalDet.rssi, s_last.channel,
-                 (unsigned)(signalDet.repeats ? signalDet.repeats : 1));
-    } else {
-        snprintf(info, sizeof(info), "%d dBm  %s",
-                 signalDet.rssi, rssiTrendName(trend));
-    }
+    snprintf(info, sizeof(info), "%d dBm   CH %u   x%u",
+             signalDet.rssi, s_last.channel,
+             (unsigned)(signalDet.repeats ? signalDet.repeats : 1));
     if (t.textWidth(info) > PLATE_W - 12) t.setTextSize(1);
     t.setTextColor(confColor, Theme::BG);
     t.setCursor(PLATE_X + (PLATE_W - t.textWidth(info)) / 2, PLATE_Y + PLATE_H - INFO_DY);
