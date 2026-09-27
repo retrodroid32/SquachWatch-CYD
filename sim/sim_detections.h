@@ -43,10 +43,9 @@ struct SimDetectionProfile {
 // to be a real registration.
 inline const SimDetectionProfile kSimProfiles[] = {
     // FLOCK -- the first is what `T FLOCK` gets
-    { DetectionType::FLOCK,       {0x24, 0x0A, 0xC4}, "Flock-ESP32", "",               -68, true,  "ESP32 module (maybe Flock)" },
+    { DetectionType::FLOCK,       {0x70, 0xC9, 0x4E}, "Flock-Field", "",               -68, true,  "Flock field prefix" },
     { DetectionType::FLOCK,       {0xB4, 0x1E, 0x52}, "Flock-MA-L",  "",               -70, true,  "Flock camera (registered)" },
-    { DetectionType::FLOCK,       {0x24, 0xB2, 0xB9}, "Flock-Liteo", "",               -72, true,  "Liteon chip (maybe Flock)" },
-    { DetectionType::FLOCK,       {0xD0, 0x39, 0x57}, "Flock",       "",               -74, true,  "Unverified Flock address" },
+    { DetectionType::FLOCK,       {0x00, 0x03, 0x7F}, "Flock-QCA",   "",               -72, true,  "Flock QCA wildcard probe" },
     { DetectionType::FLOCK,       {0x02, 0xF1, 0x0C}, "Flock-Setup", "",               -60, true,  "Flock setup network" },
     { DetectionType::FLOCK,       {0x02, 0xF1, 0x0B}, "Flock-BLE",   "FS Ext Battery", -66, false, "Flock external battery" },
     { DetectionType::FLOCK,       {0x02, 0x09, 0xC8}, "Flock-BLE",   "",               -71, false, "Flock Bluetooth (XUNTONG)" },
@@ -138,6 +137,14 @@ inline void simMakeDetection(Detection& d, const SimDetectionProfile& p, uint32_
     // Without this a memset leaves conf at 0, which is LOW -- and every
     // synthetic sighting would render as a shaky match.
     d.conf      = confidenceFor(p.type);
+    // Flock's current WiFi paths are deliberately path-dependent. Keep the
+    // emulator honest: a field-observed prefix is LOW by address alone,
+    // while the QCA firmware prefix is only emitted after wildcard-probe
+    // corroboration and therefore renders MED.
+    if (p.type == DetectionType::FLOCK && strcmp(p.vendor, "Flock-Field") == 0)
+        d.conf = Confidence::LOW_CONF;
+    else if (p.type == DetectionType::FLOCK && strcmp(p.vendor, "Flock-QCA") == 0)
+        d.conf = Confidence::MED_CONF;
     d.vendor = p.vendor;   // a pointer into the seed table, as on the board
     snprintf(d.name,   sizeof(d.name),   "%s", p.name);
     d.firstSeen = now;
