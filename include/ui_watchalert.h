@@ -1,7 +1,7 @@
 // SquachWatch-CYD — dedicated alert screen for a watched target
 // ("stalker tracker") coming back into range. Deliberately different
-// from the normal ALERT screen: Squachy runs around behind outlined
-// headline text instead of a per-type ambient scene.
+// from the normal ALERT screen: LOCKED ON, a radar scope with the target
+// closing in, and Squachy beside it on the headphones.
 #pragma once
 #include <TFT_eSPI.h>
 #include <stdint.h>
@@ -20,8 +20,3 @@ void uiWatchAlertTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, boo
 // is the one place the target is ever named on screen, so it is the one place
 // you can act on it without finding it in a scan again.
 bool uiWatchAlertHitRemove(TFT_eSPI& t, int x, int y);
-
-// Design studies for this screen: 0 is the shipped look, 1 RED ALERT,
-// 2 WANTED, then LOCKED ON five ways: 3 SCOPE, 4 SONAR, 5 HUD, 6 BULLSEYE,
-// 7 OPERATOR. See ui_watchalert.cpp.
-void uiWatchAlertSetStyle(uint8_t s);

@@ -756,12 +756,11 @@ int main(int argc, char** argv) {
     else if (screen == "watchalert") {
         // Watching the seeded AirTag, with a signal that has been climbing for
         // the last twenty seconds -- so the screen has a name, a type and a
-        // trend to show. SQUACHSIM_WATCHSTYLE picks one of the design studies.
+        // trend to show.
         const uint8_t tile[6] = { 0x10, 0x11, 0x12, 0x13, 0x14, 0x15 };
         engine.watchBle(tile, "AirTag");
         static const int8_t R[] = { -89, -86, -87, -83, -80, -81, -76, -73, -70, -67, -64, -61 };
         for (int8_t r : R) engine.checkWatchBle(tile, r);
-        if (const char* st = getenv("SQUACHSIM_WATCHSTYLE")) uiWatchAlertSetStyle((uint8_t)atoi(st));
         uiWatchAlertInit(frame);
     }
     else if (screen == "diagnostics") uiDiagnosticsInit(frame);
