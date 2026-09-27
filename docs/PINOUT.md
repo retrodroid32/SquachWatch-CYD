@@ -52,3 +52,23 @@ on the CYD's GPIO header but not used by SquachWatch-CYD v1.0.
 - [Fr4nkFletcher/ESP32-Marauder-Cheap-Yellow-Display](https://github.com/Fr4nkFletcher/ESP32-Marauder-Cheap-Yellow-Display)
 - Sunton schematic for the ESP32-2432S028R (publicly available in
   the witnessmenow wiki).
+
+
+## Optional GPS / GNSS firmware
+
+GPS-capable CYD builds use a dedicated UART2 pair that does not overlap the
+display, touch, SD or status-light assignments used by this fork:
+
+| Signal | CYD GPIO |
+|---|---:|
+| GPS module TX -> ESP32 RX | 35 |
+| GPS module RX <- ESP32 TX | 26 |
+
+GPIO35 is input-only on the ESP32, which is intentional here: it receives the
+GNSS module's serial output. The GPS firmware defaults to 115200 baud.
+
+GPS is a compile-time/web-flasher option, not a required peripheral. The normal
+40 MHz and 80 MHz firmware remain available without GPS, and the GPS checkbox
+can be combined with either display-clock choice. GPS builds append
+`gps_epoch,lat,lon,alt_m,sats,hdop,gps_age_ms` to SD detection rows and leave
+the fixed-size BlackBox format unchanged.

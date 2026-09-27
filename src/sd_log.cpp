@@ -1,6 +1,7 @@
 // SquachWatch-CYD — SD log implementation
 #include "sd_log.h"
 #include "clock.h"
+#include "gps.h"
 #include <time.h>
 #include <SD.h>
 #include <stdio.h>
@@ -160,9 +161,16 @@ bool SdLog::flushPending() {
 
 void SdLog::logEvent(const Detection& d) {
     if (!_ready) return;
+    // A GPS/NTP/serial clock can become trusted after SD mounted. Move from
+    // the uptime fallback to the dated file immediately instead of waiting
+    // for the hourly rotation check.
+    if (Clock::trusted() && strncmp(_filename, "/squachwatch-up-", 16) == 0) {
+        flushPending();
+        _filename[0] = '\0';
+    }
     if (_filename[0] == '\0') openDaily();
 
-    char line[96];
+    char line[224];
     char mac[18];
     snprintf(mac, sizeof(mac), "%02X:%02X:%02X:%02X:%02X:%02X",
              d.mac[0], d.mac[1], d.mac[2], d.mac[3], d.mac[4], d.mac[5]);
@@ -173,15 +181,30 @@ void SdLog::logEvent(const Detection& d) {
     for (char* p = vendorSafe; *p; p++) if (*p == ',') *p = '.';
     for (char* p = nameSafe;   *p; p++) if (*p == ',') *p = '.';
 
+#if defined(GPS_SUPPORT)
+    const Gps::Snapshot g = Gps::snapshot();
+    char epoch[16] = "", lat[20] = "", lon[20] = "", alt[16] = "";
+    char sats[8] = "", hdop[12] = "", age[16] = "";
+    if (g.timeValid) snprintf(epoch, sizeof epoch, "%lu", (unsigned long)g.epoch);
+    if (g.fix) {
+        snprintf(lat, sizeof lat, "%.7f", g.lat);
+        snprintf(lon, sizeof lon, "%.7f", g.lon);
+        if (g.altValid) snprintf(alt, sizeof alt, "%.1f", (double)g.altM);
+        snprintf(sats, sizeof sats, "%u", (unsigned)g.sats);
+        if (g.hdopValid) snprintf(hdop, sizeof hdop, "%.2f", (double)g.hdop100 / 100.0);
+        snprintf(age, sizeof age, "%lu", (unsigned long)g.ageMs);
+    }
+    const int n = snprintf(line, sizeof(line),
+                           "%lu,%s,%d,%s,%u,%s,%s,%s,%s,%s,%s,%s,%s,%s\n",
+                           (unsigned long)millis(), detectionTypeName(d.type), d.rssi,
+                           mac, d.channel, vendorSafe, nameSafe,
+                           epoch, lat, lon, alt, sats, hdop, age);
+#else
     const int n = snprintf(line, sizeof(line),
                            "%lu,%s,%d,%s,%u,%s,%s\n",
-                           (unsigned long)millis(),
-                           detectionTypeName(d.type),
-                           d.rssi,
-                           mac,
-                           d.channel,
-                           vendorSafe,
-                           nameSafe);
+                           (unsigned long)millis(), detectionTypeName(d.type), d.rssi,
+                           mac, d.channel, vendorSafe, nameSafe);
+#endif
     if (n <= 0) return;
     const size_t lineLen = (size_t)n < sizeof(line) ? (size_t)n : sizeof(line) - 1;
 

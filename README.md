@@ -80,7 +80,10 @@ for the implementation and validation record.
 
 The web flasher also offers optional 80 MHz display-clock variants for the
 2.8" CYD and 3.2" CYD. Those are separate experimental performance profiles,
-not different physical boards. The RL Phantom capacitive profile is compile-only,
+not different physical boards. The CYD profiles also offer an independent
+**GPS / GNSS firmware** checkbox, so 40 MHz + GPS and 80 MHz + GPS are both
+available. GPS uses UART2 with module TX → GPIO35 and module RX → GPIO26.
+The RL Phantom capacitive profile is compile-only,
 and the 3.5" ST7796 profile remains excluded from release/CI while its hardware
 issue is unresolved.
 
@@ -136,10 +139,22 @@ plug in, click Connect & Install, done. A T-Watch has its clock set after instal
 
 If a microSD card is present, every detection is also appended to
 `squachwatch-<day>.log` (CSV: `ts,type,rssi,mac,channel,vendor,ssid`).
+On a GPS firmware build, the same row appends
+`gps_epoch,lat,lon,alt_m,sats,hdop,gps_age_ms`; unavailable values stay blank.
+
+### Optional GPS / GNSS
+
+GPS is a firmware choice in the web flasher, independent of the 80 MHz
+display option. On supported CYD profiles wire the module's **TX to GPIO35**
+and **RX to GPIO26**. The GPS build listens at 115200 baud, uses valid GNSS
+UTC to establish the board clock when it does not already have trusted time,
+shows fix status under **System Properties → Board**, and geotags SD detection
+rows. The fixed-size BlackBox record is deliberately unchanged.
 
 ### The clock
 
-There is no GPS, and the board never joins a network to scan. But it does
+On a normal build there is no GPS, and the board never joins a network to scan. A
+GPS build can establish UTC from the receiver. Otherwise the board does
 join one for the update check at boot, and for UPDATE OVER WIFI, and the
 clock rides along: one NTP round trip while the radio is up anyway, about a
 second. The zone is yours to pick, and there are three ways: the web
