@@ -85,12 +85,45 @@ int main() {
        lookup(0xB4, 0x1E, 0x52, &conf) == DetectionType::FLOCK);
     ck("...and graded HIGH", conf == Confidence::HIGH_CONF);
 
-    // 24:0A:C4 is Espressif. Flock build on ESP32, so it is real evidence --
-    // shared with every dev board, smart plug and hobby project on earth,
-    // which is exactly what LOW is for.
-    ck("a generic Espressif block still matches FLOCK",
-       lookup(0x24, 0x0A, 0xC4, &conf) == DetectionType::FLOCK);
-    ck("...but graded LOW", conf == Confidence::LOW_CONF);
+    suite("Flock field-tested WiFi prefixes");
+
+    static const uint8_t flockField[][3] = {
+        {0x70,0xC9,0x4E},{0x3C,0x91,0x80},{0xD8,0xF3,0xBC},{0x80,0x30,0x49},
+        {0xB8,0x35,0x32},{0x14,0x5A,0xFC},{0x74,0x4C,0xA1},{0x08,0x3A,0x88},
+        {0x9C,0x2F,0x9D},{0xC0,0x35,0x32},{0x94,0x08,0x53},{0xE4,0xAA,0xEA},
+        {0xF4,0x6A,0xDD},{0xE0,0x0A,0xF6},{0x24,0xB2,0xB9},{0x00,0xF4,0x8D},
+        {0xD0,0x39,0x57},{0xE8,0xD0,0xFC},{0xE0,0x4F,0x43},{0xB8,0x1E,0xA4},
+        {0x70,0x08,0x94},{0x58,0x8E,0x81},{0xEC,0x1B,0xBD},{0x3C,0x71,0xBF},
+        {0x58,0x00,0xE3},{0x90,0x35,0xEA},{0x5C,0x93,0xA2},{0x64,0x6E,0x69},
+        {0x48,0x27,0xEA},{0xA4,0xCF,0x12},{0x14,0xB5,0xCD},{0x82,0x6B,0xF2},
+    };
+    int flockMisses = 0, flockOvergraded = 0;
+    for (size_t i = 0; i < sizeof(flockField) / sizeof(flockField[0]); i++) {
+        conf = Confidence::HIGH_CONF;
+        if (lookup(flockField[i][0], flockField[i][1], flockField[i][2], &conf) != DetectionType::FLOCK)
+            flockMisses++;
+        if (conf != Confidence::LOW_CONF) flockOvergraded++;
+    }
+    ck("all 32 active field prefixes match FLOCK", flockMisses == 0);
+    ck("all community field prefixes remain LOW", flockOvergraded == 0);
+
+    // Old generic ESP32 guesses are deliberately gone unless they are in the
+    // current field list. They produced predictable false positives on ordinary
+    // Espressif hardware and are not part of the 2026-07-16 Flock-You set.
+    ck("retired generic ESP32 guess no longer matches",
+       lookup(0x24, 0x0A, 0xC4, &conf) == DetectionType::UNKNOWN);
+    ck("retired SPECTRA-TEK guess no longer matches",
+       lookup(0x00, 0xA0, 0xD8, &conf) == DetectionType::UNKNOWN);
+
+    suite("Flock firmware-derived BLE names");
+    ck("Penguin + 10 digits matches FLOCK",
+       lookupBtName("Penguin-1234567890") == DetectionType::FLOCK);
+    ck("bare 10-digit Penguin serial matches FLOCK",
+       lookupBtName("1234567890") == DetectionType::FLOCK);
+    ck("non-digit Penguin suffix does not match",
+       lookupBtName("Penguin-12345ABCDE") == DetectionType::UNKNOWN);
+    ck("random 10-char name does not match",
+       lookupBtName("12345abcde") == DetectionType::UNKNOWN);
 
     suite("Drone manufacturer OUIs");
 
