@@ -3519,25 +3519,30 @@ void loop() {
     }
     // WATCHTEST: put the newest device in the log on the watch list and count
     // this as its first hit, so the LOCKED ON screen comes up at the next
-    // home-screen tick and then fills in from its real signal. Bluetooth only
-    // (a WiFi hit has no public way in): live first, then one the black box
-    // brought back. It is a real watch: REMOVE FROM WATCH LIST ends it.
+    // home-screen tick and then fills in from its real signal. Live Bluetooth
+    // first, then live WiFi, then anything the black box brought back. It is a
+    // real watch: REMOVE FROM WATCH LIST ends it.
     if (g_consoleWatchTest) {
         g_consoleWatchTest = false;
         const Detection* pick = nullptr;
-        for (uint8_t pass = 0; pass < 2 && !pick; pass++)
+        for (uint8_t pass = 0; pass < 3 && !pick; pass++)
             for (uint8_t i = 0; i < engine.logCount() && !pick; i++) {
                 const Detection* d = engine.logAt(i);
-                if (d && d->channel == 0 && (pass == 1 || !d->restored)) pick = d;
+                if (!d) continue;
+                const bool ble = d->channel == 0;
+                if (pass == 2 || (!d->restored && (pass == 0) == ble)) pick = d;
             }
         if (!pick) {
-            Serial.println("[watch] test: no Bluetooth device in the log yet; wait for one");
+            Serial.println("[watch] test: the log is empty; wait for a detection");
         } else {
-            engine.watchBle(pick->mac, pick->name[0] ? pick->name : detectionTypeName(pick->type));
-            engine.checkWatchBle(pick->mac, pick->rssi);
-            Serial.printf("[watch] test: watching %s (%s, %d dBm%s); the alert shows on the home screen\n",
-                          engine.watchLabel(), detectionTypeName(pick->type), (int)pick->rssi,
-                          pick->restored ? ", from before this boot" : "");
+            const bool ble = pick->channel == 0;
+            const char* label = pick->name[0] ? pick->name : detectionTypeName(pick->type);
+            if (ble) engine.watchBle(pick->mac, label);
+            else     engine.watchWifi(pick->mac, label);
+            engine.forceWatchHit(pick->rssi);
+            Serial.printf("[watch] test: watching %s (%s over %s, %d dBm%s); the alert shows on the home screen\n",
+                          engine.watchLabel(), detectionTypeName(pick->type), ble ? "Bluetooth" : "WiFi",
+                          (int)pick->rssi, pick->restored ? ", from before this boot" : "");
         }
     }
     if (g_consoleRotate || (tp.valid && !Settings::rotationLocked() && !Squachy::isHeld() &&
