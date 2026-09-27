@@ -6132,6 +6132,13 @@ void loop() {
                 if (latest && freshAlertCandidate(*latest, now) &&
                     alertMayInterrupt(*latest)) {
                     uiDeskAlert(*latest, now);
+                    if (s_alertSpam) {
+                        char sub[40];
+                        snprintf(sub, sizeof sub, "%u IDs; later ones stay in LOG",
+                                 (unsigned)engine.spam().fakes(latest->type));
+                        Theme::showToast("TRACKER SPAM", sub, Theme::RED, 3500);
+                        s_alertSpam = false;
+                    }
                     lastAlertType = latest->type;
                     squachyCatch(latest->type, latest->mac, latest->hits, latest->rssi, latest->conf);
                 }
