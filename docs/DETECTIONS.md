@@ -45,6 +45,11 @@ The 32 field-observed prefixes are:
   table because Qualcomm hardware is generic. SquachWatch only classifies it
   as Flock when the same frame is a wildcard probe, and then grades the result
   **Medium**.
+- Probe responses are also checked at **addr1 (receiver)**. A camera can be
+  quiet during SquachWatch's dwell but still appear as the destination when
+  a nearby AP answers its earlier wildcard probe. This receiver-only path is
+  intentionally not promoted; community prefixes remain **Low** until direct
+  wildcard-probe evidence is observed.
 - SSIDs beginning `Flock-` / `FLOCK-` remain a separate SSID evidence path.
 
 The older generic ESP32 guesses that were not in the current field set were
