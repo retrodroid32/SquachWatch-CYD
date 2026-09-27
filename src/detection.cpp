@@ -702,6 +702,13 @@ bool DetectionEngine::init() {
             // Data frame: addr1 (DA) and addr2 (SA) both interesting
             g_engine->postWiFi(frame + 4,  pkt->rx_ctrl.rssi, pkt->rx_ctrl.channel);
             g_engine->postWiFi(frame + 10, pkt->rx_ctrl.rssi, pkt->rx_ctrl.channel);
+        } else if (type == 0 && subtype == 13 &&
+                   RemoteId::isWifiNanAction(frame, (uint16_t)pkt->rx_ctrl.sig_len)) {
+            // OpenDroneID Wi-Fi NAN public-action frame. Use addr2 as the
+            // aircraft radio identity and route it through the same bounded
+            // Wi-Fi queue as beacon-form Remote ID.
+            g_engine->postWiFi(frame + 10, pkt->rx_ctrl.rssi,
+                               pkt->rx_ctrl.channel, nullptr, false, false, true);
         } else if (type == 0 && subtype == 8) {
             // Beacon: fixed params (timestamp+interval+capability) run
             // 12 bytes after the 24-byte header, then the SSID is the
