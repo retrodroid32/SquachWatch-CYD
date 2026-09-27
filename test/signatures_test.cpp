@@ -109,6 +109,8 @@ int main() {
        lookup(0x00, 0x1A, 0xF9, &conf) == DetectionType::DRONE);
     ck("PowerVision is DRONE",
        lookup(0x54, 0x7D, 0x40, &conf) == DetectionType::DRONE);
+    ck("Zipline is DRONE",
+       lookup(0x74, 0xB8, 0x0F, &conf) == DetectionType::DRONE);
 
     // The next three share their first 24 bits with unrelated companies.
     // Exact high-nibble matching is therefore part of correctness, not just
@@ -129,6 +131,14 @@ int main() {
        lookup4(0xAC, 0x86, 0xD1, 0x71, &conf) == DetectionType::DRONE);
     ck("Inspired Flight MA-M matches",
        lookup4(0x34, 0xB5, 0xF3, 0x21, &conf) == DetectionType::DRONE);
+    ck("FIMI MA-M exact /28 matches",
+       lookup4(0x6C, 0xDF, 0xFB, 0xE1, &conf) == DetectionType::DRONE);
+    ck("FIMI neighboring /28 does not match",
+       lookup4(0x6C, 0xDF, 0xFB, 0xD1, &conf) == DetectionType::UNKNOWN);
+    ck("HOVERAir / Zero Zero MA-M exact /28 matches",
+       lookup4(0xC8, 0x63, 0x14, 0x41, &conf) == DetectionType::DRONE);
+    ck("Zero Zero neighboring /28 does not match",
+       lookup4(0xC8, 0x63, 0x14, 0x31, &conf) == DetectionType::UNKNOWN);
 
     const uint8_t autelMac[6] = {0xEC,0x5B,0xCD,0xE1,0,0};
     ck("MA-M vendor label resolves",
