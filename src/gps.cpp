@@ -11,7 +11,7 @@
 #define GPS_RX_PIN 35
 #endif
 #ifndef GPS_TX_PIN
-#define GPS_TX_PIN 26
+#define GPS_TX_PIN 22
 #endif
 #ifndef GPS_BAUD
 #define GPS_BAUD 115200
