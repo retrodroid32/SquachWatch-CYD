@@ -1081,6 +1081,15 @@ static bool alertMayInterrupt(const Detection& d) {
                                    Settings::alertCooldownSec(d.type), now))
         return false;
 
+    // If this flood already spent its one explanatory alert, stop here --
+    // before alertGate() mutates AUTO SNOOZE counters for an interruption
+    // that will never happen. A pending first announcement is allowed to
+    // continue through AUTO SNOOZE and is only consumed if that gate passes.
+    const bool spamActive =
+        !watched && !always && engine.spam().active(d.type, now);
+    if (spamActive && !engine.spam().announcementPending(d.type))
+        return false;
+
 #if defined(TWATCH_S3)
     const bool still = twatchStill();
 #else
@@ -1097,11 +1106,12 @@ static bool alertMayInterrupt(const Detection& d) {
 
     s_alertLastFree = (g == DetectionEngine::AlertGate::ALLOW_LAST);
 
-    // SpamWatch is intentionally the LAST policy gate. It cannot create an
-    // alert that LOG ONLY / confidence / repeat / cooldown / device snooze /
-    // AUTO SNOOZE would have blocked. WATCH and ALWAYS ALERT are explicit
-    // per-device intent, so they bypass flood suppression.
-    if (!watched && !always && engine.spam().active(d.type, now)) {
+    // Consume the one flood announcement only after every ordinary policy
+    // gate, including AUTO SNOOZE, has actually allowed this interruption.
+    // That keeps SpamWatch suppression from spending AUTO SNOOZE allowance
+    // and keeps a blocked first announcement available for the next eligible
+    // tracker identity.
+    if (spamActive) {
         if (!engine.spam().takeAnnounce(d.type)) return false;
         s_alertSpam = true;
         Serial.printf("[spam] %s flood announced: %u tracker identities; later ones stay in LOG\n",
