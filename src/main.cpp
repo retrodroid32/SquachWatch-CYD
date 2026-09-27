@@ -4555,7 +4555,8 @@ void loop() {
                 uiLogTick(t, now, engine, 0, s_confirmPending, s_confirmLabel,
                           s_infoPending, infoTypeName, infoText,
                           engine.isWatched(s_confirmMac, s_confirmIsBle),
-                          engine.isHunted(s_confirmMac, s_confirmIsBle));
+                          engine.isHunted(s_confirmMac, s_confirmIsBle),
+                          IgnoreList::contains(s_confirmMac));
                 Theme::drawToast(t, now);
             });
 
