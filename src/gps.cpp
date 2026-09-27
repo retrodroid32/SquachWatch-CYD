@@ -33,13 +33,15 @@ static int64_t daysFromCivil(int y, unsigned m, unsigned d) {
     y -= m <= 2;
     const int era = (y >= 0 ? y : y - 399) / 400;
     const unsigned yoe = (unsigned)(y - era * 400);
-    const unsigned doy = (153 * (m + (m > 2 ? (unsigned)-3 : 9)) + 2) / 5 + d - 1;
+    const int mp = (int)m + (m > 2 ? -3 : 9);
+    const unsigned doy = (unsigned)((153 * mp + 2) / 5) + d - 1;
     const unsigned doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
     return (int64_t)era * 146097 + (int64_t)doe - 719468;
 }
 
 static uint32_t gpsEpoch() {
     if (!s_gps.date.isValid() || !s_gps.time.isValid()) return 0;
+    if (s_gps.date.age() > 5000 || s_gps.time.age() > 5000) return 0;
     const int y = s_gps.date.year();
     const unsigned mo = s_gps.date.month(), d = s_gps.date.day();
     if (y < 2025 || mo < 1 || mo > 12 || d < 1 || d > 31) return 0;
@@ -69,7 +71,7 @@ void tick(uint32_t now) {
         s_lastCharAt = now;
         if (!s_gps.encode(c)) continue;
 
-        if (s_gps.location.isValid() && s_gps.location.age() <= 10000) {
+        if (s_gps.location.isUpdated() && s_gps.location.isValid()) {
             s_snap.lat = s_gps.location.lat();
             s_snap.lon = s_gps.location.lng();
             s_fixAt = now;
