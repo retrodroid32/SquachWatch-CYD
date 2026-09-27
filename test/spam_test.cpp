@@ -41,7 +41,9 @@ int main() {
         SpamWatch w;
         uint32_t now = 3000000;
         for (int i = 0; i < 8; i++) { now += 3000; w.noteVanish(DetectionType::GOOGLE_TAG, 800, 1, now); }
+        ck("announcement starts pending", w.announcementPending(DetectionType::GOOGLE_TAG));
         ck("first announcement allowed", w.takeAnnounce(DetectionType::GOOGLE_TAG));
+        ck("announcement no longer pending", !w.announcementPending(DetectionType::GOOGLE_TAG));
         ck("second suppressed", !w.takeAnnounce(DetectionType::GOOGLE_TAG));
         ck("other tracker type unaffected", !w.active(DetectionType::TILE, now));
     }
