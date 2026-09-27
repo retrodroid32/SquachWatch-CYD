@@ -110,9 +110,9 @@ enum class EvidenceKind : uint8_t {
     WIFI_OUI,
     WIFI_SSID,
     WIFI_PWNAGOTCHI,
-    WIFI_REMOTEID,
     WIFI_EVILTWIN,
     WIFI_DEAUTH,
+    WIFI_REMOTEID,
 };
 
 inline const char* evidenceKindName(EvidenceKind e) {
