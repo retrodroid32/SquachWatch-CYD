@@ -32,6 +32,23 @@ CYAN  = (0, 214, 214)
 # ---- the clips ----
 
 CLIPS = {
+    # v1.22.0 "Costume Drama": the wardrobe, redrawn. One outfit a scene on
+    # CLEAR, long enough for each one's moving part (the propeller, the
+    # headband, the blinking chest lights) to do its thing. Warm-up 200 so
+    # the "every outfit unlocked" bubble --outfit brings with it has gone.
+    "costume-drama": [
+        ("clear", 200, 16, ["--outfit", "1",  "--noseed", "--bg", "3"],  {}, 800, "THE TANOOKI SUIT. THE WHOLE SUIT."),
+        ("clear", 200, 16, ["--outfit", "3",  "--noseed", "--bg", "4"],  {}, 800, "TINFOIL HAT NOW HAS A PROPELLER. FOR SCIENCE."),
+        ("clear", 200, 16, ["--outfit", "4",  "--noseed", "--bg", "10"], {}, 800, "THE NINJA IS VISIBLE NOW. BAD NINJA."),
+        ("clear", 200, 16, ["--outfit", "5",  "--noseed", "--bg", "8"],  {}, 800, "THE S IS FOR SQUACHY. LAWYERS, RELAX."),
+        ("clear", 200, 16, ["--outfit", "6",  "--noseed", "--bg", "5"],  {}, 700, "TALL BRO. SAME, BUT TALLER."),
+        ("clear", 200, 16, ["--outfit", "7",  "--noseed", "--bg", "1"],  {}, 800, "THE SPACE SUIT HAS ARMS NOW"),
+        ("clear", 200, 16, ["--outfit", "8",  "--noseed", "--bg", "0"],  {}, 700, "GOTTA DETECT FAST"),
+        ("clear", 200, 16, ["--outfit", "9",  "--noseed", "--bg", "3"],  {}, 800, "A PIRATE HAT, NOT A TENT"),
+        ("clear", 200, 16, ["--outfit", "10", "--noseed", "--bg", "6"],  {}, 800, "THE WOLF PELT GREW PAWS"),
+        ("clear", 200, 16, ["--outfit", "11", "--noseed", "--bg", "2"],  {}, 800, "CHROME WING IS ACTUALLY CHROME"),
+        ("clear", 200, 16, ["--outfit", "12", "--noseed", "--bg", "1"],  {}, 900, "THE VOID BLINKS BACK"),
+    ],
     # v1.21.0 "All Ears": the watch hears again, the buzz grew up, and the
     # watch rows got a page. Shot on the watch's 240x240 like v1.20.0's; the
     # emulator is not the watch build, so the page itself is the notes' to
