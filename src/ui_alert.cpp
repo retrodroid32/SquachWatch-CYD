@@ -118,18 +118,26 @@ static uint8_t glitchStepLevel(uint8_t step) {
     return (uint8_t)(lv > 4 ? 4 : lv);
 }
 
-static bool s_first = false;
-static bool s_night = false;
-static bool s_lastFree = false;
+static bool     s_first          = false;
+static bool     s_night          = false;
+static bool     s_lastFree       = false;
+static bool     s_spam           = false;
+static uint16_t s_spamIdentities = 0;
 void uiAlertSetFirst(bool first) { s_first = first; }
 void uiAlertSetNight(bool night) { s_night = night; }
 void uiAlertSetLastFree(bool lastFree) { s_lastFree = lastFree; }
+void uiAlertSetSpam(bool spam, uint16_t identities) {
+    s_spam = spam;
+    s_spamIdentities = identities;
+}
 
 void uiAlertInit(TFT_eSPI& t, const Detection& d) {
     s_last = d;
     s_first = false;
     s_night = false;
     s_lastFree = false;
+    s_spam = false;
+    s_spamIdentities = 0;
     s_touched = false;
     s_alertStart = millis();
     s_glitchStep = 0;
@@ -505,9 +513,17 @@ void uiAlertTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng,
     t.setCursor(PLATE_X + (PLATE_W - t.textWidth(info)) / 2, PLATE_Y + PLATE_H - INFO_DY);
     t.print(info);
     t.setTextSize(readSz);
-    // The first one of its kind, ever, on this board: a line in the gap
-    // between the strip and the plate, in the strip's own colour.
-    if (s_first || s_night) {
+    // One line of context above the plate. A tracker flood beats FIRST /
+    // AT NIGHT because it explains why later matching identities will stay
+    // quiet; FIRST / NIGHT still win over ordinary AUTO SNOOZE housekeeping.
+    if (s_spam) {
+        char fl[36];
+        snprintf(fl, sizeof fl, "* SPAM: %u TRACKER IDS *", (unsigned)s_spamIdentities);
+        t.setTextSize(1);
+        t.setTextColor(Theme::RED, Theme::BG);
+        t.setCursor(PLATE_X + (PLATE_W - t.textWidth(fl)) / 2, stripHOf(w) + 2);
+        t.print(fl);
+    } else if (s_first || s_night) {
         const char* fl = (s_first && s_night) ? "* FIRST, AND AT NIGHT *"
                        : s_first ? "* FIRST OF ITS KIND *" : "* AT NIGHT *";
         t.setTextSize(1);
