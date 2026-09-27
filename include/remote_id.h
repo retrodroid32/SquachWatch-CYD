@@ -60,6 +60,7 @@ bool merge(const uint8_t* payload, uint8_t len, Info& out, uint32_t now);
 // become DRONE alerts.
 bool isBluetoothLegacy(const uint8_t* payload, uint8_t len);
 bool isWifiBeacon(const uint8_t* frame, uint16_t len);
+bool isWifiNanAction(const uint8_t* frame, uint16_t len);
 
 void reset(Info& out);
 
