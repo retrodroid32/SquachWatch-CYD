@@ -70,7 +70,7 @@ pio run -e cyd32-st7798 -t upload
 ```
 
 **Optional GPS variants** use UART2 at 115200 baud with GPS TX → GPIO35 and
-GPS RX → GPIO26. GPS is independent of the display clock:
+GPS RX → GPIO22. GPS is independent of the display clock:
 ```sh
 # 3.2" normal display clock + GPS
 pio run -e cyd32-st7798-gps -t upload
