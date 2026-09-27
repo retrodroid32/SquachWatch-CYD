@@ -453,7 +453,19 @@ void dump() {
         return true;
     }, nullptr);
     Serial.println("boot,epoch,up_s,type,mac,rssi,channel,hits,again,vendor,name");
-    forEachDetection([](const DetRecord& r, void*) {
+    // The on-device LOG intentionally stops at the newest CLR marker so a
+    // cleared history never reappears after reboot. BLACKBOX is the forensic
+    // console view, though, so it walks the whole ring and prints each CLR
+    // marker in-place before continuing into the older records it hid.
+    s_dets.walk([](const uint8_t* p, void*) {
+        if (p[0] == KIND_CLEAR) {
+            const DetRecord& mark = *(const DetRecord*)p;
+            Serial.printf("# LOG CLEARED here (boot %u, epoch %lu): older rows below are hidden from the LOG screen\n",
+                          (unsigned)mark.boot, (unsigned long)mark.epoch);
+            return true;
+        }
+        if (p[0] != KIND_DET) return true;
+        const DetRecord& r = *(const DetRecord*)p;
         Serial.printf("%u,%lu,%lu,%s,%02x:%02x:%02x:%02x:%02x:%02x,%d,%u,%u,%u,%s,%s\n",
                       (unsigned)r.boot, (unsigned long)r.epoch, (unsigned long)r.upSec,
                       detectionTypeName((DetectionType)r.type),
