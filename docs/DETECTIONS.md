@@ -42,8 +42,8 @@ of the matched signature rather than of the type:
 | **Medium** | Registered to a parent whose range is far wider than the product — Amazon owns Ring, and also Echo, Fire TV and Kindle. |
 | **Low** | A module or ODM vendor whose parts are in everything, or a block not in the IEEE registry. |
 
-Across the current 102 manufacturer-prefix rules (97 MA-L/24-bit rows plus
-5 exact MA-M/28-bit rows) that comes out at 58 High, 4 Medium, 40 Low.
+Across the current 105 manufacturer-prefix rules (98 MA-L/24-bit rows plus
+7 exact MA-M/28-bit rows) that comes out at 61 High, 4 Medium, 40 Low.
 
 **This is what makes ALERT FILTER work.** It has always been a minimum-
 confidence filter, and until now confidence was constant per type, so it
@@ -189,6 +189,7 @@ Current full 24-bit MA-L set:
 - **Freefly Systems:** `EC:71:5E`
 - **AeroVironment:** `00:1A:F9`
 - **PowerVision:** `54:7D:40`
+- **Zipline International:** `74:B8:0F`
 
 Current exact 28-bit MA-M set:
 - **Autel Robotics:** `EC:5B:CD:E/28`
@@ -196,11 +197,18 @@ Current exact 28-bit MA-M set:
 - **Yuneec:** `E0:B6:F5:8/28`
 - **Quantum-Systems:** `AC:86:D1:7/28`
 - **Inspired Flight:** `34:B5:F3:2/28`
+- **FIMI:** `6C:DF:FB:E/28`
+- **HOVERAir / Zero Zero Robotics:** `C8:63:14:4/28`
 
 The 28-bit distinction is deliberate. Those manufacturers share their first
 24 bits with unrelated IEEE MA-M registrants; treating `EC:5B:CD`,
-`98:AA:FC`, `E0:B6:F5`, etc. as ordinary OUIs would create predictable
-false positives.
+`98:AA:FC`, `E0:B6:F5`, `6C:DF:FB`, `C8:63:14`, etc. as ordinary
+OUIs would create predictable false positives.
+
+Additional brands reviewed but not added yet include Walkera, EHang, Wingtra,
+Flyability, BRINC, Holy Stone, and senseFly/AgEagle. No manufacturer-owned
+IEEE prefix was verified for those names in this audit, so the table does not
+guess from commodity Wi-Fi module vendors.
 
 **Sources:** OpenDroneID reference implementation
 ([opendroneid-core-c](https://github.com/opendroneid/opendroneid-core-c)),
