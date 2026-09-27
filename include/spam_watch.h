@@ -80,6 +80,11 @@ struct SpamWatch {
 private:
     bool evidence(uint8_t type, uint16_t n, uint32_t now, bool burst) {
         Type& x = t[type];
+        // A new piece of evidence after the quiet timeout belongs to a new
+        // flood even if no alert candidate happened to call active() during
+        // the gap.
+        if (x.active && x.lastMs && (uint32_t)(now - x.lastMs) > QUIET_MS)
+            x = Type();
         uint32_t s = x.score16;
         uint32_t el = x.lastMs ? (uint32_t)(now - x.lastMs) : 0;
 
