@@ -358,6 +358,34 @@ devices) rather than getting its own type — it's split out here.
 **Confidence in v1.0:** **High** — SIG-assigned UUIDs specific to this
 product line, same tier as the Samsung SmartTag match above.
 
+### Tracker spam-flood suppression
+
+AirTag, Samsung SmartTag, Google Find My Device tracker and Tile detections
+also feed a flood guard designed for BLE spam tools that rotate to a fresh
+address for every fake tracker burst.
+
+Two independent paths can mark one tracker type as a flood:
+
+- roughly eight short-lived, one-visit tracker identities accumulating faster
+  than a 90-second evidence half-life can decay them;
+- 40 genuinely new tracker identities of the same type within a minute.
+
+A flood gets at most one explanatory full-screen alert, then later identities
+of that type continue to be logged without repeatedly taking over the screen.
+The state clears after five quiet minutes.
+
+This is deliberately **tracker-only**. iBeacon, Meta, cameras, Wi-Fi attack
+types and other BLE categories never feed the flood detector. It is also a
+last-stage suppression gate, not an alert bypass: DETECTION FILTER, per-type
+LOG ONLY, minimum confidence/repeats, cooldown, Device Policies, AUTO SNOOZE,
+WATCH / ALWAYS ALERT and lock-screen rules keep their existing meaning.
+WATCH and ALWAYS ALERT remain explicit per-device exceptions and are never
+silenced by the flood guard.
+
+The host tests cover tracker eligibility, the trip thresholds, evidence
+decay, one announcement per flood, quiet-time reset and the case where new
+evidence arrives after the quiet timeout without an intervening UI query.
+
 ---
 
 ## Ring doorbells / cameras — `RING` — **High confidence**
