@@ -724,7 +724,7 @@
       <span>
         <span class="oc-title">Optional: external GPS / GNSS</span>
         <span class="oc-desc" id="gpsDesc">
-          Adds UART GPS time and geotagging. GPS TX connects to GPIO35; GPS RX connects to GPIO26.
+          Adds UART GPS time and geotagging. GPS TX connects to GPIO35; GPS RX connects to GPIO22.
           Works independently of the 80MHz option.
         </span>
       </span>
@@ -1573,11 +1573,11 @@
     var OVERCLOCK_LINE =
       "Overclock, huh. If it comes up white or torn, that panel said no — flash again with the box unticked.";
     var GPS_DESC_ON =
-      "UART GPS/GNSS: module TX → GPIO35, module RX → GPIO26. Adds GPS UTC and position fields to SD detections.";
+      "UART GPS/GNSS: module TX → GPIO35, module RX → GPIO22. Adds GPS UTC and position fields to SD detections.";
     var GPS_DESC_OFF =
       "GPS firmware is not published for this board profile.";
     var GPS_LINE =
-      "GPS build selected. Wire the module TX to GPIO35 and RX to GPIO26; it works with or without the 80MHz display option.";
+      "GPS build selected. Wire the module TX to GPIO35 and RX to GPIO22; it works with or without the 80MHz display option.";
 
     // Which release directory the manifest lives in. "" is the latest,
     // which sits at the site root; older ones are in <tag>/ subdirectories
