@@ -118,8 +118,8 @@ static bool mergeMessage(const uint8_t* m, Info& out, uint32_t now) {
     return false;
 }
 
-bool merge(const uint8_t* payload, uint8_t len, Info& out, uint32_t now) {
-    if (!payload || len < 4) return false;
+static const uint8_t* bluetoothMessage(const uint8_t* payload, uint8_t len) {
+    if (!payload || len < 4) return nullptr;
 
     uint8_t i = 0;
     while (i < len) {
@@ -134,17 +134,60 @@ bool merge(const uint8_t* payload, uint8_t len, Info& out, uint32_t now) {
         const uint8_t* adData = payload + i + 2;
         const uint8_t  adSize = (uint8_t)(adLen - 1);   // type byte excluded
 
-        if (adType == AD_SERVICE_DATA_16 && adSize >= 3 &&
+        if (adType == AD_SERVICE_DATA_16 && adSize >= 4 + MSG_SIZE &&
             rd16(adData) == ODID_UUID && adData[2] == ODID_APP_CODE) {
-            // UUID, app code, counter, then the message itself.
-            if (adSize >= 4 + MSG_SIZE) {
-                return mergeMessage(adData + 4, out, now);
-            }
-            return false;
+            // UUID, app code, counter, then the 25-byte ODID message.
+            return adData + 4;
         }
         i = (uint8_t)(i + 1 + adLen);
     }
+    return nullptr;
+}
+
+bool isBluetoothLegacy(const uint8_t* payload, uint8_t len) {
+    return bluetoothMessage(payload, len) != nullptr;
+}
+
+bool isWifiBeacon(const uint8_t* frame, uint16_t len) {
+    // 24-byte management header + 12-byte beacon fixed parameters.
+    if (!frame || len < 36) return false;
+
+    uint16_t i = 36;
+    while (i + 2u <= len) {
+        const uint8_t id = frame[i];
+        const uint8_t ieLen = frame[i + 1];
+        const uint16_t next = (uint16_t)(i + 2u + ieLen);
+        if (next > len) return false;
+
+        // ASTM F3411 Wi-Fi Beacon Remote ID:
+        // IE 221, ASD-STAN OUI FA:0B:BC, OUI type 0x0D, one-byte service
+        // counter, then an ODID Message Pack header and N x 25-byte messages.
+        if (id == 0xDD && ieLen >= 8) {
+            const uint8_t* d = frame + i + 2;
+            if (d[0] == 0xFA && d[1] == 0x0B && d[2] == 0xBC && d[3] == 0x0D) {
+                const uint8_t* pack = d + 5;  // skip OUI/type + message counter
+                const uint8_t packType = (uint8_t)(pack[0] >> 4);
+                const uint8_t singleSize = pack[1];
+                const uint8_t count = pack[2];
+                if (packType != 0x0F || singleSize != MSG_SIZE || count == 0 || count > 9)
+                    return false;
+                const uint16_t need = (uint16_t)(5u + 3u + (uint16_t)count * MSG_SIZE);
+                return ieLen >= need;
+            }
+        }
+        i = next;
+    }
     return false;
+}
+
+bool merge(const uint8_t* payload, uint8_t len, Info& out, uint32_t now) {
+    const uint8_t* msg = bluetoothMessage(payload, len);
+    if (!msg) return false;
+    // Presence and decoding are deliberately separate. Unsupported Remote ID
+    // message types still identify a compliant transmitter even though they
+    // do not add fields to Info.
+    mergeMessage(msg, out, now);
+    return true;
 }
 
 }  // namespace RemoteId
