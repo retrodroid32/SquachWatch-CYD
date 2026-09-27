@@ -1,10 +1,10 @@
 // SquachWatch-CYD — the device pages. See include/device_info.h.
 //
 // Every claim here has to survive being read by somebody standing next to the
-// thing. Where the evidence is a chip rather than a product, the page says so:
-// an Espressif prefix under FLOCK is "maybe a Flock camera", never "a Flock
-// camera", and the grades in docs/DETECTIONS.md are the source for which is
-// which. Kept to seven lines of 34 characters -- the MORE INFO panel in
+// thing. Where the evidence is a field-observed/module address rather than a
+// product-owned registration, the page says so: a LOW Flock field prefix is a
+// lead, not proof of a camera. The grades in docs/DETECTIONS.md are the source
+// for which is which. Kept to seven lines of 34 characters -- the MORE INFO panel in
 // portrait -- which the host test checks by wrapping each one.
 #include "device_info.h"
 #include <string.h>
@@ -37,12 +37,10 @@ const Device kDevices[] = {
       "A radio on Flock Safety's own registered block: one of their plate-reader cameras, which photograph every passing car and feed a database police search across towns." },
     { DetectionType::FLOCK, "FLOCK BLE", "Flock-BLE", nullptr,
       "A Bluetooth radio from XUNTONG, the supplier behind Flock's Bluetooth parts. Flock reportedly turns Bluetooth off on newer units, and XUNTONG sells to others -- a lead." },
-    { DetectionType::FLOCK, "ESP32 MODULE", "Flock-ESP32|Flok-ESP-S3|Flok-ESP-S2|Flok-ESP-C6", nullptr,
-      "An Espressif ESP32-family chip. Flock cameras use them -- and so do smart plugs, dev boards and this SquachWatch. Filed under Flock because it could be one. Treat it as a maybe." },
-    { DetectionType::FLOCK, "LITEON CHIP", "Flock-Liteo", nullptr,
-      "A Liteon wireless module. Flock hardware has used them, and so have millions of laptops. A maybe, not a match." },
-    { DetectionType::FLOCK, "FLOCK MAYBE", "Flock|Flock-OEM|Flock-DeFlk", nullptr,
-      "An address other Flock detectors list, but whose registration does not say Flock -- or names nobody. Kept because it has turned up on Flock gear; graded low because nothing proves it." },
+    { DetectionType::FLOCK, "FLOCK FIELD", "Flock-Field", nullptr,
+      "A WiFi address seen on Flock infrastructure in field research. The address alone is a low-confidence lead; an empty-SSID probe makes it stronger because deployed Flock cameras show that behavior." },
+    { DetectionType::FLOCK, "FLOCK QCA", "Flock-QCA", nullptr,
+      "A Qualcomm QCA9377 default address found inside Flock camera firmware, seen with Flock's wildcard-probe pattern. Qualcomm alone is generic; SquachWatch requires both clues." },
 
     // ---- AXON ---------------------------------------------------------------
     { DetectionType::AXON, "AXON BODY 2", "Axon-Body2", nullptr, AXON_BODY },
