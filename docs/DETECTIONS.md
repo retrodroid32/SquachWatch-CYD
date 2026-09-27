@@ -370,9 +370,11 @@ Two independent paths can mark one tracker type as a flood:
   than a 90-second evidence half-life can decay them;
 - 40 genuinely new tracker identities of the same type within a minute.
 
-A flood gets at most one explanatory full-screen alert, then later identities
-of that type continue to be logged without repeatedly taking over the screen.
-The state clears after five quiet minutes.
+A flood gets at most one explanatory alert, then later identities of that
+type continue to be logged without repeatedly taking over the screen. On the
+normal ALERT screen that is the red `SPAM: N TRACKER IDS` banner; DESK mode
+keeps its compact alert and adds a `TRACKER SPAM` toast instead. The state
+clears after five quiet minutes.
 
 This is deliberately **tracker-only**. iBeacon, Meta, cameras, Wi-Fi attack
 types and other BLE categories never feed the flood detector. It is also a
