@@ -32,8 +32,7 @@ static void stopButtonRect(int screenW, int screenH, int& x, int& y, int& w, int
 // hunt always gets its own STARTED line and a clean slate for
 // warmer/colder/hot instead of carrying over whatever the last target
 // left behind.
-enum class TrendState : uint8_t { NONE, WARMER, COLDER, STEADY };
-static TrendState s_lastTrend    = TrendState::NONE;
+static RssiTrend s_lastTrend    = RssiTrend::UNKNOWN;
 static bool       s_hotFired     = false;
 static bool       s_everHot      = false;  // gates STALLED -- no point razzing someone who already found it
 static bool       s_gotFirstSignal = false;
@@ -54,7 +53,7 @@ static bool     s_caughtFired = false;
 
 void uiHuntInit(TFT_eSPI& t) {
     t.fillRect(0, 0, t.width(), t.height(), Theme::BG);
-    s_lastTrend       = TrendState::NONE;
+    s_lastTrend       = RssiTrend::UNKNOWN;
     s_hotFired        = false;
     s_everHot         = false;
     s_gotFirstSignal  = false;
@@ -202,9 +201,11 @@ void uiHuntTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool adva
     }
     const bool caught = uiHuntCaught();
 
-    // Numeric readout + warmer/colder trend, compared against a sample
-    // from ~6 ticks (roughly 12s) back so a single noisy reading can't
-    // flip it -- a hard deadband on top of that for the same reason.
+    // Numeric readout + the shared v1.21 RSSI trend. HUNT keeps a longer
+    // fixed history than a Detection, but classifies the newest up-to-eight
+    // cadence samples with the same 3-sample / +/-6 dB rule used by LOG.
+    // The playful HUNT wording stays intentionally different from the compact
+    // LOG arrows even though the underlying meaning is now identical.
     char rbuf[16];
     if (rssiN > 0) snprintf(rbuf, sizeof(rbuf), "%d dBm", (int)latestRssi);
     else           snprintf(rbuf, sizeof(rbuf), "-- dBm");
@@ -220,20 +221,30 @@ void uiHuntTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool adva
 
     const char* trend = "WAITING FOR SIGNAL...";
     uint16_t trendColor = Theme::WHITE;
-    if (rssiN >= 2) {
-        uint8_t backIdx = (rssiN > 6) ? (rssiN - 6) : 0;
-        int delta = (int)latestRssi - (int)eng.huntRssiAt(backIdx);
-        TrendState cur;
-        if (delta > 3)       { trend = "GETTING WARMER";  trendColor = Theme::GREEN; cur = TrendState::WARMER; }
-        else if (delta < -3) { trend = "GETTING COLDER";  trendColor = Theme::RED;   cur = TrendState::COLDER; }
-        else                 { trend = "HOLDING STEADY";  trendColor = Theme::CYAN;  cur = TrendState::STEADY; }
-        // Only on an actual change -- not every tick the trend still
-        // reads the same way, or he'd never shut up.
-        if (cur != s_lastTrend) {
-            if (cur == TrendState::WARMER) Squachy::huntReaction(Squachy::HuntMoment::WARMER);
-            else if (cur == TrendState::COLDER) Squachy::huntReaction(Squachy::HuntMoment::COLDER);
-            s_lastTrend = cur;
-        }
+    const uint8_t trendCount = rssiN > 8 ? 8 : rssiN;
+    const uint8_t trendStart = (uint8_t)(rssiN - trendCount);
+    const RssiTrend cur = trendCount
+        ? classifyRssiTrend((int)eng.huntRssiAt(trendStart), (int)latestRssi, trendCount)
+        : RssiTrend::UNKNOWN;
+    if (cur == RssiTrend::APPROACHING) {
+        trend = "GETTING WARMER";
+        trendColor = Theme::GREEN;
+    } else if (cur == RssiTrend::MOVING_AWAY) {
+        trend = "GETTING COLDER";
+        trendColor = Theme::RED;
+    } else if (cur == RssiTrend::STEADY) {
+        trend = "HOLDING STEADY";
+        trendColor = Theme::CYAN;
+    }
+
+    // Only on an actual change -- not every tick the trend still reads the
+    // same way, or he'd never shut up.
+    if (cur != RssiTrend::UNKNOWN && cur != s_lastTrend) {
+        if (cur == RssiTrend::APPROACHING)
+            Squachy::huntReaction(Squachy::HuntMoment::WARMER);
+        else if (cur == RssiTrend::MOVING_AWAY)
+            Squachy::huntReaction(Squachy::HuntMoment::COLDER);
+        s_lastTrend = cur;
     }
     // Caught: the word takes the readout's row, in a green box the eye cannot
     // miss from across a table, and the number moves down to the trend line.
