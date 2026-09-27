@@ -22,5 +22,6 @@ void uiWatchAlertTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, boo
 bool uiWatchAlertHitRemove(TFT_eSPI& t, int x, int y);
 
 // Design studies for this screen: 0 is the shipped look, 1 RED ALERT,
-// 2 WANTED, 3 RADAR LOCK. See ui_watchalert.cpp.
+// 2 WANTED, then LOCKED ON five ways: 3 SCOPE, 4 SONAR, 5 HUD, 6 BULLSEYE,
+// 7 OPERATOR. See ui_watchalert.cpp.
 void uiWatchAlertSetStyle(uint8_t s);

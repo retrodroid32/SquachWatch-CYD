@@ -292,49 +292,79 @@ void drawWanted(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, int hintY
     if (wide) Squachy::tick(t, px + pw + (w - px - pw) / 2, 2, hintY - 12, now, advance);
 }
 
-// ---- 3: RADAR LOCK -----------------------------------------------------------
-// A scope: rings, a sweep with a fading trail, and the target as a blip that
-// flares when the sweep passes it, sitting nearer the middle the stronger it
-// is, with lock-on brackets breathing round it.
-void drawRadar(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, int hintY) {
-    const int w = t.width(), h = t.height();
-    const WatchView v = gather(eng);
-    const uint16_t g0 = t.color565(0, 36, 0), g1 = t.color565(0, 73, 0), g2 = t.color565(0, 146, 0),
-                   g3 = t.color565(0, 255, 0);
-    t.fillRect(0, 0, w, h, g0);
-    for (int x = 0; x < w; x += 20) t.drawFastVLine(x, 0, h, g1);
-    for (int y = 0; y < h; y += 20) t.drawFastHLine(0, y, w, g1);
+// ---- LOCKED ON, five ways (2026-09-27) --------------------------------------
+// The radar won the first round. These are variations on it: 3 SCOPE (the
+// round-one radar with the approach drawn in), 4 SONAR, 5 HUD, 6 BULLSEYE and
+// 7 OPERATOR (the scope with Squachy on the headphones).
 
-    const bool wide = w >= 300;
-    const int R = wide ? (hintY - 20) / 2 : (hintY - 100) / 2;
-    const int rcx = wide ? 14 + R : w / 2, rcy = wide ? 10 + R : 42 + R;
-    t.fillCircle(rcx, rcy, R, Theme::BLACK);
+// Where the watched target has been, as signal fractions, oldest first.
+int historyF(const DetectionEngine& eng, float* out, int maxN) {
+    const uint8_t n = eng.watchRssiCount();
+    const int from = n > maxN ? n - maxN : 0;
+    int k = 0;
+    for (int i = from; i < n; i++) {
+        int r = eng.watchRssiAt((uint8_t)i); if (r < -100) r = -100; if (r > -30) r = -30;
+        out[k++] = (float)(r + 100) / 70.0f;
+    }
+    return k;
+}
 
+float labelAngle(const char* label) {
+    uint32_t hs = 2166136261u;
+    for (const char* p = label; *p; p++) { hs ^= (uint8_t)*p; hs *= 16777619u; }
+    return (float)(hs % 628) / 100.0f;
+}
+
+// The text column every variant shares: headline, name, type, trend, line.
+void lockedText(TFT_eSPI& t, const DetectionEngine& eng, const WatchView& v, int tx, int ty, int tw,
+                bool centre, int hintY, uint16_t head, uint16_t name, uint16_t dim, uint16_t line,
+                const char* word = "LOCKED ON") {
+    headline(t, tx + tw / 2, ty, word, head);
+    ty += 30;
+    fitPrint(t, tx, ty, v.label, tw, 2, name, centre);
+    ty += 20;
+    fitPrint(t, tx, ty, v.type != DetectionType::UNKNOWN ? detectionTypeName(v.type) : "WATCH LIST", tw, 1, dim, centre);
+    ty += 14;
+    if (v.haveRssi) {
+        trendLine(t, tx, ty, v, name, centre, tw);
+        ty += 14;
+        if (ty + 26 < hintY) spark(t, eng, tx, ty + 4, tw, 22, dim, head);
+    }
+}
+
+// A round scope with rings, a trailed sweep and the target's recent
+// positions as a path closing in on the middle. Shared by SCOPE and OPERATOR.
+void scope(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, const WatchView& v,
+           int rcx, int rcy, int R, bool tag) {
+    const uint16_t g1 = t.color565(0, 73, 0), g2 = t.color565(0, 146, 0), g3 = t.color565(0, 255, 0);
     const float TAU = 6.2831853f;
+    t.fillCircle(rcx, rcy, R, Theme::BLACK);
     const float a = (float)(now % 2400) / 2400.0f * TAU;
-    // The trail: wedges behind the beam, darkening as they fall behind it.
     for (int k = 5; k >= 1; k--) {
         const float a0 = a - (float)k * 0.09f, a1 = a - (float)(k - 1) * 0.09f;
-        const uint16_t c = k <= 1 ? g2 : g1;
         t.fillTriangle(rcx, rcy, rcx + (int)(cosf(a0) * R), rcy + (int)(sinf(a0) * R),
-                       rcx + (int)(cosf(a1) * R), rcy + (int)(sinf(a1) * R), c);
+                       rcx + (int)(cosf(a1) * R), rcy + (int)(sinf(a1) * R), k <= 1 ? g2 : g1);
     }
     for (int k = 1; k <= 3; k++) t.drawCircle(rcx, rcy, R * k / 3, g2);
     t.drawCircle(rcx, rcy, R + 1, g3);
     t.drawFastHLine(rcx - R, rcy, 2 * R, g1);
     t.drawFastVLine(rcx, rcy - R, 2 * R, g1);
     t.drawLine(rcx, rcy, rcx + (int)(cosf(a) * R), rcy + (int)(sinf(a) * R), g3);
-    // The blip: an angle from the label, so the same target always sits in
-    // the same place, and a radius from the signal.
-    uint32_t hs = 2166136261u;
-    for (const char* p = v.label; *p; p++) { hs ^= (uint8_t)*p; hs *= 16777619u; }
-    const float b = (float)(hs % 628) / 100.0f;
-    const float rr = (float)R * (0.12f + 0.78f * (1.0f - (v.haveRssi ? v.f : 0.3f)));
+
+    const float b = labelAngle(v.label);
+    auto radius = [&](float f) { return (float)R * (0.12f + 0.78f * (1.0f - f)); };
+    // The approach: where it was on each of the last few readings.
+    float hf[8];
+    const int hn = historyF(eng, hf, 8);
+    for (int i = 0; i + 1 < hn; i++) {
+        const float rr = radius(hf[i]);
+        t.fillCircle(rcx + (int)(cosf(b) * rr), rcy + (int)(sinf(b) * rr), i >= hn - 3 ? 2 : 1, g2);
+    }
+    const float rr = radius(v.haveRssi ? v.f : 0.3f);
     const int bx = rcx + (int)(cosf(b) * rr), by = rcy + (int)(sinf(b) * rr);
     float since = a - b; while (since < 0) since += TAU;
     const float fl = since < 1.2f ? 1.0f - since / 1.2f : 0.0f;
     t.fillCircle(bx, by, 3 + (int)(fl * 3.0f), Theme::blend(g2, Theme::WHITE, (uint16_t)(fl * 255.0f)));
-    // Lock-on brackets.
     const int s = 10 + (int)(3.0f * sinf((float)(now % 800) / 800.0f * TAU));
     const uint16_t lc = ((now / 250) & 1u) ? t.color565(255, 36, 0) : t.color565(255, 219, 0);
     for (int sx = -1; sx <= 1; sx += 2)
@@ -343,28 +373,281 @@ void drawRadar(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, int hintY)
             t.drawFastHLine(sx < 0 ? cx : cx - 4, cy, 5, lc);
             t.drawFastVLine(cx, sy < 0 ? cy : cy - 4, 5, lc);
         }
+    // A tag on a leader line: what it is, pinned to where it is.
+    if (tag && v.type != DetectionType::UNKNOWN) {
+        const char* nm = detectionTypeName(v.type);
+        t.setTextSize(1);
+        const int lw = t.textWidth(nm) + 6;
+        const int dir = (cosf(b) > 0) ? -1 : 1;              // point the tag back toward the middle
+        const int lx = bx + dir * (s + 10), ly = by - s - 10;
+        t.drawLine(bx + dir * s, by - s, lx, ly + 5, lc);
+        const int rx = dir > 0 ? lx : lx - lw;
+        t.fillRect(rx, ly, lw, 11, Theme::BLACK);
+        t.drawRect(rx, ly, lw, 11, g3);
+        t.setTextColor(g3);
+        t.setCursor(rx + 3, ly + 2);
+        t.print(nm);
+    }
+}
 
-    int tx, ty, tw;
-    if (wide) { tx = rcx + R + 14; ty = 16; tw = w - tx - 10; }
-    else      { tx = 10; ty = 8; tw = w - 20; }
+// ---- 3: SCOPE -------------------------------------------------------------------
+void drawScope(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, int hintY) {
+    const int w = t.width(), h = t.height();
+    const WatchView v = gather(eng);
+    const uint16_t g0 = t.color565(0, 36, 0), g1 = t.color565(0, 73, 0), g2 = t.color565(0, 146, 0),
+                   g3 = t.color565(0, 255, 0);
+    t.fillRect(0, 0, w, h, g0);
+    for (int x = 0; x < w; x += 20) t.drawFastVLine(x, 0, h, g1);
+    for (int y = 0; y < h; y += 20) t.drawFastHLine(0, y, w, g1);
+    const bool wide = w >= 300;
+    const int R = wide ? (hintY - 20) / 2 : (hintY - 100) / 2;
+    const int rcx = wide ? 14 + R : w / 2, rcy = wide ? 10 + R : 42 + R;
+    scope(t, now, eng, v, rcx, rcy, R, true);
+    if (wide) lockedText(t, eng, v, rcx + R + 14, 16, w - rcx - R - 24, false, hintY, g3,
+                         t.color565(182, 255, 170), g2, g2);
+    else {
+        headline(t, w / 2, 8, "LOCKED ON", g3);
+        int ty = rcy + R + 8;
+        fitPrint(t, 10, ty, v.label, w - 20, 2, t.color565(182, 255, 170), true);
+        if (v.haveRssi) trendLine(t, 10, ty + 20, v, g3, true, w - 20);
+    }
+}
+
+// ---- 4: SONAR -------------------------------------------------------------------
+// A submarine's fan, rising from the bottom of the screen: a ping goes out
+// every couple of seconds, and the target only shows when the ping reaches it,
+// then fades until the next one. Deep blue and cyan instead of green.
+void drawSonar(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, int hintY) {
+    const int w = t.width(), h = t.height();
+    const WatchView v = gather(eng);
+    const uint16_t n0 = t.color565(0, 0, 85), n1 = t.color565(0, 36, 170), n2 = t.color565(0, 109, 170),
+                   c3 = t.color565(73, 255, 255);
+    t.fillRect(0, 0, w, h, Theme::BLACK);
+    // Centred along the bottom on every screen, with the words above it: beside
+    // it, the text column on a 2.8" was too narrow for the headline.
+    const int cx = w / 2;
+    const int cy = hintY - 10;
+    const int top = 76;
+    int R = (cy - top < w / 2 - 8) ? cy - top : w / 2 - 8;
+    if (R < 40) R = 40;
+    const float PI_ = 3.14159265f;
+    // The fan: filled, then its rings and spokes.
+    for (int dy = 0; dy <= R; dy++) {
+        const int half = (int)sqrtf((float)(R * R - dy * dy));
+        t.drawFastHLine(cx - half, cy - dy, 2 * half + 1, n0);
+    }
+    auto arc = [&](int r, uint16_t c, int thick) {
+        const int steps = r * 3;
+        for (int i = 0; i <= steps; i++) {
+            const float a = PI_ + PI_ * (float)i / (float)steps;
+            for (int k = 0; k < thick; k++)
+                t.drawPixel(cx + (int)(cosf(a) * (r - k)), cy + (int)(sinf(a) * (r - k)), c);
+        }
+    };
+    for (int k = 1; k <= 4; k++) arc(R * k / 4, n1, 1);
+    for (int k = 1; k < 6; k++) {
+        const float a = PI_ + PI_ * (float)k / 6.0f;
+        t.drawLine(cx, cy, cx + (int)(cosf(a) * R), cy + (int)(sinf(a) * R), n1);
+    }
+    t.drawFastHLine(cx - R, cy, 2 * R + 1, n2);
+    arc(R, n2, 2);
+    // The ping.
+    const uint32_t P = 2000, T = 1400;
+    const uint32_t pp = now % P;
+    const float b = PI_ + 0.15f * PI_ + fmodf(labelAngle(v.label), 0.7f * PI_);
+    const float br = (float)R * (0.14f + 0.8f * (1.0f - (v.haveRssi ? v.f : 0.3f)));
+    if (pp < T) {
+        const int pr = (int)((float)R * (float)pp / (float)T);
+        arc(pr, pp < T / 2 ? c3 : n2, 2);
+    }
+    // The blip lights as the ping crosses it and fades until the next.
+    const uint32_t hitAt = (uint32_t)(br / (float)R * (float)T);
+    const int32_t age = (int32_t)pp - (int32_t)hitAt;
+    const float lit = age >= 0 ? 1.0f - (float)age / (float)(P - hitAt) : 0.25f;
+    const int bx = cx + (int)(cosf(b) * br), by = cy + (int)(sinf(b) * br);
+    t.fillCircle(bx, by, 3 + (age >= 0 && age < 300 ? 2 : 0), Theme::blend(n1, Theme::WHITE, (uint16_t)(lit * 255.0f)));
+    if (age >= 0 && age < 500) {
+        t.setTextSize(1);
+        t.setTextColor(c3);
+        t.setCursor(bx + 7, by - 12);
+        t.print("PING");
+    }
+    int ty = cy - R - 76;
+    if (ty < 6) ty = 6;
+    headline(t, w / 2, ty, "LOCKED ON", c3);
+    fitPrint(t, 10, ty + 30, v.label, w - 20, 2, Theme::WHITE, true);
+    if (v.haveRssi) trendLine(t, 10, ty + 50, v, c3, true, w - 20);
+}
+
+// ---- 5: HUD ----------------------------------------------------------------------
+// A targeting display: the device's own icon in the middle of a reticle, and
+// four brackets that close in on it as the signal climbs. Amber on black,
+// with scanlines, a range tape down one side and readouts down the other.
+void drawHud(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, int hintY) {
+    const int w = t.width(), h = t.height();
+    const WatchView v = gather(eng);
+    const uint16_t a1 = t.color565(109, 73, 0), a2 = t.color565(182, 146, 0), a3 = t.color565(255, 219, 0);
+    t.fillRect(0, 0, w, h, Theme::BLACK);
+    for (int y = 0; y < h; y += 3) t.drawFastHLine(0, y, w, t.color565(36, 36, 0));
+    const bool wide = w >= 300;
+    headline(t, w / 2, 6, "LOCKED ON", a3);
+    const int cx = wide ? w * 42 / 100 : w / 2;
+    const int cy = wide ? (36 + hintY) / 2 : 36 + (hintY - 36 - 44) / 2;
+    const int Rmax = wide ? (hintY - 36) / 2 - 6 : (hintY - 36 - 44) / 2 - 4;
+    // The reticle.
+    t.drawCircle(cx, cy, Rmax * 55 / 100, a1);
+    t.drawCircle(cx, cy, Rmax * 55 / 100 + 1, a1);
+    for (int s = -1; s <= 1; s += 2) {
+        t.drawFastHLine(s < 0 ? cx - Rmax : cx + Rmax * 30 / 100, cy, Rmax * 70 / 100, a1);
+        t.drawFastVLine(cx, s < 0 ? cy - Rmax : cy + Rmax * 30 / 100, Rmax * 70 / 100, a1);
+    }
+    if (v.type != DetectionType::UNKNOWN) Theme::drawTypeIcon(t, v.type, cx, cy, Rmax / 5);
+    // The brackets: far out when faint, hugging the icon when close, and
+    // breathing a little so they read as live.
+    const float TAU = 6.2831853f;
+    const float f = v.haveRssi ? v.f : 0.2f;
+    const int d = (int)((float)Rmax * (1.0f - 0.55f * f)) + (int)(2.0f * sinf((float)(now % 700) / 700.0f * TAU));
+    const int L = Rmax / 4;
+    const uint16_t bc = ((now / 300) & 1u) ? a3 : t.color565(255, 109, 0);
+    for (int sx = -1; sx <= 1; sx += 2)
+        for (int sy = -1; sy <= 1; sy += 2) {
+            const int x = cx + sx * d, y = cy + sy * d;
+            for (int k = 0; k < 2; k++) {
+                t.drawFastHLine(sx < 0 ? x : x - L, y + sy * -k, L + 1, bc);
+                t.drawFastVLine(x + sx * -k, sy < 0 ? y : y - L, L + 1, bc);
+            }
+        }
+    // The range tape, down the left.
+    const int tx = wide ? 12 : 6, tyT = cy - Rmax, tyB = cy + Rmax;
+    t.drawFastVLine(tx + 8, tyT, tyB - tyT, a2);
+    for (int k = 0; k <= 10; k++) {
+        const int y = tyT + (tyB - tyT) * k / 10;
+        t.drawFastHLine(tx + (k % 5 == 0 ? 2 : 5), y, k % 5 == 0 ? 6 : 3, a2);
+    }
+    const int py = tyB - (int)((float)(tyB - tyT) * f);
+    t.fillTriangle(tx + 10, py, tx + 16, py - 4, tx + 16, py + 4, a3);
+    t.setTextSize(1);
+    t.setTextColor(a2);
+    t.setCursor(tx, tyT - 10); t.print("NEAR");
+    t.setCursor(tx, tyB + 3);  t.print("FAR");
+    // Readouts.
     if (wide) {
-        headline(t, tx + tw / 2, ty, "LOCKED ON", g3);
-        ty += 30;
+        const int rx = cx + Rmax + 16, rw = w - rx - 8;
+        int ry = 44;
+        fitPrint(t, rx, ry, v.label, rw, 2, a3, false); ry += 22;
+        fitPrint(t, rx, ry, v.type != DetectionType::UNKNOWN ? detectionTypeName(v.type) : "WATCH LIST", rw, 1, a2, false); ry += 16;
+        char buf[24];
+        if (v.haveRssi) {
+            snprintf(buf, sizeof buf, "SIG %d dBm", (int)v.rssi);
+            fitPrint(t, rx, ry, buf, rw, 1, a3, false); ry += 12;
+            fitPrint(t, rx, ry, v.trend > 0 ? "VEC CLOSING" : v.trend < 0 ? "VEC OPENING" : "VEC HOLDING", rw, 1, a3, false); ry += 12;
+            const char* rng = f > 0.8f ? "RNG POINT BLANK" : f > 0.55f ? "RNG CLOSE" : f > 0.3f ? "RNG MEDIUM" : "RNG LONG";
+            fitPrint(t, rx, ry, rng, rw, 1, a3, false); ry += 16;
+            if (ry + 24 < hintY) spark(t, eng, rx, ry, rw, 22, a1, a3);
+        }
     } else {
-        headline(t, w / 2, ty, "LOCKED ON", g3);
-        ty = rcy + R + 8;
+        fitPrint(t, 10, cy + Rmax + 6, v.label, w - 20, 2, a3, true);
+        if (v.haveRssi) trendLine(t, 10, cy + Rmax + 26, v, a3, true, w - 20);
     }
-    fitPrint(t, tx, ty, v.label, tw, 2, t.color565(182, 255, 170), !wide);
-    ty += 20;
+}
+
+// ---- 6: BULLSEYE ---------------------------------------------------------------
+// Hot and cold as rings: blue outside, red in the middle, the target sitting
+// on the ring its signal puts it in, and a white ring drawing in toward the
+// centre over and over. The word under it says it plainly.
+void drawBullseye(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, int hintY) {
+    const int w = t.width(), h = t.height();
+    const WatchView v = gather(eng);
+    t.fillRect(0, 0, w, h, Theme::BLACK);
+    const bool wide = w >= 300;
+    const int R = wide ? (hintY - 20) / 2 : (hintY - 104) / 2;
+    const int rcx = wide ? 14 + R : w / 2, rcy = wide ? 10 + R : 40 + R;
+    static const uint8_t RC[5][3] = { {0, 36, 170}, {0, 146, 170}, {255, 219, 0}, {255, 109, 0}, {255, 0, 0} };
+    for (int k = 0; k < 5; k++) {
+        const int r = R - k * R / 5;
+        t.fillCircle(rcx, rcy, r, Theme::BLACK);
+        t.fillCircle(rcx, rcy, r - 2, t.color565(RC[k][0], RC[k][1], RC[k][2]));
+    }
+    // The closing ring.
+    const uint32_t P = 1600;
+    const int cr = R - (int)((float)R * (float)(now % P) / (float)P);
+    if (cr > 2) { t.drawCircle(rcx, rcy, cr, Theme::WHITE); t.drawCircle(rcx, rcy, cr - 1, Theme::WHITE); }
+    const float f = v.haveRssi ? v.f : 0.2f;
+    const float b = labelAngle(v.label);
+    const float rr = (float)R * (0.08f + 0.86f * (1.0f - f));
+    const int bx = rcx + (int)(cosf(b) * rr), by = rcy + (int)(sinf(b) * rr);
+    t.fillCircle(bx, by, 6, Theme::BLACK);
+    t.fillCircle(bx, by, 4, Theme::WHITE);
+    const char* word = f > 0.8f ? "RIGHT HERE" : f > 0.55f ? "HOT" : f > 0.3f ? "WARM" : "COLD";
+    const uint16_t wc = f > 0.8f ? t.color565(255, 0, 0) : f > 0.55f ? t.color565(255, 109, 0)
+                      : f > 0.3f ? t.color565(255, 219, 0) : t.color565(0, 146, 170);
     if (wide) {
-        fitPrint(t, tx, ty, v.type != DetectionType::UNKNOWN ? detectionTypeName(v.type) : "WATCH LIST",
-                 tw, 1, g2, false);
-        ty += 16;
+        const int tx = rcx + R + 14, tw = w - tx - 10;
+        headline(t, tx + tw / 2, 14, "LOCKED ON", Theme::WHITE);
+        headline(t, tx + tw / 2, 44, word, wc);
+        int ty = 76;
+        fitPrint(t, tx, ty, v.label, tw, 2, Theme::WHITE, true); ty += 20;
+        fitPrint(t, tx, ty, v.type != DetectionType::UNKNOWN ? detectionTypeName(v.type) : "WATCH LIST", tw, 1, t.color565(146, 146, 170), true); ty += 14;
+        if (v.haveRssi) { trendLine(t, tx, ty, v, Theme::WHITE, true, tw); ty += 14; }
+        if (ty + 26 < hintY) spark(t, eng, tx, ty + 4, tw, 22, t.color565(146, 146, 170), wc);
+    } else {
+        headline(t, w / 2, 6, "LOCKED ON", Theme::WHITE);
+        headline(t, w / 2, rcy + R + 4, word, wc);
+        fitPrint(t, 10, rcy + R + 32, v.label, w - 20, 1, Theme::WHITE, true);
     }
-    if (v.haveRssi) {
-        trendLine(t, tx, ty, v, g3, !wide, tw);
-        ty += 14;
-        if (wide && ty + 30 < hintY) spark(t, eng, tx, ty + 4, tw, 26, g2, g3);
+}
+
+// ---- 7: OPERATOR ---------------------------------------------------------------
+// The scope, with Squachy beside it on the headphones: the one version of this
+// screen where he is still in the room.
+void drawOperator(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, int hintY, bool advance) {
+    const int w = t.width(), h = t.height();
+    const WatchView v = gather(eng);
+    const uint16_t g0 = t.color565(0, 36, 0), g1 = t.color565(0, 73, 0), g3 = t.color565(0, 255, 0);
+    t.fillRect(0, 0, w, h, g0);
+    for (int x = 0; x < w; x += 20) t.drawFastVLine(x, 0, h, g1);
+    for (int y = 0; y < h; y += 20) t.drawFastHLine(0, y, w, g1);
+    const bool wide = w >= 300;
+    // On a narrow screen the scope gives up width so he still fits beside it.
+    int R = wide ? (hintY - 46) / 2 : (hintY - 60) / 2 - 10;
+    if (!wide && R > w * 28 / 100) R = w * 28 / 100;
+    const int rcx = wide ? 12 + R : 8 + R, rcy = 40 + R;
+    scope(t, now, eng, v, rcx, rcy, R, wide);
+    // Squachy in the space to the right of the scope, headphones on. His
+    // region starts well down the screen: his speech bubble sits above it
+    // and is wider than the gap, and up top it covered the headline.
+    const int sx = rcx + R + (w - rcx - R) / 2;
+    const int sTop = wide ? 64 : 70;
+    // Sized to the gap beside the scope as well as the height under it: he
+    // is about two thirds as wide as he is tall.
+    int avail = hintY - 4 - sTop;
+    const int byWidth = (w - (rcx + R)) * 13 / 10;
+    if (avail > byWidth) avail = byWidth;
+    Squachy::tick(t, sx, sTop, avail, now, advance, 0.4f);
+    headline(t, rcx, 6, "LOCKED ON", g3);
+    const int crown = Squachy::crownY();
+    const float sc = Squachy::lastScale();
+    auto S = [sc](float u) { return (int)(u * sc); };
+    const uint16_t band = t.color565(182, 182, 170), cup = t.color565(73, 73, 85);
+    for (int k = 0; k < 2; k++) {
+        const int r = S(17) - k;
+        for (int i = 0; i <= 90; i++) {
+            const float a = 3.14159265f + 3.14159265f * (float)i / 90.0f;
+            t.drawPixel(sx + (int)(cosf(a) * r), crown + S(11) + (int)(sinf(a) * (float)r * 0.9f), band);
+        }
+    }
+    for (int sg = -1; sg <= 1; sg += 2) {
+        t.fillRoundRect(sx + sg * S(16) - S(3), crown + S(9), S(6), S(9), S(2), Theme::BLACK);
+        t.fillRoundRect(sx + sg * S(16) - S(3) + 1, crown + S(9) + 1, S(6) - 2, S(9) - 2, S(2), cup);
+    }
+    // The mic boom off his left cup, round to his mouth.
+    t.drawLine(sx - S(16), crown + S(16), sx - S(8), crown + S(21), band);
+    t.fillCircle(sx - S(7), crown + S(21), S(1) + 1, Theme::BLACK);
+    // Name and trend under the scope.
+    const int ty = rcy + R + 6;
+    if (ty + 18 < hintY) {
+        fitPrint(t, rcx - R, ty, v.label, 2 * R, 1, t.color565(182, 255, 170), true);
+        if (v.haveRssi && ty + 30 < hintY) trendLine(t, rcx - R, ty + 12, v, g3, true, 2 * R);
     }
 }
 
@@ -381,9 +664,15 @@ void uiWatchAlertTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, boo
 
     if (s_style != 0) {
         const int hintY = h - REMOVE_H - 10 - 8 - 6;
-        if (s_style == 1)      drawRedAlert(t, now, eng, hintY);
-        else if (s_style == 2) drawWanted(t, now, eng, hintY, advance);
-        else                   drawRadar(t, now, eng, hintY);
+        switch (s_style) {
+            case 1:  drawRedAlert(t, now, eng, hintY); break;
+            case 2:  drawWanted(t, now, eng, hintY, advance); break;
+            case 3:  drawScope(t, now, eng, hintY); break;
+            case 4:  drawSonar(t, now, eng, hintY); break;
+            case 5:  drawHud(t, now, eng, hintY); break;
+            case 6:  drawBullseye(t, now, eng, hintY); break;
+            default: drawOperator(t, now, eng, hintY, advance); break;
+        }
         const char* tapMsg = "tap anywhere to dismiss";
         t.setTextSize(1);
         t.setTextColor(Theme::WHITE);
