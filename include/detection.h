@@ -225,6 +225,9 @@ public:
     // rather than a network name -- see pwnagotchiName(). It travels as a
     // flag instead of being re-derived in processWiFiQ() because the JSON
     // it came from is in the frame, and the frame is gone by then.
+    // `flockWildcardProbe` does the same for an empty-SSID probe request:
+    // the frame-level behavior is parsed in the callback, then combined with
+    // the address evidence later on the loop task.
     void IRAM_ATTR postWiFi(const uint8_t* mac, int8_t rssi, uint8_t channel,
                             const char* ssid = nullptr, bool encrypted = false,
                             bool pwnagotchi = false, bool remoteId = false,
