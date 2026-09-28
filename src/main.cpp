@@ -3508,6 +3508,11 @@ static char     s_gpsLine[100];
 static uint8_t  s_gpsLen = 0;
 static uint8_t  s_gpsFix = 0, s_gpsUsed = 0;
 static uint8_t  s_gpsView[6] = {0};     // GP GL GA GB/BD GQ other
+// The best it has done since GPS was switched on, for a watch that was off
+// the cable (on a windowsill, on a walk) while it happened: GPS STATUS asks.
+static uint32_t s_gpsOnAt = 0, s_gpsFirstFixMs = 0, s_gpsFixes = 0;
+static uint8_t  s_gpsBestView = 0, s_gpsBestUsed = 0;
+static char     s_gpsLastFix[48] = "";
 static const uint32_t GPS_BAUDS[] = { 38400, 9600, 115200 };
 
 static void gpsPower(bool on, bool dc4) {
@@ -3545,6 +3550,17 @@ static void gpsSentence(const char* s) {
     if (!strncmp(t, "GGA", 3)) {
         s_gpsFix  = (uint8_t)atoi(gpsField(s, 6));
         s_gpsUsed = (uint8_t)atoi(gpsField(s, 7));
+        if (s_gpsUsed > s_gpsBestUsed) s_gpsBestUsed = s_gpsUsed;
+        if (s_gpsFix) {
+            s_gpsFixes++;
+            if (!s_gpsFirstFixMs) s_gpsFirstFixMs = millis() - s_gpsOnAt;
+            // ddmm.mmmm,N,dddmm.mmmm,W exactly as sent: fields 2 to 5.
+            const char* a = gpsField(s, 2);
+            const char* e = gpsField(s, 6);
+            size_t n = (size_t)(e - a) > 0 ? (size_t)(e - a) - 1 : 0;
+            if (n >= sizeof s_gpsLastFix) n = sizeof s_gpsLastFix - 1;
+            memcpy(s_gpsLastFix, a, n); s_gpsLastFix[n] = 0;
+        }
         return;
     }
     if (!strncmp(t, "GSV", 3)) {
@@ -3563,10 +3579,24 @@ static void gpsTick() {
         g_consoleGps = 0;
         s_gpsOn = true; s_gpsFound = false; s_gpsTry = 0;
         memset(s_gpsView, 0, sizeof s_gpsView); s_gpsFix = s_gpsUsed = 0;
+        s_gpsOnAt = millis(); s_gpsFirstFixMs = 0; s_gpsFixes = 0;
+        s_gpsBestView = s_gpsBestUsed = 0; s_gpsLastFix[0] = 0;
         gpsPower(true, false);
         delay(50);
         gpsOpen(GPS_BAUDS[0]);
         s_gpsSumAt = millis();
+    } else if (g_consoleGps == 3) {
+        g_consoleGps = 0;
+        if (!s_gpsOn) { Serial.println("[gps] status: off"); }
+        else {
+            Serial.printf("[gps] status: on %lu s; most satellites in view %u, most used %u; ",
+                          (unsigned long)((millis() - s_gpsOnAt) / 1000), s_gpsBestView, s_gpsBestUsed);
+            if (s_gpsFirstFixMs)
+                Serial.printf("FIRST FIX after %lu s, %lu fix reports, last at %s\n",
+                              (unsigned long)(s_gpsFirstFixMs / 1000), (unsigned long)s_gpsFixes, s_gpsLastFix);
+            else
+                Serial.println("never had a fix");
+        }
     } else if (g_consoleGps == 2) {
         g_consoleGps = 0;
         s_gpsOn = false;
@@ -3596,6 +3626,7 @@ static void gpsTick() {
     if (s_gpsFound && now - s_gpsSumAt > 5000) {
         s_gpsSumAt = now;
         const uint8_t v = s_gpsView[0] + s_gpsView[1] + s_gpsView[2] + s_gpsView[3] + s_gpsView[4] + s_gpsView[5];
+        if (v > s_gpsBestView) s_gpsBestView = v;
         Serial.printf("[gps] %s; %u satellites used; in view %u (GPS %u, GLONASS %u, Galileo %u, BeiDou %u, QZSS %u)\n",
                       s_gpsFix ? "FIX" : "no fix yet", s_gpsUsed, v,
                       s_gpsView[0], s_gpsView[1], s_gpsView[2], s_gpsView[3], s_gpsView[4]);

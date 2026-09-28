@@ -540,6 +540,7 @@ void pollSerial() {
         if (strcasecmp(line, "PMU") == 0)    { g_consolePmu = true; continue; }
         if (strcasecmp(line, "GPS") == 0)    { g_consoleGps = 1; continue; }
         if (strcasecmp(line, "GPS OFF") == 0) { g_consoleGps = 2; continue; }
+        if (strcasecmp(line, "GPS STATUS") == 0) { g_consoleGps = 3; continue; }
         if (strcasecmp(line, "RTC") == 0)    { g_consoleRtc = true; continue; }
         if (strcasecmp(line, "BUZZ") == 0)   { g_consoleBuzz = true; continue; }
         if (strcasecmp(line, "MOTION") == 0) { g_consoleMotion = true; continue; }
