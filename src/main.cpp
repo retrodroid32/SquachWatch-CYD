@@ -3682,6 +3682,12 @@ static void gpsTick() {
             if (s_gpsTry >= 6) {
                 Serial.println("[gps] no GNSS answered: not an S3 Plus, or its GPS is not powered this way");
                 gpsStop();
+                // WARDRIVE on a watch with no GPS: say so and switch it off,
+                // rather than leave a row reading GPS STARTING forever.
+                if (Wardrive::enabled()) {
+                    Wardrive::setEnabled(false);
+                    Theme::showToast("NO GPS ON THIS WATCH", "Wardriving needs the S3 Plus", Theme::AMBER);
+                }
                 return;
             }
             gpsOpen(GPS_BAUDS[s_gpsTry % 3]);
@@ -3706,6 +3712,13 @@ static void gpsTick() {
         Serial.printf("[gps] %s; %u used; in view %u, heard %u\n",
                       Gnss::fresh(now) ? "FIX" : "no fix yet", f.used, k.view, k.heard);
     }
+}
+
+// For the WARDRIVE row: 0 off, 1 looking for the module, 2 no fix, 3 fix.
+uint8_t twatchGpsState() {
+    if (!s_gpsOn) return 0;
+    if (!s_gpsFound) return 1;
+    return Gnss::fresh(millis()) ? 3 : 2;
 }
 
 // At boot: the store, and the GPS back on if wardriving was left on.
@@ -5455,6 +5468,15 @@ void loop() {
                         case SettingsRow::WATCH_TEMP: break;   // a reading, not a switch
                         case SettingsRow::WATCH_XTAL: twatchXtalStart(); break;
                         case SettingsRow::WATCH_SETTINGS: uiSettingsOpenPage(SettingsPage::WATCH); break;
+                        case SettingsRow::WATCH_WARDRIVE:
+                            // Through the console's own path, so the row and
+                            // WARDRIVE ON/OFF can never disagree about what
+                            // switching it does (the GPS goes with it).
+                            g_consoleGps = Wardrive::enabled() ? 6 : 5;
+                            Theme::showToast(Wardrive::enabled() ? "WARDRIVE OFF" : "WARDRIVE ON",
+                                             Wardrive::enabled() ? nullptr : "Logging once the GPS has a fix",
+                                             Theme::CYAN);
+                            break;
                         case SettingsRow::WATCH_BUZZ:
                             // OFF, HIGH, MED, LOW. Each level plays the alert
                             // pattern once, so the choice is made by feel; OFF
