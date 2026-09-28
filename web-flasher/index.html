@@ -1654,7 +1654,15 @@
       if (useGps && useFast) chosen = gpsFast || gps;
       else if (useGps)       chosen = gps;
       else if (useFast)      chosen = fast;
-      var manifest = './' + verDir + chosen.replace(/^\.\//, '');
+      // Always hand esp-web-tools an absolute manifest URL. The lab flasher
+      // lives under /lab/ and uses <base href="../">; browsers resolve normal
+      // fetch() calls against that base, but esp-web-tools may resolve its
+      // manifest attribute against window.location instead. That turned
+      // "manifest-lab-..." into /lab/manifest-lab-... and produced
+      // "Failed to download manifest" even though the manifest existed at
+      // the Pages root.
+      var manifestRel = verDir + chosen.replace(/^\.\//, '');
+      var manifest = new URL(manifestRel, document.baseURI).href;
       installBtn.setAttribute('manifest', manifest);
       var isCyd28 = opt.dataset.cyd28 === '1';
       if (note) note.hidden = !isCyd28;
