@@ -725,7 +725,7 @@ void setTimeZone(uint8_t i) {
 // chosen: only THIS IS RIGHT, the row's own tap, or the flasher does that.
 void cycleTimeZone()     { stepTimeZone(1); markTimeZoneChosen(); }
 void stepTimeZone(int dir) {
-    s_timeZone = (uint8_t)((s_timeZone + Clock::zoneCount() + dir) % Clock::zoneCount());
+    s_timeZone = Clock::zoneStep(s_timeZone, dir);
     s_prefs.putUChar("tz", s_timeZone);
     Clock::applyZone(s_timeZone);
 }
