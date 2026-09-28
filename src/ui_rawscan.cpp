@@ -1,6 +1,7 @@
 // SquachWatch-CYD — manual raw BLE/WiFi scanner screen implementation
 #include "ui_rawscan.h"
 #include "ui_scroll.h"
+#include "ui_fit.h"
 #include "theme.h"
 #include "squachy.h"
 #include "settings.h"
@@ -49,8 +50,8 @@ void uiRawScanScroll(int delta) {
 RawScanTap uiRawScanHitTest(int x, int y, int screenW, int screenH) {
     int bx, by, bw, bh, ax, ay, aw, ah;
     bottomButtonRects(screenW, screenH, bx, by, bw, bh, ax, ay, aw, ah);
-    if (x >= bx && x <= bx + bw && y >= by && y <= by + bh) return RawScanTap::BACK;
-    if (x >= ax && x <= ax + aw && y >= ay && y <= ay + ah) return RawScanTap::SWITCH;
+    if (x >= bx && x <= bx + bw && y >= by && y < screenH) return RawScanTap::BACK;
+    if (x >= ax && x <= ax + aw && y >= ay && y < screenH) return RawScanTap::SWITCH;
     return RawScanTap::NONE;
 }
 
@@ -323,10 +324,18 @@ switch (Settings::background()) {
         if (isBle) {
             const RawBleResult* r = eng.rawBleAt(idx);
             if (!r) break;
+            t.setTextSize(1);
+            char rssi[12];
+            snprintf(rssi, sizeof(rssi), "%ddBm", r->rssi);
+            const int rw = t.textWidth(rssi);
+            const int ax = w - rw - 14 - 11;
+            char fittedName[40];
+            UiFit::fitMid(fittedName, sizeof fittedName, r->name[0] ? r->name : "(unnamed)",
+                          UiFit::chars(ax - 6, 2));
             t.setTextSize(2);
             t.setTextColor(Theme::CYAN, Theme::BG);
             t.setCursor(4, y + topPad);
-            t.print(r->name[0] ? r->name : "(unnamed)");
+            t.print(fittedName);
 
             t.setTextSize(1);
             t.setTextColor(Theme::WHITE, Theme::BG);
@@ -337,9 +346,6 @@ switch (Settings::background()) {
             t.print(mac);
 
             t.setTextColor(Theme::VAPOR_PURPLE, Theme::BG);
-            char rssi[12];
-            snprintf(rssi, sizeof(rssi), "%ddBm", r->rssi);
-            int rw = t.textWidth(rssi);
             t.setCursor(w - rw - 14, y + topPad);
             t.print(rssi);
             // Closer or further since the last reading: an arrow beside the
@@ -347,15 +353,22 @@ switch (Settings::background()) {
             // a wobble of under four dB, which is what a still device does.
             {
                 const int d  = (int)r->rssi - (int)r->prev;
-                const int ax = w - rw - 14 - 11, ay = y + topPad + 1;
+                const int ay = y + topPad + 1;
                 if (d >= 4)       t.fillTriangle(ax, ay + 6, ax + 6, ay + 6, ax + 3, ay, Theme::GREEN);
                 else if (d <= -4) t.fillTriangle(ax, ay, ax + 6, ay, ax + 3, ay + 6, Theme::RED);
             }
         } else {
+            t.setTextSize(1);
+            char wifiRssi[12];
+            snprintf(wifiRssi, sizeof(wifiRssi), "%ddBm", eng.rawWifiRssi(idx));
+            const int wifiRw = t.textWidth(wifiRssi);
+            char fittedSsid[40];
+            UiFit::fitMid(fittedSsid, sizeof fittedSsid, eng.rawWifiSsid(idx),
+                          UiFit::chars(w - wifiRw - 20, 2));
             t.setTextSize(2);
             t.setTextColor(Theme::CYAN, Theme::BG);
             t.setCursor(4, y + topPad);
-            t.print(eng.rawWifiSsid(idx));
+            t.print(fittedSsid);
 
             t.setTextSize(1);
             t.setTextColor(Theme::WHITE, Theme::BG);
@@ -366,11 +379,8 @@ switch (Settings::background()) {
             t.print(line);
 
             t.setTextColor(Theme::VAPOR_PURPLE, Theme::BG);
-            char rssi[12];
-            snprintf(rssi, sizeof(rssi), "%ddBm", eng.rawWifiRssi(idx));
-            int rw = t.textWidth(rssi);
-            t.setCursor(w - rw - 14, y + topPad);
-            t.print(rssi);
+            t.setCursor(w - wifiRw - 14, y + topPad);
+            t.print(wifiRssi);
         }
 
         y += rowH;
