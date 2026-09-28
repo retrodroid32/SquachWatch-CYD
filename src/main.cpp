@@ -48,6 +48,8 @@
 #include <esp_heap_caps.h>
 #include "ui_diagnostics.h"   // CrashReport, used by the breadcrumb below
 #include "blackbox.h"
+#include "gnss.h"
+#include "wardrive.h"
 #include "ui_bingo.h"
 #include "bingo.h"
 #include "dex.h"
@@ -1539,7 +1541,8 @@ volatile bool g_consoleMotion = false; // MOTION: the motion sensor's reading an
 volatile bool g_consoleBuzz = false;  // BUZZ: play the alert pattern now and report the driver (watch)
 volatile bool g_consoleRtc = false;   // RTC: read the clock chip (watch)
 volatile bool g_consolePmu = false;   // PMU: dump the power chip's registers (watch)
-volatile uint8_t g_consoleGps = 0;    // GPS / GPS OFF: the S3 Plus's GNSS on the bench (watch)
+volatile uint8_t g_consoleGps = 0;    // GPS, WARDRIVE and WIGLE commands: the S3 Plus's GNSS (watch)
+volatile int32_t g_consoleFakeLat7 = 0, g_consoleFakeLon7 = 0;   // GPS FAKE lat lon
 
 #ifdef BENCH_TOOLS
 // UPDATE NOW and UPDATE STOP on the console, for the bench: the unattended
@@ -1963,6 +1966,9 @@ static void performWipe(WipeBoot after) {
     Security::wipeSecrets();
     engine.sd().wipe();
     BlackBox::wipe();        // the log and the crash history kept in flash
+#if defined(TWATCH_S3)
+    Wardrive::clear();       // where the watch has been, and everything it heard there
+#endif
 #if HAVE_NVS_ERASE
     // The frame buffer is 77 KB the wipe can have: the board restarts in a
     // moment and the screen is meant to go quiet anyway. Without it the copy
@@ -2777,6 +2783,9 @@ static void printBootBanner() {
 }
 
 // ---- Arduino setup / loop ----
+#if defined(TWATCH_S3)
+static void wardriveBegin();
+#endif
 void setup() {
     // Before anything else can allocate: the breadcrumb has to be read out
     // while it is still the previous life's, not this one's.
@@ -3265,6 +3274,11 @@ void setup() {
     }
 
 #if defined(TWATCH_S3)
+    // The wardrive log, and its GPS if wardriving was left on.
+    wardriveBegin();
+#endif
+
+#if defined(TWATCH_S3)
     // What the watch is like at the moment the radios start. A boot that
     // ran the touch calibration first hears the room; a plain boot comes up
     // deaf. Logged so the two kinds of boot can be compared line by line.
@@ -3490,30 +3504,32 @@ static uint32_t    s_lastScreenUs   = 0;
 static uint32_t    s_lastScreenAt   = 0;     // transitionStart of the screen being timed
 
 #if defined(TWATCH_S3)
-// ---- GPS bench probe (the T-Watch S3 Plus) --------------------------------
-// GPS on the console powers the S3 Plus's GNSS and reports what it hears:
-// which baud it talks at, the module's own banner lines, satellites in view
-// per constellation, and whether it has a fix. GPS OFF powers it down. The
-// plain S3 has no GNSS, so nothing ever answers and it says so.
+// ---- GPS and wardriving (the T-Watch S3 Plus) --------------------------------
+// The S3 Plus carries a u-blox MIA-M10Q (an LS550G on some batches). Its
+// sentences go to Gnss (gnss.h); a fix stamps what Wardrive (wardrive.h)
+// writes. The plain S3 has no GNSS: the probe finds nothing, says so once,
+// and powers the rails back down.
 //
 // The board variant (arduino-esp32 variants/lilygo_twatch_s3) has the ESP32
 // receiving on GPIO41 and sending on 42; LilyGo's docs table names the same
 // pins from the module's side, which reads the other way round. Power: BLDO1
 // on revisions with BOOT/RST buttons, DC3 on earlier ones, and the LS550G
 // version also wants DC4 at 850 mV (LilyGoLib docs/hardware).
+//
+// Console: GPS / GPS OFF / GPS STATUS; GPS FAKE lat lon (a bench fix, rows
+// marked and left out of an export); WARDRIVE ON / OFF; WIGLE (the file, over
+// USB), WIGLE ALL (bench rows too), WIGLE CLEAR.
 static bool     s_gpsOn = false, s_gpsFound = false;
 static uint8_t  s_gpsTry = 0;           // index into GPS_BAUDS, then the DC4 retry
-static uint32_t s_gpsTryAt = 0, s_gpsSumAt = 0, s_gpsSentences = 0;
-static char     s_gpsLine[100];
-static uint8_t  s_gpsLen = 0;
-static uint8_t  s_gpsFix = 0, s_gpsUsed = 0;
-static uint8_t  s_gpsView[6] = {0};     // GP GL GA GB/BD GQ other
-// The best it has done since GPS was switched on, for a watch that was off
-// the cable (on a windowsill, on a walk) while it happened: GPS STATUS asks.
-static uint32_t s_gpsOnAt = 0, s_gpsFirstFixMs = 0, s_gpsFixes = 0;
-static uint8_t  s_gpsBestView = 0, s_gpsBestUsed = 0;
-static char     s_gpsLastFix[48] = "";
+static uint32_t s_gpsTryAt = 0, s_gpsSumAt = 0, s_gpsGoodAt = 0;
 static const uint32_t GPS_BAUDS[] = { 38400, 9600, 115200 };
+// The best since switched on, for a watch that was off the cable while it
+// happened: GPS STATUS asks.
+static uint32_t s_gpsOnAt = 0, s_gpsFirstFixMs = 0;
+static uint8_t  s_gpsBestView = 0, s_gpsBestHeard = 0, s_gpsBestUsed = 0;
+static bool     s_gpsSummaries = false;  // the 5 s lines, only when asked for on the console
+extern volatile uint8_t g_consoleGps;    // 1 on, 2 off, 3 status, 4 fake, 5..7 wardrive/wigle
+extern volatile int32_t g_consoleFakeLat7, g_consoleFakeLon7;
 
 static void gpsPower(bool on, bool dc4) {
     if (on) {
@@ -3527,67 +3543,47 @@ static void gpsPower(bool on, bool dc4) {
 
 static void gpsOpen(uint32_t baud) {
     Serial1.end();
-    Serial1.begin(baud, SERIAL_8N1, 41, 42);   // our RX 41, TX 42: arduino-esp32 variants/lilygo_twatch_s3
-    s_gpsLen = 0; s_gpsSentences = 0;
+    Serial1.begin(baud, SERIAL_8N1, 41, 42);   // our RX 41, TX 42
     s_gpsTryAt = millis();
-    Serial.printf("[gps] listening at %lu baud\n", (unsigned long)baud);
+    s_gpsGoodAt = Gnss::good();
 }
 
-static const char* gpsField(const char* s, uint8_t n) {
-    while (n && *s) { if (*s == ',') n--; s++; }
-    return s;
+static void gpsStart(bool summaries) {
+    if (!s_pmuOk) return;
+    s_gpsOn = true; s_gpsFound = false; s_gpsTry = 0;
+    s_gpsSummaries = summaries;
+    s_gpsOnAt = millis(); s_gpsFirstFixMs = 0;
+    s_gpsBestView = s_gpsBestHeard = s_gpsBestUsed = 0;
+    Gnss::reset();
+    gpsPower(true, false);
+    delay(50);
+    gpsOpen(GPS_BAUDS[0]);
+    s_gpsSumAt = millis();
 }
 
-static void gpsSentence(const char* s) {
-    if (s[0] != '$' || strlen(s) < 7) return;
-    s_gpsSentences++;
-    if (!s_gpsFound && s_gpsSentences >= 3) {
-        s_gpsFound = true;
-        Serial.printf("[gps] a GNSS is talking at %lu baud\n", (unsigned long)GPS_BAUDS[s_gpsTry % 3]);
-    }
-    const char* t = s + 3;   // after $ and the two-letter talker
-    if (!strncmp(t, "TXT", 3)) { Serial.printf("[gps] module: %s\n", s); return; }
-    if (!strncmp(t, "GGA", 3)) {
-        s_gpsFix  = (uint8_t)atoi(gpsField(s, 6));
-        s_gpsUsed = (uint8_t)atoi(gpsField(s, 7));
-        if (s_gpsUsed > s_gpsBestUsed) s_gpsBestUsed = s_gpsUsed;
-        if (s_gpsFix) {
-            s_gpsFixes++;
-            if (!s_gpsFirstFixMs) s_gpsFirstFixMs = millis() - s_gpsOnAt;
-            // ddmm.mmmm,N,dddmm.mmmm,W exactly as sent: fields 2 to 5.
-            const char* a = gpsField(s, 2);
-            const char* e = gpsField(s, 6);
-            size_t n = (size_t)(e - a) > 0 ? (size_t)(e - a) - 1 : 0;
-            if (n >= sizeof s_gpsLastFix) n = sizeof s_gpsLastFix - 1;
-            memcpy(s_gpsLastFix, a, n); s_gpsLastFix[n] = 0;
-        }
-        return;
-    }
-    if (!strncmp(t, "GSV", 3)) {
-        uint8_t k = 5;
-        if      (!strncmp(s + 1, "GP", 2)) k = 0;
-        else if (!strncmp(s + 1, "GL", 2)) k = 1;
-        else if (!strncmp(s + 1, "GA", 2)) k = 2;
-        else if (!strncmp(s + 1, "GB", 2) || !strncmp(s + 1, "BD", 2)) k = 3;
-        else if (!strncmp(s + 1, "GQ", 2)) k = 4;
-        s_gpsView[k] = (uint8_t)atoi(gpsField(s, 3));
-    }
+static void gpsStop() {
+    s_gpsOn = false;
+    Serial1.end();
+    gpsPower(false, false);
 }
 
 // While the GPS is on, a small counter at the top of the main screen: how
-// many satellites it can see, how many it is using, and FIX once it has one.
-// For a watch on a windowsill, read without a cable.
+// many satellites it hears, how many it uses, FIX once it has one -- and,
+// wardriving, how many rows are kept. Read without a cable, on a windowsill.
 static void gpsBadge(TFT_eSPI& t) {
     if (!s_gpsOn) return;
-    const uint8_t v = s_gpsView[0] + s_gpsView[1] + s_gpsView[2] + s_gpsView[3] + s_gpsView[4] + s_gpsView[5];
-    char txt[32];
-    if (!s_gpsFound)  snprintf(txt, sizeof txt, "GPS STARTING");
-    else if (s_gpsFix) snprintf(txt, sizeof txt, "GPS FIX  %u SATS", s_gpsUsed);
-    else              snprintf(txt, sizeof txt, "GPS %u SEEN  %u USED", v, s_gpsUsed);
+    const Gnss::Sky k = Gnss::sky();
+    const Gnss::Fix& f = Gnss::fix();
+    const bool fix = Gnss::fresh(millis());
+    char txt[40];
+    if (!s_gpsFound)                   snprintf(txt, sizeof txt, "GPS STARTING");
+    else if (fix && Wardrive::enabled()) snprintf(txt, sizeof txt, "GPS FIX %u  %lu ROWS", f.used, (unsigned long)Wardrive::count());
+    else if (fix)                      snprintf(txt, sizeof txt, "GPS FIX  %u SATS", f.used);
+    else                               snprintf(txt, sizeof txt, "GPS %u HEARD  %u USED", k.heard, f.used);
     t.setTextSize(Theme::uiTextSize(t, 1));
     const int w = t.textWidth(txt) + 10, h = t.fontHeight() + 6;
     const int x = (t.width() - w) / 2, y = 4;
-    const uint16_t col = s_gpsFix ? Theme::GREEN : Theme::CYAN;
+    const uint16_t col = fix ? Theme::GREEN : Theme::CYAN;
     t.fillRoundRect(x, y, w, h, 4, Theme::BG);
     t.drawRoundRect(x, y, w, h, 4, col);
     t.setTextColor(col, Theme::BG);
@@ -3595,63 +3591,127 @@ static void gpsBadge(TFT_eSPI& t) {
     t.print(txt);
 }
 
+// The WiGLE file over USB, between two marker lines tools/wigle_dump.py looks
+// for. The native USB console drops what does not fit its buffer (see the
+// setTxTimeoutMs(0) in setup), and the first export lost the end of the
+// column line that way. So this writes only as much as the buffer has room
+// for, and waits for the host to take the rest; a host that stops reading
+// for two seconds ends the export rather than hanging the watch.
+static bool usbWriteAll(const char* p, size_t n) {
+    uint32_t waitFrom = millis();
+    while (n) {
+        const int room = Serial.availableForWrite();
+        if (room <= 0) {
+            if (millis() - waitFrom > 2000) return false;
+            delay(1);
+            continue;
+        }
+        const size_t k = (size_t)room < n ? (size_t)room : n;
+        const size_t w = Serial.write((const uint8_t*)p, k);
+        p += w; n -= w;
+        if (w) waitFrom = millis();
+    }
+    return true;
+}
+
+static void wigleExport(bool includeFake) {
+    char buf[512];   // the two header lines run past 330 with a long version string
+    struct Ctx { bool fake, ok; uint32_t rows, skipped; char* buf; } c = { includeFake, true, 0, 0, buf };
+    usbWriteAll("=== WIGLE BEGIN ===\n", 20);
+    const size_t h = Wardrive::headerLines(buf, sizeof buf, FIRMWARE_VERSION, "twatch-s3", "LilyGo T-Watch S3 Plus");
+    c.ok = usbWriteAll(buf, h);
+    if (c.ok) Wardrive::forEach([](const Wardrive::Record& r, void* p) {
+        Ctx& c = *(Ctx*)p;
+        if ((r.flags & Wardrive::F_FAKE) && !c.fake) { c.skipped++; return true; }
+        const size_t n = Wardrive::csvRow(r, c.buf, 320);
+        if (n && !usbWriteAll(c.buf, n)) { c.ok = false; return false; }
+        if (n) c.rows++;
+        return true;
+    }, &c);
+    const int n = snprintf(buf, sizeof buf, "=== WIGLE END %lu rows (%lu bench rows left out)%s ===\n",
+                           (unsigned long)c.rows, (unsigned long)c.skipped, c.ok ? "" : " INCOMPLETE");
+    usbWriteAll(buf, (size_t)n);
+}
+
 static void gpsTick() {
-    if (g_consoleGps == 1) {
-        g_consoleGps = 0;
-        s_gpsOn = true; s_gpsFound = false; s_gpsTry = 0;
-        memset(s_gpsView, 0, sizeof s_gpsView); s_gpsFix = s_gpsUsed = 0;
-        s_gpsOnAt = millis(); s_gpsFirstFixMs = 0; s_gpsFixes = 0;
-        s_gpsBestView = s_gpsBestUsed = 0; s_gpsLastFix[0] = 0;
-        gpsPower(true, false);
-        delay(50);
-        gpsOpen(GPS_BAUDS[0]);
-        s_gpsSumAt = millis();
-    } else if (g_consoleGps == 3) {
-        g_consoleGps = 0;
-        if (!s_gpsOn) { Serial.println("[gps] status: off"); }
-        else {
-            Serial.printf("[gps] status: on %lu s; most satellites in view %u, most used %u; ",
-                          (unsigned long)((millis() - s_gpsOnAt) / 1000), s_gpsBestView, s_gpsBestUsed);
-            if (s_gpsFirstFixMs)
-                Serial.printf("FIRST FIX after %lu s, %lu fix reports, last at %s\n",
-                              (unsigned long)(s_gpsFirstFixMs / 1000), (unsigned long)s_gpsFixes, s_gpsLastFix);
-            else
-                Serial.println("never had a fix");
-        }
-    } else if (g_consoleGps == 2) {
-        g_consoleGps = 0;
-        s_gpsOn = false;
-        Serial1.end();
-        gpsPower(false, false);
-        Serial.println("[gps] off");
+    const uint8_t cmd = g_consoleGps;
+    if (cmd) g_consoleGps = 0;
+    if (cmd == 1) { gpsStart(true); Serial.println("[gps] on"); }
+    else if (cmd == 2) { gpsStop(); Serial.println("[gps] off"); }
+    else if (cmd == 3) {
+        const Gnss::Fix& f = Gnss::fix();
+        Serial.printf("[gps] status: %s; on %lu s; most in view %u, heard %u, used %u; ",
+                      s_gpsOn ? "on" : "off", s_gpsOn ? (unsigned long)((millis() - s_gpsOnAt) / 1000) : 0ul,
+                      s_gpsBestView, s_gpsBestHeard, s_gpsBestUsed);
+        if (s_gpsFirstFixMs) Serial.printf("FIRST FIX after %lu s%s, now %s at %ld,%ld\n",
+                                           (unsigned long)(s_gpsFirstFixMs / 1000), Gnss::faked() ? " (fake)" : "",
+                                           Gnss::fresh(millis()) ? "fixed" : "lost", (long)f.lat7, (long)f.lon7);
+        else Serial.println("never had a fix");
+        Serial.printf("[wardrive] %s; %lu rows kept of %lu; this boot %lu written, %lu skipped as repeats, %lu dropped\n",
+                      Wardrive::enabled() ? "ON" : "off", (unsigned long)Wardrive::count(), (unsigned long)Wardrive::capacity(),
+                      (unsigned long)Wardrive::written(), (unsigned long)Wardrive::skipped(), (unsigned long)Wardrive::dropped());
     }
-    if (!s_gpsOn) return;
-    while (Serial1.available()) {
-        const char c = (char)Serial1.read();
-        if (c == '\r') continue;
-        if (c == '\n') { s_gpsLine[s_gpsLen] = 0; gpsSentence(s_gpsLine); s_gpsLen = 0; continue; }
-        if (s_gpsLen < sizeof s_gpsLine - 1) s_gpsLine[s_gpsLen++] = c;
+    else if (cmd == 4) {
+        const uint32_t e = Clock::isSet() ? Clock::nowEpoch() : 0;
+        Gnss::fake(g_consoleFakeLat7, g_consoleFakeLon7, e, millis());
+        if (!s_gpsFirstFixMs) s_gpsFirstFixMs = millis() - s_gpsOnAt + 1;
+        Serial.printf("[gps] BENCH FIX at %ld,%ld%s -- rows written now are marked and left out of WIGLE\n",
+                      (long)g_consoleFakeLat7, (long)g_consoleFakeLon7, e ? "" : "; the clock is not set, so no rows until it is");
     }
+    else if (cmd == 5) { Wardrive::setEnabled(true);  if (!s_gpsOn) gpsStart(false); Serial.println("[wardrive] ON"); }
+    else if (cmd == 6) { Wardrive::setEnabled(false); gpsStop(); Serial.println("[wardrive] off"); }
+    else if (cmd == 7) wigleExport(false);
+    else if (cmd == 8) wigleExport(true);
+    else if (cmd == 9) { Wardrive::clear(); Serial.println("[wardrive] cleared"); }
+
+    // A bench fix is held until a real one replaces it; refreshed here so it
+    // does not go stale while the console test runs.
+    if (Gnss::faked()) Gnss::fake(Gnss::fix().lat7, Gnss::fix().lon7, Clock::isSet() ? Clock::nowEpoch() : 0, millis());
+
+    if (!s_gpsOn) { Wardrive::tick(millis()); return; }
+    while (Serial1.available()) Gnss::feed((char)Serial1.read(), millis());
     const uint32_t now = millis();
-    if (!s_gpsFound && now - s_gpsTryAt > 2500) {
-        // Three bauds with BLDO1 and DC3, then the same three with DC4 too.
-        s_gpsTry++;
-        if (s_gpsTry == 3) { gpsPower(true, true); Serial.println("[gps] nothing yet; DC4 at 850 mV too (the LS550G version)"); delay(50); }
-        if (s_gpsTry >= 6) {
-            Serial.println("[gps] no GNSS answered on any baud: not an S3 Plus, or its GPS is not powered this way");
-            s_gpsOn = false; Serial1.end(); gpsPower(false, false);
-            return;
+    if (!s_gpsFound) {
+        if (Gnss::good() - s_gpsGoodAt >= 3) {
+            s_gpsFound = true;
+            Serial.printf("[gps] a GNSS is talking at %lu baud\n", (unsigned long)GPS_BAUDS[s_gpsTry % 3]);
+        } else if (now - s_gpsTryAt > 2500) {
+            // Three bauds with BLDO1 and DC3, then the same three with DC4 too.
+            s_gpsTry++;
+            if (s_gpsTry == 3) { gpsPower(true, true); delay(50); }
+            if (s_gpsTry >= 6) {
+                Serial.println("[gps] no GNSS answered: not an S3 Plus, or its GPS is not powered this way");
+                gpsStop();
+                return;
+            }
+            gpsOpen(GPS_BAUDS[s_gpsTry % 3]);
         }
-        gpsOpen(GPS_BAUDS[s_gpsTry % 3]);
     }
-    if (s_gpsFound && now - s_gpsSumAt > 5000) {
+    const Gnss::Sky k = Gnss::sky();
+    const Gnss::Fix& f = Gnss::fix();
+    if (k.view > s_gpsBestView) s_gpsBestView = k.view;
+    if (k.heard > s_gpsBestHeard) s_gpsBestHeard = k.heard;
+    if (f.used > s_gpsBestUsed) s_gpsBestUsed = f.used;
+    if (f.valid && !Gnss::faked() && !s_gpsFirstFixMs) {
+        s_gpsFirstFixMs = now - s_gpsOnAt;
+        Serial.printf("[gps] FIRST FIX after %lu s, %u satellites\n", (unsigned long)(s_gpsFirstFixMs / 1000), f.used);
+    }
+    // Satellite time is the best clock this watch will ever be offered.
+    if (f.valid && !Gnss::faked() && Gnss::utcEpoch() && !Clock::trusted()) {
+        if (Clock::setEpoch(Gnss::utcEpoch())) Serial.println("[clock] set from GPS");
+    }
+    Wardrive::tick(now);
+    if (s_gpsSummaries && s_gpsFound && now - s_gpsSumAt > 5000) {
         s_gpsSumAt = now;
-        const uint8_t v = s_gpsView[0] + s_gpsView[1] + s_gpsView[2] + s_gpsView[3] + s_gpsView[4] + s_gpsView[5];
-        if (v > s_gpsBestView) s_gpsBestView = v;
-        Serial.printf("[gps] %s; %u satellites used; in view %u (GPS %u, GLONASS %u, Galileo %u, BeiDou %u, QZSS %u)\n",
-                      s_gpsFix ? "FIX" : "no fix yet", s_gpsUsed, v,
-                      s_gpsView[0], s_gpsView[1], s_gpsView[2], s_gpsView[3], s_gpsView[4]);
+        Serial.printf("[gps] %s; %u used; in view %u, heard %u\n",
+                      Gnss::fresh(now) ? "FIX" : "no fix yet", f.used, k.view, k.heard);
     }
+}
+
+// At boot: the store, and the GPS back on if wardriving was left on.
+static void wardriveBegin() {
+    Wardrive::begin();
+    if (Wardrive::enabled()) gpsStart(false);
 }
 #endif
 

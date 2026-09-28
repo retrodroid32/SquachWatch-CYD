@@ -1,5 +1,7 @@
 // SquachWatch-CYD — DetectionEngine implementation
 #include "detection.h"
+#include "wardrive.h"
+#include "wifi_auth.h"
 #include "serial_flush.h"
 #include "signatures.h"
 #include "settings.h"
@@ -290,6 +292,20 @@ class BleScanCallbacks : public NimBLEScanCallbacks {
         uint8_t printed[6];
         for (int i = 0; i < 6; i++) printed[i] = mac[5 - i];
         mac = printed;
+#if defined(TWATCH_S3)
+        // Wardriving: every device, not just the ones worth an alert. The
+        // name and the company ID are only asked for while it is on -- both
+        // cost a string on this task.
+        if (Wardrive::enabled()) {
+            const std::string nm = adv->haveName() ? adv->getName() : std::string();
+            bool hasId = false; uint16_t cid = 0;
+            if (adv->haveManufacturerData()) {
+                const std::string md = adv->getManufacturerData();
+                if (md.size() >= 2) { hasId = true; cid = (uint16_t)((uint8_t)md[0] | ((uint8_t)md[1] << 8)); }
+            }
+            Wardrive::noteBle(mac, nm.c_str(), (int8_t)adv->getRSSI(), hasId, cid);
+        }
+#endif
         if (!g_engine) return;
         // Checked regardless of raw-scan mode -- a watched/hunted
         // target still fires even if it's not a known signature and
@@ -700,6 +716,15 @@ bool DetectionEngine::init() {
             // device announcing itself to its own kind, not an access point
             // offering a network, and its SSID is throwaway. Its name goes
             // where the SSID would have.
+#if defined(TWATCH_S3)
+            // Wardriving: every access point, with its security read from the
+            // RSN and WPA elements (the last four bytes are the FCS).
+            if (Wardrive::enabled() && sigLen > 40) {
+                const uint16_t cap = (uint16_t)(frame[34] | (frame[35] << 8));
+                Wardrive::noteWifi(frame + 16, ssid, WifiAuth::parse(cap, frame + 36, (uint16_t)(sigLen - 40)),
+                                   pkt->rx_ctrl.channel, (int8_t)pkt->rx_ctrl.rssi);
+            }
+#endif
             char pwnName[33];
             // A drone's WiFi Remote ID rides in its beacons as a vendor
             // element (issue #15): posted as a drone, named by its serial
