@@ -7,14 +7,14 @@
 // the reason this file exists. Everything else on this device tells you a
 // thing is nearby; this tells you where the person holding it is.
 //
-// Scope, honestly: this decodes the Bluetooth LEGACY form only, which is
-// AD type 0x16 service data under UUID 0xFFFA carrying one message per
-// advertisement. It does not decode Bluetooth 5 Long Range, and it cannot:
-// the ESP32-WROOM in this board is BLE 4.2 and Espressif document that it
-// has no hardware support for Coded PHY or extended advertising, which is
-// where the second half of the drones are. Nor does it decode the WiFi
-// Beacon form, which packs several messages together -- that would need
-// the promiscuous path rather than the NimBLE one, and is a separate job.
+// Scope, honestly: this decodes the Bluetooth LEGACY form, which is AD type
+// 0x16 service data under UUID 0xFFFA carrying one message per
+// advertisement, and the WiFi Beacon form, a vendor element packing several
+// messages together (mergeBeacon). It does not decode Bluetooth 5 Long
+// Range, and it cannot: the ESP32-WROOM in this board is BLE 4.2 and
+// Espressif document that it has no hardware support for Coded PHY or
+// extended advertising, which is where the second half of the drones are.
+// Nor the WiFi NAN form, which rides action frames, not beacons.
 //
 // Source for every offset and constant below: opendroneid-core-c, the
 // reference implementation of the standard.
