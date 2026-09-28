@@ -8,6 +8,7 @@
 #include "dex.h"
 #include "regulars.h"
 #include "clock.h"
+#include "ble_adv_utils.h"
 #include <Arduino.h>
 #include <WiFi.h>
 #include <esp_wifi.h>
@@ -102,20 +103,7 @@ static bool advFieldAt(const std::vector<uint8_t>& payload, uint8_t type,
 }
 
 static void copyAdvName(const std::vector<uint8_t>& payload, char* dst, size_t dstSize) {
-    if (!dst || dstSize == 0) return;
-    dst[0] = 0;
-
-    // Match NimBLE's getName() semantics: prefer a complete name anywhere in
-    // the assembled payload, then fall back to the shortened/incomplete name.
-    AdvFieldView name;
-    if (!advFieldAt(payload, BLE_HS_ADV_TYPE_COMP_NAME, 0, name) &&
-        !advFieldAt(payload, BLE_HS_ADV_TYPE_INCOMP_NAME, 0, name)) {
-        return;
-    }
-
-    const size_t n = name.len < (dstSize - 1) ? name.len : (dstSize - 1);
-    if (n) memcpy(dst, name.data, n);
-    dst[n] = 0;
+    BleAdv::copyLocalName(payload.data(), payload.size(), dst, dstSize);
 }
 
 static bool matchKnownServiceUuid16(const std::vector<uint8_t>& payload,
@@ -341,9 +329,12 @@ class BleScanCallbacks : public NimBLEScanCallbacks {
             s_advertsDropped++;
             return;
         }
-        // 2.x hands back a reference to the device's own address, so the
-        // pointer is good for the whole of this call.
-        const uint8_t* mac = adv->getAddress().getBase()->val;
+        // NimBLE exposes ble_addr_t::val in controller/native byte order.
+        // Keep that representation only for stack-internal mesh handling, then
+        // normalize once for every user-facing/stored SquachWatch address.
+        const uint8_t* nimbleMac = adv->getAddress().getBase()->val;
+        uint8_t mac[6];
+        BleAdv::canonicalMacFromNimble(nimbleMac, mac);
         const std::vector<uint8_t>& payload = adv->getPayload();
 #if SQUACH_MESH
         // A peer is handled here and RETURNS, so it never reaches the
@@ -361,7 +352,7 @@ class BleScanCallbacks : public NimBLEScanCallbacks {
             for (uint8_t i = 0;; i++) {
                 AdvFieldView md;
                 if (!advFieldAt(payload, BLE_HS_ADV_TYPE_MFG_DATA, i, md)) break;
-                if (Mesh::onManufacturerData(md.data, md.len, mac, millis())) ours = true;
+                if (Mesh::onManufacturerData(md.data, md.len, nimbleMac, millis())) ours = true;
             }
             // A SquachWatch is not a detection, but it can be a hunt target:
             // the SQUAD screen's HUNT aims the gauge at one. Its advert feeds
