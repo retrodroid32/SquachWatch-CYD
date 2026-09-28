@@ -722,7 +722,12 @@ int main(int argc, char** argv) {
     };
 
     // Per-screen init, where the screen has one.
-    if      (screen == "clear" || screen == "zonecard") uiClearInit(frame);
+    if      (screen == "clear" || screen == "zonecard") {
+        uiClearInit(frame);
+        // SQUACHSIM_ZONE=<index into Clock's table> shows the zone card on
+        // that zone, for rendering one of them.
+        if (const char* z = getenv("SQUACHSIM_ZONE")) Settings::setTimeZone((uint8_t)atoi(z));
+    }
     else if (screen == "log") {
         // The second row ignored, so the screen shows its IGNORED tag. The
         // sim's NVS is in memory unless SQUACHSIM_NVS says otherwise, so
@@ -793,14 +798,14 @@ int main(int argc, char** argv) {
         // The real path: a version arrives, then the release's own lines if
         // it came from the site. --from makes it a squad member's hello,
         // which carries a number and no notes.
-        OtaCore::noteAvailable("1.23.0", heardFrom.c_str());
+        OtaCore::noteAvailable("1.24.0", heardFrom.c_str());
         if (heardFrom.empty()) {
             static const char* const NEWS[3] = {
-                "A radar for your watch list",
-                "Squachy explains what came back",
-                "The alert waits for your tap",
+                "Real drones detected, at last",
+                "Flock-You's Flock signatures",
+                "18 more time zones",
             };
-            OtaCore::noteRelease("Locked On", NEWS, 3);
+            OtaCore::noteRelease("Look Up", NEWS, 3);
         }
         uiSysPropsInit(frame);
         // The tab a tap would have opened, for rendering one of them.

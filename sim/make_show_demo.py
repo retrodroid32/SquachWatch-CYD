@@ -32,6 +32,16 @@ CYAN  = (0, 214, 214)
 # ---- the clips ----
 
 CLIPS = {
+    # v1.24.0 "Look Up": drones are really detected now (the page is the
+    # emulator's seeded aircraft, decoded), ignored devices wear a tag, and
+    # eighteen more time zones, shown on the zone card.
+    "look-up": [
+        ("log", 20, 40, ["--info", "7"], {}, 1800, "REAL DRONES SHOW UP NOW. PILOT INCLUDED."),
+        ("log", 20, 30, [], {}, 1400, "IGNORED DEVICES WEAR A TAG NOW"),
+        ("zonecard", 30, 20, [], {"SQUACHSIM_ZONE": "33"}, 1100, "18 MORE TIME ZONES. HELLO, BANGKOK."),
+        ("zonecard", 30, 20, [], {"SQUACHSIM_ZONE": "26"}, 1100, "HELLO, JOHANNESBURG."),
+        ("zonecard", 30, 20, [], {"SQUACHSIM_ZONE": "35"}, 1400, "HELLO, SEOUL."),
+    ],
     # v1.23.0 "Locked On": the new watch-list alert. One scene per line
     # Squachy says (they change every 7 s), each started a little after its
     # line so the bubble has typed out and the sweep has come round.

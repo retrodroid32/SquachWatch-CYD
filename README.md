@@ -94,8 +94,9 @@ from your browser:
 **[https://squachwatch.com/](https://squachwatch.com/)**
 
 Works in Firefox, Chrome, Edge, or Brave on desktop. Pick your board (2.8" CYD,
-AWOK 2.4", RL Phantom 2.4", or the LilyGo T-Watch S3 in beta), plug in, click
-Connect & Install, done. A T-Watch has its clock set for it once the install
+AWOK 2.4", RL Phantom 2.4", Freenove 3.2", or in beta the 3.5", the LilyGo
+T-Watch S3, the Freenove ESP32-S3 2.8" and the Elecrow CrowPanel 7"), plug in,
+click Connect & Install, done. A T-Watch has its clock set for it once the install
 finishes.
 
 ## Build

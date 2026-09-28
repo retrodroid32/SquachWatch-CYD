@@ -181,7 +181,10 @@ jobs:
           # twatch-s3 is the LilyGo T-Watch S3: an ESP32-S3, so its own
           # bootloader (at 0x0, not 0x1000) and its own 16 MB partition
           # table. A lab board until the watch work settles; see ?lab=1.
-          pio run -e twatch-s3
+          # freenove-s3 (Freenove ESP32-S3 2.8", FNK0104B) and crowpanel7
+          # (Elecrow CrowPanel Advance 7.0) are S3s too, public BETAs from
+          # v1.24.0, contributed and tested on their authors' boards (#16, #11).
+          pio run -e twatch-s3 -e freenove-s3 -e crowpanel7
           # The Phantom's capacitive version has never run on a real board, so
           # it is compiled to keep its code honest but NOT published anywhere.
           pio run -e rlphantom
@@ -226,6 +229,15 @@ jobs:
             0x8000  .pio/build/twatch-s3/partitions.bin \
             0xe000  "$HOME/.platformio/packages/framework-arduinoespressif32/tools/partitions/boot_app0.bin" \
             0x10000 .pio/build/twatch-s3/firmware.bin
+          for v in freenove-s3 crowpanel7; do
+            python -m esptool --chip esp32s3 merge_bin \
+              -o "firmware-$v-merged.bin" \
+              --flash_mode dio --flash_freq 80m --flash_size 16MB \
+              0x0     ".pio/build/$v/bootloader.bin" \
+              0x8000  ".pio/build/$v/partitions.bin" \
+              0xe000  "$HOME/.platformio/packages/framework-arduinoespressif32/tools/partitions/boot_app0.bin" \
+              0x10000 ".pio/build/$v/firmware.bin"
+          done
           # Every board's raw PlatformIO artifacts share the same basenames
           # (bootloader.bin/partitions.bin/firmware.bin), and release assets
           # need unique names -- the very first two-board release failed
@@ -274,6 +286,19 @@ jobs:
           # and its own table. otadata is the same eight bytes of boot_app0.
           cp .pio/build/twatch-s3/bootloader.bin esp32s3-bootloader.bin
           cp .pio/build/twatch-s3/partitions.bin twatch-s3-partitions.bin
+          # The other two S3 boards share both: the same flash mode, size and
+          # speed, and partition tables with the same rows. Checked, not
+          # assumed, for the same reason as the ESP32 pair above.
+          for f in bootloader partitions; do
+            ref="$(sha256sum ".pio/build/twatch-s3/$f.bin" | cut -d' ' -f1)"
+            for v in freenove-s3 crowpanel7; do
+              got="$(sha256sum ".pio/build/$v/$f.bin" | cut -d' ' -f1)"
+              if [ "$got" != "$ref" ]; then
+                echo "::error::$v/$f.bin differs from twatch-s3/$f.bin, which the S3 manifests share."
+                exit 1
+              fi
+            done
+          done
           # The app, which is the only part that actually differs. cyd-fast
           # and cyd-ili9341-fast are the 80MHz display-overclock variants
           # the flasher's "experimental overclock" checkbox targets,
@@ -281,7 +306,7 @@ jobs:
           # merged image for those on purpose: the merged blob is a
           # manual-recovery artifact, and recovery should land you on the
           # spec-compliant build rather than the overclocked one.
-          for v in cyd cyd-ili9341 awok rlphantom-r freenove32 cyd-fast cyd-ili9341-fast cyd35-fast twatch-s3; do
+          for v in cyd cyd-ili9341 awok rlphantom-r freenove32 cyd-fast cyd-ili9341-fast cyd35-fast twatch-s3 freenove-s3 crowpanel7; do
             cp ".pio/build/$v/firmware.bin" "$v-firmware.bin"
           done
 
@@ -299,7 +324,7 @@ jobs:
           fi
           umask 077
           printf '%s\n' "$OTA_SIGNING_KEY" > "$RUNNER_TEMP/ota_key.pem"
-          for v in cyd cyd-ili9341 awok rlphantom-r freenove32 cyd-fast cyd-ili9341-fast cyd35-fast twatch-s3; do
+          for v in cyd cyd-ili9341 awok rlphantom-r freenove32 cyd-fast cyd-ili9341-fast cyd35-fast twatch-s3 freenove-s3 crowpanel7; do
             python tools/sign_firmware.py --key "$RUNNER_TEMP/ota_key.pem" \
               --env "$v" --bin "$v-firmware.bin" --out "$v-firmware.sig"
           done
@@ -332,7 +357,9 @@ jobs:
                     "web-flasher/manifest-rlphantom-r.json",
                     "web-flasher/manifest-freenove32.json",
                     "web-flasher/manifest-cyd35-fast.json",
-                    "web-flasher/manifest-twatch-s3.json"):
+                    "web-flasher/manifest-twatch-s3.json",
+                    "web-flasher/manifest-freenove-s3.json",
+                    "web-flasher/manifest-crowpanel7.json"):
               m = json.load(open(p))
               m["version"] = "${{ steps.ver.outputs.version }}"
               if name: m["release_name"] = name
@@ -358,6 +385,8 @@ jobs:
           cp web-flasher/manifest-freenove32.json manifest-freenove32.json
           cp web-flasher/manifest-cyd35-fast.json manifest-cyd35-fast.json
           cp web-flasher/manifest-twatch-s3.json manifest-twatch-s3.json
+          cp web-flasher/manifest-freenove-s3.json manifest-freenove-s3.json
+          cp web-flasher/manifest-crowpanel7.json manifest-crowpanel7.json
 
       - name: Create GitHub Release with build artifacts
         # A lab tag publishes a flashable build and nothing else. Creating a
@@ -394,6 +423,12 @@ jobs:
             twatch-s3-firmware.bin \
             firmware-twatch-s3-merged.bin \
             manifest-twatch-s3.json \
+            freenove-s3-firmware.bin \
+            firmware-freenove-s3-merged.bin \
+            manifest-freenove-s3.json \
+            crowpanel7-firmware.bin \
+            firmware-crowpanel7-merged.bin \
+            manifest-crowpanel7.json \
             firmware-cyd-merged.bin \
             firmware-cyd-ili9341-merged.bin \
             firmware-awok-merged.bin \
@@ -467,6 +502,8 @@ jobs:
           cp web-flasher/manifest-freenove32.json _site/manifest-freenove32.json
           cp web-flasher/manifest-cyd35-fast.json _site/manifest-cyd35-fast.json
           cp web-flasher/manifest-twatch-s3.json _site/manifest-twatch-s3.json
+          cp web-flasher/manifest-freenove-s3.json _site/manifest-freenove-s3.json
+          cp web-flasher/manifest-crowpanel7.json _site/manifest-crowpanel7.json
           # A LAB RUN MUST NOT CHANGE WHAT THE PUBLIC PAGE SERVES.
           #
           # A Pages deploy is wholesale -- there is no partial update -- so a
@@ -535,7 +572,7 @@ jobs:
           import json, shutil, os
           label = "${{ steps.ver.outputs.label }}"
           ver   = "${{ steps.ver.outputs.version }}"
-          for board in ("cyd", "cyd-ili9341", "cyd-fast", "cyd-ili9341-fast", "rlphantom-r", "freenove32", "twatch-s3"):
+          for board in ("cyd", "cyd-ili9341", "cyd-fast", "cyd-ili9341-fast", "rlphantom-r", "freenove32", "twatch-s3", "freenove-s3", "crowpanel7"):
               shutil.copy(board + "-firmware.bin", "_site/lab-" + board + "-firmware.bin")
               if os.path.exists(board + "-firmware.sig"):
                   shutil.copy(board + "-firmware.sig", "_site/lab-" + board + "-firmware.sig")
@@ -575,7 +612,7 @@ jobs:
             # firmware here: v1.16.0 shipped cyd35-fast to the release and into
             # index.html's <option> list but neither into _site, so the 3.5"
             # appeared in the picker and 404'd when chosen.
-            for board in cyd cyd-ili9341 awok rlphantom-r freenove32 cyd-fast cyd-ili9341-fast cyd35-fast twatch-s3; do
+            for board in cyd cyd-ili9341 awok rlphantom-r freenove32 cyd-fast cyd-ili9341-fast cyd35-fast twatch-s3 freenove-s3 crowpanel7; do
               cp "$board-firmware.bin" "_site/$board-firmware.bin"
               # The Bluetooth update page fetches the image and its signature
               # side by side from the site root.

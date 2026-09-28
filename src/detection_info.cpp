@@ -24,7 +24,7 @@ static const char* const EXPLAIN_TEXT[] = {
     // AIRTAG
     "An Apple AirTag, riding Apple's Find My network. Legitimate for keys and luggage -- also a known method for tracking a person or vehicle without consent.",
     // DRONE
-    "A drone broadcasting Remote ID, the wireless 'license plate' the FAA requires most drones to transmit. It is decoded, not just spotted: where the aircraft is, and often where the person flying it is standing. Not its camera feed -- that stays private, which is rather the point of the complaint. Bluetooth Legacy only: this chip is BLE 4.2, so a drone using the Bluetooth 5 long-range form is invisible to it and always will be.",
+    "A drone broadcasting Remote ID, the wireless 'license plate' the FAA requires most drones to transmit. It is decoded, not just spotted: where the aircraft is, and often where the person flying it is standing. Heard over Bluetooth and in WiFi beacons. Not its camera feed -- that stays private, which is rather the point of the complaint. Not the Bluetooth 5 long-range form either: this chip is BLE 4.2 and cannot hear it.",
     // ALPR
     "An automated license-plate reader from a vendor other than Flock. Same idea: logs every plate that passes, usually feeding a shared database.",
     // CAMERA
