@@ -158,8 +158,18 @@ Flashed and captured over the CH340 port on 2026-09-28.
 - [x] **Detections fire.** `det 5` in one capture, from ambient traffic alone.
 - [x] **Performance**: 67-72 fps, `loop 69/s`, heap flat around 80 KB free
       across the capture, largest block 8.2 MB.
-- [x] **SD card absence is handled**: `[sd] no card, or it did not answer:
-      nothing will be logged`. A card still needs testing.
+- [x] **SD card mounts and logs**: `[sd] card mounted: 30436 MB` on a 32 GB
+      FAT32 card. It needed two fixes -- `SD_CS_PIN` was 5 (this board's card
+      is on 10, and GPIO5 here is the GPS header's UART), and `-DRLPHANTOM_R`
+      sent it to the branch written for the original CYD's *dedicated* SD bus,
+      which runs `SPI.begin(18, 19, 23, 5)`. GPIO23 is this board's `TFT_CS`.
+- [x] **Display confirmed by the panel itself.** `RDDPM = 0x9C` (booster on,
+      sleep out, normal mode, display on), `RDDCOLM = 0x05` (16 bits/pixel),
+      `RDDMADC = 0x60` matching `setRotation(1)` -- read back over MISO, so
+      the controller is genuinely initialised rather than presumed so.
+- [x] **Touch works, including at 80 MHz SPI**, which is the check that proves
+      the clock-source restore holds (see Performance below).
+- [x] **80 MHz SPI: picture clean, no tearing or speckles.**
 
 ### Still to confirm on the board
 Ordered so that a failure early explains the failures after it.
@@ -197,31 +207,84 @@ Ordered so that a failure early explains the failures after it.
       app slots and the ported ECDSA signature check)
 - [ ] **Soak**: left running for an hour without a reset or a heap collapse
 
-## Performance, and why the SPI frequency does nothing
+## Performance: why it was slow, and what fixed it
 
-The port renders correctly but more slowly than a classic CYD: a full 320x240
-frame takes about 88 ms, roughly 0.37 ms per row. Two things are worth knowing
-before anyone tries to tune it.
+As first ported, a full 320x240 frame took **82 ms (12 fps)**. It now takes
+**20 ms (49 fps)** on the bench, and the firmware runs at 20 fps with the UI
+on top. Everything below was measured on hardware, and the cause was found in
+the TRM rather than by trying numbers.
 
-**`SPI_FREQUENCY` is not connected to anything on the path this firmware
-uses.** Built at 20, 26.6, 40 and 80 MHz, the board came up with
-`SPI_CLOCK_REG = 0x00002001` every time and a 240-row frame took 88.8, 86.6,
-83.2 and 88.3 ms -- the same frame, four times, within noise. RockBase's C5
-processor port mentions `SPI_FREQUENCY` exactly once, inside `initDMA()`'s
-`spi_device_interface_config_t`, and `frame_push.cpp` never calls `initDMA` --
-it drives the peripheral registers itself. So the bus keeps whatever divisor it
-came up on. Per the C5 TRM ch.33.7,
-`f = f_clk_spi_mst / ((SPI_CLKCNT_N+1)(SPI_CLKDIV_PRE+1))`, and `0x00002001` is
-`CLKCNT_N = 2`, `CLKDIV_PRE = 0`: a fixed divide-by-three.
+### `SPI_FREQUENCY` does nothing on this path
 
-**The SPI_UPDATE latch is not optional.** The C5's GPSPI2 stages its
-configuration registers and needs `SPI_UPDATE` raised, and seen to clear,
-before `SPI_USR` starts a transfer. Without it the panel still initialises,
-answers its ID registers, reports display-on and 16 bits per pixel, and the
-firmware reports 70 fps -- while the glass shows dashed, torn runs with most
-rows missing. `frame_push.cpp` does this once per span, which is where the TRM
-puts it: the burst length is configuration and must be latched, the
-`SPI_W0..W15` data buffer is not and does not.
+Built at 20, 26.6, 40 and 80 MHz, the board came up with
+`SPI_CLOCK_REG = 0x00002001` every time and the same frame took 88.8, 86.6,
+83.2 and 88.3 ms. Two reasons, and the second is the one that wasted time:
+
+- RockBase's C5 processor port names `SPI_FREQUENCY` exactly once, inside
+  `initDMA()`. `frame_push.cpp` drives the peripheral registers itself and
+  never calls it.
+- TFT_eSPI's `begin_tft_write()` calls
+  `spi.beginTransaction(SPISettings(SPI_FREQUENCY, ...))`, which **rewrites**
+  `SPI_CLOCK_REG`. Anything set before `tft.startWrite()` is overwritten before
+  a pixel moves. The divisor has to be set *inside* the transaction.
+
+### Where the 0.343 ms per row actually went
+
+| | per 320-pixel row |
+|---|---|
+| LUT pixel conversion | 0.011 ms |
+| All 16 `SPI_W` register writes (75 ns each) | 0.012 ms |
+| **Waiting for the wire** | **0.320 ms** |
+
+93% wire, and the CPU nearly idle — moving the inner loop into IRAM changed
+nothing at any clock, twice measured.
+
+### The two knobs, both in the TRM
+
+`f_SPI = f_clk_spi_mst / ((SPI_CLKCNT_N + 1)(SPI_CLKDIV_PRE + 1))` (ch.33.7),
+and `PCR_SPI2_CLKM_SEL` (ch.9, bits [21:20] of `PCR_SPI2_CLKM_CONF_REG`)
+chooses the module clock: `0 = XTAL_CLK` (the 48 MHz default), `1 =
+PLL_F160M_CLK`. The bus ships at N=2 on the crystal: 48/3 = 16 MHz, which is
+exactly the 14.9 Mbit/s measured.
+
+Same frame, same loop, divisor set inside the transaction:
+
+| Source | SPI clock | Frame | fps | Wire |
+|---|---|---|---|---|
+| XTAL, N=3 | 12 MHz | 107.9 ms | 9.3 | 11.4 Mbit/s |
+| XTAL, N=2 *(as shipped)* | 16 MHz | 82.2 ms | 12.2 | 14.9 Mbit/s |
+| XTAL, N=1 | 24 MHz | 56.6 ms | 17.7 | 21.7 Mbit/s |
+| XTAL, N=0 | 48 MHz | 30.9 ms | 32.4 | 39.8 Mbit/s |
+| **PLL_F160M/2, N=0** | **80 MHz** | **20.5 ms** | **48.8** | **60.0 Mbit/s** |
+
+Linear in the divisor, which is the proof the wire was the ceiling. PLL/1 with
+N=1 is also 80 MHz and gave an identical time, which cross-checks the number.
+
+### The clock source is restored before the push returns
+
+`PCR_SPI2_CLKM_SEL` is **global to SPI2**, and on this board the XPT2046 touch
+controller and the SD card sit on that same peripheral. Arduino's
+`beginTransaction()` computes its divisors believing the source is the crystal,
+so leaving the PLL selected would silently run every later transaction at 3.3x
+its requested frequency: touch at ~8 MHz against a rated 2.5 MHz, SD at 13 MHz
+instead of 4. Nothing would log an error -- touch would simply start missing
+presses. So `frame_push.cpp` raises the clock after `tft.startWrite()` and puts
+it back before `tft.endWrite()`. Verified on hardware: picture clean and touch
+responsive at 80 MHz.
+
+Two build-time escapes, both in `src/frame_push.cpp`:
+
+- `-DSQW_C5_SPI_PLL=0` stays on the 48 MHz crystal. Still 3x stock, and the
+  fallback if a panel dislikes 80 MHz.
+- `-DSQW_C5_SPI_DIV=n` divides the module clock by `n+1`.
+
+Too fast shows as torn or speckled rows, never a blank screen.
+
+### What is the limit now
+
+`bg 20.0 ms` against `push 19.8 ms`: the digital-rain background now costs as
+much as the whole SPI transfer. Past this point the work is in the renderer,
+on a single core, not on the bus.
 
 ## Deliberately not claimed
 - Display overclock. There is no `-fast` variant for this board on purpose:

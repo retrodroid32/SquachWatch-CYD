@@ -158,12 +158,31 @@ void SdLog::openDaily() {
     uint32_t t = millis();
     uint32_t day = t / (24UL * 60UL * 60UL * 1000UL);
     snprintf(_filename, sizeof(_filename), "/squachwatch-%lu.log", (unsigned long)day);
+    // Say what is already on the card for today. Mounting proves the card
+    // answers; it does not prove a single row ever reached it, and until this
+    // line existed the only way to tell the two apart was to pull the card.
+    File f = CARD.open(_filename, FILE_READ);
+    if (f) { Serial.printf("[sd] %s: %lu bytes already\n", _filename, (unsigned long)f.size()); f.close(); }
+    else   { Serial.printf("[sd] %s: new file\n", _filename); }
 }
 
 void SdLog::logEvent(const Detection& d) {
     if (!_ready) return;
     File f = CARD.open(_filename, FILE_APPEND);
-    if (!f) return;
+    if (!f) {
+        // Once, not once per detection: a card that mounts but cannot be
+        // opened for append read exactly like a card that was logging, and
+        // begin()'s own comment two screens up says that is the thing to
+        // avoid. A write-protected card, a full one, or a filesystem the
+        // driver mounted but cannot write all land here.
+        static bool said = false;
+        if (!said) {
+            said = true;
+            Serial.printf("[sd] cannot open %s for append: mounted, but nothing is being logged\n",
+                          _filename);
+        }
+        return;
+    }
     char line[96];
     char mac[18];
     snprintf(mac, sizeof(mac), "%02X:%02X:%02X:%02X:%02X:%02X",
