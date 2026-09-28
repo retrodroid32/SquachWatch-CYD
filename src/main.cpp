@@ -2886,7 +2886,17 @@ void setup() {
 #if defined(TWATCH_S3)
     twatchPowerUp();
 #endif
-#if defined(CYD35)
+#if defined(CYD35) || defined(NM_CYD_C5)
+    // On the NM-CYD-C5 this answers a specific open question rather than a
+    // general one. Its bootloader prints
+    //   E MSPI Timing: Failed to allocate dummy cacheline for PSRAM memory barrier!
+    // on every boot. That is arduino-esp32 issue #12587, open since 2026-05-12
+    // and not caused by anything here, and the reporter says PSRAM works
+    // anyway -- so this line is how THIS board says whether it does, rather
+    // than the project taking a stranger's word for it. Nothing in the
+    // firmware asks for PSRAM on a CYD, so the answer is informational
+    // either way.
+    //
     // One-time diagnostic: is PSRAM actually present on this unit? The
     // "no PSRAM" conclusion driving the no-full-framebuffer tradeoff
     // (see `frame`'s declaration up top) was from an earlier pass --
@@ -2925,6 +2935,20 @@ void setup() {
     // command to the helper MCU, sent once Wire is up. GPIO27/32 are the same
     // OPI PSRAM lines the watch avoids, and every other candidate here is an
     // RGB data line.
+#elif defined(NM_CYD_C5)
+    // One backlight, TFT_BL (GPIO25), and ONLY that pin. Confirmed on the
+    // board: the branch below drives 27 and 32, and on a C5 that is
+    //   GPIO27 -- the WS2812 status light. Held HIGH here it is a stuck data
+    //           line, and StatusLight::begin() then talks to it over RMT.
+    //   GPIO32 -- does not exist. The C5's GPIO range stops well below it, and
+    //           the Arduino layer says so, loudly and three times:
+    //             __pinMode(): Invalid IO 32 selected
+    //             perimanGetPinBus(): Invalid pin: 32
+    //             __digitalWrite(): IO 32 is not set as GPIO
+    // Harmless in the sense that nothing crashes, and worth removing anyway:
+    // three errors in the first 300 ms of every boot is noise that hides the
+    // next real one.
+    pinMode(TFT_BL, OUTPUT); digitalWrite(TFT_BL, TFT_BACKLIGHT_ON);
 #else
     pinMode(27, OUTPUT); digitalWrite(27, HIGH);
 #if !defined(FREENOVE32) && !defined(CYD32C)   // not a spare pin on the Freenove, and the 2432S032C's touch SCL; both light 27 alone
