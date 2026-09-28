@@ -1539,6 +1539,7 @@ volatile bool g_consoleMotion = false; // MOTION: the motion sensor's reading an
 volatile bool g_consoleBuzz = false;  // BUZZ: play the alert pattern now and report the driver (watch)
 volatile bool g_consoleRtc = false;   // RTC: read the clock chip (watch)
 volatile bool g_consolePmu = false;   // PMU: dump the power chip's registers (watch)
+volatile uint8_t g_consoleGps = 0;    // GPS / GPS OFF: the S3 Plus's GNSS on the bench (watch)
 
 #ifdef BENCH_TOOLS
 // UPDATE NOW and UPDATE STOP on the console, for the bench: the unattended
@@ -3488,6 +3489,120 @@ static const char* s_lastScreenName = nullptr;
 static uint32_t    s_lastScreenUs   = 0;
 static uint32_t    s_lastScreenAt   = 0;     // transitionStart of the screen being timed
 
+#if defined(TWATCH_S3)
+// ---- GPS bench probe (the T-Watch S3 Plus) --------------------------------
+// GPS on the console powers the S3 Plus's GNSS and reports what it hears:
+// which baud it talks at, the module's own banner lines, satellites in view
+// per constellation, and whether it has a fix. GPS OFF powers it down. The
+// plain S3 has no GNSS, so nothing ever answers and it says so.
+//
+// The board variant (arduino-esp32 variants/lilygo_twatch_s3) has the ESP32
+// receiving on GPIO41 and sending on 42; LilyGo's docs table names the same
+// pins from the module's side, which reads the other way round. Power: BLDO1
+// on revisions with BOOT/RST buttons, DC3 on earlier ones, and the LS550G
+// version also wants DC4 at 850 mV (LilyGoLib docs/hardware).
+static bool     s_gpsOn = false, s_gpsFound = false;
+static uint8_t  s_gpsTry = 0;           // index into GPS_BAUDS, then the DC4 retry
+static uint32_t s_gpsTryAt = 0, s_gpsSumAt = 0, s_gpsSentences = 0;
+static char     s_gpsLine[100];
+static uint8_t  s_gpsLen = 0;
+static uint8_t  s_gpsFix = 0, s_gpsUsed = 0;
+static uint8_t  s_gpsView[6] = {0};     // GP GL GA GB/BD GQ other
+static const uint32_t GPS_BAUDS[] = { 38400, 9600, 115200 };
+
+static void gpsPower(bool on, bool dc4) {
+    if (on) {
+        s_pmu.setBLDO1Voltage(3300); s_pmu.enableBLDO1();
+        s_pmu.setDC3Voltage(3300);   s_pmu.enableDC3();
+        if (dc4) { s_pmu.setDC4Voltage(850); s_pmu.enableDC4(); }
+    } else {
+        s_pmu.disableBLDO1(); s_pmu.disableDC3(); s_pmu.disableDC4();
+    }
+}
+
+static void gpsOpen(uint32_t baud) {
+    Serial1.end();
+    Serial1.begin(baud, SERIAL_8N1, 41, 42);   // our RX 41, TX 42: arduino-esp32 variants/lilygo_twatch_s3
+    s_gpsLen = 0; s_gpsSentences = 0;
+    s_gpsTryAt = millis();
+    Serial.printf("[gps] listening at %lu baud\n", (unsigned long)baud);
+}
+
+static const char* gpsField(const char* s, uint8_t n) {
+    while (n && *s) { if (*s == ',') n--; s++; }
+    return s;
+}
+
+static void gpsSentence(const char* s) {
+    if (s[0] != '$' || strlen(s) < 7) return;
+    s_gpsSentences++;
+    if (!s_gpsFound && s_gpsSentences >= 3) {
+        s_gpsFound = true;
+        Serial.printf("[gps] a GNSS is talking at %lu baud\n", (unsigned long)GPS_BAUDS[s_gpsTry % 3]);
+    }
+    const char* t = s + 3;   // after $ and the two-letter talker
+    if (!strncmp(t, "TXT", 3)) { Serial.printf("[gps] module: %s\n", s); return; }
+    if (!strncmp(t, "GGA", 3)) {
+        s_gpsFix  = (uint8_t)atoi(gpsField(s, 6));
+        s_gpsUsed = (uint8_t)atoi(gpsField(s, 7));
+        return;
+    }
+    if (!strncmp(t, "GSV", 3)) {
+        uint8_t k = 5;
+        if      (!strncmp(s + 1, "GP", 2)) k = 0;
+        else if (!strncmp(s + 1, "GL", 2)) k = 1;
+        else if (!strncmp(s + 1, "GA", 2)) k = 2;
+        else if (!strncmp(s + 1, "GB", 2) || !strncmp(s + 1, "BD", 2)) k = 3;
+        else if (!strncmp(s + 1, "GQ", 2)) k = 4;
+        s_gpsView[k] = (uint8_t)atoi(gpsField(s, 3));
+    }
+}
+
+static void gpsTick() {
+    if (g_consoleGps == 1) {
+        g_consoleGps = 0;
+        s_gpsOn = true; s_gpsFound = false; s_gpsTry = 0;
+        memset(s_gpsView, 0, sizeof s_gpsView); s_gpsFix = s_gpsUsed = 0;
+        gpsPower(true, false);
+        delay(50);
+        gpsOpen(GPS_BAUDS[0]);
+        s_gpsSumAt = millis();
+    } else if (g_consoleGps == 2) {
+        g_consoleGps = 0;
+        s_gpsOn = false;
+        Serial1.end();
+        gpsPower(false, false);
+        Serial.println("[gps] off");
+    }
+    if (!s_gpsOn) return;
+    while (Serial1.available()) {
+        const char c = (char)Serial1.read();
+        if (c == '\r') continue;
+        if (c == '\n') { s_gpsLine[s_gpsLen] = 0; gpsSentence(s_gpsLine); s_gpsLen = 0; continue; }
+        if (s_gpsLen < sizeof s_gpsLine - 1) s_gpsLine[s_gpsLen++] = c;
+    }
+    const uint32_t now = millis();
+    if (!s_gpsFound && now - s_gpsTryAt > 2500) {
+        // Three bauds with BLDO1 and DC3, then the same three with DC4 too.
+        s_gpsTry++;
+        if (s_gpsTry == 3) { gpsPower(true, true); Serial.println("[gps] nothing yet; DC4 at 850 mV too (the LS550G version)"); delay(50); }
+        if (s_gpsTry >= 6) {
+            Serial.println("[gps] no GNSS answered on any baud: not an S3 Plus, or its GPS is not powered this way");
+            s_gpsOn = false; Serial1.end(); gpsPower(false, false);
+            return;
+        }
+        gpsOpen(GPS_BAUDS[s_gpsTry % 3]);
+    }
+    if (s_gpsFound && now - s_gpsSumAt > 5000) {
+        s_gpsSumAt = now;
+        const uint8_t v = s_gpsView[0] + s_gpsView[1] + s_gpsView[2] + s_gpsView[3] + s_gpsView[4] + s_gpsView[5];
+        Serial.printf("[gps] %s; %u satellites used; in view %u (GPS %u, GLONASS %u, Galileo %u, BeiDou %u, QZSS %u)\n",
+                      s_gpsFix ? "FIX" : "no fix yet", s_gpsUsed, v,
+                      s_gpsView[0], s_gpsView[1], s_gpsView[2], s_gpsView[3], s_gpsView[4]);
+    }
+}
+#endif
+
 void loop() {
     // Cheap and unconditional: available() is a register read, and this
     // is the only way in for the one serial command the firmware takes.
@@ -3748,6 +3863,7 @@ void loop() {
             Serial.println(line);
         }
     }
+    gpsTick();
 #endif
     if (g_consoleInvert) {
         g_consoleInvert = false;

@@ -55,6 +55,7 @@ extern volatile bool g_consoleBatt;
 extern volatile bool g_consoleBattLog;
 extern volatile bool g_consoleRadioTest;
 extern volatile bool g_consolePmu;
+extern volatile uint8_t g_consoleGps;
 extern volatile bool g_consoleRtc;
 extern volatile bool g_consoleBuzz;
 extern volatile bool g_consoleMotion;
@@ -537,6 +538,8 @@ void pollSerial() {
         if (strcasecmp(line, "BATTLOG") == 0) { g_consoleBattLog = true; continue; }
         if (strcasecmp(line, "RADIO TEST") == 0) { g_consoleRadioTest = !g_consoleRadioTest; Serial.printf("[radio] bench test %s\n", g_consoleRadioTest ? "ON: cycling on the cable, screen or not" : "OFF"); continue; }
         if (strcasecmp(line, "PMU") == 0)    { g_consolePmu = true; continue; }
+        if (strcasecmp(line, "GPS") == 0)    { g_consoleGps = 1; continue; }
+        if (strcasecmp(line, "GPS OFF") == 0) { g_consoleGps = 2; continue; }
         if (strcasecmp(line, "RTC") == 0)    { g_consoleRtc = true; continue; }
         if (strcasecmp(line, "BUZZ") == 0)   { g_consoleBuzz = true; continue; }
         if (strcasecmp(line, "MOTION") == 0) { g_consoleMotion = true; continue; }
