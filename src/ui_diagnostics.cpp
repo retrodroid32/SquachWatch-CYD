@@ -21,10 +21,14 @@ void uiDiagnosticsInit(TFT_eSPI& t) {
 bool uiDiagnosticsHitBack(int x, int y, int screenW, int screenH) {
     int bx, by, bw, bh;
     backButtonRect(screenW, screenH, bx, by, bw, bh);
-    return x >= bx && x <= bx + bw && y >= by && y <= by + bh;
+    return x >= bx && x <= bx + bw && y >= by && y < screenH;
 }
 
+static int s_diagBottom = 0;
+static int s_diagSkipped = 0;
+
 static int drawLine(TFT_eSPI& t, int y, uint16_t labelColor, const char* label, const char* fmt, ...) {
+    if (s_diagBottom && y + t.fontHeight() > s_diagBottom) { s_diagSkipped++; return y; }
     t.setTextColor(labelColor, Theme::BG);
     t.setCursor(6, y);
     t.print(label);
@@ -50,6 +54,8 @@ void uiDiagnosticsTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, co
     Theme::ButtonBarGeom bar = Theme::computeButtonBar(w, h);
     int bodyTop = 16, bodyBottom = bar.y - 4;
     t.fillRect(0, bodyTop, w, bodyBottom - bodyTop, Theme::BG);
+    s_diagBottom = bodyBottom;
+    s_diagSkipped = 0;
 
     t.setTextSize(1);
     t.setTextWrap(false);
@@ -208,6 +214,15 @@ void uiDiagnosticsTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, co
                      (unsigned long)fs.count);
     }
 #endif
+
+    if (s_diagSkipped) {
+        char more[16];
+        snprintf(more, sizeof more, "+%d more>", s_diagSkipped);
+        t.setTextSize(1);
+        t.setTextColor(Theme::CYAN, Theme::BG);
+        t.setCursor(w - 6 - t.textWidth(more), bodyBottom - t.fontHeight() - 1);
+        t.print(more);
+    }
 
     int bx, by, bw, bh;
     backButtonRect(w, h, bx, by, bw, bh);
