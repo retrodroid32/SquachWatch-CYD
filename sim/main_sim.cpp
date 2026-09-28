@@ -49,6 +49,7 @@
 #include "meshmsg.h"
 #include "meshcrypto.h"
 #include "ui_watchalert.h"
+#include "ignore_list.h"
 #include "ui_colorcheck.h"
 #include "ui_diagnostics.h"
 #include "ui_desk.h"
@@ -641,7 +642,7 @@ int main(int argc, char** argv) {
         else if (screen == "desk")     uiDeskTick(frame, t, engine);
         else if (screen == "zonecard") { uiClearTick(frame, t, engine, true, false); uiZoneCardDraw(frame, t); }
         else if (screen == "hunt")     uiHuntTick(frame, t, engine);
-        else if (screen == "rawscan")  uiRawScanTick(frame, t, engine, true, true, false, "", false, false);
+        else if (screen == "rawscan")  uiRawScanTick(frame, t, engine, true, true, false, "", false, false, false);
         else if (screen == "phone")    uiPhoneTick(frame, t, engine);
         else if (screen == "bingo")    uiBingoTick(frame, t, engine);
         else if (screen == "dex")      uiDexTick(frame, t, engine);
