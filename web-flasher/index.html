@@ -371,6 +371,20 @@
     box-shadow:0 0 14px rgba(180,0,255,0.4);
     outline:none;
   }
+  .board-select optgroup{ color:var(--vapor-pink); font-style:normal; }
+  .board-select option{ color:#fff; }
+  .board-finder{ display:grid; gap:4px; margin-bottom:12px; }
+  .board-code{
+    display:block; width:100%;
+    font-family:'VT323', monospace; font-size:1.15rem; letter-spacing:0.05em; text-transform:uppercase;
+    padding:9px 10px; background:var(--bg); color:#fff;
+    border:1px solid var(--vapor-blue); border-radius:8px;
+  }
+  .board-code:focus{ outline:none; border-color:var(--cyan); box-shadow:0 0 14px rgba(0,255,245,0.3); }
+  .board-code-answer{ font-family:'VT323', monospace; font-size:1.1rem; min-height:1.3em; color:var(--green); }
+  .board-code-answer.warn{ color:var(--vapor-yellow); }
+  .board-help{ margin:0 0 16px; padding-left:18px; font-size:0.82rem; color:#b9b0d6; display:grid; gap:4px; }
+  .board-help strong{ color:var(--text); font-weight:400; }
   .white-screen-note{
     margin:0 0 16px;
     font-size:0.82rem;
@@ -678,23 +692,43 @@
       </p>
     </div>
 
+    <div class="board-finder">
+      <label class="board-picker-label" for="boardCode">Code on the back of your board (optional):</label>
+      <input class="board-code" id="boardCode" type="text" autocomplete="off" spellcheck="false" placeholder="e.g. ESP32-2432S032C">
+      <div class="board-code-answer" id="boardCodeAnswer" aria-live="polite"></div>
+    </div>
+
     <label class="board-picker-label" for="boardSelect">Select your board:</label>
     <select class="board-select" id="boardSelect" aria-label="Board select">
-      <option value="./manifest-cyd.json" data-cyd28="1" data-fast="./manifest-cyd-fast.json" selected>2.8&quot; CYD &mdash; ST7789 (default)</option>
-      <option value="./manifest-cyd-ili9341.json" data-cyd28="1" data-fast="./manifest-cyd-ili9341-fast.json">2.8&quot; CYD &mdash; ILI9341 (older)</option>
-      <option value="./manifest-awok.json">AWOK 2.4&quot;</option>
-      <option value="./manifest-rlphantom-r.json">RL Phantom 2.4&quot;</option>
-      <option value="./manifest-freenove32.json">Freenove 3.2&quot; &mdash; ST7789</option>
-      <option value="./manifest-cyd35-fast.json" data-ocnote="The 3.5&quot; only ships at 80MHz, so there is no slower build to fall back to.">3.5&quot; &mdash; ST7796 (BETA)</option>
-      <option value="./manifest-twatch-s3.json">LilyGo T-Watch S3 (BETA)</option>
-      <option value="./manifest-freenove-s3.json">Freenove ESP32-S3 2.8&quot; (BETA)</option>
-      <option value="./manifest-crowpanel7.json">Elecrow CrowPanel 7&quot; (BETA)</option>
+      <optgroup label="CHEAP YELLOW DISPLAYS (CYD)">
+      <option value="./manifest-cyd.json" data-cyd28="1" data-fast="./manifest-cyd-fast.json" selected>2.8&quot; CYD &middot; ST7789 &mdash; ESP32-2432S028R, the usual screen</option>
+      <option value="./manifest-cyd-ili9341.json" data-cyd28="1" data-fast="./manifest-cyd-ili9341-fast.json">2.8&quot; CYD &middot; ILI9341 &mdash; ESP32-2432S028R, older screen</option>
+      <option value="./manifest-freenove32.json">3.2&quot; &middot; resistive &mdash; Freenove FNK0103</option>
+      <option value="./manifest-cyd32c.json" data-ocnote="The 3.2&quot; capacitive already ships at 80MHz.">3.2&quot; &middot; capacitive &mdash; ESP32-2432S032C (NEW)</option>
+      <option value="./manifest-cyd35-fast.json" data-ocnote="The 3.5&quot; only ships at 80MHz, so there is no slower build to fall back to.">3.5&quot; &middot; ST7796 &mdash; ESP32-3248S035 (BETA)</option>
+      </optgroup>
+      <optgroup label="OTHER ESP32 BOARDS">
+      <option value="./manifest-awok.json">AWOK 2.4&quot; &mdash; ESP32 Marauder v6.1</option>
+      <option value="./manifest-rlphantom-r.json">RL Phantom 2.4&quot; &mdash; ESP32-2432S024R</option>
+      </optgroup>
+      <optgroup label="ESP32-S3 BOARDS">
+      <option value="./manifest-freenove-s3.json">Freenove ESP32-S3 2.8&quot; &mdash; FNK0104 (BETA)</option>
+      <option value="./manifest-crowpanel7.json">Elecrow CrowPanel 7&quot; &mdash; CrowPanel Advance 7.0 (BETA)</option>
+      </optgroup>
+      <optgroup label="WATCHES">
+      <option value="./manifest-twatch-s3.json">LilyGo T-Watch S3 / S3 Plus (BETA)</option>
+      </optgroup>
     </select>
     <p class="white-screen-note" id="whiteScreenNote">
       The 2.8&quot; CYD ships with one of two different display drivers depending on manufacturing
       batch, and there's no way to tell which from the outside. If you flash one and get a
       <strong>solid white screen</strong>, that's not broken — just flash the other 2.8&quot; option above instead.
     </p>
+    <ul class="board-help">
+      <li><strong>Cheap Yellow Displays</strong> have a code like <strong>ESP32-2432S028R</strong> on the back. The last letter is the touch: <strong>R</strong> resistive (press), <strong>C</strong> capacitive (tap).</li>
+      <li><strong>Freenove</strong> boards say <strong>FNK0103</strong> or <strong>FNK0104</strong>.</li>
+      <li>Not on the list? Tell us what it is on <a href="https://github.com/skizzophrenic/SquachWatch-CYD/issues" target="_blank" rel="noopener">GitHub</a>.</li>
+    </ul>
 
     <label class="overclock-row" id="overclockRow">
       <input type="checkbox" id="overclockChk">
@@ -1434,7 +1468,7 @@
          './manifest-lab-cyd-ili9341.json', './manifest-lab-cyd-ili9341-fast.json',
          './manifest-lab-rlphantom-r.json', './manifest-lab-freenove32.json',
          './manifest-lab-twatch-s3.json', './manifest-lab-freenove-s3.json',
-         './manifest-lab-crowpanel7.json'].forEach(function (path) {
+         './manifest-lab-crowpanel7.json', './manifest-lab-cyd32c.json'].forEach(function (path) {
           fetch(path, { cache: 'no-store' })
             .then(function (r) { return r.ok ? r.json() : null; })
             .then(function (m) {
@@ -1573,6 +1607,39 @@
     select.addEventListener('change', function () { applySelection('board'); });
     if (ocChk) ocChk.addEventListener('change', function () { applySelection('overclock'); });
     applySelection(null);
+
+    // "Which one do I have?": the code printed on the back of the board picks
+    // the entry. The patterns are the codes the boards carry; a code this
+    // list does not know says so instead of guessing.
+    var codeIn = document.getElementById('boardCode');
+    var codeOut = document.getElementById('boardCodeAnswer');
+    var CODES = [
+      { re: /2432S028/,             v: './manifest-cyd.json',         say: 'That’s the 2.8" CYD. If the screen goes white, pick the ILI9341 one instead.' },
+      { re: /2432S032C/,            v: './manifest-cyd32c.json',      say: 'That’s the 3.2" capacitive. Selected below.' },
+      { re: /FNK0?103|2432S032R?$/, v: './manifest-freenove32.json',  say: 'That’s the 3.2" resistive. Selected below.' },
+      { re: /3248S035C/,            v: null,                          say: 'The capacitive 3.5" isn’t supported yet (issue #8).' },
+      { re: /3248S035/,             v: './manifest-cyd35-fast.json',  say: 'That’s the 3.5" (BETA). Selected below.' },
+      { re: /2432S024R/,            v: './manifest-rlphantom-r.json', say: 'That’s the RL Phantom 2.4". Selected below.' },
+      { re: /2432S024C/,            v: null,                          say: 'The capacitive 2.4" isn’t on the flasher yet.' },
+      { re: /AWOK|MARAUDER/,        v: './manifest-awok.json',        say: 'That’s the AWOK 2.4". Selected below.' },
+      { re: /FNK0?104/,             v: './manifest-freenove-s3.json', say: 'That’s the Freenove ESP32-S3 2.8" (BETA). Selected below.' },
+      { re: /CROWPANEL|CROW/,       v: './manifest-crowpanel7.json',  say: 'That’s the CrowPanel 7" (BETA). Selected below.' },
+      { re: /T-?WATCH/,             v: './manifest-twatch-s3.json',   say: 'That’s a T-Watch S3 (BETA). Selected below.' }
+    ];
+    if (codeIn && codeOut) codeIn.addEventListener('input', function () {
+      var v = codeIn.value.toUpperCase().replace(/\s+/g, '');
+      codeOut.className = 'board-code-answer';
+      if (v.length < 4) { codeOut.textContent = ''; return; }
+      for (var i = 0; i < CODES.length; i++) {
+        if (!CODES[i].re.test(v)) continue;
+        if (CODES[i].v) { select.value = CODES[i].v; applySelection('board'); }
+        else codeOut.className = 'board-code-answer warn';
+        codeOut.textContent = CODES[i].say;
+        return;
+      }
+      codeOut.className = 'board-code-answer warn';
+      codeOut.textContent = 'Not on the list yet. Tell us what it is on GitHub and we’ll look at it.';
+    });
   })();
 
   // ---- Identify board -------------------------------------------------
