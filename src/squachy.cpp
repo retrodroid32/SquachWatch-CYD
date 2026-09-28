@@ -3361,15 +3361,19 @@ static uint8_t voidBlink(uint32_t now) {
 // rect would spill past the sphere and there is no clip region on a sprite.
 // The sqrtf runs only while a lid is actually moving -- a few frames every
 // couple of seconds -- never on the ordinary draw path.
-static void voidLid(TFT_eSPI& t, int cx2, int cy, int r, uint8_t k, uint16_t col) {
+static void voidLid(TFT_eSPI& t, int cx2, int cy, int r, uint8_t k, uint16_t col,
+                    uint16_t edge) {
     if (!k || r <= 0) return;
     const int lh = (r * (int)k) / 255 + 1;
     for (int i = 0; i < lh && i <= r; i++) {
         const int yT = -r + i, yB = r - i;
         const int wT = (int)sqrtf((float)(r * r - yT * yT));
         const int wB = (int)sqrtf((float)(r * r - yB * yB));
-        if (wT > 0) t.drawFastHLine(cx2 - wT, cy + yT, 2 * wT, col);
-        if (wB > 0) t.drawFastHLine(cx2 - wB, cy + yB, 2 * wB, col);
+        // The leading row of each lid in the edge colour: without it a
+        // closing lid was a flat violet slab with nothing to say it moved.
+        const uint16_t c = (i == lh - 1) ? edge : col;
+        if (wT > 0) t.drawFastHLine(cx2 - wT, cy + yT, 2 * wT, c);
+        if (wB > 0) t.drawFastHLine(cx2 - wB, cy + yB, 2 * wB, c);
     }
 }
 
@@ -3386,13 +3390,30 @@ static void drawOutfit(TFT_eSPI& t, int cx2, int hy, uint32_t now, Mood m, float
             // brown drawn onto brown fur, so the mask has been invisible since
             // it shipped and the outfit read as wearing nothing. Cream above,
             // near-black on the bands, and it reads instantly.
+            //
+            // Second pass: the full-width cream bar still read as a visor, and
+            // with no ears nothing up top said raccoon. Round ears now, cream
+            // brows in two pieces instead of one bar, and the dark band sweeps
+            // out past the lenses into the points a raccoon's mask has.
             const uint16_t cream = t.color565(238, 222, 190);
             const uint16_t dark  = t.color565(52, 42, 34);
-            t.fillRect(cx2 - S(14), hy + S(1), S(28), S(3), cream);
+            const uint16_t earC  = t.color565(109, 73, 36);
+            for (int8_t sg = -1; sg <= 1; sg += 2) {
+                const int ex = cx2 + sg * S(10), ey = hy - S(1);
+                t.fillCircle(ex, ey, S(5) + 1, BLACK);
+                t.fillCircle(ex, ey, S(5), earC);
+                t.fillCircle(ex, ey + S(1), S(3), dark);
+                t.fillCircle(ex - sg * S(1), ey - S(2), S(1), cream);   // light on the rim
+            }
+            t.fillEllipse(cx2 - S(7), hy + S(2), S(5), S(1) + 1, cream);
+            t.fillEllipse(cx2 + S(7), hy + S(2), S(5), S(1) + 1, cream);
             t.fillRoundRect(cx2 - S(14), hy + S(4),  S(11), S(3), 1, dark);
             t.fillRoundRect(cx2 + S(3),  hy + S(4),  S(11), S(3), 1, dark);
             t.fillRoundRect(cx2 - S(14), hy + S(13), S(11), S(3), 1, dark);
             t.fillRoundRect(cx2 + S(3),  hy + S(13), S(11), S(3), 1, dark);
+            // The mask's points, out past the lenses and down over the cheeks.
+            t.fillTriangle(cx2 - S(12), hy + S(5), cx2 - S(12), hy + S(15), cx2 - S(16), hy + S(12), dark);
+            t.fillTriangle(cx2 + S(12), hy + S(5), cx2 + S(12), hy + S(15), cx2 + S(16), hy + S(12), dark);
             // The snout PAD is not drawn here -- see drawBody(), where it goes
             // on under the mood chain so his own mouth still lands on top of
             // it and every expression survives.
@@ -3461,6 +3482,29 @@ static void drawOutfit(TFT_eSPI& t, int cx2, int hy, uint32_t now, Mood m, float
                 }
             }
             t.drawCircle(cx2, oy, R + 1, ink);
+
+            // Fur trim round the opening: a ring of tufts in two shades over
+            // the inside edge of the black ring, which is what turns a hole
+            // in a hood into a parka.
+            {
+                const uint16_t f1 = t.color565(219, 182, 146), f2 = t.color565(182, 146, 109);
+                const int tr = S(2) + 1;
+                for (uint8_t i = 0; i < 30; i++) {
+                    const float a = (float)i / 30.0f * 6.2831853f;
+                    const int fx = cx2 + (int)(cosf(a) * (float)(ow - S(1)));
+                    const int fy = oy + (int)(sinf(a) * (float)(oh - S(1)));
+                    t.fillCircle(fx, fy, tr, (i & 1) ? f2 : f1);
+                }
+            }
+            // Snow settled on top of the hood, following its curve: a row of
+            // lumps just inside the rim, bigger in the middle.
+            for (int i = -3; i <= 3; i++) {
+                const float a = -1.5708f + (float)i * 0.16f;
+                const int sx = cx2 + (int)(cosf(a) * (float)(R - S(1)));
+                const int sy = oy + (int)(sinf(a) * (float)(R - S(1)));
+                t.fillCircle(sx, sy, S(3 - (i < 0 ? -i : i) / 2), WHITE);
+            }
+            t.drawFastHLine(cx2 - S(5), oy - R + S(3), S(8), t.color565(182, 219, 255));
 
             // No stitching. Everything outside the black ring is the flat
             // orange of the hood, the way the reference has it -- a second
@@ -3543,6 +3587,10 @@ static void drawOutfit(TFT_eSPI& t, int cx2, int hy, uint32_t now, Mood m, float
             // SOCKET, drawn BEHIND the sphere so it shows only as a violet ring
             // at the sides and under the chin. Over the top it would cover the
             // sky, which is the part of this costume worth having.
+            // A faint glow ring round the socket, breathing slowly.
+            const bool glow = ((now / 1400) % 3u) != 0;
+            t.fillEllipse(cx2, ey + S(5), er + S(7), (er * 92) / 100 + S(1),
+                          glow ? t.color565(73, 36, 170) : t.color565(36, 36, 85));
             t.fillEllipse(cx2, ey + S(5), er + S(6), (er * 92) / 100, t.color565(70, 60, 130));
             t.fillEllipse(cx2, ey + S(6), er + S(3), (er * 82) / 100, t.color565(20, 14, 48));
             // The sphere. That outer circle is a RIM, not the black underlay
@@ -3582,7 +3630,7 @@ static void drawOutfit(TFT_eSPI& t, int cx2, int hy, uint32_t now, Mood m, float
             t.fillCircle(ix, iy, (er * 24) / 100, BLACK);
             t.fillCircle(cx2 - (er * 8) / 100, ey - (er * 36) / 100,
                          (er * 17) / 100, t.color565(150, 140, 210));
-            voidLid(t, cx2, ey, er, voidBlink(now), t.color565(70, 60, 130));
+            voidLid(t, cx2, ey, er, voidBlink(now), t.color565(70, 60, 130), BLACK);
             break;
         }
         case OutfitId::WOLFPELT: {
@@ -3616,8 +3664,6 @@ static void drawOutfit(TFT_eSPI& t, int cx2, int hy, uint32_t now, Mood m, float
             // so the tips are clamped to it rather than hoped for. When
             // room is tight they shorten instead of being cut, which
             // reads as ears at a different angle rather than as damage.
-            t.fillRoundRect(cx2 - S(14), hy - S(8), S(28), S(7), S(3), peltDark);
-            t.fillRoundRect(cx2 - S(10), hy - S(7), S(20), S(4), S(2), peltMid);
 
             // A fixed ear LENGTH that translates with the bob, not a fixed tip
             // position re-clamped every frame. Clamping the tip meant the
@@ -3709,6 +3755,31 @@ static void drawOutfit(TFT_eSPI& t, int cx2, int hy, uint32_t now, Mood m, float
             if (earLen < Sf(10.0f)) earLen = Sf(10.0f);     // never stubbier than the hood
             const int earTip = mhy - earLen;
 
+            // An outline round the whole mask first -- band, skull, ears and
+            // jaw, all in ink a pixel out -- so it sits ON him as one worn
+            // thing instead of greys melting into his brown.
+            {
+                static const int8_t O[4][2] = { {-1, 0}, {1, 0}, {0, -1}, {0, 1} };
+                for (uint8_t q = 0; q < 4; q++) {
+                    const int ox = O[q][0], oy = O[q][1];
+                    t.fillRoundRect(cx2 - S(14) + ox, hy - S(8) + oy, S(28), S(7), S(3), BLACK);
+                    t.fillTriangle(cx2 - Sf(13.5f) + ox, mhy - Sf(6.5f) + oy, cx2 + Sf(13.5f) + ox, mhy - Sf(8.0f) + oy,
+                                   cx2 + Sf(13.5f) + ox, mhy - Sf(2.0f) + oy, BLACK);
+                    t.fillTriangle(cx2 - Sf(13.5f) + ox, mhy - Sf(6.5f) + oy, cx2 + Sf(13.5f) + ox, mhy - Sf(2.0f) + oy,
+                                   cx2 - Sf(13.5f) + ox, mhy - Sf(0.5f) + oy, BLACK);
+                    t.fillTriangle(cx2 - Sf(13.0f) + ox, mhy - Sf(5.5f) + oy, cx2 - Sf(4.0f) + ox, mhy - Sf(8.5f) + oy,
+                                   cx2 - Sf(11.0f) + ox, earTip + oy, BLACK);
+                    t.fillTriangle(cx2 + Sf(13.0f) + ox, mhy - Sf(5.5f) + oy, cx2 + Sf(4.0f) + ox, mhy - Sf(8.5f) + oy,
+                                   cx2 + Sf(11.0f) + ox, earTip + oy, BLACK);
+                    t.fillTriangle(cx2 - Sf(14.0f) + ox, mhy - Sf(1.0f) + oy, cx2 + Sf(14.0f) + ox, mhy - Sf(2.5f) + oy,
+                                   cx2 + Sf(14.0f) + ox, mhy + Sf(1.0f) + oy, BLACK);
+                    t.fillTriangle(cx2 - Sf(14.0f) + ox, mhy - Sf(1.0f) + oy, cx2 - Sf(14.0f) + ox, mhy + Sf(2.5f) + oy,
+                                   cx2 + Sf(14.0f) + ox, mhy + Sf(1.0f) + oy, BLACK);
+                }
+            }
+            t.fillRoundRect(cx2 - S(14), hy - S(8), S(28), S(7), S(3), peltDark);
+            t.fillRoundRect(cx2 - S(10), hy - S(7), S(20), S(4), S(2), peltMid);
+
             // Cranium, as a slanted quad rather than an upright box --
             // two triangles sharing a diagonal. An axis-aligned rounded
             // rect cannot tilt, and without the tilt the skull read as a
@@ -3753,11 +3824,13 @@ static void drawOutfit(TFT_eSPI& t, int cx2, int hy, uint32_t now, Mood m, float
                            cx2 - Sf(11.0f), earTip, peltDark);
             t.fillTriangle(cx2 + Sf(13.0f), mhy - Sf(5.5f), cx2 + Sf(4.0f), mhy - Sf(8.5f),
                            cx2 + Sf(11.0f), earTip, peltDark);
-            // Inner ear, a touch lighter and shorter.
+            // Inner ear, shorter, and pink: grey inside grey was one more
+            // shade of the same mask.
+            const uint16_t earPink = t.color565(219, 109, 146);
             t.fillTriangle(cx2 - Sf(11.0f), mhy - Sf(6.5f), cx2 - Sf(6.0f), mhy - Sf(8.5f),
-                           cx2 - Sf(10.0f), earTip + Sf(4.0f), peltLit);
+                           cx2 - Sf(10.0f), earTip + Sf(4.0f), earPink);
             t.fillTriangle(cx2 + Sf(11.0f), mhy - Sf(6.5f), cx2 + Sf(6.0f), mhy - Sf(8.5f),
-                           cx2 + Sf(10.0f), earTip + Sf(4.0f), peltLit);
+                           cx2 + Sf(10.0f), earTip + Sf(4.0f), earPink);
 
             // Sockets, lit. These used to be deliberately dead on the
             // reasoning that a live pair belongs to the werewolf out on
@@ -3827,8 +3900,18 @@ static void drawOutfit(TFT_eSPI& t, int cx2, int hy, uint32_t now, Mood m, float
             auto peltOn = [&](int x0, int y0, int x1, int y1, int outward) {
                 const int mx = x0 + (x1 - x0) * 55 / 100;
                 const int my = y0 + (y1 - y0) * 55 / 100;
+                wideLine(t, x0 + outward, y0 - Sf(2.0f), mx + outward, my, Sf(8.0f) + 2, BLACK);
                 wideLine(t, x0 + outward, y0 - Sf(2.0f), mx + outward, my, Sf(8.0f), peltDark);
                 wideLine(t, x0 + outward, y0 + Sf(1.0f), mx + outward, my - Sf(1.0f), Sf(3.0f), peltMid);
+                // The paw at the end of it, claws out.
+                const int px = mx + outward, py = my + Sf(2.0f);
+                t.fillCircle(px, py, Sf(3.5f) + 1, BLACK);
+                t.fillCircle(px, py, Sf(3.5f), peltMid);
+                for (int c = -1; c <= 1; c++) {
+                    const int cxw = px + c * Sf(2.0f);
+                    t.fillTriangle(cxw - Sf(0.8f), py + Sf(2.0f), cxw + Sf(0.8f), py + Sf(2.0f),
+                                   cxw, py + Sf(4.5f), WHITE);
+                }
             };
             // One unit outboard, so the hide sits ON the upper arm with a
             // sliver past its outer edge. Three units left most of it hanging
@@ -3863,7 +3946,9 @@ static void drawOutfit(TFT_eSPI& t, int cx2, int hy, uint32_t now, Mood m, float
             // The fin's base flares into the hood top (two small triangles)
             // rather than sitting on it as a separate triangle.
             const int o = S(1) > 1 ? S(1) : 1;
-            const int jawW = S(5), jawBot = hy + S(13);     // past the shades, above the ears
+            // The jaw corners now come all the way down to his chin, where a
+            // lower jaw joins them: his whole face sits in the mouth.
+            const int jawW = S(5), jawBot = hy + S(24);
             t.fillTriangle(cx2 - S(8) - o, hy - S(6), cx2 + S(8) + o, hy - S(6),
                            cx2 + S(4), hy - S(18) - o, eyeBk);
             t.fillTriangle(cx2 - S(10) - o, hy - S(9), cx2 - S(6), hy - S(9), cx2 - S(6), hy - S(12) - o, eyeBk);
@@ -3887,17 +3972,30 @@ static void drawOutfit(TFT_eSPI& t, int cx2, int hy, uint32_t now, Mood m, float
             }
             // The lip: where the hood meets the white band.
             t.fillRect(cx2 - halfW + jawW, hy - S(1) - o, halfW * 2 - 2 * jawW, o, eyeBk);
-            t.fillRoundRect(cx2 - halfW + S(1), hy - S(1), halfW * 2 - S(2), S(4), S(2), silvHi);
-            t.fillRect(cx2 - halfW + S(2), hy + S(2), halfW * 2 - S(4), S(2), gum);
+            // Lip, gum and teeth all a unit or two shallower than they were:
+            // the teeth used to reach down across his lenses.
+            t.fillRoundRect(cx2 - halfW + S(1), hy - S(1), halfW * 2 - S(2), S(3), S(1), silvHi);
+            t.fillRect(cx2 - halfW + S(2), hy + S(2), halfW * 2 - S(4), S(1) + 1, gum);
             {   // the teeth, inset a shade from the jaw so the jaw has a lip
                 const int x0 = cx2 - halfW + S(3), x1 = cx2 + halfW - S(3);
                 const int tw = (x1 - x0) / 7;
                 for (int i = 0; i < 7 && tw > 0; i++) {
                     const int a = x0 + i * tw;
-                    t.fillTriangle(a, hy + S(4), a + tw, hy + S(4),
-                                   a + tw / 2, hy + S(8), WHITE);
+                    t.fillTriangle(a, hy + S(3), a + tw, hy + S(3),
+                                   a + tw / 2, hy + S(6), WHITE);
                 }
             }
+            // The lower jaw, under his chin, with a tooth up at each corner
+            // (clear of his mouth, which moves).
+            inked(eyeBk, silvDk, [&](int ox, int oy, uint16_t c) {
+                t.fillRoundRect(cx2 - halfW + ox, hy + S(22) + oy, halfW * 2, S(5), S(2), c);
+            });
+            t.fillRect(cx2 - halfW + S(2), hy + S(22), halfW * 2 - S(4), S(1) + 1, gum);
+            for (int8_t sg = -1; sg <= 1; sg += 2)
+                for (int k = 0; k < 2; k++) {
+                    const int tx = cx2 + sg * S(14 - k * 3);
+                    t.fillTriangle(tx - S(1) - 1, hy + S(23), tx + S(1) + 1, hy + S(23), tx, hy + S(19), WHITE);
+                }
             t.fillCircle(cx2 - S(11), hy - S(6), S(2), silvHi);
             t.fillCircle(cx2 + S(11), hy - S(6), S(2), silvHi);
             t.fillCircle(cx2 - S(11), hy - S(6), S(1), eyeBk);
@@ -3961,9 +4059,9 @@ static void drawOutfit(TFT_eSPI& t, int cx2, int hy, uint32_t now, Mood m, float
                 t.fillRect(cx2 - hw + S(2), hy + S(25), hw * 2 - S(4), S(3), silvHi);
                 t.fillRect(cx2 - hw + S(3), hy + S(25), hw * 2 - S(6), S(1), WHITE);
                 const int bw = hw - S(6);
-                t.fillRoundRect(cx2 - bw, hy + S(28), bw * 2, S(11), S(4), silvHi);
-                t.fillRect(cx2 - bw, hy + S(32), bw * 2, S(1), silv);
-                t.fillRect(cx2 - bw, hy + S(35), bw * 2, S(1), silv);
+                // A plain white belly, the way a shark has one. The two
+                // stripes that used to cross it made it a robot's grille.
+                t.fillRoundRect(cx2 - bw - S(3), hy + S(27), bw * 2 + S(6), S(12), S(5), WHITE);
                 // Gill slashes up on the chest, above where the fins reach.
                 for (int i = 0; i < 3; i++) {
                     const int gx = cx2 + hw - S(4) - i * S(3);
@@ -3986,25 +4084,69 @@ static void drawOutfit(TFT_eSPI& t, int cx2, int hy, uint32_t now, Mood m, float
             int baseY = hy;
             int tipY  = baseY - S(24);
             int baseW = S(9);
-            t.fillTriangle(cx2 - baseW / 2, baseY, cx2 + baseW / 2, baseY, cx2, tipY, WHITE);
-            // Candy-cane twist: diagonal rainbow stripes crossing the
-            // cone (rather than flat horizontal bands) so it reads as
-            // a spiral, narrowing to match the cone's taper as they
-            // climb toward the tip.
-            static const uint16_t bands[6] = { RED, AMBER, VAPOR_YELLOW, GREEN, VAPOR_BLUE, VAPOR_PURPLE };
-            for (int i = 0; i < 6; i++) {
-                float frac = (float)i / 6.0f;
-                int y0 = baseY + (int)((tipY - baseY) * frac);
-                int w0 = (int)(baseW * (1.0f - frac));
-                wideLine(t, cx2 - w0 / 2 - S(1), y0, cx2 + w0 / 2 + S(1), y0 - S(3), S(2), bands[i]);
+            // ---- the mane, first, so the horn stands in front of it --------
+            // Three strands from the crown down his right side, swaying a
+            // little, each outlined so they read as locks and not stripes.
+            {
+                const uint16_t strand[3] = { t.color565(255, 109, 170), t.color565(255, 219, 85),
+                                             t.color565(73, 219, 255) };
+                const float sw = sinf((float)(now % 3000) / 3000.0f * 6.2831853f) * (float)S(1);
+                static const int8_t M[4][2] = { {3, -1}, {12, 1}, {17, 8}, {18, 19} };
+                const int mw = S(3) > 2 ? S(3) : 2;
+                for (uint8_t pass = 0; pass < 2; pass++)
+                    for (uint8_t k = 0; k < 3; k++) {
+                        const int off = S(k * 2);
+                        for (uint8_t i = 0; i < 3; i++) {
+                            const float f0 = (float)i / 3.0f, f1 = (float)(i + 1) / 3.0f;
+                            wideLine(t, cx2 + S(M[i][0]) + off + sw * f0, hy + S(M[i][1]) + off / 2,
+                                        cx2 + S(M[i + 1][0]) + off + sw * f1, hy + S(M[i + 1][1]) + off / 2,
+                                        pass == 0 ? mw + 2 : mw, pass == 0 ? BLACK : strand[k]);
+                        }
+                    }
+            }
+            // ---- the horn ---------------------------------------------------
+            // Outlined, then a candy-cane spiral filled row by row INSIDE the
+            // cone: the old stripes were wide lines laid across it and their
+            // ends stuck out past its edges, which is what smeared it.
+            inked(BLACK, WHITE, [&](int ox, int oy, uint16_t c) {
+                t.fillTriangle(cx2 - baseW / 2 + ox, baseY + oy, cx2 + baseW / 2 + ox, baseY + oy,
+                               cx2 + ox, tipY + oy, c);
+            });
+            static const uint8_t RB[5][3] = { {255, 109, 170}, {255, 219, 85}, {109, 255, 85},
+                                              {73, 219, 255}, {182, 109, 255} };
+            const int H = baseY - tipY;
+            const int bh = S(3) > 2 ? S(3) : 2;
+            for (int y = tipY + 2; y < baseY; y++) {
+                const int half = (baseW / 2) * (y - tipY) / (H > 0 ? H : 1) - 1;
+                for (int x = -half; x <= half; x++) {
+                    const int k = (baseY - y) + x / 2 + 64 * bh;
+                    const int band = k / bh;
+                    if (band & 1) {
+                        const uint8_t* c = RB[(band / 2) % 5];
+                        t.drawPixel(cx2 + x, y, t.color565(c[0], c[1], c[2]));
+                    }
+                }
+            }
+            // ---- a sparkle, drifting off the tip every few seconds ----------
+            {
+                const uint32_t sp = now % 3400;
+                if (sp < 900) {
+                    const float f = (float)sp / 900.0f;
+                    const int sx = cx2 + S(2) + (int)(f * (float)S(9));
+                    const int sy = tipY + (int)(f * (float)S(5));
+                    const int arm = (int)((1.0f - f) * (float)S(3)) + 1;
+                    const uint16_t sc = f < 0.5f ? WHITE : t.color565(255, 182, 255);
+                    t.drawFastHLine(sx - arm, sy, arm * 2 + 1, sc);
+                    t.drawFastVLine(sx, sy - arm, arm * 2 + 1, sc);
+                }
             }
             break;
         }
         case OutfitId::TINFOIL: {
             // Crumpled by hand, not stamped: the cone is four facets in
             // alternating tones round an apex pushed off centre, on a rolled
-            // brim, with an antenna on top that picks something up now and
-            // then. Greys from the same RGB332 ramp SHARK SUIT uses -- the only
+            // brim, with a beanie propeller on a stalk turning lazily on
+            // top. Greys from the same RGB332 ramp SHARK SUIT uses -- the only
             // cool neutrals the frame buffer has.
             const uint16_t ink = BLACK;
             const uint16_t fDk = t.color565( 73,  73,  85);
@@ -4013,12 +4155,11 @@ static void drawOutfit(TFT_eSPI& t, int cx2, int hy, uint32_t now, Mood m, float
             const int ax = cx2 + S(2), ay = hy - S(12);
             const int by = hy + S(1);
             const int bx[5] = { cx2 - S(14), cx2 - S(6), cx2 + S(1), cx2 + S(8), cx2 + S(14) };
-            const int tx = ax + S(1), ty = ay - S(4);          // antenna tip
+            const int tx = ax + S(1), ty = ay - S(4);          // propeller hub
             inked(ink, fMd, [&](int ox, int oy, uint16_t c) {
                 t.fillTriangle(bx[0] + ox, by + oy, bx[4] + ox, by + oy, ax + ox, ay + oy, c);
                 t.fillRoundRect(cx2 - S(16) + ox, hy - S(1) + oy, S(32), S(5), S(2), c);
                 t.drawLine(ax + ox, ay + oy, tx + ox, ty + oy, c);
-                t.fillCircle(tx + ox, ty + oy, S(1) + 1, c);
             });
             // Facets: lit from the upper left, with one crumple in the middle
             // catching the light the wrong way, which is what reads as foil.
@@ -4034,14 +4175,27 @@ static void drawOutfit(TFT_eSPI& t, int cx2, int hy, uint32_t now, Mood m, float
             t.fillRect(cx2 - S(15), hy + S(3), S(30), 1, fDk);
             for (int k = -12; k <= 12; k += 4)
                 t.drawFastVLine(cx2 + S(k), hy + S(1), S(2), (k & 4) ? fDk : fLt);
-            // The antenna: a wire and a bead that lights up every couple of
-            // seconds, with two ticks of "signal" either side while it does.
+            // The propeller: two blades seen side on, so a turn is each one
+            // shrinking to the hub and growing out the other side. Whichever
+            // blade is swinging toward us is drawn last, over the other.
             t.drawLine(ax, ay, tx, ty, fDk);
-            const bool lit = (now % 2400) < 300;
-            t.fillCircle(tx, ty, S(1) + 1, lit ? t.color565(255, 36, 0) : t.color565(109, 0, 0));
-            if (lit && S(1) > 0) {
-                t.drawFastVLine(tx - S(3), ty - S(1), S(2), fLt);
-                t.drawFastVLine(tx + S(3), ty - S(1), S(2), fLt);
+            {
+                const float a = (float)(now % 700) / 700.0f * 6.2831853f;
+                const float c = cosf(a);
+                const int L = S(8), th = S(1) + 1;
+                const uint16_t bladeA = t.color565(219, 0, 0), bladeB = t.color565(0, 85, 255);
+                auto blade = [&](float dir, uint16_t col) {
+                    int half = (int)(fabsf(c) * (float)L * 0.5f);
+                    if (half < 1) half = 1;
+                    const int bxc = tx + (int)(dir * (c >= 0 ? 1.0f : -1.0f) * (float)half);
+                    inked(ink, col, [&](int ox, int oy, uint16_t cc) {
+                        t.fillEllipse(bxc + ox, ty + oy, half, th, cc);
+                    });
+                };
+                const bool aFront = sinf(a) > 0.0f;
+                blade(aFront ? -1.0f : 1.0f, aFront ? bladeB : bladeA);
+                blade(aFront ? 1.0f : -1.0f, aFront ? bladeA : bladeB);
+                t.fillCircle(tx, ty, S(1), t.color565(255, 219, 0));
             }
             // A glint that jumps between facets every few seconds.
             const uint32_t gp = now % 4200;
@@ -4056,18 +4210,54 @@ static void drawOutfit(TFT_eSPI& t, int cx2, int hy, uint32_t now, Mood m, float
             break;
         }
         case OutfitId::SHADOW: {
-            t.fillRect(cx2 - S(15), hy + S(1), S(30), S(4), BLACK);
-            t.fillRect(cx2 + S(13), hy + S(2), S(2), S(3), RED);
-            t.drawLine(cx2 + S(15), hy + S(4), cx2 + S(22), hy + S(10), BLACK);
-            t.drawLine(cx2 + S(17), hy + S(4), cx2 + S(24), hy + S(9),  BLACK);
+            // A navy ninja: red headband knotted at the side with two tails
+            // that flutter, a hood over the lower face with his eyes left in
+            // the slit, and a red sash with a throwing star tucked in it.
+            const uint16_t ink   = BLACK;
+            const uint16_t navy  = t.color565(36, 36, 85);
+            const uint16_t navyL = t.color565(73, 73, 170);
+            const uint16_t red   = t.color565(219, 0, 0);
+            const uint16_t redHi = t.color565(255, 109, 85);
             // Lower-face mask, kept below the shade line so his eyes
             // stay visible -- covers mouth/jaw, not the lenses.
-            t.fillRoundRect(cx2 - S(11), hy + S(14), S(22), S(10), S(4), BLACK);
-            // Red belt across the torso -- his fur is recolored
-            // near-black for this outfit up in drawBody()'s
-            // furMain/furLight block, so the belt is the one splash of
-            // color against it.
-            t.fillRect(cx2 - S(torsoHalf()), hy + S(32), S(2 * torsoHalf()), S(4), RED);
+            inked(ink, navy, [&](int ox, int oy, uint16_t c) {
+                t.fillRoundRect(cx2 - S(12) + ox, hy + S(14) + oy, S(24), S(10), S(4), c);
+            });
+            t.drawFastHLine(cx2 - S(9), hy + S(17), S(18), navyL);          // a fold
+            // The tails: two strips off the knot, each a travelling wave.
+            const float ph = (float)(now % 900) / 900.0f * 6.2831853f;
+            const int kx = cx2 + S(14), ky = hy + S(3);
+            for (uint8_t pass = 0; pass < 2; pass++)
+                for (uint8_t k = 0; k < 2; k++) {
+                    const int w = S(2) > 1 ? S(2) : 2;
+                    int px = kx, py = ky;
+                    for (uint8_t i = 1; i <= 3; i++) {
+                        const int nx = kx + S(4) * i;
+                        const int ny = ky + S(2 + k * 3) * i / 2 + (int)(sinf(ph - i * 1.3f + k) * (float)S(1) * i / 2);
+                        wideLine(t, px, py, nx, ny, pass == 0 ? w + 2 : w, pass == 0 ? ink : red);
+                        px = nx; py = ny;
+                    }
+                }
+            // The band and its knot.
+            inked(ink, red, [&](int ox, int oy, uint16_t c) {
+                t.fillRoundRect(cx2 - S(15) + ox, hy + S(1) + oy, S(30), S(4), S(1), c);
+                t.fillCircle(kx + ox, ky + oy, S(2) + 1, c);
+            });
+            t.drawFastHLine(cx2 - S(13), hy + S(1), S(24), redHi);
+            // The sash, knotted at his hip, one end hanging.
+            const int th = torsoHalf();
+            inked(ink, red, [&](int ox, int oy, uint16_t c) {
+                t.fillRect(cx2 - S(th) + ox, hy + S(32) + oy, S(2 * th), S(4), c);
+                t.fillTriangle(cx2 + S(5) + ox, hy + S(35) + oy, cx2 + S(9) + ox, hy + S(35) + oy,
+                               cx2 + S(8) + ox, hy + S(41) + oy, c);
+            });
+            t.drawFastHLine(cx2 - S(th) + 1, hy + S(32), S(2 * th) - 2, redHi);
+            // The throwing star, tucked in on the other side.
+            const uint16_t steel = t.color565(182, 182, 170);
+            const int sx = cx2 - S(6), sy = hy + S(34), sr = S(2) + 1;
+            t.fillTriangle(sx - sr, sy, sx + sr, sy, sx, sy - sr - 1, steel);
+            t.fillTriangle(sx - sr, sy, sx + sr, sy, sx, sy + sr + 1, steel);
+            t.fillCircle(sx, sy, 1, ink);
             break;
         }
         case OutfitId::PLUMBER:
@@ -4129,6 +4319,36 @@ static void drawOutfit(TFT_eSPI& t, int cx2, int hy, uint32_t now, Mood m, float
             // sphere is a thick rim plus a highlight that follows the curve.
             const int cy = hy + S(10), r = S(19);
             const uint16_t steel = t.color565(226, 230, 240);
+            // ---- the suit on his arms and feet, before the helmet ----------
+            // Along wherever each arm really is, like the parka's sleeves, and
+            // started a little way down the arm so the round end does not
+            // poke up over the corners of his jaw inside the helmet.
+            {
+                const uint16_t suit  = t.color565(219, 219, 255);
+                const uint16_t suitD = t.color565(146, 146, 170);
+                const uint16_t glove = t.color565(255, 146, 0);
+                const int aw = S(8);
+                for (int8_t sg = -1; sg <= 1; sg += 2) {
+                    const int x0 = sg < 0 ? s_armL0x : s_armR0x, y0 = sg < 0 ? s_armL0y : s_armR0y;
+                    const int x1 = sg < 0 ? s_armL1x : s_armR1x, y1 = sg < 0 ? s_armL1y : s_armR1y;
+                    const int sx = x0 + (x1 - x0) / 5, sy = y0 + (y1 - y0) / 5;
+                    wideLine(t, sx, sy, x1, y1, aw + 2, BLACK);
+                    wideLine(t, sx, sy, x1, y1, aw, suit);
+                    // A seam ring at the elbow, the suit's one mark.
+                    const int mx = (sx + x1) / 2, my = (sy + y1) / 2;
+                    wideLine(t, mx - aw / 2, my, mx + aw / 2, my, S(1) > 0 ? S(1) : 1, suitD);
+                    t.fillCircle(x1, y1, S(4) + 1, BLACK);
+                    t.fillCircle(x1, y1, S(4), glove);
+                }
+                const int fx[2] = { s_footLx, s_footRx }, fy[2] = { s_footLy, s_footRy };
+                for (int k = 0; k < 2; k++) {
+                    inked(BLACK, suitD, [&](int ox, int oy, uint16_t c) {
+                        t.fillRoundRect(fx[k] + ox, fy[k] - S(2) + oy, S(12), S(8), S(2), c);
+                    });
+                    t.fillRect(fx[k] + 1, fy[k] - S(2), S(12) - 2, S(2), suit);
+                    t.fillRect(fx[k] + 1, fy[k] + S(4), S(12) - 2, S(1) > 0 ? S(1) : 1, BLACK);
+                }
+            }
             const int ar = r - S(4);
             // The whole highlight drifts, as though he were turning under a
             // light. One sinf a frame, the same as his own idle arm sway.
@@ -4142,9 +4362,15 @@ static void drawOutfit(TFT_eSPI& t, int cx2, int hy, uint32_t now, Mood m, float
                 wideLine(t, px, py, nx, ny, S(2) < 2 ? 2 : S(2), WHITE);
                 px = nx; py = ny;
             }
-            // Rim last, so the arc cannot spill over it.
+            // Rim last, so the arc cannot spill over it. A dark line inside
+            // it now too, so the rim reads as a thick metal ring rather than
+            // three pale hairlines.
             for (uint8_t k = 0; k < 3; k++) t.drawCircle(cx2, cy, r - k, steel);
-            t.drawCircle(cx2, cy, r + 1, t.color565(84, 88, 104));
+            t.drawCircle(cx2, cy, r - 3, t.color565(73, 73, 85));
+            t.drawCircle(cx2, cy, r + 1, BLACK);
+            // A second, smaller glint low on the far side: two lights read as
+            // curved glass, one reads as a sticker.
+            t.fillCircle(cx2 + (r * 55) / 100, cy + (r * 45) / 100, S(1), WHITE);
             t.fillRoundRect(cx2 - S(torsoHalf() + 2), hy + S(21), S(2 * torsoHalf() + 4), S(5), S(2), t.color565(186, 190, 202));
             t.fillRect(cx2 - S(torsoHalf() + 2), hy + S(21), S(2 * torsoHalf() + 4), 1, t.color565(244, 244, 252));
             // The glint: a blunt plus rather than a tapered sparkle, because
@@ -4165,8 +4391,11 @@ static void drawOutfit(TFT_eSPI& t, int cx2, int hy, uint32_t now, Mood m, float
             // overlapped the right quill, which starts at cx+6, leaving
             // a visible seam where they crossed. The silhouette is the
             // whole point of the homage, and it's cleaner with two.
-            t.fillTriangle(cx2 - S(4), hy - S(2), cx2 - S(16), hy - S(6), cx2 - S(6), hy + S(6), blue);
-            t.fillTriangle(cx2 + S(6), hy - S(2), cx2 + S(20), hy - S(4),  cx2 + S(10), hy + S(6), blue);
+            //
+            // Those two live BEHIND his head now, with more beside them: see
+            // the quills in drawBody(). Drawn here, on top, their bases had to
+            // stop short of his lenses and they came out stubby.
+            (void)blue;
             // White gloves -- a core, consistent trait across every
             // era of the design this homages, and the one thing this
             // outfit was missing that actually sells the reference.
@@ -4174,13 +4403,39 @@ static void drawOutfit(TFT_eSPI& t, int cx2, int hy, uint32_t now, Mood m, float
             // drawBody()), not at the resting hand position: fixed gloves
             // stayed at his sides while the arms went up, and every raised
             // pose showed two white balls floating where his hands had been.
+            t.fillCircle(s_armL1x, s_armL1y, S(4) + 1, BLACK);
+            t.fillCircle(s_armR1x, s_armR1y, S(4) + 1, BLACK);
             t.fillCircle(s_armL1x, s_armL1y, S(4), WHITE);
             t.fillCircle(s_armR1x, s_armR1y, S(4), WHITE);
             // Shoes on the FEET, which stay planted when the body sinks into a
             // crouch or a bow: at a fixed distance below hy they slid down
             // and hung in the air under his soles.
-            t.fillEllipse(s_footLx + S(7), s_footLy + S(1), S(6), S(3), RED);
-            t.fillEllipse(s_footRx + S(5), s_footRy + S(1), S(6), S(3), RED);
+            //
+            // Outlined, with the white strap, gold buckle and white sole that
+            // make them those shoes rather than two red ovals.
+            {
+                const uint16_t shoe = t.color565(219, 0, 0), shoeHi = t.color565(255, 109, 85);
+                const int fx[2] = { s_footLx, s_footRx }, fy[2] = { s_footLy, s_footRy };
+                for (int k = 0; k < 2; k++) {
+                    inked(BLACK, shoe, [&](int ox, int oy, uint16_t c) {
+                        t.fillRoundRect(fx[k] - S(1) + ox, fy[k] - S(1) + oy, S(14), S(7), S(3), c);
+                    });
+                    t.drawFastHLine(fx[k] + S(1), fy[k] - S(1), S(8), shoeHi);
+                    t.fillRect(fx[k] - S(1) + 1, fy[k] + S(4), S(14) - 2, S(2), WHITE);
+                    t.fillRect(fx[k] + S(5), fy[k] - S(1), S(3), S(5), WHITE);
+                    t.fillRect(fx[k] + S(6), fy[k] + S(1), S(1) > 0 ? S(1) : 1, S(2), t.color565(255, 219, 0));
+                }
+                // A puff of dust kicked up behind whichever foot just left the
+                // ground, while he walks.
+                if (m == Mood::WALK) {
+                    const uint32_t wp = now % 400;
+                    const int k = wp < 200 ? 0 : 1;
+                    const int age = (int)(wp % 200);
+                    const int pr = S(1) + age * S(2) / 200 + 1;
+                    const int px = fx[k] + (k == 0 ? -S(2) : S(13)) - (k == 0 ? age * S(3) / 200 : -age * S(3) / 200);
+                    t.fillCircle(px, fy[k] + S(4), pr, t.color565(182, 182, 170));
+                }
+            }
             break;
         }
         case OutfitId::CAPTAIN: {
@@ -4430,8 +4685,11 @@ static void drawBody(TFT_eSPI& t, int cx, int hy, int headTopY, uint32_t now, Mo
         // Mostly black -- furLight stays a touch lighter than pure
         // black purely so edges/highlights (ears, arm outlines) don't
         // vanish into a single flat silhouette.
-        furMain  = blend(BLACK, WHITE, 12);
-        furLight = blend(BLACK, WHITE, 32);
+        //
+        // Navy now, not near-black: black on black lost the whole shape of
+        // him, and the navy keeps it while still reading as a ninja at night.
+        furMain  = t.color565(36, 36, 85);
+        furLight = t.color565(73, 73, 170);
     }
     // PARKA sits out the shimmer. Everything of him that shows is either the
     // coat, which is a fixed orange this cannot reach, or his legs and arms,
@@ -4485,10 +4743,49 @@ static void drawBody(TFT_eSPI& t, int cx, int hy, int headTopY, uint32_t now, Mo
         // should not ride his head's squash-and-stretch.
         const float sy   = (float)(hy + S(20));
         const float len  = (float)S(25);
+        //
+        // CHROME, which plain white never said. A mirror at this size is hard
+        // bands, not a gradient: a bright wing with a dark reflection along
+        // its lower half and a black keyline, then a narrower white band laid
+        // down its middle. On every flap that band retracts to the shoulder
+        // and runs back out to the tip, which is a shine sliding along it.
+        (void)wh; (void)wh2; (void)wh3;
+        const uint16_t cBr = t.color565(219, 219, 255);
+        const uint16_t cMd = t.color565(146, 146, 170);
+        const uint16_t cDk = t.color565( 73,  73,  85);
+        const float shine = (fAge < 900u) ? 0.25f + 0.75f * (float)fAge / 900.0f : 1.0f;
         Theme::drawWing(t, (float)(cx2 - S(13)), sy, len,
-                        218.0f, -beat, 0.50f, 3, wh, wh3, -0.55f, 26.0f, wh2);
+                        218.0f, -beat, 0.50f, 3, cMd, BLACK, -0.55f, 26.0f, cDk);
         Theme::drawWing(t, (float)(cx2 + S(13)), sy, len,
-                        -38.0f, beat, 0.50f, 3, wh, wh3, 0.55f, 26.0f, wh2);
+                        -38.0f, beat, 0.50f, 3, cMd, BLACK, 0.55f, 26.0f, cDk);
+        Theme::drawWing(t, (float)(cx2 - S(13)), sy, len * shine,
+                        218.0f, -beat, 0.22f, 0, WHITE, WHITE, -0.55f, 26.0f, cBr);
+        Theme::drawWing(t, (float)(cx2 + S(13)), sy, len * shine,
+                        -38.0f, beat, 0.22f, 0, WHITE, WHITE, 0.55f, 26.0f, cBr);
+    }
+
+    // ---- WOLF PELT's hide down his back ------------------------------------
+    // Behind him for the same reason as the wings and the tanooki's tail.
+    // (SHARK SUIT had a tail here too, and it was gone: his fin arms cover
+    // exactly the place a tail would show.)
+    if (outfitNow == OutfitId::WOLFPELT) {
+        // Flares out from his shoulders to a ragged hem at his knees, so it
+        // shows past his arms either side, the way a hide hangs off a back.
+        const uint16_t pD = blend(BLACK, WHITE, 58), pM = blend(BLACK, WHITE, 96);
+        static const int8_t C[9][2] = { {-12, 20}, {12, 20}, {22, 44}, {17, 41}, {12, 47},
+                                        {0, 44}, {-12, 47}, {-17, 41}, {-22, 44} };
+        const int fx = cx2, fy = hy + S(32);
+        auto cape = [&](int ox, int oy, uint16_t c) {
+            for (uint8_t i = 0; i < 9; i++) {
+                const uint8_t j = (uint8_t)((i + 1) % 9);
+                t.fillTriangle(fx + ox, fy + oy, cx2 + S(C[i][0]) + ox, hy + S(C[i][1]) + oy,
+                               cx2 + S(C[j][0]) + ox, hy + S(C[j][1]) + oy, c);
+            }
+        };
+        inked(BLACK, pD, cape);
+        for (int8_t sg = -1; sg <= 1; sg += 2)
+            for (int k = 0; k < 3; k++)
+                t.drawLine(cx2 + sg * S(15 + k * 2), hy + S(28 + k * 3), cx2 + sg * S(17 + k * 2), hy + S(34 + k * 3), pM);
     }
 
     // ---- TANOOKI's tail ---------------------------------------------------
@@ -4719,7 +5016,8 @@ static void drawBody(TFT_eSPI& t, int cx, int hy, int headTopY, uint32_t now, Mo
 
     // The bros' overalls come down the legs: denim from the hip to the ankle.
     const bool bros = (outfitNow == OutfitId::PLUMBER || outfitNow == OutfitId::TALLBRO);
-    const uint16_t legCol = bros ? t.color565(36, 73, 170) : furMain;
+    const uint16_t legCol = bros ? t.color565(36, 73, 170)
+                          : (outfitNow == OutfitId::SPACE) ? t.color565(219, 219, 255) : furMain;
 
     // Legs + big bigfoot feet — a simple alternating step lift while
     // walking (TFT_eSPI has no canvas-style transforms to pivot a real
@@ -4800,8 +5098,10 @@ static void drawBody(TFT_eSPI& t, int cx, int hy, int headTopY, uint32_t now, Mo
         t.fillRoundRect(cx2 - S(torsoHalf()), hy + S(23), S(2 * torsoHalf()), S(18), S(5), t.color565(224, 224, 232));
         t.fillRect(cx2 - S(torsoHalf()), hy + S(30), S(2 * torsoHalf()), S(2), t.color565(110, 116, 132));
         t.fillRoundRect(cx2 - S(5), hy + S(33), S(10), S(6), 2, t.color565(40, 44, 60));
-        t.fillRect(cx2 - S(3), hy + S(35), S(2), S(2), t.color565(0, 255, 136));
-        t.fillRect(cx2 + S(1), hy + S(35), S(2), S(2), t.color565(255, 60, 60));
+        // The two lights take turns, so the panel is doing something.
+        const bool tick = ((now / 500) & 1u) != 0;
+        t.fillRect(cx2 - S(3), hy + S(35), S(2), S(2), tick ? t.color565(0, 255, 136) : t.color565(0, 73, 0));
+        t.fillRect(cx2 + S(1), hy + S(35), S(2), S(2), tick ? t.color565(109, 0, 0) : t.color565(255, 60, 60));
     } else if (bros) {
         // Shirt the cap's colour, then the bib and straps over it, lit on the
         // left and shaded on the right like the cap.
@@ -4857,6 +5157,9 @@ static void drawBody(TFT_eSPI& t, int cx, int hy, int headTopY, uint32_t now, Mo
         // nine units down, which left the whole upper chest blank and made the
         // coat read as a smock.
         t.fillRect(cx2 - 1, hy + S(24), 2, S(16), seam);
+        // ...with a pull on it, just under the chin.
+        t.fillRect(cx2 - S(1) - 1, hy + S(25) - 1, S(2) + 2, S(3) + 2, ink);
+        t.fillRect(cx2 - S(1), hy + S(25), S(2), S(3), t.color565(182, 182, 170));
         // Boots ON his feet, not near them, and on them in every pose: these
         // take the rectangle the legs above actually drew rather than the
         // resting one. Hard-coded to the rest position they stayed put while
@@ -5220,6 +5523,30 @@ static void drawBody(TFT_eSPI& t, int cx, int hy, int headTopY, uint32_t now, Mo
     // the face patch onto his fur.
     const bool noMouth = (outfitNow == OutfitId::PARKA);
     if (!hideFace) {
+
+    // BLUE BLUR's quills, behind his head so it covers their roots and only
+    // the spikes show: two a side, swept back and out, and one up top. A third
+    // pair lower down came out under his chin and read as a spiky beard.
+    if (outfitNow == OutfitId::BLUEBLUR) {
+        static const int8_t Q[5][6] = {
+            { -6,  3,   6,  3,  -2,  -8 },    // up top
+            { -6,  4, -13, 11, -24,  -4 },    // left, high
+            {-11, 10, -13, 19, -26,   8 },    // left, middle
+            {  6,  4,  13, 11,  25,  -2 },    // right, high
+            { 11, 10,  13, 19,  27,  10 },
+        };
+        const uint16_t qHi = furLight;
+        for (uint8_t pass = 0; pass < 5; pass++) {
+            static const int8_t O[5][2] = { {-1, 0}, {1, 0}, {0, -1}, {0, 1}, {0, 0} };
+            const uint16_t c = pass < 4 ? BLACK : furMain;
+            for (uint8_t i = 0; i < 5; i++)
+                t.fillTriangle(cx2 + S(Q[i][0]) + O[pass][0], hh + S(Q[i][1]) + O[pass][1],
+                               cx2 + S(Q[i][2]) + O[pass][0], hh + S(Q[i][3]) + O[pass][1],
+                               cx2 + S(Q[i][4]) + O[pass][0], hh + S(Q[i][5]) + O[pass][1], c);
+        }
+        for (uint8_t i = 0; i < 5; i++)
+            t.drawLine(cx2 + S(Q[i][0]), hh + S(Q[i][1]), cx2 + S(Q[i][4]), hh + S(Q[i][5]), qHi);
+    }
 
     // Head — broader jaw than before, brow ridge over the eyes.
     t.fillRoundRect(cx2 - S(15), hh, S(30), S(24), S(7), furLight);
