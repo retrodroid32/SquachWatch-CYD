@@ -32,6 +32,9 @@ BOARDS = {
     # build never touches either, so it runs the watch build with the GPS off.
     "68:ee:8f:48:1f:e4": ("twatch-s3",  "LilyGo T-Watch S3 Plus, native USB"),
     "d4:e9:f4:c5:0e:e0": ("freenove32", "Freenove 3.2in CYD, ST7789, resistive touch on the display bus"),
+    # Sunton ESP32-2432S032C (DIYmalls, Amazon B0CLGDHS16): 3.2in ST7789 IPS,
+    # GT911 capacitive touch, a battery charger. Issue #6's board. 2026-09-28.
+    "14:33:5c:6c:20:b8": ("cyd32c",     "Sunton ESP32-2432S032C, 3.2in ST7789 IPS, GT911 capacitive touch"),
     # 88:57:21:2e:e6:e0 runs SquachEmit, not this firmware. It is the only
     # CAPACITIVE 2.8in; to test capacitive touch, list it here as cyd-fast
     # for the test and comment it out again after (done 2026-09-21).

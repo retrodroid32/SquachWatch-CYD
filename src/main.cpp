@@ -21,6 +21,9 @@
 #else
 #define SQW_PUSH_ROWS() FramePush::lastRows()
 #endif
+#if defined(CYD32C)
+#include "gt911_touch.h"
+#endif
 #include <XPT2046_Touchscreen.h>
 #include <Preferences.h>  // AWOK's own per-rotation touch-cal storage; see the AWOK block below pollTouch()'s globals
 #include <esp_heap_caps.h>   // heap_caps_get_largest_free_block() -- diagnostics screen
@@ -414,6 +417,10 @@ constexpr bool PANEL_NEEDS_INVERSION = true;
 #elif defined(FREENOVE_S3)
 // Freenove's own setup for the S3 2.8" (FNK0104AB) turns inversion on, and
 // confirmed on an FNK0104B 2026-09-25: colours right with INVERT untouched.
+constexpr bool PANEL_NEEDS_INVERSION = true;
+#elif defined(CYD32C)
+// The same IPS ST7789 as the Freenove 3.2". UNCONFIRMED until looked at;
+// INVERT in Settings flips it if wrong.
 constexpr bool PANEL_NEEDS_INVERSION = true;
 #elif defined(FREENOVE32)
 // Freenove's own setup for the 3.2" turns inversion on. UNCONFIRMED here
@@ -858,7 +865,7 @@ static bool rawReadFiltered(int16_t& a, int16_t& b) {
 // The one reader pollTouch(), the calibration and the diagnostics screen all
 // use, so what the calibration measures is exactly what touch then reads.
 static bool readTouchRaw(int16_t& a, int16_t& b) {
-#if defined(CROWPANEL7)
+#if defined(CROWPANEL7) || defined(CYD32C)
     // The GT911 already reports panel pixels; TouchFit divides by the scale,
     // so nothing else differs.
     uint16_t x, y;
@@ -1530,6 +1537,7 @@ static void enterInvite() {
 
 // INVERT and ROT on the console -- see clock.cpp. Consumed in loop().
 volatile bool g_consoleInvert = false;
+volatile bool g_consoleAdc = false;     // ADC: the spare analog inputs, for finding a battery sense line
 volatile bool g_consoleRotate = false;
 volatile bool g_consoleWatchTest = false; // WATCHTEST: watch the newest Bluetooth device, fire its alert
 volatile bool g_consoleRadioTest = false; // RADIO TEST: cycle even on the cable with the screen on (bench)
@@ -2831,7 +2839,7 @@ void setup() {
 // ... and not on the CrowPanel 7, where GPIO21 is the panel's BLUE-0 data
 // line. Driving it high before the panel driver claims it is a stripe down the
 // picture at best.
-#if !defined(AWOK) && !defined(RLPHANTOM) && !defined(RLPHANTOM_R) && !defined(SQW_S3) && !defined(CROWPANEL7)
+#if !defined(AWOK) && !defined(RLPHANTOM) && !defined(RLPHANTOM_R) && !defined(SQW_S3) && !defined(CROWPANEL7) && !defined(CYD32C)
     pinMode(21, OUTPUT); digitalWrite(21, HIGH);
 #endif
 #if defined(SQW_S3)
@@ -2845,7 +2853,7 @@ void setup() {
     // RGB data line.
 #else
     pinMode(27, OUTPUT); digitalWrite(27, HIGH);
-#if !defined(FREENOVE32)   // not a known-spare pin on the Freenove; its backlight is 27 alone
+#if !defined(FREENOVE32) && !defined(CYD32C)   // not a spare pin on the Freenove, and the 2432S032C's touch SCL; both light 27 alone
     pinMode(32, OUTPUT); digitalWrite(32, HIGH);  // AWOK's real BL pin; unused GPIO on the other two boards
 #endif
 #endif
@@ -2924,13 +2932,13 @@ void setup() {
     ledcSetup(BL_CH_ORIG, 5000, 8);
     ledcAttachPin(BL_PIN_S3, BL_CH_ORIG);
 #else
-#if !defined(AWOK) && !defined(RLPHANTOM) && !defined(RLPHANTOM_R)
+#if !defined(AWOK) && !defined(RLPHANTOM) && !defined(RLPHANTOM_R) && !defined(CYD32C)
     ledcSetup(BL_CH_ORIG, 5000, 8);
     ledcAttachPin(BL_PIN_ORIG, BL_CH_ORIG);
 #endif
     ledcSetup(BL_CH_CAP, 5000, 8);
     ledcAttachPin(BL_PIN_CAP, BL_CH_CAP);
-#if !defined(FREENOVE32)   // see the pinMode(32) above; a channel with no pin is harmless to write
+#if !defined(FREENOVE32) && !defined(CYD32C)   // see the pinMode(32) above; a channel with no pin is harmless to write
     ledcSetup(BL_CH_AWOK, 5000, 8);
     ledcAttachPin(BL_PIN_AWOK, BL_CH_AWOK);
 #endif
@@ -3090,6 +3098,13 @@ void setup() {
     // buzzer a crash may have left sounding -- the helper keeps its state
     // across our reset. Not a boot beep.
     CrowBuzzer::begin();
+#elif defined(CYD32C)
+    // The GT911, on the CYD's capacitive I2C pins. Raw panel pixels in the
+    // panel's own portrait frame, so the five-target calibration maps them
+    // onto the screen like any other capacitive CYD.
+    usingCapTouch = Gt911::begin();
+    Serial.println(usingCapTouch ? "ESP32-2432S032C -- GT911 capacitive touch answered."
+                                 : "ESP32-2432S032C -- GT911 did not answer; no touch.");
 #elif defined(TWATCH_S3)
     // The T-Watch's FT6336, on I2C SDA 39 / SCL 40 at 0x38. No reset line;
     // the AXP2101 powers it (ALDO3) in twatchPowerUp(), before this runs.
@@ -3152,7 +3167,7 @@ void setup() {
         uint32_t windowStart = millis();
         while (millis() - windowStart < 1200) {
             int16_t a, b;
-#if defined(CROWPANEL7)
+#if defined(CROWPANEL7) || defined(CYD32C)
             // The GT911 is neither of the two below; the two-way dispatch
             // polled a capacitive controller that is not on this bus.
             bool down = readTouchRaw(a, b);
@@ -3989,6 +4004,22 @@ void loop() {
         }
     }
     gpsTick();
+#endif
+#if !defined(SQW_S3) && !defined(CROWPANEL7)
+    // ADC: every input-only analog pin the CYDs leave free, in millivolts,
+    // averaged over 16 reads. A battery divider shows up as about half the
+    // cell's voltage, and moves when the cell is unplugged.
+    if (g_consoleAdc) {
+        g_consoleAdc = false;
+        const uint8_t pins[] = { 34, 35, 36, 39 };
+        char line[96]; int n = snprintf(line, sizeof line, "[adc]");
+        for (uint8_t p : pins) {
+            uint32_t mv = 0;
+            for (int k = 0; k < 16; k++) mv += analogReadMilliVolts(p);
+            n += snprintf(line + n, sizeof line - n, "  GPIO%u %lu mV", p, (unsigned long)(mv / 16));
+        }
+        Serial.println(line);
+    }
 #endif
     if (g_consoleInvert) {
         g_consoleInvert = false;

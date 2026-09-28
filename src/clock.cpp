@@ -49,6 +49,7 @@ extern volatile bool g_benchUpdateStop;
 // INVERT and ROT: the colour-check toggles and the corner rotate button,
 // from the console, for bringing up a panel nobody can read yet.
 extern volatile bool g_consoleInvert;
+extern volatile bool g_consoleAdc;
 extern volatile bool g_consoleWatchTest;
 extern volatile bool g_consoleRotate;
 extern volatile bool g_consoleBatt;
@@ -533,6 +534,7 @@ void pollSerial() {
             continue;
         }
         if (strcasecmp(line, "INVERT") == 0) { g_consoleInvert = true; continue; }
+        if (strcasecmp(line, "ADC") == 0)    { g_consoleAdc = true; continue; }
         if (strcasecmp(line, "WATCHTEST") == 0) { g_consoleWatchTest = true; continue; }
         if (strcasecmp(line, "ROT") == 0)    { g_consoleRotate = true; continue; }
         if (strcasecmp(line, "BATT") == 0)    { g_consoleBatt = true; continue; }
