@@ -24,6 +24,7 @@ static Snapshot    s_snap{};
 static uint32_t    s_fixAt = 0;
 static uint32_t    s_timeAt = 0;
 static uint32_t    s_lastCharAt = 0;
+static uint32_t    s_lastSentenceAt = 0;
 static bool        s_started = false;
 static bool        s_hadFix = false;
 
@@ -70,6 +71,9 @@ void tick(uint32_t now) {
         const char c = (char)Serial2.read();
         s_lastCharAt = now;
         if (!s_gps.encode(c)) continue;
+        // encode() returning true means a complete sentence passed its
+        // checksum. Raw bytes alone are not enough to call the stream NMEA.
+        s_lastSentenceAt = now;
 
         if (s_gps.location.isUpdated() && s_gps.location.isValid()) {
             s_snap.lat = s_gps.location.lat();
@@ -133,12 +137,19 @@ void formatStatus(char* out, size_t n) {
     if (!out || !n) return;
     const uint32_t now = millis();
     if (!s_lastCharAt || (uint32_t)(now - s_lastCharAt) > 5000u) {
-        snprintf(out, n, "NO DATA  115200");
+        snprintf(out, n, "NO DATA  %u", (unsigned)GPS_BAUD);
+        return;
+    }
+    if (!s_lastSentenceAt || (uint32_t)(now - s_lastSentenceAt) > 5000u) {
+        // We have electrical UART activity, but nothing has passed a NMEA
+        // checksum recently. This catches a wrong baud rate, contention on a
+        // shared UART pin, or a receiver configured for a binary protocol.
+        snprintf(out, n, "UART DATA  NO NMEA");
         return;
     }
     const Snapshot s = snapshot();
     if (!s.fix) {
-        snprintf(out, n, "NMEA  NO FIX");
+        snprintf(out, n, "NMEA OK  NO FIX");
         return;
     }
     if (s.hdopValid) snprintf(out, n, "FIX %u SV  HDOP %.2f", (unsigned)s.sats, (double)s.hdop100 / 100.0);
