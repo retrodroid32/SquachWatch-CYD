@@ -421,6 +421,12 @@ DetectionType lookupUuid(uint16_t uuid16) {
     return DetectionType::UNKNOWN;
 }
 
+bool isBareSerialName(const char* name) {
+    if (!name) return false;
+    for (int i = 0; i < 10; i++) if (name[i] < '0' || name[i] > '9') return false;
+    return name[10] == '\0';
+}
+
 DetectionType lookupBtName(const char* name) {
     if (!name) return DetectionType::UNKNOWN;
     for (uint16_t i = 0; i < kBtClassicCount; i++) {
@@ -458,6 +464,9 @@ DetectionType lookupBtName(const char* name) {
 
 DetectionType lookupSsid(const char* ssid) {
     if (!ssid) return DetectionType::UNKNOWN;
+    // A provisioned camera's bare "Flock" (Flock-You's firmware dump). Exact,
+    // not a prefix: "Flock" as a prefix would take "Flockhart Family WiFi".
+    if (strcasecmp(ssid, "Flock") == 0) return DetectionType::FLOCK;
     for (uint16_t i = 0; i < kSsidCount; i++) {
         size_t n = strlen(kSsidPrefixes[i].prefix);
         if (strncasecmp(ssid, kSsidPrefixes[i].prefix, n) == 0) {
