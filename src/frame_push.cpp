@@ -250,9 +250,6 @@ static inline void sqwC5SpiClockRestore(uint32_t pcr) {
 #endif
 }
 
-#else
-static inline uint32_t sqwC5SpiClockRaise() { return 0; }
-static inline void     sqwC5SpiClockRestore(uint32_t) { }
 #endif
 
 static uint32_t gcd32(uint32_t a, uint32_t b) { while (b) { uint32_t t = a % b; a = b; b = t; } return a; }
@@ -298,8 +295,10 @@ bool push(TFT_eSPI& tft, const uint8_t* src, int32_t w, int32_t h, int32_t x, in
         for (int i = 0; i < n; i++)
             if (((uint32_t)(spans[i].r1 - spans[i].r0) * (uint32_t)w) % PX_PER_BURST) { spans[0].r0 = 0; spans[0].r1 = h; n = 1; break; }
         tft.startWrite();
+#if defined(NM_CYD_C5)
         // Inside the transaction, after beginTransaction has had its say.
         const uint32_t c5pcr = sqwC5SpiClockRaise();
+#endif
         for (int i = 0; i < n; i++) {
             const int32_t r0 = spans[i].r0, r1 = spans[i].r1;
             tft.setAddrWindow(x, y + r0, w, r1 - r0);
@@ -325,7 +324,9 @@ bool push(TFT_eSPI& tft, const uint8_t* src, int32_t w, int32_t h, int32_t x, in
             pushPixels(src + (size_t)r0 * (size_t)w, (uint32_t)(r1 - r0) * (uint32_t)w);
             s_lastRows += r1 - r0;
         }
+#if defined(NM_CYD_C5)
         sqwC5SpiClockRestore(c5pcr);
+#endif
         tft.endWrite();
         SQW_PUSH_CHARGE(s_wireUs, tWire);
     }

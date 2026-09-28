@@ -1934,12 +1934,13 @@ static nvs_iterator_t sqwNvsEntryNext(nvs_iterator_t it) {
     return nullptr;
 }
 #else
-static inline nvs_iterator_t sqwNvsEntryFind(const char* part, const char* ns, nvs_type_t type) {
-    return nvs_entry_find(part, ns, type);
-}
-static inline nvs_iterator_t sqwNvsEntryNext(nvs_iterator_t it) {
-    return nvs_entry_next(it);
-}
+// Macros, not inline functions, deliberately. An inline wrapper is free in
+// principle and was not quite free in practice: it moved [env:cyd]'s
+// .flash.text by a few bytes, and a board port has no business changing the
+// code generated for boards it cannot test. These expand to the original call
+// exactly, so the IDF 4 builds compile the same instructions they always did.
+#define sqwNvsEntryFind(part, ns, type) nvs_entry_find((part), (ns), (type))
+#define sqwNvsEntryNext(it)             nvs_entry_next((it))
 #endif
 
 static bool secretNamespace(const char* ns) {
