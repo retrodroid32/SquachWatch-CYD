@@ -408,7 +408,27 @@ class BleScanCallbacks : public NimBLEScanCallbacks {
                             break;
                         }
                     }
+                    // Raven's services run 0x3100-0x3500, not just the five
+                    // round ones above: 0x3101 and 0x3102 are the ones that
+                    // hand out its GPS position (Flock-You, issue #15).
+                    // getValue() is the 16-bit value's own bytes, little-endian.
+                    if (det.type == DetectionType::UNKNOWN && u.getValue()) {
+                        const uint8_t* p = u.getValue();
+                        const uint16_t v = (uint16_t)(p[0] | (p[1] << 8));
+                        if (v >= 0x3100 && v <= 0x3500) {
+                            det.type = DetectionType::RAVEN;
+                            label    = uuidName(0x3100);
+                        }
+                    }
                     if (det.type != DetectionType::UNKNOWN) break;
+                } else if (u.bitSize() == 128) {
+                    // The Flock accessory service, from the GATT definition
+                    // in a Flock camera's firmware (Flock-You, issue #15).
+                    static const NimBLEUUID kFlockGatt("e8ccbb38-9532-46a8-9fe5-1814df172e6f");
+                    if (u.equals(kFlockGatt)) {
+                        det.type = DetectionType::FLOCK;   // labelled Flock-BLE below, like every Flock advert
+                        break;
+                    }
                 }
             }
         }
@@ -432,6 +452,11 @@ class BleScanCallbacks : public NimBLEScanCallbacks {
         // "Flipper", which is a string, not a signature.
         if (det.type == DetectionType::HACKER) {
             det.conf = matchedByName ? Confidence::MED_CONF : Confidence::HIGH_CONF;
+        }
+        // A bare ten-digit name is how one Penguin firmware names itself, and
+        // also something any gadget could be called. Logged, but LOW.
+        if (det.type == DetectionType::FLOCK && matchedByName && isBareSerialName(det.name)) {
+            det.conf = Confidence::LOW_CONF;
         }
         // A Remote ID advert carries far more than the fact that it exists.
         // Decode it before the entry is posted so the log row can be named

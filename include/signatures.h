@@ -41,6 +41,8 @@ extern const uint16_t    kMfgIdCount;
 DetectionType lookupOui(const uint8_t* mac, Confidence* conf = nullptr);
 DetectionType lookupUuid(uint16_t uuid16);
 DetectionType lookupBtName(const char* name);
+// Exactly ten digits and nothing else: a Penguin battery pack's serial.
+bool isBareSerialName(const char* name);
 DetectionType lookupSsid(const char* ssid);   // case-insensitive prefix
 
 // Friendly vendor label for whichever kSsidPrefixes entry matched
