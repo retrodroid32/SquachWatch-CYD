@@ -2220,6 +2220,9 @@ void setNameTag(const char* name) {
     s_nameTag = (name && name[0]) ? name : nullptr;
 }
 
+static bool s_headset = false;
+void setHeadset(bool on) { s_headset = on; }
+
 static void say(const char* line, uint32_t ms);
 
 // ---- the clock's lines ---------------------------------------------------
@@ -5747,6 +5750,34 @@ static void drawBody(TFT_eSPI& t, int cx, int hy, int headTopY, uint32_t now, Mo
     // outside the space helmet and half behind the captain's hat, and the
     // void eye, drawn with his face hidden, never got one at all.
     if (legendHat) topHat(hh - S(topHatSeat(outfitNow)));
+
+    // The headset, in the head group so it rides every bob and squash with
+    // him. The band arcs over his crown from cup to cup; the cups sit on his
+    // ears; the mic boom curls round to the corner of his mouth.
+    if (s_headset) {
+        const uint16_t ink = BLACK, band = t.color565(182, 182, 170), cup = t.color565(73, 73, 85);
+        const int bw = S(2) > 1 ? S(2) : 2;
+        const int bcx = cx2, bcy = hh + S(12), br = S(16);
+        for (uint8_t pass = 0; pass < 2; pass++) {
+            float px = (float)(bcx - br), py = (float)bcy;
+            for (uint8_t i = 1; i <= 12; i++) {
+                const float a = 3.14159265f + 3.14159265f * (float)i / 12.0f;
+                const float nx = (float)bcx + cosf(a) * (float)br, ny = (float)bcy + sinf(a) * (float)br;
+                wideLine(t, px, py, nx, ny, pass == 0 ? bw + 2 : bw, pass == 0 ? ink : band);
+                px = nx; py = ny;
+            }
+        }
+        wideLine(t, cx2 - S(16), hh + S(16), cx2 - S(10), hh + S(21), bw + 2, ink);
+        wideLine(t, cx2 - S(16), hh + S(16), cx2 - S(10), hh + S(21), bw, band);
+        t.fillCircle(cx2 - S(9), hh + S(21), S(1) + 2, ink);
+        t.fillCircle(cx2 - S(9), hh + S(21), S(1) + 1, cup);
+        for (int8_t sg = -1; sg <= 1; sg += 2) {
+            const int x = cx2 + sg * S(16) - S(3);
+            t.fillRoundRect(x - 1, hh + S(8) - 1, S(6) + 2, S(10) + 2, S(2), ink);
+            t.fillRoundRect(x, hh + S(8), S(6), S(10), S(2), cup);
+            t.drawFastVLine(x + (sg < 0 ? 1 : S(6) - 2), hh + S(10), S(6), band);
+        }
+    }
 
     // ---- props ---------------------------------------------------------
     // Drawn last, so they sit in front of the costume as well as the body.
