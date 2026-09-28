@@ -708,6 +708,8 @@ private:
     uint8_t     _wifiChannel = 1;
     uint32_t    _lastHopMs   = 0;
     uint16_t    _dwellMs     = 300;   // how long this channel gets, set on arrival
+    SpamWatch   _spam;
+    uint16_t    _newBle[SpamWatch::TYPES] = {0};   // new Bluetooth rows by type, counted in pushLog
 
     // Index 1..13; 0 is unused. Fed from every captured mgmt/data
     // frame in processWiFiQ() (not just ones that match a known
