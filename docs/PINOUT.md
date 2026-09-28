@@ -61,12 +61,16 @@ GPS-capable CYD builds use board-specific UART wiring:
 | Board | GPS TX -> ESP32 RX | GPS RX <- ESP32 TX |
 |---|---:|---:|
 | 2.8" CYD profiles | GPIO35 | GPIO22 |
-| 3.2" E32R32P / ESP32-32E | RXD / GPIO3 | TXD / GPIO1 |
+| 3.2" E32R32P / ESP32-32E | **GPIO35 (JP3)** | **not connected** |
 
-On the 3.2" board these are the signals on the dedicated 4-pin connector
-silkscreened **5V / GND / TXD / RXD**. Connect GPS TX to board RXD and GPS RX
-to board TXD. GPIO35 remains input-only on the 2.8" wiring, which is
-intentional. The GPS firmware defaults to 115200 baud.
+The 3.2" board's 4-pin **5V / GND / TXD / RXD** serial-module connector is
+wired to ESP32 UART0 (GPIO1/GPIO3), the same UART used by the onboard CH340C
+USB bridge and SquachWatch's serial console. It is therefore not used for GPS
+data. Power the receiver from 5V/GND as appropriate, connect **GPS TX only**
+to the board's exposed **GPIO35 / JP3** input, and leave GPS RX disconnected.
+Receive-only operation is sufficient for NMEA position logging and avoids
+USB-console/UART contention. GPIO35 is input-only, which is intentional.
+The GPS firmware defaults to 115200 baud.
 
 GPS is a compile-time/web-flasher option, not a required peripheral. The normal
 40 MHz and 80 MHz firmware remain available without GPS, and the GPS checkbox
