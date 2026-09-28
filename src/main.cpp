@@ -3342,12 +3342,19 @@ void setup() {
 
     // Seed the PRNG so the digital rain starts in a fresh-looking state
     // on every boot.
-#if defined(SQW_S3) || defined(CROWPANEL7)
+#if defined(SQW_S3) || defined(CROWPANEL7) || defined(NM_CYD_C5)
     // GPIO34 is not an ADC pin on an S3 (it is an octal PSRAM line on these
     // boards, the CrowPanel's N16R8 module included): analogRead() refuses
     // it and the seed was a constant. The hardware RNG instead -- before WiFi
     // starts it is running on the bootloader's entropy rather than radio
     // noise, still no constant.
+    //
+    // The NM-CYD-C5 is the same fault with less ambiguity: GPIO34 does not
+    // exist on a C5 at all, and the board says so twice on every boot --
+    //   E adc_common: adc_io_to_channel(29): invalid gpio number
+    //   __analogRead(): Pin 34 is not ADC pin!
+    // -- after which the seed is 0 and the digital rain opens on the same
+    // frame every time. Confirmed on hardware, not inferred.
     randomSeed(esp_random());
 #else
     // Analog read on a floating pin is plenty.

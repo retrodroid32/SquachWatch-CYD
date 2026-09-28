@@ -45,6 +45,26 @@ that failed to boot.
 If you want the console on the native port, flip that flag in
 `boards/nm-cyd-c5.json` to 1 and rebuild.
 
+### Do not flash the merged image at 0x0
+
+`pio run -e nm-cyd-c5 -t upload` is safe and is what you should use. If you
+flash by hand with esptool, flash the **four parts**, not
+`firmware.factory.bin`:
+
+```
+esptool --port COM5 --baud 460800 --chip esp32c5 write-flash \
+  0x2000 bootloader.bin  0x8000 partitions.bin \
+  0xe000 boot_app0.bin   0x10000 firmware.bin
+```
+
+`firmware.factory.bin` is those same four padded into one contiguous image
+from 0x0, so it also covers **0x9000–0xe000, which is NVS**. Flashing it wipes
+settings, the touch calibration, the PIN and its duress twin, mesh pairings and
+Squachy's stats. The symptom is the board running the five-target calibration
+again as though it were brand new, which reads as "the calibration did not
+save" rather than as "the flash erased it". The four-part write leaves the gap
+alone and settings survive.
+
 ## Pinout
 
 From RockBase's `Demos/Platformio/nm-cyd-c5/`. Display, touch and SD all share
@@ -124,6 +144,22 @@ Flashed and captured over the CH340 port on 2026-09-28.
 - [x] **Reaches touch calibration**: `Touch: no five-target calibration yet`,
       which means the display stack initialised and the board is asking for
       input.
+- [x] **No ADC errors.** `randomSeed(analogRead(34))` fails here -- GPIO34 does
+      not exist on a C5 -- so the seed was 0 and the digital rain opened on the
+      same frame every boot. `NM_CYD_C5` now joins the boards that seed from
+      `esp_random()`, which is the fix already in the tree for the S3s.
+- [x] **The WiFi sniffer is NOT deaf.** This was the one to worry about (see
+      the checklist item below, and PR #10): `wifi 581` frames and climbing,
+      alongside `ble 69/s` and 1,908 adverts, in a single 75-second capture.
+      The `delay(10)` in `detection.cpp` holds on this chip and core.
+- [x] **Mesh crypto self-test passes on the device**: `[meshtalk] crypto
+      self-test PASS`. That is the mbedtls 2 -> 3 migration confirmed by the
+      board itself, against frames built by an independent implementation.
+- [x] **Detections fire.** `det 5` in one capture, from ambient traffic alone.
+- [x] **Performance**: 67-72 fps, `loop 69/s`, heap flat around 80 KB free
+      across the capture, largest block 8.2 MB.
+- [x] **SD card absence is handled**: `[sd] no card, or it did not answer:
+      nothing will be logged`. A card still needs testing.
 
 ### Still to confirm on the board
 Ordered so that a failure early explains the failures after it.
@@ -134,7 +170,10 @@ Ordered so that a failure early explains the failures after it.
 - [ ] **Touch**: registers, and lands where you press after calibration
 - [ ] **Status light**: the boot sweep runs (proves the WS2812 on 27, and that
       it is not silently doing nothing)
-- [ ] **WiFi scan finds APs.** Not optional and not obvious: on the ESP32-S3
+- [ ] **WiFi AP count matches a phone's.** The sniffer is confirmed alive
+      above; this is the stricter version -- that it sees as many APs as a
+      phone standing in the same place, not merely more than zero. Not
+      optional and not obvious: on the ESP32-S3
       a race between `esp_wifi_deinit()` and the sniffer's `esp_wifi_init()`
       brought the driver up **with the receiver off** — scans returned zero
       networks and the sniffer saw no frames while BLE worked perfectly and
