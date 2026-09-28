@@ -2935,7 +2935,7 @@ void setup() {
     // One backlight, GPIO45, on the first channel. The CYD pins below are
     // flash/PSRAM lines and the power chip's interrupt on an S3.
     ledcSetup(BL_CH_ORIG, 5000, 8);
-    ledcAttachPin(BL_PIN_TWATCH, BL_CH_ORIG);
+    ledcAttachPin(BL_PIN_S3, BL_CH_ORIG);
 #else
 #if !defined(AWOK) && !defined(RLPHANTOM) && !defined(RLPHANTOM_R)
     ledcSetup(BL_CH_ORIG, 5000, 8);
