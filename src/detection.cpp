@@ -2495,6 +2495,8 @@ void DetectionEngine::saveLifetime(uint32_t now) {
     saveLifetimeByType();
 }
 
+static_assert((uint8_t)DetectionType::COUNT <= SpamWatch::TYPES, "SpamWatch is sized for 32 types");
+
 void DetectionEngine::expireStale() {
     uint32_t now = millis();
     for (uint8_t i = 0; i < _logCount; i++) {
