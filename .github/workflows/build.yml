@@ -65,6 +65,16 @@ jobs:
       - name: Build Elecrow CrowPanel Advance 7.0
         run: pio run -e crowpanel7
 
+      # Same idea for the NM-CYD-C5, with one difference worth knowing: it is
+      # the only environment on a different platform (Arduino 3.3 / IDF 5.5,
+      # because the ESP32-C5 did not exist when core 2.0.14 was cut), so this
+      # step downloads a second toolchain -- a RISC-V one -- that no other job
+      # here needs. It is cached with the rest under the platformio.ini hash,
+      # so it is a cold-cache cost rather than a per-run one. Drop this step if
+      # that is not worth it; the board is opt-in either way.
+      - name: Build RockBase NM-CYD-C5 (ESP32-C5)
+        run: pio run -e nm-cyd-c5
+
   tests:
     # The decoders are pure arithmetic over byte buffers, so they run on a
     # desktop with no board and no display. Worth a job of their own: the
