@@ -798,14 +798,13 @@ int main(int argc, char** argv) {
         // The real path: a version arrives, then the release's own lines if
         // it came from the site. --from makes it a squad member's hello,
         // which carries a number and no notes.
-        OtaCore::noteAvailable("1.24.0", heardFrom.c_str());
+        OtaCore::noteAvailable("1.24.1", heardFrom.c_str());
         if (heardFrom.empty()) {
-            static const char* const NEWS[3] = {
-                "Real drones detected, at last",
-                "Flock-You's Flock signatures",
-                "18 more time zones",
+            static const char* const NEWS[2] = {
+                "No more phantom Flock alerts",
+                "Nameless gadgets stay nameless",
             };
-            OtaCore::noteRelease("Look Up", NEWS, 3);
+            OtaCore::noteRelease("Ghost Town", NEWS, 2);
         }
         uiSysPropsInit(frame);
         // The tab a tap would have opened, for rendering one of them.

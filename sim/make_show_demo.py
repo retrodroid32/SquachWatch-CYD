@@ -32,6 +32,13 @@ CYAN  = (0, 214, 214)
 # ---- the clips ----
 
 CLIPS = {
+    # v1.24.1 "Ghost Town": a hotfix with nothing new on screen -- the fix is
+    # the absence of phantom FLOCK rows, so the clip is the log as it should
+    # read, and Squachy at rest.
+    "ghost-town": [
+        ("log", 20, 30, [], {}, 1800, "NO MORE PHANTOM FLOCKS"),
+        ("clear", 200, 30, ["--noseed", "--bg", "3"], {}, 1800, "SAME SQUACHY. FEWER GHOSTS."),
+    ],
     # v1.24.0 "Look Up": drones are really detected now (the page is the
     # emulator's seeded aircraft, decoded), ignored devices wear a tag, and
     # eighteen more time zones, shown on the zone card.

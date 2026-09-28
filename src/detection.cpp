@@ -296,7 +296,10 @@ class BleScanCallbacks : public NimBLEScanCallbacks {
             memset(&r, 0, sizeof(r));
             memcpy(r.mac, mac, 6);
             r.rssi = adv->getRSSI();
-            const char* name = adv->getName().c_str();
+            // Held, not borrowed: getName() returns a temporary, and a pointer
+            // into it dangles by the next line (issue #22).
+            const std::string advName = adv->getName();
+            const char* name = advName.c_str();
             if (name && name[0]) strncpy(r.name, name, sizeof(r.name) - 1);
             g_engine->postRawBle(r);
             return;
@@ -309,7 +312,11 @@ class BleScanCallbacks : public NimBLEScanCallbacks {
         det.firstSeen = det.lastSeen = millis();
         det.hits   = 1;
         det.active = true;
-        const char* name = adv->getName().c_str();
+        // Held for the same reason as the raw scan's above. Borrowed, a
+        // nameless device read freed memory as its name -- and a garbage name
+        // that happened to be ten digits was logged as a Flock battery (#22).
+        const std::string advName = adv->getName();
+        const char* name = advName.c_str();
         if (name && name[0]) {
             strncpy(det.name, name, sizeof(det.name) - 1);
         }
