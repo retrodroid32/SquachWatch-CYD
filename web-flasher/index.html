@@ -724,8 +724,8 @@
       <span>
         <span class="oc-title">Optional: external GPS / GNSS</span>
         <span class="oc-desc" id="gpsDesc">
-          Adds UART GPS time and geotagging. GPS TX connects to GPIO35; GPS RX connects to GPIO22.
-          Works independently of the 80MHz option.
+          Adds UART GPS time and geotagging. Wiring is board-specific; the selected board description
+          below shows the correct connector/pins. Works independently of the 80MHz option.
         </span>
       </span>
     </label>
@@ -1574,10 +1574,14 @@
       "Overclock, huh. If it comes up white or torn, that panel said no — flash again with the box unticked.";
     var GPS_DESC_ON =
       "UART GPS/GNSS: module TX → GPIO35, module RX → GPIO22. Adds GPS UTC and position fields to SD detections.";
+    var GPS_DESC_CYD32 =
+      "UART GPS/GNSS: use the 4-pin 5V/GND/TXD/RXD connector. GPS TX → RXD/GPIO3; GPS RX → TXD/GPIO1.";
     var GPS_DESC_OFF =
       "GPS firmware is not published for this board profile.";
     var GPS_LINE =
-      "GPS build selected. Wire the module TX to GPIO35 and RX to GPIO22; it works with or without the 80MHz display option.";
+      "GPS build selected. It works with or without the 80MHz display option.";
+    var GPS_LINE_CYD32 =
+      "GPS build selected. On this 3.2-inch board use the 4-pin UART: GPS TX → RXD, GPS RX → TXD.";
 
     // Which release directory the manifest lives in. "" is the latest,
     // which sits at the site root; older ones are in <tag>/ subdirectories
@@ -1623,7 +1627,10 @@
       if (gpsRow) {
         gpsRow.classList.toggle('disabled', !gps);
         if (gpsChk) gpsChk.disabled = !gps;
-        if (gpsDesc) gpsDesc.textContent = gps ? GPS_DESC_ON : GPS_DESC_OFF;
+        if (gpsDesc) {
+          var isCyd32Gps = /cyd32-st7798/.test((opt.value || "") + " " + (gps || ""));
+          gpsDesc.textContent = gps ? (isCyd32Gps ? GPS_DESC_CYD32 : GPS_DESC_ON) : GPS_DESC_OFF;
+        }
       }
       var useFast = !!fast && !!(ocChk && ocChk.checked && !ocChk.disabled);
       var useGps = !!gps && !!(gpsChk && gpsChk.checked && !gpsChk.disabled);
@@ -1640,7 +1647,10 @@
       updateCompatibility(opt);
       if (announce === 'board' && isCyd28) say(WHITE_SCREEN_LINE, 8000);
       if (announce === 'overclock' && useFast) say(OVERCLOCK_LINE, 8000);
-      if (announce === 'gps' && useGps) say(GPS_LINE, 8000);
+      if (announce === 'gps' && useGps) {
+        var cyd32Selected = /cyd32-st7798/.test((opt.value || "") + " " + (gps || ""));
+        say(cyd32Selected ? GPS_LINE_CYD32 : GPS_LINE, 8000);
+      }
       if (announce === 'version' && verDir) {
         say("Rolling back. If that one behaves, tell me which build broke it.", 8000);
       }
