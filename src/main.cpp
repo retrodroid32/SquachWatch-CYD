@@ -4005,7 +4005,7 @@ void loop() {
     }
     gpsTick();
 #endif
-#if !defined(SQW_S3) && !defined(CROWPANEL7)
+#if defined(ESP32) && !defined(SQW_S3) && !defined(CROWPANEL7)   // hardware only: the emulators build this too
     // ADC: every input-only analog pin the CYDs leave free, in millivolts,
     // averaged over 16 reads. A battery divider shows up as about half the
     // cell's voltage, and moves when the cell is unplugged.
