@@ -146,8 +146,10 @@ On a GPS firmware build, the same row appends
 
 GPS is a firmware choice in the web flasher, independent of the 80 MHz
 display option. On 2.8" CYDs wire module **TX to GPIO35** and **RX to GPIO22**.
-On the 3.2" E32R32P use the dedicated 4-pin UART connector: GPS **TX → RXD**
-(GPIO3), GPS **RX → TXD** (GPIO1), plus GND and 5V for receivers rated for it.
+On the 3.2" E32R32P, do **not** use the RXD/TXD pair for GPS data because
+those signals are UART0 and are shared with the onboard CH340C USB serial bridge.
+Connect GPS **TX → GPIO35 (JP3)**, leave GPS RX disconnected, and use suitable
+5V/GND power for receivers rated for it.
 The GPS build listens at 115200 baud, uses valid GNSS
 UTC to establish the board clock when it does not already have trusted time,
 shows fix status under **System Properties → Board**, and geotags SD detection
