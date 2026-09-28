@@ -44,6 +44,19 @@ int main() {
     mac(m, 10);
     ck("a newcomer is in", Regulars::daysFor(m) == 1);
 
+    suite("A regular kept backwards (before v1.25.0) keeps its name");
+    {
+        Regulars::reset();
+        const uint8_t old[6] = { 0xC4, 0x45, 0xCF, 0xC1, 0xC5, 0x5E };
+        const uint8_t fwd[6] = { 0x5E, 0xC5, 0xC1, 0xCF, 0x45, 0xC4 };
+        for (uint32_t d = 300; d < 310; d++) Regulars::noteOnDay(old, DetectionType::TILE, d);
+        const char* was = Regulars::nameFor(old);
+        ck("it had a name", was != nullptr);
+        ck("the same name the new way round", was && Regulars::nameFor(fwd) == was);
+        Regulars::noteOnDay(fwd, DetectionType::TILE, 310);
+        ck("seen again: one more day, not a new regular", Regulars::daysFor(fwd) == 11 && Regulars::count() == 1);
+    }
+
     suite("Reset");
     Regulars::reset();
     ck("empty", Regulars::count() == 0 && Regulars::daysFor(tag) == 0);

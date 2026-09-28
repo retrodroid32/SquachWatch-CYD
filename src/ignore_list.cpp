@@ -69,6 +69,16 @@ static int indexOf(const uint8_t* mac) {
     if (!mac) return -1;
     for (uint8_t i = 0; i < s_count; i++)
         if (memcmp(&s_rec[(size_t)i * REC], mac, 6) == 0) return (int)i;
+    // Before v1.25.0 a Bluetooth address was kept backwards (NimBLE's byte
+    // order, issue #22), so a device ignored then is on the list reversed.
+    // It still matches, and it still comes off with UN-IGNORE. A WiFi address
+    // whose reverse is somebody else's ignored address is not a real risk.
+    for (uint8_t i = 0; i < s_count; i++) {
+        const uint8_t* r = &s_rec[(size_t)i * REC];
+        bool same = true;
+        for (int b = 0; b < 6 && same; b++) same = (r[b] == mac[5 - b]);
+        if (same) return (int)i;
+    }
     return -1;
 }
 

@@ -29,7 +29,7 @@ struct __attribute__((packed)) DetRecord {
     uint8_t  kind;          // internal: a sighting, or the mark a CLR leaves
     uint8_t  type;          // DetectionType
     uint8_t  conf;          // Confidence
-    uint8_t  flags;         // DET_AGAIN
+    uint8_t  flags;         // DET_AGAIN, DET_PRINTED
     uint8_t  mac[6];
     int8_t   rssi;
     uint8_t  channel;
@@ -42,7 +42,11 @@ struct __attribute__((packed)) DetRecord {
     uint8_t  pad[3];
     uint8_t  crc;
 };
-static const uint8_t DET_AGAIN = 0x01;   // came back after going quiet
+static const uint8_t DET_AGAIN   = 0x01;   // came back after going quiet
+// The address is in printed order (v1.25.0 on, issue #22). A Bluetooth record
+// without it (channel 0) was kept backwards, and forEachDetection() turns it
+// round as it hands it on.
+static const uint8_t DET_PRINTED = 0x02;
 
 // One boot. When it followed a crash, the crash is in here too, from the
 // breadcrumb and the core dump summary (see crashReportInit() in main.cpp).

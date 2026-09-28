@@ -280,6 +280,16 @@ class BleScanCallbacks : public NimBLEScanCallbacks {
             }
         }
 #endif
+        // Printed order from here on (issue #22). NimBLE keeps an address
+        // least-significant byte first, so every Bluetooth address this board
+        // showed was backwards next to a phone app or Home Assistant. Flipped
+        // here, after the squad above: its peers name each other in NimBLE's
+        // own order, in the sealed hello, and that must not change under it.
+        // Lists saved before this still match -- see IgnoreList, Regulars and
+        // BlackBox::forEachDetection.
+        uint8_t printed[6];
+        for (int i = 0; i < 6; i++) printed[i] = mac[5 - i];
+        mac = printed;
         if (!g_engine) return;
         // Checked regardless of raw-scan mode -- a watched/hunted
         // target still fires even if it's not a known signature and

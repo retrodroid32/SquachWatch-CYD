@@ -71,6 +71,16 @@ int main() {
     ck("count is 0 after clear", IgnoreList::count() == 0);
     ck("nothing on disk after clear", bytesOnDisk() == 0);
 
+    suite("An address ignored backwards (before v1.25.0) still matches");
+    {
+        const uint8_t fwd[6] = { 0x5E, 0xC5, 0xC1, 0xCF, 0x45, 0xC4 };
+        const uint8_t old[6] = { 0xC4, 0x45, 0xCF, 0xC1, 0xC5, 0x5E };
+        ck("ignored the old way round", IgnoreList::add(old, DetectionType::AIRTAG));
+        ck("heard the new way round, still ignored", IgnoreList::contains(fwd));
+        ck("not added twice either way", !IgnoreList::add(fwd, DetectionType::AIRTAG));
+        ck("UN-IGNORE the new way round takes it off", IgnoreList::remove(fwd) && !IgnoreList::contains(old));
+    }
+
     std::filesystem::remove_all(dir);
     return report();
 }
