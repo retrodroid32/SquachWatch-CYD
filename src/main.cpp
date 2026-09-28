@@ -3574,6 +3574,27 @@ static void gpsSentence(const char* s) {
     }
 }
 
+// While the GPS is on, a small counter at the top of the main screen: how
+// many satellites it can see, how many it is using, and FIX once it has one.
+// For a watch on a windowsill, read without a cable.
+static void gpsBadge(TFT_eSPI& t) {
+    if (!s_gpsOn) return;
+    const uint8_t v = s_gpsView[0] + s_gpsView[1] + s_gpsView[2] + s_gpsView[3] + s_gpsView[4] + s_gpsView[5];
+    char txt[32];
+    if (!s_gpsFound)  snprintf(txt, sizeof txt, "GPS STARTING");
+    else if (s_gpsFix) snprintf(txt, sizeof txt, "GPS FIX  %u SATS", s_gpsUsed);
+    else              snprintf(txt, sizeof txt, "GPS %u SEEN  %u USED", v, s_gpsUsed);
+    t.setTextSize(Theme::uiTextSize(t, 1));
+    const int w = t.textWidth(txt) + 10, h = t.fontHeight() + 6;
+    const int x = (t.width() - w) / 2, y = 4;
+    const uint16_t col = s_gpsFix ? Theme::GREEN : Theme::CYAN;
+    t.fillRoundRect(x, y, w, h, 4, Theme::BG);
+    t.drawRoundRect(x, y, w, h, 4, col);
+    t.setTextColor(col, Theme::BG);
+    t.setCursor(x + 5, y + 3);
+    t.print(txt);
+}
+
 static void gpsTick() {
     if (g_consoleGps == 1) {
         g_consoleGps = 0;
@@ -4248,6 +4269,9 @@ void loop() {
             // NEARBY, so SNOOZED and READ, both raised on the way here or while
             // here, went unseen.
             Theme::drawToast(*canvas, now);
+#if defined(TWATCH_S3)
+            gpsBadge(*canvas);
+#endif
             // The clock is set and no zone was ever picked: the card, over
             // everything, until THIS IS RIGHT. A tap on it is the card's; a
             // tap beside it is the main screen's, so he can still be poked.
