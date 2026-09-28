@@ -15,6 +15,7 @@
 #include "crowpanel7_backlight.h"
 #include "gt911_touch.h"
 #include "crowpanel7_probe.h"
+#include "crowpanel7_buzzer.h"
 // The [frame] line's "rows" is whoever actually wrote them.
 #define SQW_PUSH_ROWS() CrowBlit::lastRows()
 #else
@@ -1997,6 +1998,10 @@ static void performWipe(WipeBoot after) {
     // Dark first. A duress restart has to look like any other restart, and
     // the light is the one thing visible from the back of the board.
     StatusLight::off();
+#if defined(CROWPANEL7)
+    // And silent: a chirp mid-wipe would be the one sound this restart makes.
+    CrowBuzzer::quiet();
+#endif
     Security::wipeSecrets();
     engine.sd().wipe();
     BlackBox::wipe();        // the log and the crash history kept in flash
@@ -3053,6 +3058,11 @@ void setup() {
     usingCapTouch = Gt911::begin();
     Serial.println(usingCapTouch ? "CrowPanel 7 -- GT911 capacitive touch answered."
                                  : "CrowPanel 7 -- GT911 did not answer; no touch.");
+    // Here and not with StatusLight::begin(): this is the first point the
+    // I2C bus is up and the helper has been spoken to. Sends OFF only, for a
+    // buzzer a crash may have left sounding -- the helper keeps its state
+    // across our reset. Not a boot beep.
+    CrowBuzzer::begin();
 #elif defined(TWATCH_S3)
     // The T-Watch's FT6336, on I2C SDA 39 / SCL 40 at 0x38. No reset line;
     // the AXP2101 powers it (ALDO3) in twatchPowerUp(), before this runs.
@@ -6667,6 +6677,11 @@ void loop() {
         lc.screenDimmed = s_screenDimmed;
         lc.screenDark   = s_screenDimmed && Settings::dimLevel() == 0;
         StatusLight::tick(now, lc);
+#if defined(CROWPANEL7)
+        // Every pass in every state, so the chirp's OFF lands whatever
+        // screen the alert opened.
+        CrowBuzzer::tick();
+#endif
     }
     prevTouchValid = tp.valid;
 }
