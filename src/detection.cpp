@@ -30,16 +30,20 @@
 #include "settings.h"
 #endif
 #include <esp_bt.h>
-// Bluetooth Classic, which not every ESP32 has. The original ESP32 does; the
-// C-series (including the C5) is BLE-only, and on those targets this header
-// is not merely unused, it does not exist in the IDF at all -- the build dies
-// at "fatal error: esp_gap_bt_api.h: No such file or directory" before any of
-// this file compiles. SOC_BT_CLASSIC_SUPPORTED comes from soc_caps.h via
-// esp_bt.h and is the chip's own answer, so this needs no board macro and
-// will be right for whatever gets added next.
-#if SOC_BT_CLASSIC_SUPPORTED
-#include <esp_gap_bt_api.h>
-#endif
+// esp_gap_bt_api.h was here and is not any more. It is a Bluetooth Classic
+// header and does not exist on BLE-only silicon -- on the ESP32-C5 the build
+// dies at "fatal error: esp_gap_bt_api.h: No such file or directory" before
+// anything in this file compiles. Nothing here ever used a symbol from it:
+// the only Classic reference in the file is esp_bt_controller_get_status()
+// below, and that is declared in esp_bt.h, included above.
+//
+// Removing it rather than guarding it is deliberate. The obvious guard,
+// #if SOC_BT_CLASSIC_SUPPORTED, is WRONG: that macro is in neither
+// toolchain's soc_caps.h -- not IDF 4.4's for the ESP32, nor IDF 5.5's for
+// the C5 -- so it evaluates to 0 everywhere. On the C5 that happens to give
+// the right answer; on the ESP32 it silently compiled the status check out
+// and shrank [env:cyd]'s .text by 8 bytes. A guard that is right by accident
+// on one target and wrong on another is worse than no guard.
 #include <esp_heap_caps.h>
 #include <string.h>
 #include <SD.h>
@@ -824,19 +828,11 @@ bool DetectionEngine::init() {
                   (unsigned long)s_bootHeap.bleFree, (unsigned long)s_bootHeap.bleLargest);
 
     // 4. BT Classic inquiry for skimmer names (best-effort, every 60 s)
-#if SOC_BT_CLASSIC_SUPPORTED
     if (esp_bt_controller_get_status() == ESP_BT_CONTROLLER_STATUS_ENABLED) {
         // We don't try to *start* the controller here — NimBLE may have
         // taken it over. The v1.0 implementation is BLE-only for skimmers
         // (advertised name match). Documented in docs/DETECTIONS.md.
     }
-#else
-    // BLE-only silicon (C-series, including the C5). Nothing is lost by
-    // skipping this: the body above is empty and skimmer detection already
-    // matches on the BLE advertised name, which the C5 does exactly as well
-    // as any other board. If a real Classic inquiry is ever written, THIS is
-    // the branch that has to say the board cannot do it.
-#endif
 
     // 5. SD card (best-effort), now that the radios have what they need.
     _sd.begin();
