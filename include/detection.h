@@ -644,6 +644,7 @@ private:
     uint8_t    _logCount = 0;            // number of valid entries (<= LOG_CAP)
     uint8_t    _logHead  = 0;            // next slot to write
     Detection* _latest   = nullptr;      // pointer into _log or null
+    bool       _latestNew = false;       // _latest is a fresh row, not a reactivation
     uint32_t   _latestChangeMs = 0;
     DetectionType _lastAlertType = DetectionType::UNKNOWN;
 
