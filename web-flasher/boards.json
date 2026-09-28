@@ -53,7 +53,7 @@
       "merged": true,
       "lab": true,
       "cyd28": false,
-      "note": "For ESP32-2432S032R / E32R32P resistive boards: 240×320 panel, GPIO27 backlight, XPT2046 touch sharing LCD SPI with touch CS on GPIO33. The optional 80MHz build overclocks only the display transactions; touch remains at 2.5MHz. Optional GPS firmware uses UART2 with GPS TX→GPIO35 and GPS RX→GPIO22.",
+      "note": "For ESP32-2432S032R / E32R32P resistive boards: 240×320 panel, GPIO27 backlight, XPT2046 touch sharing LCD SPI with touch CS on GPIO33. The optional 80MHz build overclocks only the display transactions; touch remains at 2.5MHz. Optional GPS firmware uses the onboard 4-pin UART: GPS TX→RXD/GPIO3 and GPS RX→TXD/GPIO1.",
       "fast_env": "cyd32-st7798-fast",
       "fast_manifest": "manifest-cyd32-st7798-fast.json",
       "gps_env": "cyd32-st7798-gps",
