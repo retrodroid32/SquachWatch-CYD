@@ -197,7 +197,33 @@ Ordered so that a failure early explains the failures after it.
       app slots and the ported ECDSA signature check)
 - [ ] **Soak**: left running for an hour without a reset or a heap collapse
 
-### Deliberately not claimed
+## Performance, and why the SPI frequency does nothing
+
+The port renders correctly but more slowly than a classic CYD: a full 320x240
+frame takes about 88 ms, roughly 0.37 ms per row. Two things are worth knowing
+before anyone tries to tune it.
+
+**`SPI_FREQUENCY` is not connected to anything on the path this firmware
+uses.** Built at 20, 26.6, 40 and 80 MHz, the board came up with
+`SPI_CLOCK_REG = 0x00002001` every time and a 240-row frame took 88.8, 86.6,
+83.2 and 88.3 ms -- the same frame, four times, within noise. RockBase's C5
+processor port mentions `SPI_FREQUENCY` exactly once, inside `initDMA()`'s
+`spi_device_interface_config_t`, and `frame_push.cpp` never calls `initDMA` --
+it drives the peripheral registers itself. So the bus keeps whatever divisor it
+came up on. Per the C5 TRM ch.33.7,
+`f = f_clk_spi_mst / ((SPI_CLKCNT_N+1)(SPI_CLKDIV_PRE+1))`, and `0x00002001` is
+`CLKCNT_N = 2`, `CLKDIV_PRE = 0`: a fixed divide-by-three.
+
+**The SPI_UPDATE latch is not optional.** The C5's GPSPI2 stages its
+configuration registers and needs `SPI_UPDATE` raised, and seen to clear,
+before `SPI_USR` starts a transfer. Without it the panel still initialises,
+answers its ID registers, reports display-on and 16 bits per pixel, and the
+firmware reports 70 fps -- while the glass shows dashed, torn runs with most
+rows missing. `frame_push.cpp` does this once per span, which is where the TRM
+puts it: the burst length is configuration and must be latched, the
+`SPI_W0..W15` data buffer is not and does not.
+
+## Deliberately not claimed
 - Display overclock. There is no `-fast` variant for this board on purpose:
   an out-of-spec panel clock is a poor thing to discover on hardware nobody
   has soaked. The vendor's own setup asks for 20 MHz; this build uses it.

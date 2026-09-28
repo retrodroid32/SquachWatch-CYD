@@ -62,6 +62,13 @@ bool begin() {
     for (int i = 0; i < 256; i++) s_lut[i] = rgb332Wire((uint8_t)i);
     s_ready = true;
     Serial.println("[push] overlapped frame push on, unchanged rows skipped");
+#if defined(SQW_PUSH_PROBE)
+    // Bring-up probe: is the frame push slow because of the wire or the CPU?
+    Serial.printf("[probe] cpu %u MHz, apb %u Hz, SPI_CLOCK_REG=0x%08X SPI_USER_REG=0x%08X\n",
+                  (unsigned)ESP.getCpuFreqMHz(), (unsigned)getApbFrequency(),
+                  (unsigned)READ_PERI_REG(SPI_CLOCK_REG(SPI_PORT)),
+                  (unsigned)READ_PERI_REG(SPI_USER_REG(SPI_PORT)));
+#endif
     return true;
 }
 
@@ -88,6 +95,36 @@ static inline uint32_t rowHash(const uint8_t* row, int32_t w) {
     for (int32_t n = w >> 2; n > 0; n--) { h ^= *p++; h *= 16777619u; }
     return h;
 }
+
+// Latching the transfer registers, which is not free on every ESP32.
+//
+// On the original ESP32 and the S3, writing SPI_USR is enough: the length in
+// SPI_MOSI_DLEN_REG and the words in SPI_W0.. are read straight out by the
+// transfer that bit starts. The ESP32-C5's GPSPI2 does not work that way. Its
+// configuration registers are staged, and SPI_UPDATE has to be raised (and
+// seen to clear) to commit them before SPI_USR starts anything -- otherwise the
+// transfer runs on whatever the peripheral last latched.
+//
+// The symptom is not a blank screen, which is what makes it worth this comment.
+// The panel initialises, answers its ID registers, reports display-on and 16
+// bits per pixel, and the firmware happily reports 70 fps -- while the glass
+// shows dashed, torn runs of pixels with most rows missing, because some bursts
+// go out with a stale length and some do not go out at all.
+//
+// RockBase's TFT_eSPI C5 port does exactly this in its own TFT_WRITE_BITS, and
+// that is why plain TFT_eSPI drawing works on this board while this file, which
+// deliberately bypasses the library to overlap conversion with the wire, did
+// not. Cost is one register write and one poll per 32-pixel burst, on the one
+// chip that needs it; every other board compiles this away to nothing.
+#if defined(CONFIG_IDF_TARGET_ESP32C5)
+    #define SQW_SPI_LATCH()                                            \
+        do {                                                           \
+            WRITE_PERI_REG(SPI_CMD_REG(SPI_PORT), SPI_UPDATE);         \
+            while (READ_PERI_REG(SPI_CMD_REG(SPI_PORT)) & SPI_UPDATE) {} \
+        } while (0)
+#else
+    #define SQW_SPI_LATCH() do { } while (0)
+#endif
 
 // 32 pixels into 16 words, in the order the FIFO sends them: two pixels per
 // word, the first pixel in the low half.
@@ -164,6 +201,24 @@ bool push(TFT_eSPI& tft, const uint8_t* src, int32_t w, int32_t h, int32_t x, in
             const int32_t r0 = spans[i].r0, r1 = spans[i].r1;
             tft.setAddrWindow(x, y + r0, w, r1 - r0);
             WRITE_PERI_REG(SPI_MOSI_DLEN_REG(SPI_PORT), 511);
+            // Once per span, not once per burst. Per the C5 TRM (ch.33, SPI
+            // Controller): SPI_UPDATE "synchronize[s] SPI registers from APB
+            // clock domain into SPI module clock domain", i.e. CONFIGURATION.
+            // The only configuration changing here is the burst length just
+            // written above -- setAddrWindow's own commands left it at 8, 16
+            // or 32 bits, so it genuinely must be re-latched. The data buffer
+            // SPI_W0..W15 is not configuration: the TRM has the SPI module
+            // reading TX data straight out of it during the transfer, so the
+            // per-burst refills below need no latch of their own.
+            //
+            // Measured: moving the latch here from inside the burst loop cost
+            // and saved nothing -- 0.378 ms per 320-pixel row either way. It
+            // stays here because it is the placement the TRM justifies, not
+            // because it is faster. The row time is dominated by the wire:
+            // 320 px x 16 bits at the 20 MHz this board's setup asks for is
+            // 0.256 ms of pure SPI, so roughly two thirds of it is unavoidable
+            // at that clock.
+            SQW_SPI_LATCH();
             pushPixels(src + (size_t)r0 * (size_t)w, (uint32_t)(r1 - r0) * (uint32_t)w);
             s_lastRows += r1 - r0;
         }

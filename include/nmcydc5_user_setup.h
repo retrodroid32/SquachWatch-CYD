@@ -365,7 +365,26 @@
 // #define SPI_FREQUENCY  27000000
 //#define SPI_FREQUENCY  40000000
 // #define SPI_FREQUENCY  55000000 // STM32 SPI1 only (SPI2 maximum is 27MHz)
+// RockBase's own setup asks for 20 MHz, and ON THIS BOARD THE NUMBER DOES
+// NOTHING. Measured: built at 20, 26.6, 40 and 80 MHz, the board came up with
+// SPI_CLOCK_REG = 0x00002001 every single time, and a 240-row frame took
+// 88.8, 86.6, 83.2 and 88.3 ms -- the same frame, four times, within noise.
+//
+// The reason is in RockBase's C5 processor port: SPI_FREQUENCY appears exactly
+// once, in initDMA()'s spi_device_interface_config_t. SquachWatch never calls
+// initDMA -- frame_push.cpp drives the peripheral registers itself -- so the
+// non-DMA path leaves whatever divisor the bus came up with. Per the C5 TRM
+// (ch.33.7), f = f_clk_spi_mst / ((SPI_CLKCNT_N+1)(SPI_CLKDIV_PRE+1)), and
+// 0x00002001 is N=2, PRE=0: a fixed divide-by-three.
+//
+// So do not "tune" this expecting a faster screen, and do not raise it hoping
+// to out-run an artefact -- it is not connected to anything on this path. The
+// guard below only exists so the comparison above can be repeated with a -D
+// rather than an edit. If RockBase's port ever honours the setting outside
+// initDMA, delete this comment and measure again from scratch.
+#ifndef SPI_FREQUENCY
 #define SPI_FREQUENCY  20000000
+#endif
 
 // Optional reduced SPI frequency for reading TFT
 #define SPI_READ_FREQUENCY  20000000
