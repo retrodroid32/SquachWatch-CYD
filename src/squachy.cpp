@@ -3392,21 +3392,20 @@ static void drawOutfit(TFT_eSPI& t, int cx2, int hy, uint32_t now, Mood m, float
             // near-black on the bands, and it reads instantly.
             //
             // Second pass: the full-width cream bar still read as a visor, and
-            // with no ears nothing up top said raccoon. Round ears now, cream
-            // brows in two pieces instead of one bar, and the dark band sweeps
-            // out past the lenses into the points a raccoon's mask has.
+            // with no ears nothing up top said raccoon. Round ears now, no bar,
+            // and the dark band sweeps out past the lenses into the points a
+            // raccoon's mask has. (Cream brows were tried: tucked under the
+            // ears they came out as a pair of eyelids.)
             const uint16_t cream = t.color565(238, 222, 190);
             const uint16_t dark  = t.color565(52, 42, 34);
             const uint16_t earC  = t.color565(109, 73, 36);
             for (int8_t sg = -1; sg <= 1; sg += 2) {
                 const int ex = cx2 + sg * S(10), ey = hy - S(1);
+                // Plain and flat. A dark centre with a light dot in it was a
+                // pupil with a glint: a second pair of eyes over his shades.
                 t.fillCircle(ex, ey, S(5) + 1, BLACK);
                 t.fillCircle(ex, ey, S(5), earC);
-                t.fillCircle(ex, ey + S(1), S(3), dark);
-                t.fillCircle(ex - sg * S(1), ey - S(2), S(1), cream);   // light on the rim
             }
-            t.fillEllipse(cx2 - S(7), hy + S(2), S(5), S(1) + 1, cream);
-            t.fillEllipse(cx2 + S(7), hy + S(2), S(5), S(1) + 1, cream);
             t.fillRoundRect(cx2 - S(14), hy + S(4),  S(11), S(3), 1, dark);
             t.fillRoundRect(cx2 + S(3),  hy + S(4),  S(11), S(3), 1, dark);
             t.fillRoundRect(cx2 - S(14), hy + S(13), S(11), S(3), 1, dark);
