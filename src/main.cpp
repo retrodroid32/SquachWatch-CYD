@@ -161,6 +161,21 @@ static void crashReportInit() {
             strncpy(g_lastCrash.task, s.exc_task, sizeof g_lastCrash.task - 1);
             g_lastCrash.task[sizeof g_lastCrash.task - 1] = '\0';
             g_lastCrash.pc    = s.exc_pc;
+#if CONFIG_IDF_TARGET_ARCH_RISCV
+            // Both of these structs are architecture-specific, and the RISC-V
+            // ones share no field names with the Xtensa ones -- see
+            // espcoredump/include/port/riscv/esp_core_dump_summary_port.h.
+            // The Xtensa exc_cause/exc_vaddr pair is mcause/mtval here.
+            g_lastCrash.cause = s.ex_info.mcause;
+            g_lastCrash.vaddr = s.ex_info.mtval;
+            // No backtrace, and not because this is unfinished. RISC-V has no
+            // windowed register ABI, so a backtrace cannot be walked on the
+            // device at all: the IDF stores a raw stack dump instead and
+            // expects GDB or the ELF to turn it into frames on a host. The
+            // crash screen therefore shows task, PC, cause and address on this
+            // board and no frames, which is the truth rather than a gap.
+            g_lastCrash.btN = 0;
+#else
             g_lastCrash.cause = s.ex_info.exc_cause;
             g_lastCrash.vaddr = s.ex_info.exc_vaddr;
             // The backtrace usually starts at the faulting PC itself; the
@@ -169,6 +184,7 @@ static void crashReportInit() {
             uint8_t  n = 0;
             for (; i < s.exc_bt_info.depth && i < 16 && n < 4; i++) g_lastCrash.bt[n++] = s.exc_bt_info.bt[i];
             g_lastCrash.btN = n;
+#endif
             char running[APP_ELF_SHA256_SZ] = { 0 };
             esp_ota_get_app_elf_sha256(running, sizeof running);
             g_lastCrash.dumpOlder =
@@ -945,6 +961,13 @@ static void applyBrightness() {
     // takes a bare I2C command byte on an inverted scale. CrowBL::set()
     // keeps the firmware's own 0..255-with-255-brightest convention.
     CrowBL::set(duty);
+#elif defined(NM_CYD_C5)
+    // One backlight, and a pin-based call. Arduino core 3 dropped the LEDC
+    // channel API entirely: ledcWrite takes the PIN now, and the channel is
+    // allocated inside ledcAttach. Writing BL_CH_ORIG/CAP/AWOK here would be
+    // writing to GPIO 0, 1 and 2 -- and on this board GPIO1 is the touch chip
+    // select. Three shots in the foot from what looks like dead code.
+    ledcWrite(TFT_BL, duty);
 #else
     ledcWrite(BL_CH_ORIG, duty);
     ledcWrite(BL_CH_CAP,  duty);
@@ -1882,6 +1905,43 @@ struct KeptEntry {
     std::vector<uint8_t> bytes;
 };
 
+// NVS iteration, either side of the IDF 4 -> IDF 5 signature change.
+//
+// IDF 5 turned both calls inside out: nvs_entry_find now returns esp_err_t and
+// hands the iterator back through an out-parameter, and nvs_entry_next takes
+// the iterator BY POINTER, advances it in place, and -- this is the part worth
+// knowing -- releases it and sets it to NULL itself once the walk is done.
+// These two wrappers put the IDF 4 shape back so the loop in physicalNvsWipe()
+// below reads the same on every board. That loop decides which entries survive
+// a duress wipe, so it is deliberately not the thing being rewritten here.
+#if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 0, 0)
+static nvs_iterator_t sqwNvsEntryFind(const char* part, const char* ns, nvs_type_t type) {
+    nvs_iterator_t it = nullptr;
+    // Anything other than ESP_OK (including ESP_ERR_NVS_NOT_FOUND for an empty
+    // store) leaves no iterator to release.
+    if (nvs_entry_find(part, ns, type, &it) != ESP_OK) return nullptr;
+    return it;
+}
+static nvs_iterator_t sqwNvsEntryNext(nvs_iterator_t it) {
+    if (!it) return nullptr;
+    esp_err_t e = nvs_entry_next(&it);
+    if (e == ESP_OK) return it;
+    // On ESP_ERR_NVS_NOT_FOUND the iterator is already freed and NULLed. On any
+    // other error that is not promised, so release whatever is still held
+    // rather than leak it -- this runs on the wipe path, which must not be the
+    // thing that exhausts the heap.
+    if (it) nvs_release_iterator(it);
+    return nullptr;
+}
+#else
+static inline nvs_iterator_t sqwNvsEntryFind(const char* part, const char* ns, nvs_type_t type) {
+    return nvs_entry_find(part, ns, type);
+}
+static inline nvs_iterator_t sqwNvsEntryNext(nvs_iterator_t it) {
+    return nvs_entry_next(it);
+}
+#endif
+
 static bool secretNamespace(const char* ns) {
     // "otawifi" is the saved WiFi password for firmware updates.
     return !strcmp(ns, "meshtalk") || !strcmp(ns, "ignore") || !strcmp(ns, "otawifi");
@@ -1895,7 +1955,7 @@ static void physicalNvsWipe() {
     // which is the one part that mattered, but as a crash, not a quiet reboot.
     kept.reserve(128);
     Serial.printf("[wipe] keeping settings: heap %lu\n", (unsigned long)ESP.getFreeHeap());
-    nvs_iterator_t it = nvs_entry_find(NVS_DEFAULT_PART_NAME, NULL, NVS_TYPE_ANY);
+    nvs_iterator_t it = sqwNvsEntryFind(NVS_DEFAULT_PART_NAME, NULL, NVS_TYPE_ANY);
     while (it) {
         nvs_entry_info_t info;
         nvs_entry_info(it, &info);
@@ -1931,7 +1991,7 @@ static void physicalNvsWipe() {
             nvs_close(h);
             if (ok) kept.push_back(std::move(e));
         }
-        it = nvs_entry_next(it);
+        it = sqwNvsEntryNext(it);
     }
     nvs_release_iterator(it);
     Serial.printf("[wipe] %u entries kept, heap %lu; erasing\n", (unsigned)kept.size(), (unsigned long)ESP.getFreeHeap());
@@ -2945,6 +3005,18 @@ void setup() {
     // flash/PSRAM lines and the power chip's interrupt on an S3.
     ledcSetup(BL_CH_ORIG, 5000, 8);
     ledcAttachPin(BL_PIN_S3, BL_CH_ORIG);
+#elif defined(NM_CYD_C5)
+    // Backlight is TFT_BL (GPIO25) on this board and nothing else is a
+    // backlight. The CYD pins below are actively wrong here, not merely
+    // unused: BL_PIN_CAP is 27, which is this board's WS2812 status LED, and
+    // BL_PIN_AWOK is 32, which the C5 does not have at all. Attaching either
+    // is the same class of mistake the AWOK and Phantom guards above exist
+    // to stop, so this board gets its own branch rather than a new exclusion
+    // bolted onto theirs.
+    //
+    // ledcAttach(pin, freq, bits) is core 3's replacement for the
+    // ledcSetup + ledcAttachPin pair; it picks the channel itself.
+    ledcAttach(TFT_BL, 5000, 8);
 #else
 #if !defined(AWOK) && !defined(RLPHANTOM) && !defined(RLPHANTOM_R) && !defined(CYD32C)
     ledcSetup(BL_CH_ORIG, 5000, 8);
