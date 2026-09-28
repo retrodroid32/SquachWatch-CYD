@@ -4784,10 +4784,16 @@ void loop() {
                 lastTouch = now;
                 // The button ends the watch; anywhere else just dismisses the
                 // alert and leaves it running. Both land back on CLEAR.
-                if (uiWatchAlertHitRemove(*canvas, tp.x, tp.y)) {
+                const bool remove = uiWatchAlertHitRemove(*canvas, tp.x, tp.y);
+                if (remove) {
                     engine.clearWatch();
                     Theme::showToast("UNWATCHED", nullptr, Theme::CYAN);
                 }
+                // Which of the two a tap was, and where it landed: a REMOVE
+                // that reads as a plain close leaves the watch running, and
+                // from the wrist the two look the same until it pops up again.
+                Serial.printf("[watch] tap at %d,%d: %s\n", (int)tp.x, (int)tp.y,
+                              remove ? "REMOVE, no longer watching" : "closed, still watching");
                 enterClear();
             }
             // No timeout: the thing you asked to be told about is here, and
