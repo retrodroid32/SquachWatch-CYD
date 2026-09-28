@@ -56,16 +56,17 @@ on the CYD's GPIO header but not used by SquachWatch-CYD v1.0.
 
 ## Optional GPS / GNSS firmware
 
-GPS-capable CYD builds use a dedicated UART2 pair that does not overlap the
-display, touch, SD or status-light assignments used by this fork:
+GPS-capable CYD builds use board-specific UART wiring:
 
-| Signal | CYD GPIO |
-|---|---:|
-| GPS module TX -> ESP32 RX | 35 |
-| GPS module RX <- ESP32 TX | 22 |
+| Board | GPS TX -> ESP32 RX | GPS RX <- ESP32 TX |
+|---|---:|---:|
+| 2.8" CYD profiles | GPIO35 | GPIO22 |
+| 3.2" E32R32P / ESP32-32E | RXD / GPIO3 | TXD / GPIO1 |
 
-GPIO35 is input-only on the ESP32, which is intentional here: it receives the
-GNSS module's serial output. The GPS firmware defaults to 115200 baud.
+On the 3.2" board these are the signals on the dedicated 4-pin connector
+silkscreened **5V / GND / TXD / RXD**. Connect GPS TX to board RXD and GPS RX
+to board TXD. GPIO35 remains input-only on the 2.8" wiring, which is
+intentional. The GPS firmware defaults to 115200 baud.
 
 GPS is a compile-time/web-flasher option, not a required peripheral. The normal
 40 MHz and 80 MHz firmware remain available without GPS, and the GPS checkbox
