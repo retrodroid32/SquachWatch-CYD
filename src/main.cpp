@@ -4016,9 +4016,11 @@ void loop() {
                 FrameProf::lap(FrameProf::CHROME);
 
                 // Overlays are part of the retained frame: when one is live,
-                // clearShouldRender() keeps rendering until it expires.
-                Theme::drawToast(*canvas, now);
+                // clearShouldRender() keeps rendering until it expires. The
+                // zone card is persistent UI; a short-lived toast is the
+                // immediate answer to the user's action, so it draws last.
                 if (uiZoneCardWanted()) uiZoneCardDraw(*canvas, now);
+                Theme::drawToast(*canvas, now);
 
 #if CROWD_BENCH
                 if (CrowdBench::active()) CrowdBench::drawOver(*canvas, now);
@@ -4705,6 +4707,9 @@ void loop() {
             static int  gestureStartX = 0, gestureStartY = 0;
             static int  lastY = -1;
             static uint32_t gestureDownMs = 0;
+            static bool     clrArmed = false;
+            static uint32_t clrArmedAt = 0;
+            constexpr uint32_t CLR_CONFIRM_MS = 2500;
             if (touchJustDown) {
                 gestureActive = true;
                 gestureMoved  = false;
@@ -4717,6 +4722,7 @@ void loop() {
                 int dy = tp.y - lastY;
                 if (abs(dy) > 10) {
                     gestureMoved = true;
+                    clrArmed = false;
                     uiLogScroll(dy > 0 ? -1 : 1);
                     lastY = tp.y;
                 }
@@ -4735,14 +4741,22 @@ void loop() {
                     } else {
                         ButtonId b = Theme::hitTestButtonBar(gestureStartX, gestureStartY,
                                                             tft.width(), tft.height());
-                        if (b == ButtonId::SCAN) { enterClear(); }
+                        if (b == ButtonId::SCAN) { clrArmed = false; enterClear(); }
                         if (b == ButtonId::CLR)  {
-                            engine.clearLog();
-                            BlackBox::markCleared();   // or a restart brings it all back
-                            Squachy::trigger(Squachy::Event::LOG_CLEARED);
-                            enterClear();
+                            if (clrArmed && (now - clrArmedAt) <= CLR_CONFIRM_MS) {
+                                clrArmed = false;
+                                engine.clearLog();
+                                BlackBox::markCleared();   // or a restart brings it all back
+                                Squachy::trigger(Squachy::Event::LOG_CLEARED);
+                                enterClear();
+                            } else {
+                                clrArmed = true;
+                                clrArmedAt = now;
+                                Theme::showToast("ERASE THE LOG?", "CLR again to erase",
+                                                 Theme::RED, CLR_CONFIRM_MS);
+                            }
                         }
-                        if (b == ButtonId::LOG)  { enterClear(); }   // toggle off
+                        if (b == ButtonId::LOG)  { clrArmed = false; enterClear(); }   // toggle off
                     }
                 }
                 gestureActive = false;
