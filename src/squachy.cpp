@@ -3483,29 +3483,6 @@ static void drawOutfit(TFT_eSPI& t, int cx2, int hy, uint32_t now, Mood m, float
             }
             t.drawCircle(cx2, oy, R + 1, ink);
 
-            // Fur trim round the opening: a ring of tufts in two shades over
-            // the inside edge of the black ring, which is what turns a hole
-            // in a hood into a parka.
-            {
-                const uint16_t f1 = t.color565(219, 182, 146), f2 = t.color565(182, 146, 109);
-                const int tr = S(2) + 1;
-                for (uint8_t i = 0; i < 30; i++) {
-                    const float a = (float)i / 30.0f * 6.2831853f;
-                    const int fx = cx2 + (int)(cosf(a) * (float)(ow - S(1)));
-                    const int fy = oy + (int)(sinf(a) * (float)(oh - S(1)));
-                    t.fillCircle(fx, fy, tr, (i & 1) ? f2 : f1);
-                }
-            }
-            // Snow settled on top of the hood, following its curve: a row of
-            // lumps just inside the rim, bigger in the middle.
-            for (int i = -3; i <= 3; i++) {
-                const float a = -1.5708f + (float)i * 0.16f;
-                const int sx = cx2 + (int)(cosf(a) * (float)(R - S(1)));
-                const int sy = oy + (int)(sinf(a) * (float)(R - S(1)));
-                t.fillCircle(sx, sy, S(3 - (i < 0 ? -i : i) / 2), WHITE);
-            }
-            t.drawFastHLine(cx2 - S(5), oy - R + S(3), S(8), t.color565(182, 219, 255));
-
             // No stitching. Everything outside the black ring is the flat
             // orange of the hood, the way the reference has it -- a second
             // ellipse out here only ever read as a line drawn across the hood
@@ -3946,9 +3923,7 @@ static void drawOutfit(TFT_eSPI& t, int cx2, int hy, uint32_t now, Mood m, float
             // The fin's base flares into the hood top (two small triangles)
             // rather than sitting on it as a separate triangle.
             const int o = S(1) > 1 ? S(1) : 1;
-            // The jaw corners now come all the way down to his chin, where a
-            // lower jaw joins them: his whole face sits in the mouth.
-            const int jawW = S(5), jawBot = hy + S(24);
+            const int jawW = S(5), jawBot = hy + S(13);     // past the shades, above the ears
             t.fillTriangle(cx2 - S(8) - o, hy - S(6), cx2 + S(8) + o, hy - S(6),
                            cx2 + S(4), hy - S(18) - o, eyeBk);
             t.fillTriangle(cx2 - S(10) - o, hy - S(9), cx2 - S(6), hy - S(9), cx2 - S(6), hy - S(12) - o, eyeBk);
@@ -3972,30 +3947,17 @@ static void drawOutfit(TFT_eSPI& t, int cx2, int hy, uint32_t now, Mood m, float
             }
             // The lip: where the hood meets the white band.
             t.fillRect(cx2 - halfW + jawW, hy - S(1) - o, halfW * 2 - 2 * jawW, o, eyeBk);
-            // Lip, gum and teeth all a unit or two shallower than they were:
-            // the teeth used to reach down across his lenses.
-            t.fillRoundRect(cx2 - halfW + S(1), hy - S(1), halfW * 2 - S(2), S(3), S(1), silvHi);
-            t.fillRect(cx2 - halfW + S(2), hy + S(2), halfW * 2 - S(4), S(1) + 1, gum);
+            t.fillRoundRect(cx2 - halfW + S(1), hy - S(1), halfW * 2 - S(2), S(4), S(2), silvHi);
+            t.fillRect(cx2 - halfW + S(2), hy + S(2), halfW * 2 - S(4), S(2), gum);
             {   // the teeth, inset a shade from the jaw so the jaw has a lip
                 const int x0 = cx2 - halfW + S(3), x1 = cx2 + halfW - S(3);
                 const int tw = (x1 - x0) / 7;
                 for (int i = 0; i < 7 && tw > 0; i++) {
                     const int a = x0 + i * tw;
-                    t.fillTriangle(a, hy + S(3), a + tw, hy + S(3),
-                                   a + tw / 2, hy + S(6), WHITE);
+                    t.fillTriangle(a, hy + S(4), a + tw, hy + S(4),
+                                   a + tw / 2, hy + S(8), WHITE);
                 }
             }
-            // The lower jaw, under his chin, with a tooth up at each corner
-            // (clear of his mouth, which moves).
-            inked(eyeBk, silvDk, [&](int ox, int oy, uint16_t c) {
-                t.fillRoundRect(cx2 - halfW + ox, hy + S(22) + oy, halfW * 2, S(5), S(2), c);
-            });
-            t.fillRect(cx2 - halfW + S(2), hy + S(22), halfW * 2 - S(4), S(1) + 1, gum);
-            for (int8_t sg = -1; sg <= 1; sg += 2)
-                for (int k = 0; k < 2; k++) {
-                    const int tx = cx2 + sg * S(14 - k * 3);
-                    t.fillTriangle(tx - S(1) - 1, hy + S(23), tx + S(1) + 1, hy + S(23), tx, hy + S(19), WHITE);
-                }
             t.fillCircle(cx2 - S(11), hy - S(6), S(2), silvHi);
             t.fillCircle(cx2 + S(11), hy - S(6), S(2), silvHi);
             t.fillCircle(cx2 - S(11), hy - S(6), S(1), eyeBk);
@@ -4059,9 +4021,9 @@ static void drawOutfit(TFT_eSPI& t, int cx2, int hy, uint32_t now, Mood m, float
                 t.fillRect(cx2 - hw + S(2), hy + S(25), hw * 2 - S(4), S(3), silvHi);
                 t.fillRect(cx2 - hw + S(3), hy + S(25), hw * 2 - S(6), S(1), WHITE);
                 const int bw = hw - S(6);
-                // A plain white belly, the way a shark has one. The two
-                // stripes that used to cross it made it a robot's grille.
-                t.fillRoundRect(cx2 - bw - S(3), hy + S(27), bw * 2 + S(6), S(12), S(5), WHITE);
+                t.fillRoundRect(cx2 - bw, hy + S(28), bw * 2, S(11), S(4), silvHi);
+                t.fillRect(cx2 - bw, hy + S(32), bw * 2, S(1), silv);
+                t.fillRect(cx2 - bw, hy + S(35), bw * 2, S(1), silv);
                 // Gill slashes up on the chest, above where the fins reach.
                 for (int i = 0; i < 3; i++) {
                     const int gx = cx2 + hw - S(4) - i * S(3);
@@ -4084,61 +4046,17 @@ static void drawOutfit(TFT_eSPI& t, int cx2, int hy, uint32_t now, Mood m, float
             int baseY = hy;
             int tipY  = baseY - S(24);
             int baseW = S(9);
-            // ---- the mane, first, so the horn stands in front of it --------
-            // Three strands from the crown down his right side, swaying a
-            // little, each outlined so they read as locks and not stripes.
-            {
-                const uint16_t strand[3] = { t.color565(255, 109, 170), t.color565(255, 219, 85),
-                                             t.color565(73, 219, 255) };
-                const float sw = sinf((float)(now % 3000) / 3000.0f * 6.2831853f) * (float)S(1);
-                static const int8_t M[4][2] = { {3, -1}, {12, 1}, {17, 8}, {18, 19} };
-                const int mw = S(3) > 2 ? S(3) : 2;
-                for (uint8_t pass = 0; pass < 2; pass++)
-                    for (uint8_t k = 0; k < 3; k++) {
-                        const int off = S(k * 2);
-                        for (uint8_t i = 0; i < 3; i++) {
-                            const float f0 = (float)i / 3.0f, f1 = (float)(i + 1) / 3.0f;
-                            wideLine(t, cx2 + S(M[i][0]) + off + sw * f0, hy + S(M[i][1]) + off / 2,
-                                        cx2 + S(M[i + 1][0]) + off + sw * f1, hy + S(M[i + 1][1]) + off / 2,
-                                        pass == 0 ? mw + 2 : mw, pass == 0 ? BLACK : strand[k]);
-                        }
-                    }
-            }
-            // ---- the horn ---------------------------------------------------
-            // Outlined, then a candy-cane spiral filled row by row INSIDE the
-            // cone: the old stripes were wide lines laid across it and their
-            // ends stuck out past its edges, which is what smeared it.
-            inked(BLACK, WHITE, [&](int ox, int oy, uint16_t c) {
-                t.fillTriangle(cx2 - baseW / 2 + ox, baseY + oy, cx2 + baseW / 2 + ox, baseY + oy,
-                               cx2 + ox, tipY + oy, c);
-            });
-            static const uint8_t RB[5][3] = { {255, 109, 170}, {255, 219, 85}, {109, 255, 85},
-                                              {73, 219, 255}, {182, 109, 255} };
-            const int H = baseY - tipY;
-            const int bh = S(3) > 2 ? S(3) : 2;
-            for (int y = tipY + 2; y < baseY; y++) {
-                const int half = (baseW / 2) * (y - tipY) / (H > 0 ? H : 1) - 1;
-                for (int x = -half; x <= half; x++) {
-                    const int k = (baseY - y) + x / 2 + 64 * bh;
-                    const int band = k / bh;
-                    if (band & 1) {
-                        const uint8_t* c = RB[(band / 2) % 5];
-                        t.drawPixel(cx2 + x, y, t.color565(c[0], c[1], c[2]));
-                    }
-                }
-            }
-            // ---- a sparkle, drifting off the tip every few seconds ----------
-            {
-                const uint32_t sp = now % 3400;
-                if (sp < 900) {
-                    const float f = (float)sp / 900.0f;
-                    const int sx = cx2 + S(2) + (int)(f * (float)S(9));
-                    const int sy = tipY + (int)(f * (float)S(5));
-                    const int arm = (int)((1.0f - f) * (float)S(3)) + 1;
-                    const uint16_t sc = f < 0.5f ? WHITE : t.color565(255, 182, 255);
-                    t.drawFastHLine(sx - arm, sy, arm * 2 + 1, sc);
-                    t.drawFastVLine(sx, sy - arm, arm * 2 + 1, sc);
-                }
+            t.fillTriangle(cx2 - baseW / 2, baseY, cx2 + baseW / 2, baseY, cx2, tipY, WHITE);
+            // Candy-cane twist: diagonal rainbow stripes crossing the
+            // cone (rather than flat horizontal bands) so it reads as
+            // a spiral, narrowing to match the cone's taper as they
+            // climb toward the tip.
+            static const uint16_t bands[6] = { RED, AMBER, VAPOR_YELLOW, GREEN, VAPOR_BLUE, VAPOR_PURPLE };
+            for (int i = 0; i < 6; i++) {
+                float frac = (float)i / 6.0f;
+                int y0 = baseY + (int)((tipY - baseY) * frac);
+                int w0 = (int)(baseW * (1.0f - frac));
+                wideLine(t, cx2 - w0 / 2 - S(1), y0, cx2 + w0 / 2 + S(1), y0 - S(3), S(2), bands[i]);
             }
             break;
         }
@@ -4766,8 +4684,6 @@ static void drawBody(TFT_eSPI& t, int cx, int hy, int headTopY, uint32_t now, Mo
 
     // ---- WOLF PELT's hide down his back ------------------------------------
     // Behind him for the same reason as the wings and the tanooki's tail.
-    // (SHARK SUIT had a tail here too, and it was gone: his fin arms cover
-    // exactly the place a tail would show.)
     if (outfitNow == OutfitId::WOLFPELT) {
         // Flares out from his shoulders to a ragged hem at his knees, so it
         // shows past his arms either side, the way a hide hangs off a back.
@@ -5157,9 +5073,6 @@ static void drawBody(TFT_eSPI& t, int cx, int hy, int headTopY, uint32_t now, Mo
         // nine units down, which left the whole upper chest blank and made the
         // coat read as a smock.
         t.fillRect(cx2 - 1, hy + S(24), 2, S(16), seam);
-        // ...with a pull on it, just under the chin.
-        t.fillRect(cx2 - S(1) - 1, hy + S(25) - 1, S(2) + 2, S(3) + 2, ink);
-        t.fillRect(cx2 - S(1), hy + S(25), S(2), S(3), t.color565(182, 182, 170));
         // Boots ON his feet, not near them, and on them in every pose: these
         // take the rectangle the legs above actually drew rather than the
         // resting one. Hard-coded to the rest position they stayed put while
