@@ -1439,21 +1439,35 @@
     function addLabOptions() {
       try {
         if (!/(?:^|[?&])lab=1(?:&|$)/.test(window.location.search)) return;
-        ['./manifest-lab-cyd.json', './manifest-lab-cyd-fast.json',
-         './manifest-lab-cyd-ili9341.json', './manifest-lab-cyd-ili9341-fast.json',
-         './manifest-lab-cyd32-st7798.json', './manifest-lab-cyd32-st7798-fast.json',
-         './manifest-lab-cyd-gps.json', './manifest-lab-cyd-fast-gps.json',
-         './manifest-lab-cyd-ili9341-gps.json', './manifest-lab-cyd-ili9341-fast-gps.json',
-         './manifest-lab-cyd32-st7798-gps.json', './manifest-lab-cyd32-st7798-fast-gps.json',
-         './manifest-lab-freenove32.json', './manifest-lab-rlphantom-r.json',
-         './manifest-lab-twatch-s3.json'].forEach(function (path) {
-          fetch(path, { cache: 'no-store' })
+
+        // Lab builds are firmware dimensions of a board, not separate boards.
+        // Add one LAB option per physical profile and attach its fast/GPS
+        // manifests as data attributes, exactly like the production picker.
+        // The previous implementation appended every lab manifest as a
+        // standalone option. Selecting "LAB ... 3.2 CYD" therefore selected
+        // the NON-GPS manifest and left the GPS checkbox disabled, even though
+        // a lab GPS binary existed. That made a fresh GPS lab build look as if
+        // GPS_SUPPORT had disappeared from the firmware.
+        [
+          { base:'cyd', fast:'cyd-fast', gps:'cyd-gps', gpsFast:'cyd-fast-gps', cyd28:true },
+          { base:'cyd-ili9341', fast:'cyd-ili9341-fast', gps:'cyd-ili9341-gps', gpsFast:'cyd-ili9341-fast-gps', cyd28:true },
+          { base:'cyd32-st7798', fast:'cyd32-st7798-fast', gps:'cyd32-st7798-gps', gpsFast:'cyd32-st7798-fast-gps' },
+          { base:'freenove32' },
+          { base:'rlphantom-r' },
+          { base:'twatch-s3' }
+        ].forEach(function (cfg) {
+          var basePath = './manifest-lab-' + cfg.base + '.json';
+          fetch(basePath, { cache: 'no-store' })
             .then(function (r) { return r.ok ? r.json() : null; })
             .then(function (m) {
               if (!m) return;
               var o = document.createElement('option');
-              o.value = path;
+              o.value = basePath;
               o.textContent = (m.name || 'LAB — development build') + (m.version ? '  (' + m.version + ')' : '');
+              if (cfg.cyd28) o.dataset.cyd28 = '1';
+              if (cfg.fast)    o.dataset.fast = './manifest-lab-' + cfg.fast + '.json';
+              if (cfg.gps)     o.dataset.gps = './manifest-lab-' + cfg.gps + '.json';
+              if (cfg.gpsFast) o.dataset.gpsFast = './manifest-lab-' + cfg.gpsFast + '.json';
               select.appendChild(o);
             })
             .catch(function () { /* not deployed; nothing to add */ });
