@@ -3385,37 +3385,15 @@ static void drawOutfit(TFT_eSPI& t, int cx2, int hy, uint32_t now, Mood m, float
 
     switch (outfit) {
         case OutfitId::TANOOKI: {
-            // The framing idea was always right and the colour was always
-            // wrong: these bands used to be blend(BLACK, FUR_DARK, 130), a
-            // brown drawn onto brown fur, so the mask has been invisible since
-            // it shipped and the outfit read as wearing nothing. Cream above,
-            // near-black on the bands, and it reads instantly.
-            //
-            // Second pass: the full-width cream bar still read as a visor, and
-            // with no ears nothing up top said raccoon. Round ears now, no bar,
-            // and the dark band sweeps out past the lenses into the points a
-            // raccoon's mask has. (Cream brows were tried: tucked under the
-            // ears they came out as a pair of eyelids.)
-            const uint16_t cream = t.color565(238, 222, 190);
-            const uint16_t dark  = t.color565(52, 42, 34);
-            const uint16_t earC  = t.color565(109, 73, 36);
-            for (int8_t sg = -1; sg <= 1; sg += 2) {
-                const int ex = cx2 + sg * S(10), ey = hy - S(1);
-                // Plain and flat. A dark centre with a light dot in it was a
-                // pupil with a glint: a second pair of eyes over his shades.
-                t.fillCircle(ex, ey, S(5) + 1, BLACK);
-                t.fillCircle(ex, ey, S(5), earC);
-            }
-            t.fillRoundRect(cx2 - S(14), hy + S(4),  S(11), S(3), 1, dark);
-            t.fillRoundRect(cx2 + S(3),  hy + S(4),  S(11), S(3), 1, dark);
-            t.fillRoundRect(cx2 - S(14), hy + S(13), S(11), S(3), 1, dark);
-            t.fillRoundRect(cx2 + S(3),  hy + S(13), S(11), S(3), 1, dark);
-            // The mask's points, out past the lenses and down over the cheeks.
-            t.fillTriangle(cx2 - S(12), hy + S(5), cx2 - S(12), hy + S(15), cx2 - S(16), hy + S(12), dark);
-            t.fillTriangle(cx2 + S(12), hy + S(5), cx2 + S(12), hy + S(15), cx2 + S(16), hy + S(12), dark);
-            // The snout PAD is not drawn here -- see drawBody(), where it goes
-            // on under the mood chain so his own mouth still lands on top of
-            // it and every expression survives.
+            // A tanooki SUIT, the one-piece in the reference, not a raccoon
+            // mask: his fur is recoloured to the suit's orange-brown up in
+            // drawBody(), so the head reads as the hood with his face in its
+            // opening. The two pointed ears on top go on in drawBody(), behind
+            // the head, so it covers their roots: on top, their outline drew
+            // a black line across his crown.
+            // (Two passes at a mask came first. A bar across the brow read as
+            // a visor; round ears with dark centres read as a second pair of
+            // eyes.)
             // ---- the tail -------------------------------------------------
             // Drawn behind him, in drawBody(), not here -- see the tail block
             // up there. This case only draws the mask; the tail needs to be
@@ -4480,6 +4458,7 @@ static int outfitReach(OutfitId o) {
         case OutfitId::TINFOIL:  return 18;   // the antenna bead
         case OutfitId::CAPTAIN:  return 16;
         case OutfitId::TALLBRO:  return 10;
+        case OutfitId::TANOOKI:  return 10;   // the ear tips
         case OutfitId::PARKA:    return 16;
         case OutfitId::SHARK:    return 18;
         case OutfitId::SPACE:    return  9;
@@ -4587,6 +4566,12 @@ static void drawBody(TFT_eSPI& t, int cx, int hy, int headTopY, uint32_t now, Mo
     } else if (outfitNow == OutfitId::BLUEBLUR) {
         furMain  = blend(VAPOR_BLUE, BLACK, 20);
         furLight = blend(VAPOR_BLUE, WHITE, 70);
+    } else if (outfitNow == OutfitId::TANOOKI) {
+        // The suit: orange-brown all over, head included, which is what makes
+        // his head the hood. Lighter on the arms and the hood's rim, the way
+        // the two fur tones alternate on plain Squachy.
+        furMain  = t.color565(219, 109, 0);
+        furLight = t.color565(255, 146, 0);
     } else if (outfitNow == OutfitId::PARKA) {
         // One flat orange everywhere -- arms, legs and torso -- so the coat
         // only has to draw its own outline and hem rather than repaint him.
@@ -4719,8 +4704,9 @@ static void drawBody(TFT_eSPI& t, int cx, int hy, int headTopY, uint32_t now, Mo
     // hung off the side -- those stick out past the silhouette and read as
     // debris rather than fur.
     if (outfitNow == OutfitId::TANOOKI) {
-        const uint16_t tcream = t.color565(238, 222, 190);
-        const uint16_t tdark  = t.color565(52, 42, 34);
+        // The suit's orange with dark brown rings, as in the reference.
+        const uint16_t tcream = t.color565(219, 109, 0);
+        const uint16_t tdark  = t.color565(109, 36, 0);
         const float TAU = 6.2831853f;
 
         // A travelling S: the displacement is perpendicular to the spine and
@@ -5460,6 +5446,22 @@ static void drawBody(TFT_eSPI& t, int cx, int hy, int headTopY, uint32_t now, Mo
             t.drawLine(cx2 + S(Q[i][0]), hh + S(Q[i][1]), cx2 + S(Q[i][4]), hh + S(Q[i][5]), qHi);
     }
 
+    // TANOOKI's pointed ears, behind his head for the same reason as the
+    // quills above: the head covers their roots and their outline with them.
+    if (outfitNow == OutfitId::TANOOKI) {
+        const uint16_t earC  = t.color565(219, 109, 0);
+        const uint16_t earIn = t.color565(109, 36, 0);
+        for (int8_t sg = -1; sg <= 1; sg += 2) {
+            const int bo = cx2 + sg * S(14), bi = cx2 + sg * S(4);
+            const int tx = cx2 + sg * S(11), ty = hh - S(9);
+            inked(BLACK, earC, [&](int ox, int oy, uint16_t c) {
+                t.fillTriangle(bo + ox, hh + S(4) + oy, bi + ox, hh + S(2) + oy, tx + ox, ty + oy, c);
+            });
+            t.fillTriangle(cx2 + sg * S(12), hh + S(2), cx2 + sg * S(7), hh + S(1),
+                           cx2 + sg * S(11), ty + S(4), earIn);
+        }
+    }
+
     // Head — broader jaw than before, brow ridge over the eyes.
     t.fillRoundRect(cx2 - S(15), hh, S(30), S(24), S(7), furLight);
     t.fillRoundRect(cx2 - S(12), hh + S(2), S(24), S(19), S(5), furMain);
@@ -5493,7 +5495,8 @@ static void drawBody(TFT_eSPI& t, int cx, int hy, int headTopY, uint32_t now, Mo
     // PARKA joins BLUE BLUR in skipping it, for a plainer reason: it is under
     // a hood. The side tufts go with it -- they reach as high as this does
     // and would poke through the fur trim.
-    if (outfitNow != OutfitId::PARKA) {
+    // TANOOKI too: its hood has the pointed ears instead.
+    if (outfitNow != OutfitId::PARKA && outfitNow != OutfitId::TANOOKI) {
     if (currentOutfit() != OutfitId::BLUEBLUR) {
         // The short one, upright.
         keyT(cx2 - S(7), hh + S(2), cx2 - S(4), hh - S(5), cx2 - S(1), hh + S(2));
@@ -5529,20 +5532,6 @@ static void drawBody(TFT_eSPI& t, int cx, int hy, int headTopY, uint32_t now, Mo
     // Blush
     t.fillCircle(cx2 - S(8), hh + S(15), S(2), VAPOR_PINK);
     t.fillCircle(cx2 + S(8), hh + S(15), S(2), VAPOR_PINK);
-
-    // TANOOKI's snout pad goes on HERE, underneath the mood chain below,
-    // rather than in drawOutfit() with the rest of that costume. drawOutfit()
-    // runs last, so a snout drawn there painted a single fixed mouth over the
-    // top of every expression he has -- the talking flap, the yawn, the
-    // pursed lip he blows a bubble with. Under the chain it is a pad his own
-    // mouth is drawn onto, and he keeps all of them.
-    if (outfitNow == OutfitId::TANOOKI) {
-        const uint16_t tcream = t.color565(238, 222, 190);
-        const uint16_t tdark  = t.color565(52, 42, 34);
-        t.fillEllipse(cx2, hh + S(19), S(9), S(6), tcream);
-        t.fillEllipse(cx2, hh + S(14), S(2), S(2), tdark);
-        t.drawLine(cx2, hh + S(15), cx2, hh + S(17), tdark);
-    }
 
     // Eyes / sunglasses + mouth
     if (m == Mood::SHOCKED) {
