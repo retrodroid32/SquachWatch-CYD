@@ -91,11 +91,6 @@ SettingsPage uiSettingsCurrentPage();
 // Kept so existing callers read the same. APPEARANCE only.
 void uiSettingsOpenAppearance(bool open);
 
-// A tap on a group heading folds that group away, turning a list that runs
-// four screens deep into a short menu. Returns true if (x,y) hit a heading and
-// the fold was toggled, in which case the tap is spent -- call this BEFORE
-// uiSettingsHitTest().
-bool uiSettingsTapHeader(TFT_eSPI& t, int x, int y, int screenW, int screenH);
 
 // True when a mode has switched this row off (boring mode, today). A tap on
 // one says why rather than silently doing nothing.

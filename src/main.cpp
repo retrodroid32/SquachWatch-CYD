@@ -5267,12 +5267,9 @@ void loop() {
                         gestureActive = false;
                         break;
                     }
-                    // A heading folds its group away. Spends the tap.
-                    if (uiSettingsTapHeader(*canvas, gestureStartX, gestureStartY,
-                                             tft.width(), tft.height())) {
-                        gestureActive = false;
-                        break;
-                    }
+                    // Headings are labels. They used to fold their group away,
+                    // which nobody found on purpose and everybody found by
+                    // accident; a tap on one lands on no row and does nothing.
                     SettingsRow row = uiSettingsHitTest(*canvas, gestureStartX, gestureStartY, tft.width(), tft.height());
                     // Switched off by a mode: say so, rather than doing nothing
                     // and reading as a broken row.
