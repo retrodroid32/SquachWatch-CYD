@@ -391,7 +391,7 @@ static void drawCrashCard(TFT_eSPI& t) {
 #define BL_PIN_ORIG 21
 #define BL_PIN_CAP  27
 #define BL_PIN_AWOK 32
-#define BL_PIN_TWATCH 45
+#define BL_PIN_S3   45   // the T-Watch S3's and the Freenove S3's, both
 #define BL_CH_ORIG  0
 #define BL_CH_CAP   1
 #define BL_CH_AWOK  2
@@ -1222,7 +1222,7 @@ static bool    s_confirmArmed = false;
 // The compiled-in ranges are a 2.8" board's. Anywhere else -- the digitisers
 // on the display's own bus -- they put taps nowhere near the finger, so a
 // board with nothing better has no SKIP to offer.
-#if defined(TOUCH_SHARES_DISPLAY_BUS) || defined(CYD35) || defined(TWATCH_S3)
+#if defined(TOUCH_SHARES_DISPLAY_BUS) || defined(CYD35) || defined(SQW_S3)
 static const bool DEFAULT_TOUCH_USABLE = false;
 #else
 static const bool DEFAULT_TOUCH_USABLE = true;
@@ -2784,7 +2784,7 @@ void setup() {
     // while it is still the previous life's, not this one's.
     crashReportInit();
     Serial.begin(SERIAL_BAUD);
-#if defined(TWATCH_S3)
+#if defined(SQW_S3)
     // Native USB: with nothing reading the port, every print would otherwise
     // wait its full timeout for a host, and after the chatty first-boot
     // calibration the loop crawled so slowly the screen looked frozen black.
@@ -3070,6 +3070,15 @@ void setup() {
     usingCapTouch = CapTouch::probe();
     Serial.println(usingCapTouch ? "T-Watch S3 -- FT6336 capacitive touch answered."
                                  : "T-Watch S3 -- FT6336 did not answer; no touch.");
+#elif defined(FREENOVE_S3)
+    // The Freenove S3 2.8"'s FT6336, on I2C SDA 16 / SCL 15 at 0x38, reset on
+    // GPIO18 (active low). The ES8311 codec shares the bus at 0x18. FNK0104A
+    // is the same board with no touch panel: nothing answers, and the screen
+    // runs without touch rather than on a guessed fallback.
+    CapTouch::begin(16, 15, 18, 0x38);
+    usingCapTouch = CapTouch::probe();
+    Serial.println(usingCapTouch ? "Freenove S3 -- FT6336 capacitive touch answered."
+                                 : "Freenove S3 -- FT6336 did not answer; no touch (FNK0104A?).");
 #elif defined(TOUCH_ON_DISPLAY_BUS)
     // AWOK's XPT2046 sits on the display's own shared VSPI bus (TOUCH_CS=21,
     // already armed by TFT_eSPI itself once awok_user_setup.h's #define
