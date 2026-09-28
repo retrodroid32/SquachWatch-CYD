@@ -405,8 +405,12 @@ constexpr bool PANEL_NEEDS_INVERSION = true;
 // that baseline on real FNK0103L/FNK0114L hardware.
 constexpr bool PANEL_NEEDS_INVERSION = true;
 #elif defined(CYD32)
-// E32R32P/ST7789P3 baseline: BGR colour order, no inversion.
-constexpr bool PANEL_NEEDS_INVERSION = false;
+// Real 3.2-inch ESP32-32E/E32R32P hardware validation (2026-09-28):
+// orientation and touch are correct with this profile, but a fresh install
+// boots with panel colours inverted until the user toggles INVERT. Treat
+// inversion-on as the panel baseline so first boot is correct; the user's
+// Settings > INVERT option still XORs against this baseline as before.
+constexpr bool PANEL_NEEDS_INVERSION = true;
 #elif defined(CYD35)
 // UNCONFIRMED on real hardware post-fix: the original port's "true"
 // guess predates discovering the override bug above, so whatever
