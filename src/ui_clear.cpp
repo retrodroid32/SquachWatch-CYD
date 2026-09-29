@@ -1715,6 +1715,36 @@ static int16_t s_cornerClockPillR = -1;
 #if defined(TWATCH_S3)
 void twatchGpsBadge(TFT_eSPI& t);   // main.cpp: S3 Plus GPS counter, under speech bubbles
 bool twatchGpsFixed();              // main.cpp: true only for a fresh S3 Plus fix
+bool twatchBatteryStatus(uint8_t& pct, bool& charging); // main.cpp / AXP2101
+
+static int drawCornerBattery(TFT_eSPI& t, int right) {
+    uint8_t pct = 0;
+    bool charging = false;
+    if (!twatchBatteryStatus(pct, charging)) return right;
+
+    char txt[6];
+    snprintf(txt, sizeof txt, "%u%%", (unsigned)pct);
+    t.setTextSize(1);
+    const int textW = t.textWidth(txt);
+    const int boltW = charging ? 8 : 0;
+    const int pad = 3;
+    const int boxW = textW + boltW + pad * 2;
+    const int x = right - boxW;
+    t.fillRect(x, 0, boxW, 20, TFT_BLACK);
+
+    int tx = x + pad;
+    if (charging) {
+        const int bx = tx, by = 3;
+        t.fillTriangle(bx + 4, by,     bx,     by + 8, bx + 4, by + 8, Theme::AMBER);
+        t.fillTriangle(bx + 4, by + 6, bx + 1, by + 14, bx + 7, by + 5, Theme::AMBER);
+        tx += boltW;
+    }
+
+    t.setTextColor(Theme::CYAN, TFT_BLACK);
+    t.setCursor(tx, 6);
+    t.print(txt);
+    return x - 3;
+}
 
 static int drawTwatchGpsFixIcon(TFT_eSPI& t, int right) {
     if (!twatchGpsFixed()) return right;
@@ -1736,6 +1766,7 @@ static int drawTwatchGpsFixIcon(TFT_eSPI& t, int right) {
 static int16_t drawCornerWatchStatus(TFT_eSPI& t, int w) {
     const int icons = Theme::titleBarRightIconsX(w);
     int right = icons - (icons < w ? 2 : 4);
+    right = drawCornerBattery(t, right);
     right = drawTwatchGpsFixIcon(t, right);
 
     if (!Clock::trusted()) return (int16_t)(right - 1);
