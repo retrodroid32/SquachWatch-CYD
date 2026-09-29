@@ -23,7 +23,7 @@ CXX      ?= g++
 CXXFLAGS := -std=c++17 -O1 -g -Wall -Wextra -Wno-unused-parameter \
             -I$(SIM) -I$(INC)
 
-TESTS := remote_id_test ibeacon_test signatures_test emitter_roundtrip_test ignore_list_test hacker_test pwnagotchi_test shim_fidelity_test squachmesh_test qwerty_test meshmsg_test device_info_test security_test emote_script_test blackbox_test bingo_test hunt_test bgretire_test autoquiet_test framepush_test touchfit_test logindex_test dex_test regulars_test detection_labels_test detection_vectors_test detection_evidence_test alert_rules_test ignore_migrate_dev_test ignore_migrate_macs_test ignore_migrate_fail_test spam_test gnss_test wigle_test
+TESTS := remote_id_test ibeacon_test signatures_test emitter_roundtrip_test ignore_list_test hacker_test pwnagotchi_test shim_fidelity_test squachmesh_test qwerty_test meshmsg_test device_info_test security_test emote_script_test blackbox_test bingo_test hunt_test bgretire_test autoquiet_test framepush_test touchfit_test logindex_test dex_test regulars_test detection_labels_test detection_vectors_test detection_evidence_test alert_rules_test ignore_migrate_dev_test ignore_migrate_macs_test ignore_migrate_fail_test spam_test gnss_test wigle_test wardrive_test
 
 # Only the units under test get linked in. Pulling the whole firmware
 # would drag in TFT_eSPI, NimBLE and the UI, and a test that needs a
@@ -87,6 +87,8 @@ spam_test_SRCS               :=
 # GNSS sentences and WiGLE formatting/security are plain host-testable C++.
 gnss_test_SRCS               := $(SRC)/gnss.cpp
 wigle_test_SRCS              := $(SRC)/wardrive_fmt.cpp $(SRC)/wifi_auth.cpp
+# Wardrive capture and storage, on the emulator's RAM flash.
+wardrive_test_SRCS           := $(SRC)/wardrive.cpp $(SRC)/gnss.cpp
 
 .PHONY: all clean
 all: $(addprefix run-,$(TESTS))

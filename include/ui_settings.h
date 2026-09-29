@@ -65,6 +65,7 @@ enum class SettingsRow : uint8_t {
     WATCH_STEADY,    // the T-Watch only: STEADY POWER, DC1 held in PWM, under WATCH
     WATCH_TEMP,      // the T-Watch only: the chip's temperature, a reading, under WATCH
     WATCH_XTAL,      // the T-Watch only: CLOCK CHECK, the ESP32's crystal against the clock chip's
+    WATCH_WARDRIVE,  // T-Watch S3 Plus: GPS-stamped WiGLE capture
     BACK,
     COUNT,
     NONE = 255

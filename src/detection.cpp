@@ -1,5 +1,7 @@
 // SquachWatch-CYD — DetectionEngine implementation
 #include "detection.h"
+#include "wardrive.h"
+#include "wifi_auth.h"
 #include "serial_flush.h"
 #include "signatures.h"
 #include "settings.h"
@@ -374,6 +376,24 @@ class BleScanCallbacks : public NimBLEScanCallbacks {
                 }
                 return;
             }
+        }
+#endif
+#if defined(TWATCH_S3)
+        if (Wardrive::enabled()) {
+            // This branch predates #41 on purpose, so convert NimBLE's native
+            // byte order locally for wardrive records. #41 will normalize the
+            // callback itself when the stacks are reconciled.
+            uint8_t printed[6];
+            for (int i = 0; i < 6; i++) printed[i] = mac[5 - i];
+            char wname[33] = {0};
+            copyAdvName(payload, wname, sizeof wname);
+            bool haveMfgr = false; uint16_t mfgr = 0;
+            AdvFieldView md;
+            if (advFieldAt(payload, BLE_HS_ADV_TYPE_MFG_DATA, 0, md) && md.len >= 2) {
+                haveMfgr = true;
+                mfgr = (uint16_t)md.data[0] | ((uint16_t)md.data[1] << 8);
+            }
+            Wardrive::noteBle(printed, wname, (int8_t)adv->getRSSI(), haveMfgr, mfgr);
         }
 #endif
         if (!g_engine) return;
@@ -756,6 +776,14 @@ bool DetectionEngine::init() {
             // encryption. That one bit is what separates a mesh node
             // from an evil twin -- see noteApBeacon().
             bool enc = (sigLen > 35) && ((frame[34] & 0x10) != 0);
+#if defined(TWATCH_S3)
+            if (Wardrive::enabled() && sigLen > 40) {
+                const uint16_t cap = (uint16_t)(frame[34] | (frame[35] << 8));
+                Wardrive::noteWifi(frame + 16, ssid,
+                                   WifiAuth::parse(cap, frame + 36, (uint16_t)(sigLen - 40)),
+                                   pkt->rx_ctrl.channel, (int8_t)pkt->rx_ctrl.rssi);
+            }
+#endif
             // A pwnagotchi's beacon is checked before it is treated as an
             // ordinary AP, and posts addr2 rather than the BSSID: this is a
             // device announcing itself to its own kind, not an access point
