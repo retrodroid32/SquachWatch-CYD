@@ -1507,6 +1507,7 @@ static void enterInvite() {
 
 // INVERT and ROT on the console -- see clock.cpp. Consumed in loop().
 volatile bool g_consoleInvert = false;
+volatile bool g_consoleAdc = false;        // ADC: sample spare classic-ESP32 analog inputs
 volatile bool g_consoleRotate = false;
 volatile bool g_consoleRadioTest = false; // RADIO TEST: cycle even on the cable with the screen on (bench)
 volatile bool g_consoleBatt    = false;   // BATT: one reading, now
@@ -3687,6 +3688,22 @@ void loop() {
             }
             Serial.println(line);
         }
+    }
+#endif
+#if defined(ESP32) && !defined(SQW_S3) && !defined(CROWPANEL7)
+    // Bench aid for classic-ESP32 display boards: report the spare input-only
+    // ADC pins in millivolts, averaged to make battery-divider hunting easier.
+    if (g_consoleAdc) {
+        g_consoleAdc = false;
+        const uint8_t pins[] = { 34, 35, 36, 39 };
+        char line[96]; int n = snprintf(line, sizeof line, "[adc]");
+        for (uint8_t p : pins) {
+            uint32_t mv = 0;
+            for (int k = 0; k < 16; k++) mv += analogReadMilliVolts(p);
+            n += snprintf(line + n, sizeof line - n, "  GPIO%u %lu mV",
+                          p, (unsigned long)(mv / 16));
+        }
+        Serial.println(line);
     }
 #endif
     if (g_consoleInvert) {
