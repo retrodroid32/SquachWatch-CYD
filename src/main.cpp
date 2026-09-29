@@ -3585,7 +3585,9 @@ static void gpsStop() {
 // While the GPS is on, a small counter at the top of the main screen: how
 // many satellites it hears, how many it uses, FIX once it has one -- and,
 // wardriving, how many rows are kept. Read without a cable, on a windowsill.
-static void gpsBadge(TFT_eSPI& t) {
+// Drawn by uiClearTick() straight after the background, like the corner
+// clock, so Squachy's speech bubbles go over it rather than under it.
+void twatchGpsBadge(TFT_eSPI& t) {
     if (!s_gpsOn) return;
     const Gnss::Sky k = Gnss::sky();
     const Gnss::Fix& f = Gnss::fix();
@@ -4373,9 +4375,6 @@ void loop() {
             // NEARBY, so SNOOZED and READ, both raised on the way here or while
             // here, went unseen.
             Theme::drawToast(*canvas, now);
-#if defined(TWATCH_S3)
-            gpsBadge(*canvas);
-#endif
             // The clock is set and no zone was ever picked: the card, over
             // everything, until THIS IS RIGHT. A tap on it is the card's; a
             // tap beside it is the main screen's, so he can still be poked.
