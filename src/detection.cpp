@@ -2216,6 +2216,14 @@ void DetectionEngine::pushLog(const Detection& d) {
     _latestChangeMs = millis();
     _typeCounts[(uint8_t)d.type]++;
     if (d.channel == 0 && (uint8_t)d.type < SpamWatch::TYPES) _newBle[(uint8_t)d.type]++;
+#if SQW_WIFI_5G
+    // A new row from 5 GHz, on the console: the one catch no other board can
+    // make, and otherwise only visible as a channel number on the SD card.
+    // WiFi rows come from loop() (processWiFiQ), never the Bluetooth task.
+    if (d.channel > 14)
+        Serial.printf("[5g] new %s %02x:%02x:%02x:%02x:%02x:%02x on ch %u, %d dBm\n", detectionTypeName(d.type),
+                      d.mac[0], d.mac[1], d.mac[2], d.mac[3], d.mac[4], d.mac[5], (unsigned)d.channel, (int)d.rssi);
+#endif
     _lifetimeTotal++;
     if ((uint8_t)d.type < (uint8_t)DetectionType::COUNT) _lifetimeByType[(uint8_t)d.type]++;
     // Counted here, on the Bluetooth host task, and written to flash from
