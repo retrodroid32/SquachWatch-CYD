@@ -296,6 +296,16 @@ bool readPacket(Lora::Packet& pk) {
     return true;
 }
 
+#if LORA_BENCH_TX
+bool benchTransmit(const uint8_t* d, uint8_t n, int8_t dbm) {
+    if (!s_radio || !s_up.ok) return false;
+    s_radio->setOutputPower(dbm);
+    const int16_t st = s_radio->transmit(const_cast<uint8_t*>(d), n);
+    Serial.printf("[lora] bench tx %u bytes at %d dBm: err %d\n", (unsigned)n, (int)dbm, (int)st);
+    return st == RADIOLIB_ERR_NONE;
+}
+#endif
+
 int16_t rssiNow() {
     if (!s_radio || !s_up.ok) return -200;
     return (int16_t)lroundf(s_radio->getRSSI(false));

@@ -76,7 +76,15 @@ def main():
     if mac not in BOARDS:
         sys.exit("unknown board %s on %s: add it to BOARDS first, or leave it alone" % (mac, port))
     env, what = BOARDS[mac]
-    print("%s: %s -> %s (%s)" % (port, mac, env, what))
+    # --env NAME: a bench variant of this board's own build, and only that
+    # (NAME must extend it, e.g. twatch-s3-loratx on a twatch-s3 board).
+    build_env = env
+    if "--env" in sys.argv:
+        want = sys.argv[sys.argv.index("--env") + 1]
+        if not want.startswith(env + "-"):
+            sys.exit("refusing --env %s: %s runs %s, and a variant must extend it" % (want, mac, env))
+        build_env = want
+    print("%s: %s -> %s (%s)" % (port, mac, build_env, what))
     if "--check" in sys.argv:
         return
     if env == "twatch-s3":
@@ -84,10 +92,10 @@ def main():
         # stub changes speed, and fails "Unable to verify flash chip" even
         # without. The system esptool 5 programs it fine at the nominal speed.
         # The bootloader lives at 0x0 on an S3, not 0x1000.
-        r = subprocess.run([PIO, "run", "-e", env], cwd=ROOT)
+        r = subprocess.run([PIO, "run", "-e", build_env], cwd=ROOT)
         if r.returncode != 0:
             sys.exit("build failed")
-        build = os.path.join(ROOT, ".pio", "build", env)
+        build = os.path.join(ROOT, ".pio", "build", build_env)
         boot_app0 = os.path.join(os.path.expanduser("~"), ".platformio", "packages",
                                  "framework-arduinoespressif32", "tools", "partitions", "boot_app0.bin")
         r = subprocess.run([sys.executable, "-m", "esptool", "--chip", "esp32s3", "--port", port, "--baud", "115200",
@@ -98,7 +106,7 @@ def main():
                             "0xe000", boot_app0,
                             "0x10000", os.path.join(build, "firmware.bin")], cwd=ROOT)
     else:
-        r = subprocess.run([PIO, "run", "-e", env, "-t", "upload", "--upload-port", port], cwd=ROOT)
+        r = subprocess.run([PIO, "run", "-e", build_env, "-t", "upload", "--upload-port", port], cwd=ROOT)
     sys.exit(r.returncode)
 
 

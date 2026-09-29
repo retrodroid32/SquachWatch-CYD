@@ -66,4 +66,11 @@ int16_t rssiNow();
 // Tune only (no modem reconfiguration), for a sweep; the modem stays in RX.
 bool tuneHz(uint32_t hz);
 
+#if LORA_BENCH_TX
+// BENCH ONLY, never in a release: one frame at `dbm`, on whatever apply()
+// last set, blocking until it is sent. Exists so one watch can prove another
+// hears; the product is receive-only.
+bool benchTransmit(const uint8_t* d, uint8_t n, int8_t dbm);
+#endif
+
 }

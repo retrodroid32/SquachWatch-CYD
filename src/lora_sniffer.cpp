@@ -18,6 +18,7 @@
 #include "lora_meshcore.h"
 #include "lora_nodes.h"
 #include "lora_meshtastic.h"
+#include "lora_crypto.h"
 #include "lora_channels.h"
 #include "lora_survey.h"
 #include "lora_msgs.h"
@@ -28,6 +29,7 @@
 #include "settings.h"
 #include <Arduino.h>
 #include <esp_heap_caps.h>
+#include <esp_random.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include <freertos/semphr.h>
@@ -1456,6 +1458,46 @@ bool console(const char* line) {
     if (strncasecmp(a, "MASK", 4) == 0) {
         s_survey = strtoull(a + 4, nullptr, 16); Serial.printf("[lora] survey mask %016llx\n", (unsigned long long)s_survey); return true;
     }
+#if LORA_BENCH_TX
+    if (strncasecmp(a, "TX", 2) == 0 && (a[2] == '\0' || a[2] == ' ')) {
+        // A default-channel Meshtastic text on the table's first profile
+        // (LongFast), built the way lora_meshtastic_test builds one: the
+        // 16-byte header in the clear, Data{portnum 1, text} under the
+        // published key. 0 dBm: a desk, not a county.
+        static uint32_t s_txN = 0;
+        s_txN++;
+        char text[32];
+        snprintf(text, sizeof text, "SQUACHY TEST %lu", (unsigned long)s_txN);
+        const uint8_t tl = (uint8_t)strlen(text);
+        uint8_t f[64];
+        const uint32_t from = 0x5A5A0000u | (uint32_t)(ESP.getEfuseMac() & 0xFFFF);
+        const uint32_t id = esp_random();
+        LoraCrypto::wr32le(f, Meshtastic::BROADCAST);
+        LoraCrypto::wr32le(f + 4, from);
+        LoraCrypto::wr32le(f + 8, id);
+        f[12] = 3 | (3 << 5);           // hop limit 3, hop start 3
+        uint8_t key[16];
+        Meshtastic::expandPsk(1, key);
+        f[13] = Meshtastic::channelHash("LongFast", key, 16);
+        f[14] = 0; f[15] = (uint8_t)from;
+        uint8_t* p = f + 16;
+        p[0] = 0x08; p[1] = 0x01; p[2] = 0x12; p[3] = tl;
+        memcpy(p + 4, text, tl);
+        const uint8_t dlen = (uint8_t)(4 + tl);
+        Meshtastic::Header h; Meshtastic::parseHeader(f, (uint8_t)(16 + dlen), h);
+        Meshtastic::Channel c; memset(&c, 0, sizeof c); memcpy(c.key, key, 16); c.keyLen = 16;
+        Meshtastic::decrypt(h, c, p, dlen);   // CTR: encrypting is the same operation
+        const Mode was = s_mode;
+        setMode(Mode::OFF);
+        vTaskDelay(pdMS_TO_TICKS(300));
+        LoraRadio::apply(profile(0));
+        Serial.printf("[lora] bench tx \"%s\" from %08lx on %s\n", text, (unsigned long)from, profile(0).name);
+        LoraRadio::benchTransmit(f, (uint8_t)(16 + dlen), 0);
+        LoraRadio::standby();
+        setMode(was);
+        return true;
+    }
+#endif
     if (strncasecmp(a, "SWEEP", 5) == 0) {
         // A quick look at the band: park the survey, tune across it and read
         // the instantaneous RSSI. Blocking, on the console's own terms.
