@@ -1,6 +1,9 @@
 // SquachWatch-CYD — settings screen implementation
 #include "ui_settings.h"
 #include "wardrive.h"
+#if SQUACH_LORA
+#include "ui_lorachat.h"
+#endif
 #include "ota_core.h"
 #include "ota_wifi.h"
 #include "theme.h"
@@ -122,7 +125,11 @@ static const SettingsRow APPEARANCE_ROWS[] = {
 // The WATCH SETTINGS page: the battery first (a reading), then the knobs that
 // decide how long it lasts, then the buzz, then the tools.
 static const SettingsRow WATCH_ROWS[] = {
-    SettingsRow::WATCH_BATTERY, SettingsRow::WATCH_WARDRIVE, SettingsRow::WATCH_RADIO, SettingsRow::WATCH_LISTEN,
+    SettingsRow::WATCH_BATTERY, SettingsRow::WATCH_WARDRIVE,
+#if SQUACH_LORA
+    SettingsRow::WATCH_LORA_CHATS, SettingsRow::WATCH_LORA,
+#endif
+    SettingsRow::WATCH_RADIO, SettingsRow::WATCH_LISTEN,
     SettingsRow::WATCH_IDLE_CPU, SettingsRow::WATCH_BUZZ,
     SettingsRow::WATCH_RADIO_RESET, SettingsRow::WATCH_STEADY, SettingsRow::WATCH_TEMP,
     SettingsRow::WATCH_XTAL,
@@ -210,6 +217,8 @@ static RowGroupId groupFor(SettingsRow r) {
         case SettingsRow::WATCH_TEMP:
         case SettingsRow::WATCH_XTAL:
         case SettingsRow::WATCH_WARDRIVE:
+        case SettingsRow::WATCH_LORA:
+        case SettingsRow::WATCH_LORA_CHATS:
             return RowGroupId::WATCH;
         // TIME ZONE sat on the SYSTEM page too, the same setting twice. Only
         // the clock reads it, so it lives with the clock.
@@ -910,6 +919,18 @@ static void rowContent(SettingsRow r, const DetectionEngine& eng, char* valBuf, 
             else { snprintf(valBuf, valBufN, "ON  %lu", (unsigned long)Wardrive::count()); value = valBuf; }
             break;
         }
+#if SQUACH_LORA
+        case SettingsRow::WATCH_LORA:
+            label = "LORA"; value = Settings::loraListenName();
+            break;
+        case SettingsRow::WATCH_LORA_CHATS: {
+            label = "LORA CHATS";
+            const uint16_t u = uiLoraChatUnread();
+            if (u) { snprintf(valBuf, valBufN, "%u NEW", (unsigned)u); value = valBuf; }
+            else value = "OPEN";
+            break;
+        }
+#endif
 #endif
         case SettingsRow::POWER_SAVER:
             label = "POWER SAVER"; value = Settings::powerSaver() ? "ON" : "OFF";

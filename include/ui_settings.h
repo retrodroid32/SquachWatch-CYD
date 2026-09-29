@@ -65,6 +65,8 @@ enum class SettingsRow : uint8_t {
     WATCH_TEMP,      // the T-Watch only: the chip's temperature, a reading, under WATCH
     WATCH_XTAL,      // the T-Watch only: CLOCK CHECK, the ESP32's crystal against the clock chip's
     WATCH_WARDRIVE,  // the T-Watch only: WARDRIVE, every network and device with where, for WiGLE
+    WATCH_LORA,      // the T-Watch only: LORA, which networks the LoRa radio listens to
+    WATCH_LORA_CHATS, // the T-Watch only: LORA CHATS, what it decoded, one chat per network
 #if defined(CROWPANEL7)
     BUZZER,          // the CrowPanel 7 only, the one board with a buzzer: OFF, or NEW ONLY
 #endif

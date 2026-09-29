@@ -262,6 +262,12 @@ namespace Settings {
     void        cycleLoraMode();
     // Which band plan the sniffer listens to: 0 AUTO (the Americas' time
     // zones get US 915, everywhere else EU 868), 1 EU, 2 US. Read at boot.
+    // The watch's LORA row: 0 OFF, 1 MESHTASTIC, 2 MESHCORE, 3 BOTH (the
+    // default: the radio takes turns between the two). Applied by
+    // Lora::applyListen().
+    uint8_t     loraListen();
+    void        cycleLoraListen();
+    const char* loraListenName();
     uint8_t     loraRegion();
     void        setLoraRegion(uint8_t r);
     uint8_t     loraFocus();

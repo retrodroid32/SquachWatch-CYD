@@ -162,6 +162,7 @@ static bool     s_buzzer       = false;
 static uint8_t  s_loraMode     = 2;
 static uint8_t  s_loraFocus    = 0;
 static uint8_t  s_loraRegion   = 0;   // AUTO
+static uint8_t  s_loraListen   = 3;   // BOTH
 // The online lookups, all four OFF. See Settings::loraLookups() for why the
 // default is the opposite of the update check's.
 static bool     s_loraLookups  = false;
@@ -305,6 +306,17 @@ bool buzzerOn()     { return s_buzzer; }
 void toggleBuzzer() { s_buzzer = !s_buzzer; s_prefs.putBool("buzzer", s_buzzer); }
 uint8_t loraMode()  { return s_loraMode; }
 void cycleLoraMode() { s_loraMode = (uint8_t)((s_loraMode + 1) % 3); s_prefs.putUChar("loraMode", s_loraMode); }
+uint8_t loraListen() { return s_loraListen; }
+// BOTH, MESHTASTIC, MESHCORE, OFF, and round.
+void cycleLoraListen() {
+    static const uint8_t NEXT[4] = { 3, 2, 0, 1 };
+    s_loraListen = NEXT[s_loraListen & 3];
+    s_prefs.putUChar("loraLstn", s_loraListen);
+}
+const char* loraListenName() {
+    static const char* const N[4] = { "OFF", "MESHTASTIC", "MESHCORE", "BOTH" };
+    return N[s_loraListen & 3];
+}
 uint8_t loraRegion() { return s_loraRegion; }
 void setLoraRegion(uint8_t r) { s_loraRegion = r > 2 ? 0 : r; s_prefs.putUChar("loraRgn", s_loraRegion); }
 uint8_t loraFocus() { return s_loraFocus; }
@@ -475,6 +487,8 @@ void load() {
     if (s_loraMode > 2) s_loraMode = 2;
     s_loraFocus    = s_prefs.getUChar("loraFocus", 0);
     s_loraRegion   = s_prefs.getUChar("loraRgn", 0);
+    s_loraListen   = s_prefs.getUChar("loraLstn", 3);
+    if (s_loraListen > 3) s_loraListen = 3;
     if (s_loraRegion > 2) s_loraRegion = 0;
     // False, every time, unless somebody has said otherwise on this board.
     s_loraLookups  = s_prefs.getBool("loraLkup", false);

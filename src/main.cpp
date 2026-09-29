@@ -300,6 +300,9 @@ static void drawCrashCard(TFT_eSPI& t) {
 #endif
 #include "status_light.h"
 #include "ui_light.h"
+#if SQUACH_LORA
+#include "ui_lorachat.h"
+#endif
 
 // Two CYD board variants are supported from this one firmware:
 //   - jczn_2432s028r (original): resistive XPT2046 touch on its own
@@ -2006,6 +2009,14 @@ static void enterPower() {
     transitionStart = millis();
     uiPowerInit(*canvas);
 }
+
+#if SQUACH_LORA
+static void enterLoraChat() {
+    state = AppState::LORA_CHAT;
+    transitionStart = millis();
+    uiLoraChatInit(*canvas);
+}
+#endif
 
 static void enterLight() {
     state = AppState::STATUS_LIGHT;
@@ -5505,6 +5516,14 @@ void loop() {
                         case SettingsRow::WATCH_TEMP: break;   // a reading, not a switch
                         case SettingsRow::WATCH_XTAL: twatchXtalStart(); break;
                         case SettingsRow::WATCH_SETTINGS: uiSettingsOpenPage(SettingsPage::WATCH); break;
+#if SQUACH_LORA
+                        case SettingsRow::WATCH_LORA:
+                            Settings::cycleLoraListen();
+                            Lora::applyListen(Settings::loraListen());
+                            Theme::showToast("LORA", Settings::loraListenName(), Theme::CYAN);
+                            break;
+                        case SettingsRow::WATCH_LORA_CHATS: enterLoraChat(); break;
+#endif
                         case SettingsRow::WATCH_WARDRIVE:
                             // Through the console's own path, so the row and
                             // WARDRIVE ON/OFF can never disagree about what
@@ -6386,6 +6405,43 @@ void loop() {
             }
             break;
         }
+#if SQUACH_LORA
+        case AppState::LORA_CHAT: {
+            drawTwoBand([&](TFT_eSPI& t, bool) { uiLoraChatTick(t, now); });
+            static bool gestureActive = false;
+            static bool gestureMoved  = false;
+            static int  gestureStartX = 0, gestureStartY = 0;
+            static int  lastY = -1;
+            static uint32_t gestureDownMs = 0;
+            if (touchJustDown) {
+                gestureActive = true; gestureMoved = false;
+                gestureStartX = tp.x; gestureStartY = tp.y; lastY = tp.y; gestureDownMs = now;
+            }
+            if (tp.valid && gestureActive) {
+                const int dy = tp.y - lastY;
+                if (abs(dy) > 24) {
+                    gestureMoved = true;
+                    uiLoraChatScroll(dy > 0 ? -1 : 1);   // drag down: newer
+                    lastY = tp.y;
+                }
+            }
+            if (touchJustUp && gestureActive) {
+                gestureActive = false;
+                if (!gestureMoved && now - gestureDownMs <= TAP_MAX_MS) {
+                    lastTouch = now;
+                    if (Theme::pinnedBackHit(gestureStartX, gestureStartY, tft.width(), tft.height())) {
+                        enterSettings();
+                        uiSettingsOpenPage(SettingsPage::WATCH);
+                        break;
+                    }
+                    const LoraChatHit hit = uiLoraChatHit(*canvas, gestureStartX, gestureStartY);
+                    if (hit == LoraChatHit::TAB_MESHTASTIC) uiLoraChatSelect(0);
+                    else if (hit == LoraChatHit::TAB_MESHCORE) uiLoraChatSelect(1);
+                }
+            }
+            break;
+        }
+#endif
         case AppState::STATUS_LIGHT: {
             drawTwoBand([&](TFT_eSPI& t, bool) { uiLightTick(t, now, engine); });
             static bool gestureActive = false;

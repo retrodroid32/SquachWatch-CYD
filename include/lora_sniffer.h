@@ -52,6 +52,10 @@ void tick(uint32_t now);
 
 void setMode(Mode m);
 Mode mode();
+// The watch's LORA row (Settings::loraListen()): 0 off, 1 Meshtastic's main
+// preset, 2 MeshCore's, 3 both in turn. Found by network in the band plan's
+// table, so it means the same thing in EU 868 and US 915.
+void applyListen(uint8_t listen);
 void setFocus(uint8_t profileIdx);
 uint8_t focus();
 // Which profiles the survey rotates through, as a bitmask over the table
@@ -206,6 +210,7 @@ inline bool present() { return false; }
 inline void statusLine(char* out, size_t cap) { if (cap) out[0] = '\0'; }
 inline void tick(uint32_t) {}
 inline void setMode(Mode) {}
+inline void applyListen(uint8_t) {}
 inline Mode mode() { return Mode::OFF; }
 inline void setFocus(uint8_t) {}
 inline uint8_t focus() { return 0; }

@@ -363,6 +363,10 @@ bool begin() {
 #if defined(LORA_PROBE)
     s_mode = Mode::FOCUS;   // the bench parks; the survey is for the field
 #endif
+#if defined(TWATCH_S3)
+    // The watch has no sysop screen: its one knob is which networks.
+    applyListen(Settings::loraListen());
+#endif
 
     // Chan::restore() ran at the top of this function, which is also before
     // xTaskCreatePinnedToCore below - the task is the only thing that feeds
@@ -489,6 +493,34 @@ void tick(uint32_t now) {
 }
 
 void setMode(Mode m) { if (m == Mode::SWEEP) { memset(s_specLive, 0, sizeof s_specLive); memset(s_specHold, 0, sizeof s_specHold); s_sweeps = 0; } s_mode = m; }
+// The first profile in the table for a network's mesh presets: LongFast for
+// Meshtastic, the regional preset for MeshCore.
+static bool meshProfile(Proto want, uint8_t& idx) {
+    for (uint8_t i = 0; i < profileCount(); i++) {
+        const Profile& p = profile(i);
+        if (p.hint == want && (p.group == PG_MESH_EU || p.group == PG_MESH_US)) { idx = i; return true; }
+    }
+    return false;
+}
+
+void applyListen(uint8_t listen) {
+    uint8_t mt = 0, mc = 0;
+    const bool haveMt = meshProfile(Proto::MESHTASTIC, mt);
+    const bool haveMc = meshProfile(Proto::MESHCORE, mc);
+    switch (listen) {
+        case 0: setMode(Mode::OFF); break;
+        case 1: if (haveMt) { s_focus = mt; setMode(Mode::FOCUS); } break;
+        case 2: if (haveMc) { s_focus = mc; setMode(Mode::FOCUS); } break;
+        default:
+            // Both: the survey over just these two. A CAD on each takes
+            // tens of milliseconds, far inside either network's preamble.
+            s_survey = (haveMt ? (1ull << mt) : 0) | (haveMc ? (1ull << mc) : 0);
+            setMode(Mode::SURVEY);
+            break;
+    }
+    Serial.printf("[lora] listening: %s\n", listen == 0 ? "off" : listen == 1 ? "Meshtastic" : listen == 2 ? "MeshCore" : "Meshtastic and MeshCore in turn");
+}
+
 uint8_t spectrum(uint8_t* live, uint8_t* hold, uint8_t cap) {
     const uint8_t n = cap < SPECTRUM_BINS ? cap : SPECTRUM_BINS;
     if (live) memcpy(live, (const void*)s_specLive, n);
@@ -1459,6 +1491,41 @@ bool console(const char* line) {
         s_survey = strtoull(a + 4, nullptr, 16); Serial.printf("[lora] survey mask %016llx\n", (unsigned long long)s_survey); return true;
     }
 #if LORA_BENCH_TX
+    if (strncasecmp(a, "TX MC", 5) == 0) {
+        // A MeshCore Public-channel text, sealed the way lora_meshcore_test
+        // seals one: timestamp, a flags byte, "name: text", zero-padded,
+        // AES-128-ECB, then two bytes of HMAC-SHA256 over the ciphertext.
+        static uint32_t s_mcN = 0;
+        s_mcN++;
+        uint8_t mc = 0;
+        if (!meshProfile(Proto::MESHCORE, mc)) { Serial.println("[lora] no MeshCore profile"); return true; }
+        const MeshCore::Channel ch = MeshCore::channel(0);
+        uint8_t plain[64] = {0};
+        LoraCrypto::wr32le(plain, Clock::trusted() ? Clock::nowEpoch() : 1790000000u);
+        plain[4] = 0x00;
+        const int tl = snprintf((char*)plain + 5, sizeof plain - 5, "Squachy: MC TEST %lu", (unsigned long)s_mcN);
+        const uint8_t plen = (uint8_t)(5 + tl);
+        const uint8_t clen = (uint8_t)((plen + 15) & ~15);
+        uint8_t f[96];
+        f[0] = 0x15;          // flood, GRP_TXT
+        f[1] = 0x00;          // no path yet
+        f[2] = ch.hash;       // Public
+        LoraCrypto::Aes128 aes; aes.setKey(ch.key);
+        for (uint8_t off = 0; off < clen; off = (uint8_t)(off + 16)) aes.encryptBlock(plain + off, f + 5 + off);
+        uint8_t secret[32] = {0}; memcpy(secret, ch.key, 16);
+        uint8_t mac[32];
+        LoraCrypto::hmacSha256(secret, 32, f + 5, clen, mac);
+        f[3] = mac[0]; f[4] = mac[1];
+        const Mode was = s_mode;
+        setMode(Mode::OFF);
+        vTaskDelay(pdMS_TO_TICKS(300));
+        LoraRadio::apply(profile(mc));
+        Serial.printf("[lora] bench tx MeshCore \"%s\" on %s\n", (const char*)plain + 5, profile(mc).name);
+        LoraRadio::benchTransmit(f, (uint8_t)(5 + clen), 0);
+        LoraRadio::standby();
+        setMode(was);
+        return true;
+    }
     if (strncasecmp(a, "TX", 2) == 0 && (a[2] == '\0' || a[2] == ' ')) {
         // A default-channel Meshtastic text on the table's first profile
         // (LongFast), built the way lora_meshtastic_test builds one: the
