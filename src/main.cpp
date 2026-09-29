@@ -1106,6 +1106,19 @@ static bool twatchStill();
 #endif
 static bool alertMayInterrupt(const Detection& d) {
     const bool exempt = engine.isWatched(d.mac, true) || engine.isWatched(d.mac, false);
+#if defined(TWATCH_S3)
+    // TAGS + RINGS: logged, never announced. A day's wear was 50 screen
+    // wakes an hour on the drive home, 52 of 83 sightings AirTags from 42
+    // different passing cars, and 126 of 256 at work from twelve Rings.
+    if (!exempt && Settings::quietTrackers()) {
+        switch (d.type) {
+            case DetectionType::AIRTAG: case DetectionType::TILE: case DetectionType::SAMSUNG_TAG:
+            case DetectionType::GOOGLE_TAG: case DetectionType::RING:
+                return false;
+            default: break;
+        }
+    }
+#endif
     // A flood of fake tags of this type: one alert says so, and the rest are
     // logged without interrupting until it has been quiet five minutes. See
     // spam_watch.h. A device you asked to WATCH still always gets through.
@@ -2478,6 +2491,15 @@ static void twatchXtalTick(uint32_t now) {
 // STEADY POWER row that forced PWM was a test for the deaf radios, which
 // were never the supply's fault (the slim WiFi re-init, fixed in v1.21.0);
 // set at boot so a watch that saved STEADY ON goes back to automatic.
+// The charge current. 200 mA suits the plain T-Watch S3's small cell; the
+// S3 Plus has about twice the cell and took 3 h 18 min from empty to 94% at
+// 200 mA while running (2026-09-29). 400 mA on a watch known to be a Plus.
+static void twatchApplyCharge() {
+    if (!s_pmuOk) return;
+    s_pmu.setChargerConstantCurr(Settings::watchPlus() ? XPOWERS_AXP2101_CHG_CUR_400MA : XPOWERS_AXP2101_CHG_CUR_200MA);
+    Serial.printf("[pmu] charge %s\n", Settings::watchPlus() ? "400 mA (S3 Plus)" : "200 mA");
+}
+
 static void twatchApplySteady() {
     if (!s_pmuOk) return;
     s_pmu.settDC1WorkModeToPwm(0);
@@ -2870,7 +2892,8 @@ void setup() {
     twatchRtcBegin();      // after Clock::begin(): a real time beats the note's guess
     twatchHapticBegin();
     twatchMotionBegin();
-    twatchApplySteady();   // after Settings::load(), which it reads
+    twatchApplySteady();   // after Settings::load()
+    twatchApplyCharge();
 #endif
     Security::begin();
     // Which version lives in this slot, and whether this boot is a fresh
@@ -3530,6 +3553,15 @@ static uint32_t    s_lastScreenAt   = 0;     // transitionStart of the screen be
 static bool     s_gpsOn = false, s_gpsFound = false;
 static uint8_t  s_gpsTry = 0;           // index into GPS_BAUDS, then the DC4 retry
 static uint32_t s_gpsTryAt = 0, s_gpsSumAt = 0, s_gpsGoodAt = 0;
+// Resting: indoors the GPS searches flat out all day and never fixes (3.7 h
+// at work on 2026-09-29). After SEARCH_FIRST_MS with no fix it is powered
+// down for REST_MS, then gets RETRY_MS to find the sky before resting again;
+// a fix resets it to the long first search.
+static const uint32_t GPS_SEARCH_FIRST_MS = 10u * 60u * 1000u;
+static const uint32_t GPS_RETRY_MS        = 2u * 60u * 1000u;
+static const uint32_t GPS_REST_MS         = 5u * 60u * 1000u;
+static bool     s_gpsResting = false, s_gpsRetried = false;
+static uint32_t s_gpsSearchFrom = 0, s_gpsRestUntil = 0, s_gpsLastFixAt = 0;
 static const uint32_t GPS_BAUDS[] = { 38400, 9600, 115200 };
 // The best since switched on, for a watch that was off the cable while it
 // happened: GPS STATUS asks.
@@ -3561,6 +3593,7 @@ static void gpsStart(bool summaries) {
     s_gpsOn = true; s_gpsFound = false; s_gpsTry = 0;
     s_gpsSummaries = summaries;
     s_gpsOnAt = millis(); s_gpsFirstFixMs = 0;
+    s_gpsResting = false; s_gpsRetried = false; s_gpsSearchFrom = millis(); s_gpsLastFixAt = 0;
     s_gpsBestView = s_gpsBestHeard = s_gpsBestUsed = 0;
     Gnss::reset();
     gpsPower(true, false);
@@ -3571,6 +3604,7 @@ static void gpsStart(bool summaries) {
 
 static void gpsStop() {
     s_gpsOn = false;
+    s_gpsResting = false;
     Serial1.end();
     gpsPower(false, false);
 }
@@ -3630,7 +3664,8 @@ void twatchGpsBadge(TFT_eSPI& t) {
     const Gnss::Fix& f = Gnss::fix();
     const bool fix = Gnss::fresh(millis());
     char txt[40];
-    if (!s_gpsFound)                   snprintf(txt, sizeof txt, "GPS STARTING");
+    if (s_gpsResting)                  snprintf(txt, sizeof txt, "GPS RESTING");
+    else if (!s_gpsFound)              snprintf(txt, sizeof txt, "GPS STARTING");
     else if (fix && Wardrive::enabled()) snprintf(txt, sizeof txt, "GPS FIX %u  %lu ROWS", f.used, (unsigned long)Wardrive::count());
     else if (fix)                      snprintf(txt, sizeof txt, "GPS FIX  %u SATS", f.used);
     else                               snprintf(txt, sizeof txt, "GPS %u HEARD  %u USED", k.heard, f.used);
@@ -3723,12 +3758,38 @@ static void gpsTick() {
     if (Gnss::faked()) Gnss::fake(Gnss::fix().lat7, Gnss::fix().lon7, Clock::isSet() ? Clock::nowEpoch() : 0, millis());
 
     if (!s_gpsOn) { Wardrive::tick(millis()); return; }
+    if (s_gpsResting) {
+        if ((int32_t)(millis() - s_gpsRestUntil) < 0) { Wardrive::tick(millis()); return; }
+        // Back on, on the rails and baud that worked, for a short look.
+        s_gpsResting = false; s_gpsRetried = true; s_gpsSearchFrom = millis();
+        gpsPower(true, s_gpsTry >= 3);
+        delay(50);
+        gpsOpen(GPS_BAUDS[s_gpsTry % 3]);
+        Serial.println("[gps] awake again: looking for the sky");
+    }
     while (Serial1.available()) Gnss::feed((char)Serial1.read(), millis());
     const uint32_t now = millis();
+    if (Gnss::fresh(now) && !Gnss::faked()) { s_gpsLastFixAt = now; s_gpsRetried = false; }
+    if (s_gpsFound && !Gnss::fresh(now)) {
+        const uint32_t from = (int32_t)(s_gpsLastFixAt - s_gpsSearchFrom) > 0 ? s_gpsLastFixAt : s_gpsSearchFrom;
+        if (now - from > (s_gpsRetried ? GPS_RETRY_MS : GPS_SEARCH_FIRST_MS)) {
+            Serial1.end();
+            gpsPower(false, false);
+            s_gpsResting = true;
+            s_gpsRestUntil = now + GPS_REST_MS;
+            Serial.printf("[gps] no fix for %lu s: resting %lu s\n", (unsigned long)((now - from) / 1000),
+                          (unsigned long)(GPS_REST_MS / 1000));
+            Wardrive::tick(now);
+            return;
+        }
+    }
     if (!s_gpsFound) {
         if (Gnss::good() - s_gpsGoodAt >= 3) {
             s_gpsFound = true;
             Serial.printf("[gps] a GNSS is talking at %lu baud\n", (unsigned long)GPS_BAUDS[s_gpsTry % 3]);
+            // A GPS answered: this is an S3 Plus, and its bigger cell can
+            // take the faster charge from now on.
+            if (!Settings::watchPlus()) { Settings::setWatchPlus(); twatchApplyCharge(); }
         } else if (now - s_gpsTryAt > 2500) {
             // Three bauds with BLDO1 and DC3, then the same three with DC4 too.
             s_gpsTry++;
@@ -3768,9 +3829,11 @@ static void gpsTick() {
     }
 }
 
-// For the WARDRIVE row: 0 off, 1 looking for the module, 2 no fix, 3 fix.
+// For the WARDRIVE row: 0 off, 1 looking for the module, 2 no fix, 3 fix,
+// 4 resting between looks.
 uint8_t twatchGpsState() {
     if (!s_gpsOn) return 0;
+    if (s_gpsResting) return 4;
     if (!s_gpsFound) return 1;
     return Gnss::fresh(millis()) ? 3 : 2;
 }
@@ -5540,6 +5603,11 @@ void loop() {
                         case SettingsRow::WATCH_BATTERY: break;   // a reading, not a switch
                         case SettingsRow::WATCH_TEMP: break;   // a reading, not a switch
                         case SettingsRow::WATCH_SETTINGS: uiSettingsOpenPage(SettingsPage::WATCH); break;
+                        case SettingsRow::WATCH_QUIET_TAGS:
+                            Settings::toggleQuietTrackers();
+                            Theme::showToast("TAGS + RINGS", Settings::quietTrackers() ? "Logged, no wake or buzz" : "Alert like the rest",
+                                             Theme::CYAN);
+                            break;
 #if SQUACH_LORA
                         case SettingsRow::WATCH_LORA:
                             Settings::cycleLoraListen();

@@ -217,6 +217,16 @@ namespace Settings {
     // worse than useless.
     bool       wakeOnAlert();
     void       toggleWakeOnAlert();
+    // TAGS + RINGS on the watch: AirTags, Tiles, Samsung and Google tags and
+    // Ring cameras are logged but never interrupt -- no card, no buzz, no
+    // screen waking. On by default: a commute is fifty AirTags an hour.
+    bool       quietTrackers();
+    void       toggleQuietTrackers();
+    // Set the first time this watch's GPS answers: it is an S3 Plus, whose
+    // bigger cell takes a faster charge. Never cleared by a GPS that is
+    // merely switched off.
+    bool       watchPlus();
+    void       setWatchPlus();
     // The T-Watch's buzz on an alert (the DRV2605 haptic motor). Kept on
     // every board so the settings file reads the same; only the watch has
     // a motor to use it.

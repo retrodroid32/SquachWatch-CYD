@@ -123,7 +123,7 @@ static const SettingsRow APPEARANCE_ROWS[] = {
 // The WATCH SETTINGS page: the battery first (a reading), then the knobs that
 // decide how long it lasts, then the buzz, then the tools.
 static const SettingsRow WATCH_ROWS[] = {
-    SettingsRow::WATCH_BATTERY, SettingsRow::WATCH_WARDRIVE,
+    SettingsRow::WATCH_BATTERY, SettingsRow::WATCH_WARDRIVE, SettingsRow::WATCH_QUIET_TAGS,
 #if SQUACH_LORA
     SettingsRow::WATCH_LORA_CHATS, SettingsRow::WATCH_LORA,
 #endif
@@ -213,6 +213,7 @@ static RowGroupId groupFor(SettingsRow r) {
         case SettingsRow::WATCH_WARDRIVE:
         case SettingsRow::WATCH_LORA:
         case SettingsRow::WATCH_LORA_CHATS:
+        case SettingsRow::WATCH_QUIET_TAGS:
             return RowGroupId::WATCH;
         // TIME ZONE sat on the SYSTEM page too, the same setting twice. Only
         // the clock reads it, so it lives with the clock.
@@ -899,11 +900,15 @@ static void rowContent(SettingsRow r, const DetectionEngine& eng, char* valBuf, 
             label = "WARDRIVE";
             const uint8_t g = twatchGpsState();
             if (!Wardrive::enabled())  value = "OFF";
+            else if (g == 4)           value = "GPS RESTING";
             else if (g <= 1)           value = "GPS STARTING";
             else if (g == 2)           value = "NO FIX YET";
             else { snprintf(valBuf, valBufN, "ON  %lu", (unsigned long)Wardrive::count()); value = valBuf; }
             break;
         }
+        case SettingsRow::WATCH_QUIET_TAGS:
+            label = "TAGS + RINGS"; value = Settings::quietTrackers() ? "LOG ONLY" : "ALERT";
+            break;
 #if SQUACH_LORA
         case SettingsRow::WATCH_LORA:
             label = "LORA"; value = Settings::loraListenName();

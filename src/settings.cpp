@@ -134,6 +134,8 @@ static const uint8_t  IDLE_CPU_DEFAULT   = 2;   // no change asleep
 static uint8_t  s_bleIx        = BLE_LISTEN_DEFAULT;
 static uint8_t  s_idleCpuIx    = IDLE_CPU_DEFAULT;
 static bool     s_wakeOnAlert  = true;
+static bool     s_quietTrack   = true;
+static bool     s_watchPlus    = false;
 static uint8_t  s_buzzMode     = 2;    // 0 OFF, 1 HIGH, 2 MED, 3 LOW; MED by default
 // The watch's radio duty cycle: on for a few seconds, resting for the rest.
 // 0 ALWAYS, 1 five seconds of thirty, 2 ten of sixty, 3 BLE always on with
@@ -228,6 +230,8 @@ uint8_t  idleFps()          { return s_powerSaver ? IDLE_FPS[s_idleFpsIx] : 0; }
 uint16_t idleAfterSec()     { return IDLE_AFTER[s_idleAfterIx]; }
 uint16_t cpuMhz()           { return s_powerSaver ? CPU_MHZ[s_cpuIx] : 240; }
 bool     wakeOnAlert()      { return s_wakeOnAlert; }
+bool     quietTrackers()    { return s_quietTrack; }
+bool     watchPlus()        { return s_watchPlus; }
 bool     buzz()             { return s_buzzMode != 0; }
 // Only while POWER SAVER is on. Either RADIO DUTY row (the Power screen,
 // or WATCH in settings) picks the mode; neither turns the saver on.
@@ -291,6 +295,15 @@ const char* buzzModeName() {
 void cycleBuzz() {
     s_buzzMode = (uint8_t)((s_buzzMode + 1) % 4);
     s_prefs.putUChar("buzzMode", s_buzzMode);
+}
+void toggleQuietTrackers() {
+    s_quietTrack = !s_quietTrack;
+    s_prefs.putBool("qTrack", s_quietTrack);
+}
+void setWatchPlus() {
+    if (s_watchPlus) return;
+    s_watchPlus = true;
+    s_prefs.putBool("wPlus", true);
 }
 void toggleWakeOnAlert() {
     s_wakeOnAlert = !s_wakeOnAlert;
@@ -468,6 +481,8 @@ void load() {
     if (s_bleIx > 2)     s_bleIx = BLE_LISTEN_DEFAULT;
     if (s_idleCpuIx > 2) s_idleCpuIx = IDLE_CPU_DEFAULT;
     s_wakeOnAlert  = s_prefs.getBool("pwrWake", true);
+    s_quietTrack   = s_prefs.getBool("qTrack", true);
+    s_watchPlus    = s_prefs.getBool("wPlus", false);
     // The old on/off switch carries over: a watch that had BUZZ off stays off.
     s_buzzMode     = s_prefs.getUChar("buzzMode", s_prefs.getBool("buzz", true) ? 2 : 0);
     if (s_buzzMode > 3) s_buzzMode = 2;
