@@ -371,6 +371,18 @@
     box-shadow:0 0 14px rgba(180,0,255,0.4);
     outline:none;
   }
+  .board-select optgroup{ color:var(--vapor-pink); font-style:normal; }
+  .board-select option{ color:#fff; }
+  .board-finder{ display:grid; gap:4px; margin:0 0 12px; }
+  .board-code{
+    display:block; width:100%; box-sizing:border-box;
+    font-family:'VT323', monospace; font-size:1.15rem; letter-spacing:0.05em;
+    padding:9px 10px; background:var(--bg); color:#fff;
+    border:1px solid var(--vapor-blue); border-radius:8px; text-transform:uppercase;
+  }
+  .board-code:focus{ outline:none; border-color:var(--cyan); box-shadow:0 0 14px rgba(0,255,245,0.3); }
+  .board-code-answer{ font-family:'VT323', monospace; font-size:1rem; min-height:1.25em; color:var(--green); }
+  .board-code-answer.warn{ color:var(--vapor-yellow); }
   .board-compat-note{
     margin:0 0 12px;
     font-size:0.82rem;
@@ -688,11 +700,18 @@
       </p>
     </div>
 
+    <div class="board-finder">
+      <label class="board-picker-label" for="boardCode">Code on the back of your board (optional):</label>
+      <input class="board-code" id="boardCode" type="text" autocomplete="off" spellcheck="false" placeholder="e.g. ESP32-2432S032C">
+      <div class="board-code-answer" id="boardCodeAnswer" aria-live="polite"></div>
+    </div>
+
     <label class="board-picker-label" for="boardSelect">Select your board:</label>
     <select class="board-select" id="boardSelect" aria-label="Board select">
       <option value="./manifest-cyd.json" data-cyd28="1" data-fast="./manifest-cyd-fast.json" selected>2.8&quot; CYD &mdash; ST7789 (default)</option>
       <option value="./manifest-cyd-ili9341.json" data-cyd28="1" data-fast="./manifest-cyd-ili9341-fast.json">2.8&quot; CYD &mdash; ILI9341 (older)</option>
       <option value="./manifest-cyd32-st7798.json" data-fast="./manifest-cyd32-st7798-fast.json">3.2&quot; CYD &mdash; ST7798 / ST7789 compatible</option>
+      <option value="./manifest-cyd32c.json">3.2&quot; CYD &middot; capacitive &mdash; ESP32-2432S032C</option>
       <option value="./manifest-freenove32.json">Freenove 3.2&quot; &mdash; ST7789</option>
       <option value="./manifest-awok.json">AWOK 2.4&quot;</option>
       <option value="./manifest-rlphantom-r.json">RL Phantom 2.4&quot;</option>
@@ -1426,6 +1445,7 @@
         ['./manifest-lab-cyd.json', './manifest-lab-cyd-fast.json',
          './manifest-lab-cyd-ili9341.json', './manifest-lab-cyd-ili9341-fast.json',
          './manifest-lab-cyd32-st7798.json', './manifest-lab-cyd32-st7798-fast.json',
+         './manifest-lab-cyd32c.json',
          './manifest-lab-freenove32.json', './manifest-lab-rlphantom-r.json',
          './manifest-lab-twatch-s3.json'].forEach(function (path) {
           fetch(path, { cache: 'no-store' })
@@ -1458,7 +1478,16 @@
           // public picker from profiles marked visible.
           var previous = boardIdFromOption(select.options[select.selectedIndex]);
           select.innerHTML = '';
+          var groups = {};
           data.boards.filter(function (b) { return b.visible === true; }).forEach(function (b) {
+            var groupName = b.group || 'Other boards';
+            var parent = groups[groupName];
+            if (!parent) {
+              parent = document.createElement('optgroup');
+              parent.label = groupName;
+              groups[groupName] = parent;
+              select.appendChild(parent);
+            }
             var o = document.createElement('option');
             o.value = './' + b.manifest;
             o.textContent = b.label || b.id;
@@ -1466,7 +1495,7 @@
             if (b.fast_manifest) o.dataset.fast = './' + b.fast_manifest;
             if (b.note) o.dataset.ocnote = b.note;
             if (b.id === previous || (!previous && b.id === 'cyd')) o.selected = true;
-            select.appendChild(o);
+            parent.appendChild(o);
           });
           if (select.selectedIndex < 0 && select.options.length) select.selectedIndex = 0;
           applySelection(null);
@@ -1488,7 +1517,51 @@
       compatNote.textContent = msg;
     }
 
-    loadBoardMatrix().then(addLabOptions);
+    loadBoardMatrix().then(function () {
+      addLabOptions();
+
+      var codeIn = document.getElementById('boardCode');
+      var codeOut = document.getElementById('boardCodeAnswer');
+      if (!codeIn || !codeOut) return;
+      codeIn.addEventListener('input', function () {
+        var raw = codeIn.value.toUpperCase().replace(/\s+/g, '');
+        codeOut.className = 'board-code-answer';
+        if (raw.length < 4) { codeOut.textContent = ''; return; }
+
+        var hits = [];
+        Object.keys(boardMatrix).forEach(function (id) {
+          var b = boardMatrix[id];
+          if (!b.visible || !Array.isArray(b.codes)) return;
+          for (var i = 0; i < b.codes.length; i++) {
+            if (raw.indexOf(String(b.codes[i]).toUpperCase().replace(/\s+/g, '')) >= 0) {
+              hits.push(b); break;
+            }
+          }
+        });
+
+        if (!hits.length) {
+          codeOut.className = 'board-code-answer warn';
+          codeOut.textContent = 'Board code not recognized yet — use the list below.';
+          return;
+        }
+
+        // 2.8" S028R boards can carry either supported display controller.
+        // Pick the normal ST7789 profile first and keep the existing white-
+        // screen guidance visible rather than pretending the PCB code tells us.
+        var chosen = hits[0];
+        if (hits.some(function (b) { return b.id === 'cyd'; })) chosen = boardMatrix.cyd;
+        for (var j = 0; j < select.options.length; j++) {
+          if (boardIdFromOption(select.options[j]) === chosen.id) {
+            select.selectedIndex = j;
+            applySelection('board');
+            break;
+          }
+        }
+        codeOut.textContent = chosen.id === 'cyd'
+          ? '2.8" CYD selected. If it boots white, use the ILI9341 option.'
+          : ((chosen.label || chosen.id) + ' selected.');
+      });
+    });
 
     // The manifest's own "version" field is stamped with the release
     // tag by .github/workflows/release-flasher.yml at deploy time (the
