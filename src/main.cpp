@@ -52,6 +52,7 @@
 #include "ui_diagnostics.h"   // CrashReport, used by the breadcrumb below
 #include "blackbox.h"
 #include "gnss.h"
+#include "lora_sniffer.h"   // the watch's SX1262; inline no-ops elsewhere
 #include "wardrive.h"
 #include "ui_bingo.h"
 #include "bingo.h"
@@ -3309,6 +3310,11 @@ void setup() {
     }
 #endif
     engine.init();
+#if SQUACH_LORA
+    // The LoRa radio, after WiFi and Bluetooth: its own task and its own bus.
+    // Receive only. Console LORA for what it hears.
+    Lora::begin();
+#endif
 #if defined(CROWPANEL7_PERIPH_PROBE)
     crowPeriphProbe();
 #endif
@@ -3858,6 +3864,7 @@ void loop() {
         touchJustUp = false;
     }
     engine.loop();
+    Lora::tick(now);   // nothing outside a SQUACH_LORA build
     floodTick();   // nothing outside a FLOOD_BENCH build
     // The heap at the first pass of loop(), for DIAGNOSTICS' BOOT line.
     static uint32_t s_loopHeapFree = 0, s_loopHeapLargest = 0;
