@@ -55,6 +55,7 @@ extern volatile bool g_consoleBattLog;
 extern volatile bool g_consoleRadioTest;
 extern volatile bool g_consolePmu;
 extern volatile uint8_t g_consoleGps;
+extern volatile int32_t g_consoleFakeLat7, g_consoleFakeLon7;
 extern volatile bool g_consoleRtc;
 extern volatile bool g_consoleBuzz;
 extern volatile bool g_consoleMotion;
@@ -500,6 +501,20 @@ void pollSerial() {
         if (strcasecmp(line, "GPS") == 0)    { g_consoleGps = 1; continue; }
         if (strcasecmp(line, "GPS OFF") == 0) { g_consoleGps = 2; continue; }
         if (strcasecmp(line, "GPS STATUS") == 0) { g_consoleGps = 3; continue; }
+        if (strncasecmp(line, "GPS FAKE ", 9) == 0) {
+            const double la = atof(line + 9);
+            const char* sp = strchr(line + 9, ' ');
+            const double lo = sp ? atof(sp + 1) : 0;
+            g_consoleFakeLat7 = (int32_t)(la * 10000000.0);
+            g_consoleFakeLon7 = (int32_t)(lo * 10000000.0);
+            g_consoleGps = 4;
+            continue;
+        }
+        if (strcasecmp(line, "WARDRIVE ON") == 0)  { g_consoleGps = 5; continue; }
+        if (strcasecmp(line, "WARDRIVE OFF") == 0) { g_consoleGps = 6; continue; }
+        if (strcasecmp(line, "WIGLE") == 0)        { g_consoleGps = 7; continue; }
+        if (strcasecmp(line, "WIGLE ALL") == 0)    { g_consoleGps = 8; continue; }
+        if (strcasecmp(line, "WIGLE CLEAR") == 0)  { g_consoleGps = 9; continue; }
         if (strcasecmp(line, "RTC") == 0)    { g_consoleRtc = true; continue; }
         if (strcasecmp(line, "BUZZ") == 0)   { g_consoleBuzz = true; continue; }
         if (strcasecmp(line, "MOTION") == 0) { g_consoleMotion = true; continue; }
