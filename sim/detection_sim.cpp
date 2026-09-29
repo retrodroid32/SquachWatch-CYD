@@ -113,6 +113,7 @@ void DetectionEngine::resetLifetime() {
 void DetectionEngine::pushLog(const Detection& d) {
     _log[_logHead] = d;
     _latest = &_log[_logHead];
+    _latestNew = true;   // the stand-in only ever pushes; nothing here reactivates
     _logHead = (uint8_t)((_logHead + 1) % LOG_CAP);
     if (_logCount < LOG_CAP) _logCount++;
     if ((uint8_t)d.type < (uint8_t)DetectionType::COUNT) {
@@ -184,7 +185,11 @@ int8_t DetectionEngine::watchRssiAt(uint8_t idx) const {
     return _watchRssiHist[slot];
 }
 bool DetectionEngine::watchHitPending() { bool f = _watchHitFlag; _watchHitFlag = false; return f; }
-void DetectionEngine::checkWatchBle(const uint8_t*, int8_t) {}
+// Records the signal when the address is the watched one, as the firmware
+// does, so the emulator's watch alert has a trend to draw.
+void DetectionEngine::checkWatchBle(const uint8_t* mac, int8_t rssi) {
+    if (mac && isWatched(mac, true)) recordWatchRssi(rssi);
+}
 void DetectionEngine::checkWatchWifi(const uint8_t*, int8_t) {}
 void DetectionEngine::recordWatchRssi(int8_t rssi) {
     _watchRssiHist[_watchRssiHead] = rssi;

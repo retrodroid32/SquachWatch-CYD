@@ -444,6 +444,14 @@ public:
     // target that just sits nearby doesn't re-fire every single
     // advertisement/frame.
     bool watchHitPending();
+    // A hit on the current watch as though it had just been heard at this
+    // signal, cooldown and all -- for the console's WATCHTEST, which picks
+    // a device out of the log rather than waiting for one to be heard.
+    void forceWatchHit(int8_t rssi) {
+        recordWatchRssi(rssi);
+        _watchLastHitMs = millis();
+        _watchHitFlag   = true;
+    }
 
     // ---- Hunt target (HUNT MODE's live gauge) -------------------------
     // A second, completely independent slot from the watch target above
@@ -644,6 +652,7 @@ private:
     uint8_t    _logCount = 0;            // number of valid entries (<= LOG_CAP)
     uint8_t    _logHead  = 0;            // next slot to write
     Detection* _latest   = nullptr;      // pointer into _log or null
+    bool       _latestNew = false;       // _latest is a fresh row, not a reactivation
     uint32_t   _latestChangeMs = 0;
     DetectionType _lastAlertType = DetectionType::UNKNOWN;
 

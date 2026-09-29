@@ -180,6 +180,7 @@ See [v1.21.0 development notes](.github/release-notes/v1.21.0-development.md) fo
 | **AWOK 2.4"** | ESP32-Marauder V6.1-style hardware profile | Released |
 | **RL Phantom 2.4"** | Resistive-touch release profile | Released |
 | **LilyGo T-Watch S3** | 240x240 ST7789, capacitive touch, PMU/battery, haptics, RTC | **Beta**, released |
+| **Elecrow CrowPanel Advance 7.0** | 800x480 RGB panel, GT911 touch, experimental 400x240 doubled rendering | **Experimental** |
 
 The web flasher also offers optional 80 MHz display-clock variants for the
 2.8" CYD and 3.2" CYD. Those are separate experimental performance profiles,
@@ -187,8 +188,7 @@ not different physical boards. The RL Phantom capacitive profile is compile-only
 and the 3.5" ST7796 profile remains excluded from release/CI while its hardware
 issue is unresolved.
 
-Most CYD installations need no add-on hardware: no GPS, buzzer, or external
-radio module is required.
+Most CYD installations need no add-on hardware. GPS remains optional; the CrowPanel's onboard buzzer is supported but stays silent unless enabled.
 
 ## Install with Web Flash
 

@@ -27,7 +27,10 @@ static bool        s_msgTutor     = false;
 static bool        s_infoPrimerShown = false;
 // Locked on the watch: a square screen with a crown has one way up, and a
 // corner button that spins it is a thing to hit by accident on a wrist.
-#if defined(TWATCH_S3)
+// Locked on the CrowPanel too, for a different reason: an RGB panel has no
+// MADCTL, so rotating it would be a per-pixel software transform of an
+// 800x480 buffer every frame -- and the panel is natively landscape anyway.
+#if defined(TWATCH_S3) || defined(CROWPANEL7)
 static const bool DEFAULT_ROTATION_LOCK = true;
 #else
 static const bool DEFAULT_ROTATION_LOCK = false;
@@ -47,6 +50,8 @@ static bool        s_deskFullVisit = false;   // one visitor: the whole visit, n
 // one step round from that with its crown on the right (LilyGo's default).
 #if defined(TWATCH_S3)
 static const uint8_t DEFAULT_ROTATION = 2;
+#elif defined(CROWPANEL7)
+static const uint8_t DEFAULT_ROTATION = 0;   // the panel is landscape as wired
 #else
 static const uint8_t DEFAULT_ROTATION = 1;
 #endif
@@ -180,6 +185,11 @@ static const uint8_t RADIO_DUTY_DEFAULT = 3;
 static const uint8_t RADIO_DUTY_DEFAULT = 1;
 #endif
 static uint8_t  s_radioDutyIx  = RADIO_DUTY_DEFAULT;
+
+// ---- buzzer --------------------------------------------------------------
+// Opt in. The one setting here that can make a sound, so it starts off and
+// stays off until somebody finds the row. Only the CrowPanel 7 shows it.
+static bool     s_buzzer       = false;
 
 // ---- status light --------------------------------------------------------
 static bool    s_lightOn     = true;
@@ -315,6 +325,8 @@ void toggleWakeOnAlert() {
     s_wakeOnAlert = !s_wakeOnAlert;
     s_prefs.putBool("pwrWake", s_wakeOnAlert);
 }
+bool buzzerOn()     { return s_buzzer; }
+void toggleBuzzer() { s_buzzer = !s_buzzer; s_prefs.putBool("buzzer", s_buzzer); }
 
 // ---- easter-egg hunt progress ----------------------------------------
 // Packed into one NVS entry rather than one each: the store has a few
@@ -459,6 +471,9 @@ void load() {
     s_steady       = s_prefs.getBool("steady", false);
     s_radioDutyIx  = s_prefs.getUChar("pwrRadio", RADIO_DUTY_DEFAULT);
     if (s_radioDutyIx >= RADIO_DUTY_N) s_radioDutyIx = RADIO_DUTY_DEFAULT;
+    // The T-Watch's BUZZ (haptics on an alert) already owns "buzz", and with
+    // the opposite default, so the CrowPanel's buzzer keeps its own key.
+    s_buzzer       = s_prefs.getBool("buzzer", false);
     s_lightOn      = s_prefs.getBool("ltOn", true);
     s_lightAlerts  = s_prefs.getBool("ltAlert", true);
     s_lightMsgs    = s_prefs.getBool("ltMsg", true);
@@ -710,7 +725,7 @@ void setTimeZone(uint8_t i) {
 // chosen: only THIS IS RIGHT, the row's own tap, or the flasher does that.
 void cycleTimeZone()     { stepTimeZone(1); markTimeZoneChosen(); }
 void stepTimeZone(int dir) {
-    s_timeZone = (uint8_t)((s_timeZone + Clock::zoneCount() + dir) % Clock::zoneCount());
+    s_timeZone = Clock::zoneStep(s_timeZone, dir);
     s_prefs.putUChar("tz", s_timeZone);
     Clock::applyZone(s_timeZone);
 }

@@ -272,6 +272,12 @@ namespace Squachy {
     // Squachy knows who he is.
     void setNameTag(const char* name);
 
+    // A radio headset on his head -- band, ear cups and a mic -- for the
+    // watch alert's LOCKED ON screen. Drawn as part of his head, so it bobs,
+    // talks and scales with him. Same contract as the name tag: set it, draw,
+    // clear it.
+    void setHeadset(bool on);
+
     // A line from outside his own head, said once: the update notice. The
     // text must outlive the bubble -- a static buffer, not a stack one.
     void announce(const char* text);
