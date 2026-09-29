@@ -2047,6 +2047,63 @@ static void enterLight() {
     uiLightInit(*canvas);
 }
 
+#if defined(CYD32C)
+// The S032C already has Wire running on SDA33/SCL32 for its GT911 touch.
+// Some IP5306 revisions expose read-only status registers at 0x75 on that
+// bus; others do not. Probe, never configure. No response means no badge.
+static const uint8_t CYD32C_IP5306_ADDR = 0x75;
+static bool s_cyd32cPmicReadable = false;
+
+static bool cyd32cIp5306Read(uint8_t reg, uint8_t& value) {
+    Wire.beginTransmission(CYD32C_IP5306_ADDR);
+    Wire.write(reg);
+    if (Wire.endTransmission(false) != 0) return false;
+    if (Wire.requestFrom(CYD32C_IP5306_ADDR, (uint8_t)1) != 1) return false;
+    value = Wire.read();
+    return true;
+}
+
+static void cyd32cBatteryBegin() {
+    uint8_t level = 0, charge = 0;
+    s_cyd32cPmicReadable =
+        cyd32cIp5306Read(0x78, level) && cyd32cIp5306Read(0x70, charge);
+    if (s_cyd32cPmicReadable) {
+        Serial.printf("[pmic] CYD32C IP5306 telemetry found at 0x75 (level=%02X charge=%02X)\n",
+                      (unsigned)level, (unsigned)charge);
+    } else {
+        Serial.println("[pmic] CYD32C IP5306 I2C telemetry not exposed; battery badge disabled");
+    }
+}
+
+bool boardBatteryStatus(uint8_t* pctOut, bool* chargingOut) {
+    if (!s_cyd32cPmicReadable) return false;
+    static uint32_t at = 0;
+    static uint8_t pct = 0;
+    static bool charging = false;
+    static bool valid = false;
+    const uint32_t now = millis();
+    if (!at || now - at >= 2000) {
+        at = now ? now : 1;
+        uint8_t level = 0, charge = 0;
+        valid = cyd32cIp5306Read(0x78, level) && cyd32cIp5306Read(0x70, charge);
+        if (valid) {
+            switch (level & 0xF0u) {
+                case 0x00: pct = 100; break;
+                case 0x80: pct = 75;  break;
+                case 0xC0: pct = 50;  break;
+                case 0xE0: pct = 25;  break;
+                default:   pct = 0;   break;
+            }
+            charging = (charge & 0x08u) != 0;
+        }
+    }
+    if (!valid) return false;
+    if (pctOut) *pctOut = pct;
+    if (chargingOut) *chargingOut = charging;
+    return true;
+}
+#endif
+
 #if defined(TWATCH_S3)
 // The T-Watch S3's AXP2101 gates the screen backlight (ALDO2), the touch
 // chip (ALDO3), the RTC's supply (ALDO1), the radio (ALDO4) and the haptic
@@ -2102,6 +2159,26 @@ static void twatchPowerUp() {
     Serial.printf("[pmu] AXP2101 up: battery %d%%, %s\n", s_pmu.getBatteryPercent(),
                   s_pmu.isVbusIn() ? "on USB" : "on battery");
 }
+
+// Top-right battery UI contract for the AXP2101 watch.
+bool boardBatteryStatus(uint8_t* pctOut, bool* chargingOut) {
+    if (!s_pmuOk) return false;
+    static uint32_t at = 0;
+    static uint8_t pct = 0;
+    static bool charging = false;
+    const uint32_t now = millis();
+    if (!at || now - at >= 2000) {
+        at = now ? now : 1;
+        int p = s_pmu.getBatteryPercent();
+        if (p < 0) p = 0;
+        if (p > 100) p = 100;
+        pct = (uint8_t)p;
+        charging = s_pmu.isCharging();
+    }
+    if (pctOut) *pctOut = pct;
+    if (chargingOut) *chargingOut = charging;
+    return true;
+}
 #endif
 
 #if defined(FREENOVE_S3)
@@ -2138,6 +2215,16 @@ void boardBatteryLine(char* out, size_t n) {
                       (unsigned)(mv / 1000), (unsigned)(mv % 1000 / 10));
     }
     snprintf(out, n, "%s", line);
+}
+
+// Freenove S3 can measure battery voltage/percentage, but its TP4054 CHRG
+// signal only drives an LED, not a GPIO. Show percentage, never a fake bolt.
+bool boardBatteryStatus(uint8_t* pctOut, bool* chargingOut) {
+    const uint16_t mv = boardBatteryMv();
+    if (mv < 2500) return false;
+    if (pctOut) *pctOut = boardBatteryPct(mv);
+    if (chargingOut) *chargingOut = false;
+    return true;
 }
 #endif
 
@@ -3111,6 +3198,7 @@ void setup() {
     usingCapTouch = Gt911::begin();
     Serial.println(usingCapTouch ? "ESP32-2432S032C -- GT911 capacitive touch answered."
                                  : "ESP32-2432S032C -- GT911 did not answer; no touch.");
+    cyd32cBatteryBegin();
 #elif defined(TWATCH_S3)
     // The T-Watch's FT6336, on I2C SDA 39 / SCL 40 at 0x38. No reset line;
     // the AXP2101 powers it (ALDO3) in twatchPowerUp(), before this runs.
