@@ -154,11 +154,13 @@ const BringUp& status() { return s_up; }
 bool apply(const Lora::Profile& p) {
     if (!s_radio || !s_up.ok) return false;
     s_radio->standby();
-    // Image calibration covers a band a few MHz wide; skip it for hops
-    // inside that (the survey's, at tens per second) and run it for a real
-    // move, 869 to 433 say.
+    // Image calibration is per band (the chip's own table: 902-928 is one
+    // calibration, 863-870 another), so a hop inside one needs none; run it
+    // for a real move, 869 to 433 say. The 3 MHz this was sized for made
+    // every hop between LongFast (906.875) and MeshCore US (910.525) a fresh
+    // calibration, twice a round.
     const uint32_t d = p.freqHz > s_calHz ? p.freqHz - s_calHz : s_calHz - p.freqHz;
-    const bool cal = d > 3000000u;
+    const bool cal = d > 30000000u;
     int16_t st = s_radio->setFrequency(p.freqHz / 1000000.0f, !cal);
     if (st != RADIOLIB_ERR_NONE) { s_up.err = st; return false; }
     if (cal) s_calHz = p.freqHz;
@@ -185,7 +187,7 @@ bool apply(const Lora::Profile& p) {
 bool tuneHz(uint32_t hz) {
     if (!s_radio || !s_up.ok) return false;
     const uint32_t d = hz > s_calHz ? hz - s_calHz : s_calHz - hz;
-    const bool cal = d > 3000000u;
+    const bool cal = d > 30000000u;
     if (s_radio->setFrequency(hz / 1000000.0f, !cal) != RADIOLIB_ERR_NONE) return false;
     if (cal) s_calHz = hz;
     s_freqHz = hz;
@@ -216,12 +218,12 @@ bool startReceiveFor(uint32_t ms) {
     return st == RADIOLIB_ERR_NONE;
 }
 
-bool startCad(uint8_t symbols, bool gotoRx, uint32_t rxMs) {
+bool startCad(uint8_t symbols, bool gotoRx, uint32_t rxMs, uint8_t detPeak) {
     if (!s_radio || !s_up.ok) return false;
     ChannelScanConfig_t cfg;
     memset(&cfg, 0, sizeof cfg);
     cfg.cad.symNum   = symbols <= 2 ? RADIOLIB_SX126X_CAD_ON_2_SYMB : symbols >= 8 ? RADIOLIB_SX126X_CAD_ON_8_SYMB : RADIOLIB_SX126X_CAD_ON_4_SYMB;
-    cfg.cad.detPeak  = RADIOLIB_SX126X_CAD_PARAM_DEFAULT;
+    cfg.cad.detPeak  = detPeak ? detPeak : RADIOLIB_SX126X_CAD_PARAM_DEFAULT;
     cfg.cad.detMin   = RADIOLIB_SX126X_CAD_PARAM_DEFAULT;
     cfg.cad.exitMode = gotoRx ? RADIOLIB_SX126X_CAD_GOTO_RX : RADIOLIB_SX126X_CAD_GOTO_STDBY;
     // setCad takes this one in microseconds and divides by 15.625 itself;

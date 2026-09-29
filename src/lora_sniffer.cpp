@@ -58,6 +58,13 @@ SemaphoreHandle_t  s_lock = nullptr;
 // What loop() asks of the task. Read at every step of the task's loop;
 // written from loop() only, so plain volatile is enough.
 volatile Mode     s_mode   = Mode::SURVEY;
+// The watch's BOTH: two presets only, and no lingering on one after a frame.
+// A linger buys the rebroadcasts of what was just heard -- copies, for a
+// chat -- at the price of two seconds deaf to the other network.
+volatile bool     s_noLinger = false;
+// Set by the task once it has seen OFF and put the radio in standby, so the
+// bench transmitter knows nothing else will touch the chip mid-frame.
+volatile bool     s_parked = false;
 volatile uint8_t  s_focus  = 0;
 volatile uint64_t s_survey = 0;
 volatile uint8_t  s_current = 0;
@@ -103,8 +110,33 @@ void listenSettle(uint32_t now) {
 
 // How long a CAD of four symbols takes on a profile, with the retune on
 // top, so the survey's wait has a bound.
+// Two symbols at SF10 and up, four below. A round has to come back to a fast
+// preset inside ITS preamble (MeshCore US: 32 symbols of 2 ms), and a
+// four-symbol LongFast CAD is most of that. Two symbols call noise a
+// preamble more often; the preamble deadline below makes each false call
+// cost a few symbols instead of a whole frame's wait.
+uint8_t cadSymbols(const Profile& p) { return p.sf >= 10 ? 2 : 4; }
+// ...and a higher detection peak for those two-symbol CADs than RadioLib's
+// SF+13: at the default, LongFast called noise a preamble about once a
+// second on a quiet desk, and each call is a MeshCore preamble's worth of
+// the round spent finding out.
+uint8_t cadPeak(const Profile& p) { return p.sf >= 10 ? (uint8_t)(p.sf + 16) : 0; }
+
+// After a CAD hit: a real frame raises PREAMBLE_DETECTED within a few
+// symbols. Nothing by then was noise.
+uint32_t preambleDeadlineMs(const Profile& p) {
+    return (symbolUs(p.sf, p.bwKhz10) * 8u) / 1000 + 8;
+}
+
+// After a CAD hit: how long until a real frame's header must have landed --
+// the rest of the preamble, the eight-symbol header, and a margin. A hit
+// with no header by then was noise, and the survey moves on rather than
+// sitting in reception for a whole maximum-length frame (2.8 s on LongFast).
+uint32_t headerDeadlineMs(const Profile& p) {
+    return (symbolUs(p.sf, p.bwKhz10) * (uint32_t)(p.preamble + 13)) / 1000 + 20;
+}
 uint32_t cadMs(const Profile& p) {
-    return (symbolUs(p.sf, p.bwKhz10) * 5) / 1000 + 4;
+    return (symbolUs(p.sf, p.bwKhz10) * (cadSymbols(p) + 1)) / 1000 + 4;
 }
 // How long the longest frame on a profile could take, for the receive timeout
 // after a CAD hit: a full preamble and 255 bytes.
@@ -182,9 +214,11 @@ void task(void*) {
         // `continue` it left by.
         listenSettle(millis());
         const Mode want = s_mode;
+        if (want != Mode::OFF) s_parked = false;
         if (want == Mode::OFF) {
             if (listening) { LoraRadio::standby(); listening = false; }
             onMode = Mode::OFF;
+            s_parked = true;
             vTaskDelay(pdMS_TO_TICKS(200));
             continue;
         }
@@ -238,7 +272,7 @@ void task(void*) {
         if (!LoraRadio::apply(p)) { vTaskDelay(pdMS_TO_TICKS(100)); continue; }
         s_stats.cadRounds++;
         const uint32_t frameMs = maxFrameMs(p);
-        if (!LoraRadio::startCad(4, true, frameMs)) { vTaskDelay(pdMS_TO_TICKS(100)); continue; }
+        if (!LoraRadio::startCad(cadSymbols(p), true, frameMs, cadPeak(p))) { vTaskDelay(pdMS_TO_TICKS(100)); continue; }
         listening = true;
         s_listenStart = millis();
         if (!LoraRadio::waitIrq(cadMs(p) + 30)) { LoraRadio::standby(); listening = false; continue; }
@@ -252,15 +286,28 @@ void task(void*) {
         s_stats.cadHits++;
         LoraRadio::clearIrq((uint16_t)(LoraRadio::IRQ_CAD_HIT | LoraRadio::IRQ_CAD_DONE));
         // The chip is in RX now, for frameMs at most.
-        bool got = false;
+        bool got = false, header = false, preamble = (f & LoraRadio::IRQ_PREAMBLE) != 0;
         const uint32_t t0 = millis();
+        const uint32_t hdrBy = headerDeadlineMs(p), preBy = preambleDeadlineMs(p);
         while (millis() - t0 < frameMs + 50) {
-            if (!LoraRadio::waitIrq(frameMs + 50 - (millis() - t0))) break;
+            const uint32_t el = millis() - t0;
+            uint32_t wait = frameMs + 50 - el;
+            if (!preamble) {
+                if (el >= preBy) { LoraRadio::standby(); break; }   // noise: no preamble
+                if (wait > preBy - el) wait = preBy - el;
+            }
+            if (!header) {
+                if (el >= hdrBy) { LoraRadio::standby(); break; }   // noise: no header came
+                if (wait > hdrBy - el) wait = hdrBy - el;
+            }
+            if (!LoraRadio::waitIrq(wait)) continue;
             f = LoraRadio::irq();
+            if (f & LoraRadio::IRQ_PREAMBLE) preamble = true;
+            if (f & LoraRadio::IRQ_HDR_VALID) { header = true; preamble = true; }
             if (f & LoraRadio::IRQ_TIMEOUT) { LoraRadio::clearIrq(f); break; }
             if (handleIrq(idx)) { got = true; break; }
         }
-        if (!got) continue;
+        if (!got || s_noLinger) continue;
         // Linger: a frame came, so its answers are about to. Two seconds of
         // plain reception here, or until the mode changes under us.
         LoraRadio::startReceive();
@@ -387,7 +434,14 @@ bool begin() {
     else
         Serial.printf("[lora] no PSRAM for the survey%s or the message ring%s -- both are off\n",
                       surveyBytes ? " (it has its block)" : "", msgBytes ? " (it has its block)" : "");
+#if defined(TWATCH_S3)
+    // The watch's WiFi sniffer and Bluetooth scan keep core 0 busy, and a
+    // late turn here is a missed MeshCore preamble (65 ms in all). Core 1
+    // is the UI's, at priority 1; this task mostly sleeps on DIO1.
+    xTaskCreatePinnedToCore(task, "lora", 6144, nullptr, 3, &s_task, 1);
+#else
     xTaskCreatePinnedToCore(task, "lora", 6144, nullptr, 2, &s_task, 0);
+#endif
     return true;
 }
 
@@ -508,13 +562,14 @@ void applyListen(uint8_t listen) {
     const bool haveMt = meshProfile(Proto::MESHTASTIC, mt);
     const bool haveMc = meshProfile(Proto::MESHCORE, mc);
     switch (listen) {
-        case 0: setMode(Mode::OFF); break;
-        case 1: if (haveMt) { s_focus = mt; setMode(Mode::FOCUS); } break;
-        case 2: if (haveMc) { s_focus = mc; setMode(Mode::FOCUS); } break;
+        case 0: s_noLinger = false; setMode(Mode::OFF); break;
+        case 1: s_noLinger = false; if (haveMt) { s_focus = mt; setMode(Mode::FOCUS); } break;
+        case 2: s_noLinger = false; if (haveMc) { s_focus = mc; setMode(Mode::FOCUS); } break;
         default:
             // Both: the survey over just these two. A CAD on each takes
             // tens of milliseconds, far inside either network's preamble.
             s_survey = (haveMt ? (1ull << mt) : 0) | (haveMc ? (1ull << mc) : 0);
+            s_noLinger = true;
             setMode(Mode::SURVEY);
             break;
     }
@@ -1517,8 +1572,9 @@ bool console(const char* line) {
         LoraCrypto::hmacSha256(secret, 32, f + 5, clen, mac);
         f[3] = mac[0]; f[4] = mac[1];
         const Mode was = s_mode;
+        s_parked = false;
         setMode(Mode::OFF);
-        vTaskDelay(pdMS_TO_TICKS(300));
+        for (int k = 0; k < 400 && !s_parked; k++) vTaskDelay(pdMS_TO_TICKS(10));
         LoraRadio::apply(profile(mc));
         Serial.printf("[lora] bench tx MeshCore \"%s\" on %s\n", (const char*)plain + 5, profile(mc).name);
         LoraRadio::benchTransmit(f, (uint8_t)(5 + clen), 0);
@@ -1555,8 +1611,9 @@ bool console(const char* line) {
         Meshtastic::Channel c; memset(&c, 0, sizeof c); memcpy(c.key, key, 16); c.keyLen = 16;
         Meshtastic::decrypt(h, c, p, dlen);   // CTR: encrypting is the same operation
         const Mode was = s_mode;
+        s_parked = false;
         setMode(Mode::OFF);
-        vTaskDelay(pdMS_TO_TICKS(300));
+        for (int k = 0; k < 400 && !s_parked; k++) vTaskDelay(pdMS_TO_TICKS(10));
         LoraRadio::apply(profile(0));
         Serial.printf("[lora] bench tx \"%s\" from %08lx on %s\n", text, (unsigned long)from, profile(0).name);
         LoraRadio::benchTransmit(f, (uint8_t)(16 + dlen), 0);

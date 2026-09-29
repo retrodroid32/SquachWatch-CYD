@@ -38,7 +38,9 @@ bool startReceive();
 bool startReceiveFor(uint32_t ms);
 // A CAD of `symbols` symbols (2, 4 or 8). With gotoRx, the chip drops into
 // reception by itself on a hit, for at most rxMs.
-bool startCad(uint8_t symbols, bool gotoRx, uint32_t rxMs);
+// detPeak 0 = RadioLib's default for the SF; higher calls noise a preamble
+// less often, at some cost in range.
+bool startCad(uint8_t symbols, bool gotoRx, uint32_t rxMs, uint8_t detPeak = 0);
 void standby();
 
 // The chip's raw IRQ word, and clearing some of it. Bits as in irq().
