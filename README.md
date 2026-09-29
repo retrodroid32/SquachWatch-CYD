@@ -154,7 +154,15 @@ The GPS build listens at 115200 baud and accepts both standard NMEA and the
 UBX NAV-PVT/NAV-DOP output used by FlightMesh-configured receivers. It uses valid GNSS
 UTC to establish the board clock when it does not already have trusted time,
 shows fix status under **System Properties → Board**, and geotags SD detection
-rows. The fixed-size BlackBox record is deliberately unchanged.
+rows. A compact green GPS-lock icon also appears at the upper right only while
+the receiver has a fresh fix.
+
+The 3.2" CYD includes an IP5306 charger/boost. Firmware probes its optional
+I2C telemetry interface at boot; on revisions that expose it, the upper-right
+status area shows the IP5306's coarse battery level (100/75/50/25/0%) and a
+lightning bolt while actively charging. Revisions whose IP5306 does not expose
+readable telemetry show no battery value rather than a guessed percentage.
+The fixed-size BlackBox record is deliberately unchanged.
 
 ### The clock
 
