@@ -3123,6 +3123,10 @@ void setup() {
     }
 
 #if defined(TWATCH_S3)
+    wardriveBegin();
+#endif
+
+#if defined(TWATCH_S3)
     // What the watch is like at the moment the radios start. A boot that
     // ran the touch calibration first hears the room; a plain boot comes up
     // deaf. Logged so the two kinds of boot can be compared line by line.
@@ -3500,6 +3504,46 @@ void twatchGpsBadge(TFT_eSPI& t) {
     t.print(txt);
 }
 
+static bool usbWriteAll(const char* p, size_t n) {
+    uint32_t waitFrom = millis();
+    while (n) {
+        const int room = Serial.availableForWrite();
+        if (room <= 0) {
+            if (millis() - waitFrom > 2000) return false;
+            delay(1);
+            continue;
+        }
+        const size_t k = (size_t)room < n ? (size_t)room : n;
+        const size_t w = Serial.write((const uint8_t*)p, k);
+        p += w; n -= w;
+        if (w) waitFrom = millis();
+    }
+    return true;
+}
+
+static void wigleExport(bool includeFake) {
+    char buf[512];
+    struct Ctx { bool fake, ok; uint32_t rows, skipped; char* buf; } ctx =
+        { includeFake, true, 0, 0, buf };
+    usbWriteAll("=== WIGLE BEGIN ===\n", 20);
+    const size_t h = Wardrive::headerLines(buf, sizeof buf, FIRMWARE_VERSION,
+                                           "twatch-s3", "LilyGo T-Watch S3 Plus");
+    ctx.ok = usbWriteAll(buf, h);
+    if (ctx.ok) Wardrive::forEach([](const Wardrive::Record& r, void* p) {
+        Ctx& c = *(Ctx*)p;
+        if ((r.flags & Wardrive::F_FAKE) && !c.fake) { c.skipped++; return true; }
+        const size_t n = Wardrive::csvRow(r, c.buf, 320);
+        if (n && !usbWriteAll(c.buf, n)) { c.ok = false; return false; }
+        if (n) c.rows++;
+        return true;
+    }, &ctx);
+    const int n = snprintf(buf, sizeof buf,
+                           "=== WIGLE END %lu rows (%lu bench rows left out)%s ===\n",
+                           (unsigned long)ctx.rows, (unsigned long)ctx.skipped,
+                           ctx.ok ? "" : " INCOMPLETE");
+    usbWriteAll(buf, (size_t)n);
+}
+
 static void gpsTick() {
     const uint8_t cmd = g_consoleGps;
     if (cmd) g_consoleGps = 0;
@@ -3533,25 +3577,9 @@ static void gpsTick() {
     }
     else if (cmd == 5) { Wardrive::setEnabled(true);  if (!s_gpsOn) gpsStart(false); Serial.println("[wardrive] ON"); }
     else if (cmd == 6) { Wardrive::setEnabled(false); gpsStop(); Serial.println("[wardrive] off"); }
-    else if (cmd == 7 || cmd == 8 || cmd == 9) {
-        if (cmd == 9) { Wardrive::clear(); Serial.println("[wardrive] cleared"); }
-        else {
-            char buf[512];
-            struct Ctx { bool fake; uint32_t rows, skipped; char* buf; } ctx = { cmd == 8, 0, 0, buf };
-            Serial.println("=== WIGLE BEGIN ===");
-            const size_t hn = Wardrive::headerLines(buf, sizeof buf, FIRMWARE_VERSION, "twatch-s3", "LilyGo T-Watch S3 Plus");
-            Serial.write((const uint8_t*)buf, hn);
-            Wardrive::forEach([](const Wardrive::Record& r, void* p) {
-                Ctx& c = *(Ctx*)p;
-                if ((r.flags & Wardrive::F_FAKE) && !c.fake) { c.skipped++; return true; }
-                const size_t n = Wardrive::csvRow(r, c.buf, 320);
-                if (n) { Serial.write((const uint8_t*)c.buf, n); c.rows++; }
-                return true;
-            }, &ctx);
-            Serial.printf("=== WIGLE END %lu rows (%lu bench rows left out) ===\n",
-                          (unsigned long)ctx.rows, (unsigned long)ctx.skipped);
-        }
-    }
+    else if (cmd == 7) wigleExport(false);
+    else if (cmd == 8) wigleExport(true);
+    else if (cmd == 9) { Wardrive::clear(); Serial.println("[wardrive] cleared"); }
 
     if (Gnss::faked())
         Gnss::fake(Gnss::fix().lat7, Gnss::fix().lon7,
