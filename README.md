@@ -150,7 +150,8 @@ On the 3.2" E32R32P, do **not** use the RXD/TXD pair for GPS data because
 those signals are UART0 and are shared with the onboard CH340C USB serial bridge.
 Connect GPS **TX → GPIO35 (JP3)**, leave GPS RX disconnected, and use suitable
 5V/GND power for receivers rated for it.
-The GPS build listens at 115200 baud, uses valid GNSS
+The GPS build listens at 115200 baud and accepts both standard NMEA and the
+UBX NAV-PVT/NAV-DOP output used by FlightMesh-configured receivers. It uses valid GNSS
 UTC to establish the board clock when it does not already have trusted time,
 shows fix status under **System Properties → Board**, and geotags SD detection
 rows. The fixed-size BlackBox record is deliberately unchanged.
