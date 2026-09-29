@@ -3517,6 +3517,12 @@ static void gpsPrintStatus() {
     (void)f;
 }
 
+// Fresh-fix query for the compact top-right indicator. A plain T-Watch S3
+// never reaches this state because its GNSS probe times out and powers down.
+bool twatchGpsFixed() {
+    return s_gpsOn && Gnss::fresh(millis());
+}
+
 // Top-centre GPS counter. ui_clear.cpp draws this immediately after the
 // background so speech bubbles and Squachy remain on top of it.
 void twatchGpsBadge(TFT_eSPI& t) {
