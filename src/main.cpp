@@ -42,6 +42,7 @@
 #include "notices.h"
 #include "theme.h"            // the crash card on the splash
 #include "clock.h"
+#include "gnss.h"
 
 // Written every second, read once on the next boot. RTC_NOINIT_ATTR is the
 // point: it survives a software reset WITHOUT being zeroed on the way back
@@ -1516,7 +1517,8 @@ volatile bool g_consoleXtal = false;   // XTAL: CLOCK CHECK from the console (wa
 volatile bool g_consoleMotion = false; // MOTION: the motion sensor's reading and verdict (watch)
 volatile bool g_consoleBuzz = false;  // BUZZ: play the alert pattern now and report the driver (watch)
 volatile bool g_consoleRtc = false;   // RTC: read the clock chip (watch)
-volatile bool g_consolePmu = false;   // PMU: dump the power chip's registers (watch)
+volatile bool g_consolePmu = false;
+volatile uint8_t g_consoleGps = 0;    // GPS / GPS OFF / GPS STATUS on T-Watch S3 Plus   // PMU: dump the power chip's registers (watch)
 
 #ifdef BENCH_TOOLS
 // UPDATE NOW and UPDATE STOP on the console, for the bench: the unattended
@@ -3423,6 +3425,129 @@ static const char* timedScreenName(AppState s) {
         default:                    return nullptr;
     }
 }
+#if defined(TWATCH_S3)
+// ---- T-Watch S3 Plus GNSS -------------------------------------------------
+static bool     s_gpsOn = false, s_gpsFound = false;
+static uint8_t  s_gpsTry = 0;
+static uint32_t s_gpsTryAt = 0, s_gpsSumAt = 0, s_gpsGoodAt = 0;
+static uint32_t s_gpsOnAt = 0, s_gpsFirstFixMs = 0;
+static uint8_t  s_gpsBestView = 0, s_gpsBestHeard = 0, s_gpsBestUsed = 0;
+static const uint32_t GPS_BAUDS[] = { 38400, 9600, 115200 };
+
+static void gpsPower(bool on, bool dc4) {
+    if (on) {
+        s_pmu.setBLDO1Voltage(3300); s_pmu.enableBLDO1();
+        s_pmu.setDC3Voltage(3300);   s_pmu.enableDC3();
+        if (dc4) { s_pmu.setDC4Voltage(850); s_pmu.enableDC4(); }
+    } else {
+        s_pmu.disableBLDO1(); s_pmu.disableDC3(); s_pmu.disableDC4();
+    }
+}
+
+static void gpsOpen(uint32_t baud) {
+    Serial1.end();
+    Serial1.begin(baud, SERIAL_8N1, 41, 42);
+    s_gpsTryAt = millis();
+    s_gpsGoodAt = Gnss::good();
+}
+
+static void gpsStart() {
+    if (!s_pmuOk) { Serial.println("[gps] PMU unavailable"); return; }
+    s_gpsOn = true; s_gpsFound = false; s_gpsTry = 0;
+    s_gpsOnAt = millis(); s_gpsFirstFixMs = 0;
+    s_gpsBestView = s_gpsBestHeard = s_gpsBestUsed = 0;
+    Gnss::reset();
+    gpsPower(true, false);
+    delay(50);
+    gpsOpen(GPS_BAUDS[0]);
+    s_gpsSumAt = millis();
+}
+
+static void gpsStop() {
+    s_gpsOn = false;
+    Serial1.end();
+    gpsPower(false, false);
+}
+
+void twatchGpsBadge(TFT_eSPI& t) {
+    if (!s_gpsOn) return;
+    const Gnss::Sky sky = Gnss::sky();
+    const Gnss::Fix& f = Gnss::fix();
+    const bool fix = Gnss::fresh(millis());
+    char txt[40];
+    if (!s_gpsFound) snprintf(txt, sizeof txt, "GPS STARTING");
+    else if (fix)    snprintf(txt, sizeof txt, "GPS FIX  %u SATS", f.used);
+    else             snprintf(txt, sizeof txt, "GPS %u HEARD  %u USED", sky.heard, f.used);
+    t.setTextSize(Theme::uiTextSize(t, 1));
+    const int w = t.textWidth(txt) + 10, h = t.fontHeight() + 6;
+    const int x = (t.width() - w) / 2, y = 4;
+    const uint16_t col = fix ? Theme::GREEN : Theme::CYAN;
+    t.fillRoundRect(x, y, w, h, 4, Theme::BG);
+    t.drawRoundRect(x, y, w, h, 4, col);
+    t.setTextColor(col, Theme::BG);
+    t.setCursor(x + 5, y + 3);
+    t.print(txt);
+}
+
+static void gpsTick() {
+    const uint8_t cmd = g_consoleGps;
+    if (cmd) g_consoleGps = 0;
+    if (cmd == 1) { gpsStart(); Serial.println("[gps] on"); }
+    else if (cmd == 2) { gpsStop(); Serial.println("[gps] off"); }
+    else if (cmd == 3) {
+        const Gnss::Fix& f = Gnss::fix();
+        Serial.printf("[gps] status: %s; on %lu s; most in view %u, heard %u, used %u; ",
+                      s_gpsOn ? "on" : "off",
+                      s_gpsOn ? (unsigned long)((millis() - s_gpsOnAt) / 1000) : 0ul,
+                      s_gpsBestView, s_gpsBestHeard, s_gpsBestUsed);
+        if (s_gpsFirstFixMs)
+            Serial.printf("FIRST FIX after %lu s, now %s at %ld,%ld\n",
+                          (unsigned long)(s_gpsFirstFixMs / 1000),
+                          Gnss::fresh(millis()) ? "fixed" : "lost",
+                          (long)f.lat7, (long)f.lon7);
+        else Serial.println("never had a fix");
+    }
+
+    if (!s_gpsOn) return;
+    while (Serial1.available()) Gnss::feed((char)Serial1.read(), millis());
+    const uint32_t now = millis();
+    if (!s_gpsFound) {
+        if (Gnss::good() - s_gpsGoodAt >= 3) {
+            s_gpsFound = true;
+            Serial.printf("[gps] a GNSS is talking at %lu baud\n",
+                          (unsigned long)GPS_BAUDS[s_gpsTry % 3]);
+        } else if (now - s_gpsTryAt > 2500) {
+            s_gpsTry++;
+            if (s_gpsTry == 3) { gpsPower(true, true); delay(50); }
+            if (s_gpsTry >= 6) {
+                Serial.println("[gps] no GNSS answered: not an S3 Plus, or its GPS is not powered this way");
+                gpsStop();
+                return;
+            }
+            gpsOpen(GPS_BAUDS[s_gpsTry % 3]);
+        }
+    }
+    const Gnss::Sky sky = Gnss::sky();
+    const Gnss::Fix& f = Gnss::fix();
+    if (sky.view > s_gpsBestView) s_gpsBestView = sky.view;
+    if (sky.heard > s_gpsBestHeard) s_gpsBestHeard = sky.heard;
+    if (f.used > s_gpsBestUsed) s_gpsBestUsed = f.used;
+    if (f.valid && !s_gpsFirstFixMs) {
+        s_gpsFirstFixMs = now - s_gpsOnAt;
+        Serial.printf("[gps] FIRST FIX after %lu s, %u satellites\n",
+                      (unsigned long)(s_gpsFirstFixMs / 1000), f.used);
+    }
+    if (f.valid && Gnss::utcEpoch() && !Clock::trusted()) {
+        if (Clock::setEpoch(Gnss::utcEpoch())) Serial.println("[clock] set from GPS");
+    }
+    if (s_gpsFound && now - s_gpsSumAt > 5000) {
+        s_gpsSumAt = now;
+        Serial.printf("[gps] %s; %u used; in view %u, heard %u\n",
+                      Gnss::fresh(now) ? "FIX" : "no fix yet", f.used, sky.view, sky.heard);
+    }
+}
+#endif
+
 static const char* s_lastScreenName = nullptr;
 static uint32_t    s_lastScreenUs   = 0;
 static uint32_t    s_lastScreenAt   = 0;     // transitionStart of the screen being timed
@@ -3446,6 +3571,7 @@ void loop() {
     twatchRadioTick(now);
     twatchRadioHealTick(now);
     twatchBatteryTick(now);
+    gpsTick();
     if (g_consoleBatt) { g_consoleBatt = false; twatchBatterySample(BlackBox::BATT_WHY_TIMER); }
     if (g_consoleBattLog) {
         g_consoleBattLog = false;
