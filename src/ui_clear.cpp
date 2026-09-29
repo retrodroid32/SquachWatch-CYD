@@ -1739,7 +1739,6 @@ static int16_t drawCornerWatchStatus(TFT_eSPI& t, int w) {
     right = drawTwatchGpsFixIcon(t, right);
 
     if (!Clock::trusted()) return (int16_t)(right - 1);
-    if (!Clock::trusted()) return -1;
     char tm[8];
     Clock::formatTime(tm, sizeof tm, true);
     t.setTextSize(2);
