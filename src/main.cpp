@@ -2298,18 +2298,45 @@ static void twatchRtcBegin() {
     if (!t && Clock::trusted()) rtcWrite(Clock::nowEpoch());
 }
 
+// Lightweight status snapshot for the main-screen corner. The PMU is queried
+// at most every two seconds so rendering the status never turns into an I2C
+// transaction per frame. Returns false when this board has no usable gauge.
+bool twatchBatteryStatus(uint8_t& pct, bool& charging) {
+    if (!s_pmuOk) return false;
+    static uint32_t at = 0;
+    static uint8_t  cachedPct = 0;
+    static bool     cachedCharging = false;
+    const uint32_t now = millis();
+    if (!at || now - at >= 2000u) {
+        at = now ? now : 1;
+        int p = s_pmu.getBatteryPercent();
+        if (p < 0) p = 0;
+        if (p > 100) p = 100;
+        cachedPct = (uint8_t)p;
+        cachedCharging = s_pmu.isCharging();
+    }
+    pct = cachedPct;
+    charging = cachedCharging;
+    return true;
+}
+
 // The WATCH page's BATTERY row: "81% 4.12V", or "CHG 81%" on the cable.
 void twatchBatteryLine(char* out, size_t n) {
     if (!s_pmuOk) { snprintf(out, n, "?"); return; }
     static uint32_t at = 0;
     static char     line[16] = "";
     const uint32_t now = millis();
-    if (!line[0] || now - at >= 2000) {   // two I2C reads, not one per frame
+    if (!line[0] || now - at >= 2000) {
         at = now;
-        const int pct = s_pmu.getBatteryPercent();
-        if (s_pmu.isCharging()) snprintf(line, sizeof line, "CHG %d%%", pct);
-        else snprintf(line, sizeof line, "%d%% %u.%02uV", pct, (unsigned)(s_pmu.getBattVoltage() / 1000),
-                      (unsigned)(s_pmu.getBattVoltage() % 1000 / 10));
+        uint8_t pct = 0;
+        bool charging = false;
+        if (!twatchBatteryStatus(pct, charging)) { snprintf(out, n, "?"); return; }
+        if (charging) snprintf(line, sizeof line, "CHG %u%%", (unsigned)pct);
+        else {
+            const unsigned mv = (unsigned)s_pmu.getBattVoltage();
+            snprintf(line, sizeof line, "%u%% %u.%02uV", (unsigned)pct,
+                     mv / 1000u, (mv % 1000u) / 10u);
+        }
     }
     snprintf(out, n, "%s", line);
 }
