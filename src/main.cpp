@@ -5370,6 +5370,12 @@ void loop() {
                             break;
                         case SettingsRow::WATCH_TEMP: break;   // a reading, not a switch
                         case SettingsRow::WATCH_XTAL: twatchXtalStart(); break;
+                        case SettingsRow::WATCH_WARDRIVE:
+                            g_consoleGps = Wardrive::enabled() ? 6 : 5;
+                            Theme::showToast(Wardrive::enabled() ? "WARDRIVE OFF" : "WARDRIVE ON",
+                                             Wardrive::enabled() ? nullptr : "Logging once the GPS has a fix",
+                                             Theme::CYAN);
+                            break;
                         case SettingsRow::WATCH_SETTINGS:
                             uiSettingsOpenPage(SettingsPage::WATCH);
                             break;
