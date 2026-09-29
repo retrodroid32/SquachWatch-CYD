@@ -1,9 +1,22 @@
-#if defined(CROWPANEL7)
+#if defined(CROWPANEL7) || defined(CYD32C)
 #include "gt911_touch.h"
-#include "crowpanel7_board.h"
-#include "crowpanel7_backlight.h"
 #include <Arduino.h>
 #include <Wire.h>
+#if defined(CROWPANEL7)
+#include "crowpanel7_board.h"
+#include "crowpanel7_backlight.h"
+#else
+#define PIN_I2C_SDA    33
+#define PIN_I2C_SCL    32
+#define PIN_TOUCH_RST  25
+#define PIN_TOUCH_INT  21
+#define I2C_HZ         400000
+#define GT911_ADDR_A   0x5D
+#define GT911_ADDR_B   0x14
+#define GT911_REG_PRODUCT_ID 0x8140
+#define GT911_REG_STATUS     0x814E
+#define GT911_REG_POINT1     0x814F
+#endif
 
 namespace Gt911 {
 
@@ -53,6 +66,19 @@ static bool i2cPresent(uint8_t addr) {
 // of reset is also what latches its address to 0x5D rather than 0x14, which
 // is why this runs before the identify rather than after a failed one.
 static void wake() {
+#if defined(CYD32C)
+    // Goodix reset/address-select sequence: INT low while reset is released
+    // selects 0x5D, then INT returns to input mode.
+    pinMode(PIN_TOUCH_RST, OUTPUT);
+    pinMode(PIN_TOUCH_INT, OUTPUT);
+    digitalWrite(PIN_TOUCH_INT, LOW);
+    digitalWrite(PIN_TOUCH_RST, LOW);
+    delay(11);
+    digitalWrite(PIN_TOUCH_RST, HIGH);
+    delay(6);
+    pinMode(PIN_TOUCH_INT, INPUT);
+    delay(60);
+#else
     for (uint8_t attempt = 0; attempt < 6; attempt++) {
         if (i2cPresent(GT911_ADDR_A)) return;
         CrowBL::begin();
@@ -65,6 +91,7 @@ static void wake() {
         pinMode(PIN_TOUCH_INT, INPUT);
         delay(100);
     }
+#endif
 }
 
 static bool identify() {
@@ -84,7 +111,9 @@ static bool identify() {
 bool begin() {
     Wire.begin(PIN_I2C_SDA, PIN_I2C_SCL, I2C_HZ);
     delay(20);
+#if defined(CROWPANEL7)
     CrowBL::begin();
+#endif
     wake();
     if (!identify()) {
         Serial.println(F("[touch] no GT911 answered on 0x5D or 0x14"));
