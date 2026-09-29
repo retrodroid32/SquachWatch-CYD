@@ -35,6 +35,7 @@
 #include "ui_diagnostics.h"   // CrashReport, used by the breadcrumb below
 #include "blackbox.h"
 #include "gnss.h"
+#include "wardrive.h"
 #include "ui_bingo.h"
 #include "bingo.h"
 #include "dex.h"
@@ -1518,7 +1519,8 @@ volatile bool g_consoleMotion = false; // MOTION: the motion sensor's reading an
 volatile bool g_consoleBuzz = false;  // BUZZ: play the alert pattern now and report the driver (watch)
 volatile bool g_consoleRtc = false;   // RTC: read the clock chip (watch)
 volatile bool g_consolePmu = false;   // PMU: dump the power chip's registers (watch)
-volatile uint8_t g_consoleGps = 0;      // GPS / GPS OFF / GPS STATUS: T-Watch S3 Plus GNSS
+volatile uint8_t g_consoleGps = 0;      // GPS, WARDRIVE and WIGLE commands on T-Watch S3 Plus
+volatile int32_t g_consoleFakeLat7 = 0, g_consoleFakeLon7 = 0;
 
 #ifdef BENCH_TOOLS
 // UPDATE NOW and UPDATE STOP on the console, for the bench: the unattended
@@ -1947,6 +1949,9 @@ static void performWipe(WipeBoot after) {
     Security::wipeSecrets();
     engine.sd().wipe();
     BlackBox::wipe();        // the log and the crash history kept in flash
+#if defined(TWATCH_S3)
+    Wardrive::clear();       // location-stamped radio history is sensitive too
+#endif
 #if HAVE_NVS_ERASE
     // The frame buffer is 77 KB the wipe can have: the board restarts in a
     // moment and the screen is meant to go quiet anyway. Without it the copy
@@ -2721,6 +2726,9 @@ static void printBootBanner() {
 }
 
 // ---- Arduino setup / loop ----
+#if defined(TWATCH_S3)
+static void wardriveBegin();
+#endif
 void setup() {
     // Before anything else can allocate: the breadcrumb has to be read out
     // while it is still the previous life's, not this one's.
@@ -3113,6 +3121,10 @@ void setup() {
         }
         BlackBox::noteBoot(br);
     }
+
+#if defined(TWATCH_S3)
+    wardriveBegin();
+#endif
 
 #if defined(TWATCH_S3)
     // What the watch is like at the moment the radios start. A boot that
