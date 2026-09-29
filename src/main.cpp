@@ -1348,7 +1348,7 @@ static void squachyCatch(DetectionType type, const uint8_t* mac, uint32_t hits, 
 }
 
 #if defined(TWATCH_S3)
-enum class Buzz : uint8_t { ALERT, WATCH, SAMPLE };
+enum class Buzz : uint8_t { ALERT, WATCH, SAMPLE, MESSAGE };
 static void twatchBuzz(Buzz kind);
 #endif
 static void enterAlert(const Detection& d) {
@@ -2185,6 +2185,8 @@ static void twatchBuzz(Buzz kind) {
     if (kind == Buzz::WATCH) {               // three long buzzes
         const uint8_t e = lvl == 2 ? 16 : 47;
         seq[0] = e; seq[1] = 0x80 | 12; seq[2] = e; seq[3] = 0x80 | 12; seq[4] = e;
+    } else if (kind == Buzz::MESSAGE) {      // one click: a message, not an alert
+        seq[0] = lvl == 0 ? 1 : 14;
     } else {                                 // a double click, or a double buzz
         const uint8_t e = lvl == 0 ? 1 : lvl == 1 ? 14 : 15;
         seq[0] = e; seq[1] = 0x80 | 10; seq[2] = e;
@@ -2193,7 +2195,7 @@ static void twatchBuzz(Buzz kind) {
     s_drvAwakeAt = millis();
     for (uint8_t i = 0; i < 8; i++) drvWrite(0x04 + i, seq[i]);
     const bool go = drvWrite(0x0C, 0x01);    // GO
-    Serial.printf("[buzz] %s%s\n", kind == Buzz::WATCH ? "watch alert" : kind == Buzz::ALERT ? "alert" : "sample",
+    Serial.printf("[buzz] %s%s\n", kind == Buzz::WATCH ? "watch alert" : kind == Buzz::ALERT ? "alert" : kind == Buzz::MESSAGE ? "lora message" : "sample",
                   go ? "" : " -- the motor driver did not answer");
 }
 
@@ -3599,6 +3601,50 @@ static void gpsStop() {
     gpsPower(false, false);
 }
 
+#if SQUACH_LORA
+// New LoRa chat messages: a pink pill at the top of the main screen, under
+// the GPS counter when that is showing, and only while there is something
+// unread. A tap opens LORA CHATS. Drawn with the GPS counter, under the
+// speech bubbles.
+static int16_t s_loraBadgeX = -1, s_loraBadgeY = 0, s_loraBadgeW = 0, s_loraBadgeH = 0;
+void twatchLoraBadge(TFT_eSPI& t) {
+    s_loraBadgeX = -1;
+    const uint16_t u = uiLoraChatUnread();
+    if (!u || Settings::loraListen() == 0) return;
+    char txt[20];
+    snprintf(txt, sizeof txt, "LORA %u NEW", (unsigned)u);
+    t.setTextSize(Theme::uiTextSize(t, 1));
+    const int w = t.textWidth(txt) + 10, h = t.fontHeight() + 6;
+    const int x = (t.width() - w) / 2;
+    const int y = s_gpsOn ? 4 + h + 3 : 4;
+    t.fillRoundRect(x, y, w, h, 4, Theme::BG);
+    t.drawRoundRect(x, y, w, h, 4, Theme::PINK);
+    t.setTextColor(Theme::PINK, Theme::BG);
+    t.setCursor(x + 5, y + 3);
+    t.print(txt);
+    s_loraBadgeX = (int16_t)x; s_loraBadgeY = (int16_t)y; s_loraBadgeW = (int16_t)w; s_loraBadgeH = (int16_t)h;
+}
+// A finger's worth of slack around it: the pill is small on a watch.
+static bool twatchLoraBadgeHit(int x, int y) {
+    return s_loraBadgeX >= 0 && x >= s_loraBadgeX - 8 && x < s_loraBadgeX + s_loraBadgeW + 8 &&
+           y >= s_loraBadgeY - 6 && y < s_loraBadgeY + s_loraBadgeH + 8;
+}
+// One soft buzz for a new message, not while the chats are open, and not
+// more than once in thirty seconds however busy the channel is.
+static void twatchLoraBuzzTick(uint32_t now) {
+    static uint32_t lastCheck = 0, lastBuzz = 0;
+    static uint16_t lastUnread = 0;
+    if (now - lastCheck < 1000) return;
+    lastCheck = now;
+    const uint16_t u = uiLoraChatUnread();
+    if (u > lastUnread && state != AppState::LORA_CHAT && (!lastBuzz || now - lastBuzz > 30000)) {
+        lastBuzz = now;
+        twatchBuzz(Buzz::MESSAGE);
+    }
+    lastUnread = u;
+}
+#endif
+
 // While the GPS is on, a small counter at the top of the main screen: how
 // many satellites it hears, how many it uses, FIX once it has one -- and,
 // wardriving, how many rows are kept. Read without a cable, on a windowsill.
@@ -3876,6 +3922,9 @@ void loop() {
     }
     engine.loop();
     Lora::tick(now);   // nothing outside a SQUACH_LORA build
+#if SQUACH_LORA && defined(TWATCH_S3)
+    twatchLoraBuzzTick(now);
+#endif
     floodTick();   // nothing outside a FLOOD_BENCH build
     // The heap at the first pass of loop(), for DIAGNOSTICS' BOOT line.
     static uint32_t s_loopHeapFree = 0, s_loopHeapLargest = 0;
@@ -4612,6 +4661,14 @@ void loop() {
                 lastTouch = now;
                 sqActive  = false;
                 enterMeshCompose();
+#if SQUACH_LORA && defined(TWATCH_S3)
+            } else if (touchJustDown && (now - lastTouch) > TOUCH_DEBOUNCE_MS &&
+                       twatchLoraBadgeHit(tp.x, tp.y)) {
+                // The LORA pill: straight to the chats.
+                lastTouch = now;
+                sqActive  = false;
+                enterLoraChat();
+#endif
             } else if (touchJustDown && (now - lastTouch) > TOUCH_DEBOUNCE_MS &&
                        uiClearWatchPillHit(tp.x, tp.y)) {
                 // The watch/hunt pill. Opens the alert screen, which names the
