@@ -1713,13 +1713,66 @@ static bool    s_watchPillOn = false;
 // bubble. Returns where the WATCH pill's free span must end, or -1.
 static int16_t s_cornerClockPillR = -1;
 #if defined(TWATCH_S3)
-static int16_t drawCornerClock(TFT_eSPI& t, int w) {
-    if (!Clock::trusted()) return -1;
+void twatchGpsBadge(TFT_eSPI& t);   // main.cpp: S3 Plus GPS counter, under speech bubbles
+bool twatchGpsFixed();              // main.cpp: true only for a fresh S3 Plus fix
+bool twatchBatteryStatus(uint8_t& pct, bool& charging); // main.cpp / AXP2101
+
+static int drawCornerBattery(TFT_eSPI& t, int right) {
+    uint8_t pct = 0;
+    bool charging = false;
+    if (!twatchBatteryStatus(pct, charging)) return right;
+
+    char txt[6];
+    snprintf(txt, sizeof txt, "%u%%", (unsigned)pct);
+    t.setTextSize(1);
+    const int textW = t.textWidth(txt);
+    const int boltW = charging ? 8 : 0;
+    const int pad = 3;
+    const int boxW = textW + boltW + pad * 2;
+    const int x = right - boxW;
+    t.fillRect(x, 0, boxW, 20, TFT_BLACK);
+
+    int tx = x + pad;
+    if (charging) {
+        const int bx = tx, by = 3;
+        t.fillTriangle(bx + 4, by,     bx,     by + 8, bx + 4, by + 8, Theme::AMBER);
+        t.fillTriangle(bx + 4, by + 6, bx + 1, by + 14, bx + 7, by + 5, Theme::AMBER);
+        tx += boltW;
+    }
+
+    t.setTextColor(Theme::CYAN, TFT_BLACK);
+    t.setCursor(tx, 6);
+    t.print(txt);
+    return x - 3;
+}
+
+static int drawTwatchGpsFixIcon(TFT_eSPI& t, int right) {
+    if (!twatchGpsFixed()) return right;
+    const int cx = right - 9, cy = 10;
+    const uint16_t col = Theme::GREEN;
+    t.fillRect(cx - 7, cy - 7, 15, 15, TFT_BLACK);
+    t.drawFastHLine(cx - 6, cy - 6, 4, col);
+    t.drawFastVLine(cx - 6, cy - 6, 4, col);
+    t.drawFastHLine(cx + 3, cy - 6, 4, col);
+    t.drawFastVLine(cx + 6, cy - 6, 4, col);
+    t.drawFastHLine(cx - 6, cy + 6, 4, col);
+    t.drawFastVLine(cx - 6, cy + 3, 4, col);
+    t.drawFastHLine(cx + 3, cy + 6, 4, col);
+    t.drawFastVLine(cx + 6, cy + 3, 4, col);
+    t.fillCircle(cx, cy, 2, col);
+    return cx - 8 - 4;
+}
+
+static int16_t drawCornerWatchStatus(TFT_eSPI& t, int w) {
+    const int icons = Theme::titleBarRightIconsX(w);
+    int right = icons - (icons < w ? 2 : 4);
+    right = drawCornerBattery(t, right);
+    right = drawTwatchGpsFixIcon(t, right);
+
+    if (!Clock::trusted()) return (int16_t)(right - 1);
     char tm[8];
     Clock::formatTime(tm, sizeof tm, true);
     t.setTextSize(2);
-    const int icons = Theme::titleBarRightIconsX(w);
-    const int right = icons - (icons < w ? 2 : 4);
     const int tw = t.textWidth(tm) - 2;   // no spacing column after the last glyph
     const int x = right - tw;
     t.fillRect(x - 3, 0, tw + 6, 20, TFT_BLACK);
@@ -2855,8 +2908,10 @@ void uiClearTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool adv
     Theme::clearBackgroundFloor();
     FrameProf::lap(FrameProf::BG);
 #if defined(TWATCH_S3)
-    // Under everything that moves: see drawCornerClock().
-    if (DrawBand::has(0, titleBottom)) s_cornerClockPillR = drawCornerClock(t, w);
+    // Compact fix icon + clock sit in the top-right strip; the larger GPS
+    // counter remains top-centre while GPS is running.
+    if (DrawBand::has(0, titleBottom)) s_cornerClockPillR = drawCornerWatchStatus(t, w);
+    twatchGpsBadge(t);
 #endif
     // Everything from here that moves by the call, not by the clock, moves
     // on the mascot's clock. See uiMascotStep().
