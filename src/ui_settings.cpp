@@ -57,10 +57,8 @@ void boardBatteryLine(char* out, size_t n);    // main.cpp: the divider on GPIO9
 #endif
 #if defined(TWATCH_S3)
 void twatchBatteryLine(char* out, size_t n);   // main.cpp, where the power chip lives
-bool twatchRadioResetArmed();                  // main.cpp: the first tap of two
 uint8_t twatchGpsState();                      // main.cpp: 0 off, 1 starting, 2 no fix, 3 fix
 int  twatchChipC();                            // main.cpp: the chip's temperature, cached
-void twatchXtalLine(char* out, size_t n);      // main.cpp: CLOCK CHECK's state or result
 #endif
 
 static const SettingsRow ALL_ROWS[] = {
@@ -131,8 +129,7 @@ static const SettingsRow WATCH_ROWS[] = {
 #endif
     SettingsRow::WATCH_RADIO, SettingsRow::WATCH_LISTEN,
     SettingsRow::WATCH_IDLE_CPU, SettingsRow::WATCH_BUZZ,
-    SettingsRow::WATCH_RADIO_RESET, SettingsRow::WATCH_STEADY, SettingsRow::WATCH_TEMP,
-    SettingsRow::WATCH_XTAL,
+    SettingsRow::WATCH_TEMP,
 };
 static const uint8_t WATCH_ROWS_N = sizeof(WATCH_ROWS) / sizeof(WATCH_ROWS[0]);
 #endif
@@ -212,10 +209,7 @@ static RowGroupId groupFor(SettingsRow r) {
         case SettingsRow::WATCH_IDLE_CPU:
         case SettingsRow::WATCH_BUZZ:
         case SettingsRow::WATCH_SETTINGS:
-        case SettingsRow::WATCH_RADIO_RESET:
-        case SettingsRow::WATCH_STEADY:
         case SettingsRow::WATCH_TEMP:
-        case SettingsRow::WATCH_XTAL:
         case SettingsRow::WATCH_WARDRIVE:
         case SettingsRow::WATCH_LORA:
         case SettingsRow::WATCH_LORA_CHATS:
@@ -896,17 +890,8 @@ static void rowContent(SettingsRow r, const DetectionEngine& eng, char* valBuf, 
         case SettingsRow::WATCH_SETTINGS:
             label = "WATCH SETTINGS"; value = ">";
             break;
-        case SettingsRow::WATCH_RADIO_RESET:
-            label = "RADIO RESET"; value = twatchRadioResetArmed() ? "SURE?" : "GO";
-            break;
-        case SettingsRow::WATCH_STEADY:
-            label = "STEADY POWER"; value = Settings::steadyPower() ? "ON" : "OFF";
-            break;
         case SettingsRow::WATCH_TEMP:
             label = "CHIP TEMP"; snprintf(valBuf, valBufN, "%d C", twatchChipC()); value = valBuf;
-            break;
-        case SettingsRow::WATCH_XTAL:
-            label = "CLOCK CHECK"; twatchXtalLine(valBuf, valBufN); value = valBuf;
             break;
         case SettingsRow::WATCH_WARDRIVE: {
             // OFF, or what it is doing: finding the GPS, waiting for a fix, or

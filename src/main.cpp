@@ -2473,26 +2473,14 @@ static void twatchXtalTick(uint32_t now) {
                   (unsigned long)n, (unsigned long)us, (long)s_xtalPpm, s_xtalChipC,
                   (unsigned long)advertsSeen(), (unsigned long)wifiFramesSeen());
 }
-void twatchXtalLine(char* out, size_t n) {
-    switch (s_xtalState) {
-        case 1: {
-            const uint32_t el = (millis() - s_xtalStartMs) / 1000u;
-            snprintf(out, n, "%lus", (unsigned long)(el < XTAL_SECS ? XTAL_SECS - el : 0));
-            break;
-        }
-        case 2:  snprintf(out, n, "%+ld PPM", (long)s_xtalPpm); break;
-        case 3:  snprintf(out, n, "FAILED"); break;
-        default: snprintf(out, n, "GO"); break;
-    }
-}
 
-// STEADY POWER: DC1 -- the ESP32 and its radio -- in forced PWM, or back to
-// the chip's automatic PWM/PFM. Applied at boot and on every toggle.
+// DC1 -- the ESP32 and its radio -- in the chip's automatic PWM/PFM. The
+// STEADY POWER row that forced PWM was a test for the deaf radios, which
+// were never the supply's fault (the slim WiFi re-init, fixed in v1.21.0);
+// set at boot so a watch that saved STEADY ON goes back to automatic.
 static void twatchApplySteady() {
     if (!s_pmuOk) return;
-    s_pmu.settDC1WorkModeToPwm(Settings::steadyPower() ? 1 : 0);
-    Serial.printf("[pmu] DC1 %s (reg 0x81 = %02X)\n", Settings::steadyPower() ? "forced PWM (STEADY POWER)" : "automatic PWM/PFM",
-                  (unsigned)s_pmu.readRegister(0x81));
+    s_pmu.settDC1WorkModeToPwm(0);
 }
 
 static void twatchBatterySample(uint8_t why) {
@@ -2510,7 +2498,7 @@ static void twatchBatterySample(uint8_t why) {
     if (!s_panelAsleep)     r.flags |= BlackBox::BATT_SCREEN_ON;
     if (!s_radiosResting)   r.flags |= BlackBox::BATT_RADIOS_ON;
     r.chipC   = (int8_t)twatchChipC();
-    r.steady  = Settings::steadyPower() ? 1 : 0;
+    r.steady  = 0;
     r.adverts = advertsSeen();
     r.frames  = wifiFramesSeen();
     BlackBox::noteBattery(r);
@@ -2640,20 +2628,6 @@ static void twatchPowerCycle(uint8_t count, uint8_t why) {
     delay(100);
     esp_sleep_enable_timer_wakeup(1000000ULL);
     esp_deep_sleep_start();
-}
-
-// RADIO RESET under WATCH: two taps within three seconds, so a stray one
-// does not blank the watch. Does not spend the self-heal's allowance.
-static uint32_t s_radioResetArmedAt = 0;
-bool twatchRadioResetArmed() {
-    return s_radioResetArmedAt && millis() - s_radioResetArmedAt < 3000;
-}
-static void twatchRadioResetTap() {
-    if (!twatchRadioResetArmed()) { s_radioResetArmedAt = millis(); if (!s_radioResetArmedAt) s_radioResetArmedAt = 1; return; }
-    s_radioResetArmedAt = 0;
-    Serial.printf("[heal] RADIO RESET tapped: %lu adverts and %lu WiFi frames since boot; restarting\n",
-                  (unsigned long)advertsSeen(), (unsigned long)wifiFramesSeen());
-    twatchPowerCycle(0, BlackBox::BATT_WHY_RESET);
 }
 
 static bool bleShouldHear() {
@@ -5564,14 +5538,7 @@ void loop() {
                         case SettingsRow::WATCH_LISTEN: Settings::cycleBleListen(); break;
                         case SettingsRow::WATCH_IDLE_CPU: Settings::cycleIdleCpu(); applyCpuClock(); break;
                         case SettingsRow::WATCH_BATTERY: break;   // a reading, not a switch
-                        case SettingsRow::WATCH_RADIO_RESET: twatchRadioResetTap(); break;
-                        case SettingsRow::WATCH_STEADY:
-                            Settings::toggleSteadyPower();
-                            twatchApplySteady();
-                            twatchBatterySample(BlackBox::BATT_WHY_TIMER);   // a line in the log at the switch
-                            break;
                         case SettingsRow::WATCH_TEMP: break;   // a reading, not a switch
-                        case SettingsRow::WATCH_XTAL: twatchXtalStart(); break;
                         case SettingsRow::WATCH_SETTINGS: uiSettingsOpenPage(SettingsPage::WATCH); break;
 #if SQUACH_LORA
                         case SettingsRow::WATCH_LORA:
