@@ -34,6 +34,7 @@
 #include <esp_heap_caps.h>
 #include "ui_diagnostics.h"   // CrashReport, used by the breadcrumb below
 #include "blackbox.h"
+#include "gnss.h"
 #include "ui_bingo.h"
 #include "bingo.h"
 #include "dex.h"
@@ -1517,6 +1518,7 @@ volatile bool g_consoleMotion = false; // MOTION: the motion sensor's reading an
 volatile bool g_consoleBuzz = false;  // BUZZ: play the alert pattern now and report the driver (watch)
 volatile bool g_consoleRtc = false;   // RTC: read the clock chip (watch)
 volatile bool g_consolePmu = false;   // PMU: dump the power chip's registers (watch)
+volatile uint8_t g_consoleGps = 0;      // GPS / GPS OFF / GPS STATUS: T-Watch S3 Plus GNSS
 
 #ifdef BENCH_TOOLS
 // UPDATE NOW and UPDATE STOP on the console, for the bench: the unattended
@@ -3427,6 +3429,183 @@ static const char* s_lastScreenName = nullptr;
 static uint32_t    s_lastScreenUs   = 0;
 static uint32_t    s_lastScreenAt   = 0;     // transitionStart of the screen being timed
 
+#if defined(TWATCH_S3)
+// ---- T-Watch S3 Plus GNSS --------------------------------------------------
+// Uses the shared, host-tested NMEA parser from the wardrive groundwork PR.
+// The plain T-Watch S3 has no GNSS; the baud/power probe simply finds nothing
+// and powers the rails back down.
+static bool     s_gpsOn = false;
+static bool     s_gpsFound = false;
+static bool     s_gpsDc4 = false;
+static uint8_t  s_gpsTry = 0;
+static uint32_t s_gpsTryAt = 0;
+static uint32_t s_gpsSumAt = 0;
+static uint32_t s_gpsOnAt = 0;
+static uint32_t s_gpsFirstFixMs = 0;
+static uint8_t  s_gpsBestView = 0;
+static uint8_t  s_gpsBestHeard = 0;
+static uint8_t  s_gpsBestUsed = 0;
+static bool     s_gpsHaveLastFix = false;
+static Gnss::Fix s_gpsLastFix;
+static const uint32_t GPS_BAUDS[] = { 38400, 9600, 115200 };
+
+static void gpsPower(bool on, bool dc4) {
+    if (on) {
+        s_pmu.setBLDO1Voltage(3300); s_pmu.enableBLDO1();
+        s_pmu.setDC3Voltage(3300);   s_pmu.enableDC3();
+        if (dc4) { s_pmu.setDC4Voltage(850); s_pmu.enableDC4(); }
+    } else {
+        s_pmu.disableBLDO1();
+        s_pmu.disableDC3();
+        s_pmu.disableDC4();
+    }
+}
+
+static void gpsOpen(uint32_t baud) {
+    Serial1.end();
+    Gnss::reset();
+    Serial1.begin(baud, SERIAL_8N1, 41, 42);  // ESP32 RX 41, TX 42 on T-Watch S3 Plus
+    s_gpsTryAt = millis();
+    Serial.printf("[gps] listening at %lu baud%s\n", (unsigned long)baud,
+                  s_gpsDc4 ? " with DC4" : "");
+}
+
+static void gpsStart() {
+    if (!s_pmuOk) {
+        Serial.println("[gps] PMU unavailable; cannot power GNSS");
+        return;
+    }
+    s_gpsOn = true;
+    s_gpsFound = false;
+    s_gpsDc4 = false;
+    s_gpsTry = 0;
+    s_gpsOnAt = millis();
+    s_gpsFirstFixMs = 0;
+    s_gpsBestView = s_gpsBestHeard = s_gpsBestUsed = 0;
+    s_gpsHaveLastFix = false;
+    gpsPower(true, false);
+    delay(50);
+    gpsOpen(GPS_BAUDS[0]);
+    s_gpsSumAt = millis();
+}
+
+static void gpsStop() {
+    s_gpsOn = false;
+    Serial1.end();
+    gpsPower(false, false);
+}
+
+static void gpsPrintStatus() {
+    const Gnss::Sky sky = Gnss::sky();
+    const Gnss::Fix& f = Gnss::fix();
+    Serial.printf("[gps] status: %s; most view %u, heard %u, used %u; ",
+                  s_gpsOn ? "on" : "off",
+                  s_gpsBestView, s_gpsBestHeard, s_gpsBestUsed);
+    if (s_gpsFirstFixMs)
+        Serial.printf("FIRST FIX after %lu s; ", (unsigned long)(s_gpsFirstFixMs / 1000u));
+    else
+        Serial.print("no fix yet; ");
+    if (s_gpsHaveLastFix) {
+        Serial.printf("last fix lat7 %ld lon7 %ld alt %d m sats %u epoch %lu\n",
+                      (long)s_gpsLastFix.lat7, (long)s_gpsLastFix.lon7,
+                      (int)s_gpsLastFix.altM, (unsigned)s_gpsLastFix.used,
+                      (unsigned long)s_gpsLastFix.epoch);
+    } else {
+        Serial.printf("current sky view %u heard %u, no last fix\n",
+                      (unsigned)sky.view, (unsigned)sky.heard);
+    }
+    (void)f;
+}
+
+// Top-centre GPS counter. ui_clear.cpp draws this immediately after the
+// background so speech bubbles and Squachy remain on top of it.
+void twatchGpsBadge(TFT_eSPI& t) {
+    if (!s_gpsOn) return;
+    const Gnss::Sky sky = Gnss::sky();
+    const Gnss::Fix& f = Gnss::fix();
+    const bool fix = Gnss::fresh(millis());
+    char txt[40];
+    if (!s_gpsFound) snprintf(txt, sizeof txt, "GPS STARTING");
+    else if (fix)    snprintf(txt, sizeof txt, "GPS FIX  %u SATS", (unsigned)f.used);
+    else             snprintf(txt, sizeof txt, "GPS %u HEARD  %u USED",
+                              (unsigned)sky.heard, (unsigned)f.used);
+    t.setTextSize(Theme::uiTextSize(t, 1));
+    const int w = t.textWidth(txt) + 10, h = t.fontHeight() + 6;
+    const int x = (t.width() - w) / 2, y = 4;
+    const uint16_t col = fix ? Theme::GREEN : Theme::CYAN;
+    t.fillRoundRect(x, y, w, h, 4, Theme::BG);
+    t.drawRoundRect(x, y, w, h, 4, col);
+    t.setTextColor(col, Theme::BG);
+    t.setCursor(x + 5, y + 3);
+    t.print(txt);
+}
+
+static void gpsTick() {
+    const uint8_t cmd = g_consoleGps;
+    if (cmd) g_consoleGps = 0;
+    if (cmd == 1) {
+        gpsStart();
+    } else if (cmd == 2) {
+        gpsStop();
+        Serial.println("[gps] off");
+    } else if (cmd == 3) {
+        gpsPrintStatus();
+    }
+
+    if (!s_gpsOn) return;
+
+    while (Serial1.available()) {
+        Gnss::feed((char)Serial1.read(), millis());
+    }
+
+    const uint32_t now = millis();
+    if (!s_gpsFound && Gnss::good() >= 3) {
+        s_gpsFound = true;
+        Serial.printf("[gps] GNSS detected at %lu baud%s\n",
+                      (unsigned long)GPS_BAUDS[s_gpsTry % 3],
+                      s_gpsDc4 ? " with DC4" : "");
+    }
+
+    if (!s_gpsFound && now - s_gpsTryAt > 2500u) {
+        s_gpsTry++;
+        if (s_gpsTry == 3) {
+            s_gpsDc4 = true;
+            gpsPower(true, true);
+            Serial.println("[gps] nothing yet; enabling DC4 at 850 mV too");
+            delay(50);
+        }
+        if (s_gpsTry >= 6) {
+            Serial.println("[gps] no GNSS answered at 38400/9600/115200; powering it down");
+            gpsStop();
+            return;
+        }
+        gpsOpen(GPS_BAUDS[s_gpsTry % 3]);
+        return;
+    }
+
+    const Gnss::Sky sky = Gnss::sky();
+    const Gnss::Fix& fix = Gnss::fix();
+    if (sky.view > s_gpsBestView) s_gpsBestView = sky.view;
+    if (sky.heard > s_gpsBestHeard) s_gpsBestHeard = sky.heard;
+    if (fix.used > s_gpsBestUsed) s_gpsBestUsed = fix.used;
+
+    if (Gnss::fresh(now)) {
+        if (!s_gpsFirstFixMs) s_gpsFirstFixMs = now - s_gpsOnAt;
+        s_gpsLastFix = fix;
+        s_gpsHaveLastFix = true;
+        if (fix.epoch && !Clock::trusted()) Clock::setEpoch(fix.epoch);
+    }
+
+    if (s_gpsFound && now - s_gpsSumAt > 5000u) {
+        s_gpsSumAt = now;
+        Serial.printf("[gps] %s; view %u heard %u used %u; good %lu bad %lu\n",
+                      Gnss::fresh(now) ? "FIX" : "no fix yet",
+                      (unsigned)sky.view, (unsigned)sky.heard, (unsigned)fix.used,
+                      (unsigned long)Gnss::good(), (unsigned long)Gnss::bad());
+    }
+}
+#endif
+
 void loop() {
     // Cheap and unconditional: available() is a register read, and this
     // is the only way in for the one serial command the firmware takes.
@@ -3688,6 +3867,7 @@ void loop() {
             Serial.println(line);
         }
     }
+    gpsTick();
 #endif
     if (g_consoleInvert) {
         g_consoleInvert = false;
