@@ -38,9 +38,106 @@ For most users, no build tools are required.
 
 Useful links: [browser emulator](https://retrodroid32.github.io/SquachWatch-CYD/emulator/) · [build guide](docs/BUILD.md) · [pinout](docs/PINOUT.md) · [detection provenance](docs/DETECTIONS.md) · [FAQ](docs/FAQ.md).
 
+
+## Why this fork
+
+This fork is being built as the **hardware-flexible, data-rich, release-disciplined SquachWatch distribution**. The goal is not to mirror upstream commit-for-commit; it is to keep the useful upstream work, preserve fork-specific capabilities, and push the platform into areas the stock project does not cover as deeply.
+
+What sets this fork apart:
+
+- **More hardware choices:** released 2.8-inch and 3.2-inch CYDs, Freenove 3.2-inch, AWOK, RL Phantom and T-Watch S3 support, with additional capacitive 3.2-inch and S3 Plus work in the next-release pipeline.
+- **Detection intelligence instead of simple hits:** concrete match evidence, per-type alert rules, device policies, chronological EVENTS history and RSSI trends are already merged to `master` for the next release.
+- **Location-aware detection work:** optional CYD GPS builds support both NMEA and FlightMesh-style UBX NAV-PVT/NAV-DOP, and the T-Watch S3 Plus pipeline adds GNSS-aware wardriving and WiGLE export.
+- **Backward compatibility matters:** this fork intentionally retains CYD BLE OTA and adds migration handling so persisted BLE policy/history data survives MAC-order normalization.
+- **A stronger flasher experience:** board-specific profiles, lab publishing, signed firmware, exact artifact validation, optional performance/GPS variants and a board-code finder are part of the fork roadmap.
+- **Measured performance work:** bounded radio queues, frame/render telemetry, indexed hot-path detection lookup, allocation-reduced BLE parsing and buffered SD logging are released in v1.20.1.
+- **Regression-first development:** host tests, emulator regression, firmware matrix builds, crypto verification and hardware gates are treated as release requirements rather than cleanup after release.
+- **Selective upstream reconciliation:** upstream changes are reviewed one-by-one. Useful work is ported or reimplemented; incompatible release history and upstream's CYD BLE-OTA removal are deliberately excluded.
+
+The intent is simple: users should be able to choose this fork for **broader hardware support, richer detection context, better logging/export, safer upgrades, and more transparent release status** rather than because it merely has a different name.
+
+## Release & development matrix
+
+**Public release:** `v1.20.1`  
+**Production tag:** `2dad3060aa1a2093b8e11c50cc701e984ba0b24e`  
+**v1.21+ public release:** **not published yet**
+
+The tables below are the public feature ledger. “Next release” means implemented on `master` or actively developed in an open PR; it does **not** mean the feature is already in the production `v1.20.1` image.
+
+### In the current v1.20.1 release
+
+| Area | Update | Status |
+|---|---|---|
+| Hardware | 2.8-inch CYD ST7789/ILI9341 profiles | **Released** |
+| Hardware | 3.2-inch CYD ST7798/ST7789-compatible profile | **Released** |
+| Hardware | Experimental 80 MHz 2.8/3.2 display profiles | **Released option** |
+| Hardware | Freenove FNK0103L/FNK0114L 3.2-inch profile | **Released** |
+| Hardware | AWOK 2.4-inch and RL Phantom 2.4-inch profiles | **Released** |
+| Hardware | LilyGo T-Watch S3 public beta | **Released beta** |
+| T-Watch | Battery-aware display timeout, motion-aware snooze and haptic standby | **Released** |
+| T-Watch | Radio self-heal, two-tap reset, STEADY POWER, chip temperature and CLOCK CHECK | **Released** |
+| T-Watch | BLE LISTEN and sleeping-CPU controls | **Released** |
+| Detection | Expanded signature coverage, Remote ID decoding and confidence grading | **Released** |
+| SquachMesh | Visitors, shared appearance/name, messages, invites and improved invite listening | **Released / WIP feature** |
+| Performance | Stage 1 bounded radio work + queue/frame telemetry | **Released** |
+| Performance | Stage 2 render/layout caching and 30 FPS CLEAR cadence | **Released** |
+| Performance | Stage 3 indexed detection lookup | **Released** |
+| Performance | Stage 3B allocation-reduced BLE advertisement parsing | **Released** |
+| Performance | Stage 3C fixed-buffer SD logging | **Released** |
+| Storage | Calendar-dated SD logs with honest uptime fallback | **Released** |
+| Storage/security | Full SquachWatch SD wipe + safe-preserve NVS wipe | **Released** |
+| OTA | Fork-owned HTTPS OTA endpoint | **Released** |
+| OTA | Signed production firmware gate using the fork OTA public key | **Released infrastructure** |
+| Release engineering | Board matrix drives CI and release assembly | **Released infrastructure** |
+| Release engineering | Production Pages publishes only validated release artifacts | **Released infrastructure** |
+| Release engineering | Lab publishing preserves production while exposing feature builds | **Released infrastructure** |
+| Diagnostics | Crash breadcrumbs, reset reasons, coredump summary and radio/battery telemetry | **Released** |
+
+Exact fix-by-fix v1.20.1 details remain in [the v1.20.1 release notes](.github/release-notes/v1.20.1.md).
+
+### In the works for the next release
+
+| Area | Update | Development status |
+|---|---|---|
+| Detection intelligence | Match evidence + uniform sighting counts | **Merged to master, unreleased** |
+| Detection intelligence | ~15-second RSSI history/trend | **Merged to master, unreleased** |
+| Detection intelligence | Per-type alert rules: confidence/repeats/cooldown/wake/log-only | **Merged to master, unreleased** |
+| Detection intelligence | Device policies: IGNORE / TRUSTED / ALWAYS ALERT | **Merged to master, unreleased** |
+| Detection intelligence | LOG DEVICES / chronological EVENTS views | **Merged to master, unreleased** |
+| Detection intelligence | Compact RSSI sparklines in live device rows | **Merged to master, unreleased** |
+| CYD GPS | Optional GPS firmware variants independent of 80 MHz display choice | **PR #39 — hardware-validated UBX/NMEA path** |
+| CYD GPS | NMEA + FlightMesh-style UBX NAV-PVT / NAV-DOP support | **PR #39 — verified real fix** |
+| CYD GPS | GPS-stamped SD detection fields | **PR #39 — final real-detection logging validation pending** |
+| Upstream reconciliation | CrowPanel/Freenove/time-zone/watch/cosmetic/ignore/Remote ID/Flock/spam improvements | **PR #40 — draft reconciliation** |
+| BLE correctness | Advertised-name lifetime fix + conventional MAC display/storage order | **PR #41** |
+| BLE compatibility | Legacy reversed-MAC policy/Regulars/BlackBox migration | **PR #44 — stacked on #41** |
+| UI | Bottom-edge hit targets, text fitting, toast wrapping, diagnostics clipping and two-press LOG clear | **PR #42** |
+| Test infrastructure | Header dependency fixes + real mesh crypto host verification | **PR #43** |
+| GNSS/WiGLE | Shared NMEA parser, security parser and WiGLE 1.6 formatting groundwork | **PR #45** |
+| Hardware | Sunton ESP32-2432S032C 3.2-inch ST7789 + GT911 capacitive support | **PR #46 — stacked on #40** |
+| Flasher | Grouped board picker + “code on the back of your board” finder | **PR #47 — stacked on #46** |
+| Flasher | CYD32C release/sign/lab manifest support | **PR #47** |
+| Status light | Seven brightness levels with migration from the old five-level setting | **PR #48** |
+| Settings UX | Group headings stay labels instead of accidentally collapsing sections | **PR #54** |
+| Diagnostics | Hardware ADC console command with GPIO35 protected when GPS uses it | **PR #55** |
+| T-Watch S3 Plus | Board recognition + GNSS power/baud probing | **PR #56 — stacked on #45** |
+| T-Watch S3 Plus | GPS STATUS, best seen/heard/used counts, first-fix timing and last-fix history | **PR #56** |
+| T-Watch S3 Plus | Main-screen GPS status badge layered below Squachy/speech bubbles | **PR #56** |
+| Wardriving | Persistent GPS-stamped Wi-Fi/BLE sighting store with deduplication | **PR #57 — stacked on #56** |
+| Wardriving | WARDRIVE ON/OFF, GPS FAKE and WIGLE console tools | **PR #57** |
+| Wardriving | WATCH SETTINGS wardrive control/status | **PR #57** |
+| Wardriving | USB WiGLE CSV dump helper | **PR #57** |
+| Wardriving | Web Serial **DOWNLOAD WIGLE FILE** in the browser flasher | **PR #57** |
+| Reconciliation | Every one of the 53 currently upstream-only commits classified and accounted for | **PR #53 — documentation ledger** |
+| Fork policy | Retain CYD BLE OTA instead of adopting upstream's removal | **Intentional fork difference** |
+
+The complete 53-commit reconciliation is tracked in [PR #53](https://github.com/retrodroid32/SquachWatch-CYD/pull/53) and `docs/UPSTREAM_53_RECONCILIATION_20260929.md`. The rule is deliberate: **do not copy upstream history just to make the commit counts match; port the useful behavior and keep the fork's own compatibility and release decisions.**
+
 ## Contents
 
 - [Quick Start](#quick-start)
+- [Why this fork](#why-this-fork)
+- [Release & development matrix](#release--development-matrix)
 - [Release status](#release-status)
 - [Supported hardware](#supported-hardware)
 - [Install with Web Flash](#install-with-web-flash)
@@ -60,12 +157,18 @@ Useful links: [browser emulator](https://retrodroid32.github.io/SquachWatch-CYD/
 
 ## Release status
 
-The current public release is **v1.20.1**. The v1.21 detection-intelligence
-feature set is **feature-complete on `master` but unreleased**. It was merged
-in small, independently validated stages rather than as one large feature branch.
+The current public production release is **v1.20.1**. There is **no v1.21+ production release yet**.
 
-See [v1.21.0 development notes](.github/release-notes/v1.21.0-development.md)
-for the implementation and validation record.
+Detection-intelligence Stages A-E are already merged to `master` and remain unreleased. Additional next-release work is intentionally being developed in reviewable PRs rather than pushed directly into production; the current pipeline includes optional CYD GPS, BLE compatibility fixes, UI hardening, expanded board support, T-Watch S3 Plus GNSS, wardriving/WiGLE export, flasher improvements, diagnostics and test infrastructure.
+
+This separation is intentional:
+
+- **Released** means present in the immutable v1.20.1 production tag.
+- **Merged to master, unreleased** means implemented but not yet published as a production version.
+- **PR / draft PR** means still under review, CI, rebase or hardware validation.
+- No open PR should be described as a production feature until it is explicitly approved, integrated, release-gated and tagged.
+
+See [v1.21.0 development notes](.github/release-notes/v1.21.0-development.md) for the merged detection-intelligence stages and [the release/development matrix above](#release--development-matrix) for the broader next-release pipeline.
 
 ## Supported hardware
 
