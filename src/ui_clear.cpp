@@ -1713,6 +1713,7 @@ static bool    s_watchPillOn = false;
 // bubble. Returns where the WATCH pill's free span must end, or -1.
 static int16_t s_cornerClockPillR = -1;
 #if defined(TWATCH_S3)
+void twatchGpsBadge(TFT_eSPI& t);   // main.cpp
 static int16_t drawCornerClock(TFT_eSPI& t, int w) {
     if (!Clock::trusted()) return -1;
     char tm[8];
@@ -2857,6 +2858,7 @@ void uiClearTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool adv
 #if defined(TWATCH_S3)
     // Under everything that moves: see drawCornerClock().
     if (DrawBand::has(0, titleBottom)) s_cornerClockPillR = drawCornerClock(t, w);
+    twatchGpsBadge(t);
 #endif
     // Everything from here that moves by the call, not by the clock, moves
     // on the mascot's clock. See uiMascotStep().
