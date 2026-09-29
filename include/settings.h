@@ -260,7 +260,7 @@ namespace Settings {
     uint8_t     lightColor();            // 0 THEME, 1..9 fixed colours, 10 BACKGROUND
     void        cycleLightColor();
     const char* lightColorName();
-    uint8_t     lightBrightness();       // 1..5, caps everything
+    uint8_t     lightBrightness();       // 1..7, caps everything
     void        cycleLightBrightness();
 
     // REMOTE UPDATE: whether a squad update nudge over SquachMesh may start
