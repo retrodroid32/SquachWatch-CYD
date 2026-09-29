@@ -47,7 +47,7 @@ What sets this fork apart:
 
 - **More hardware choices:** released 2.8-inch and 3.2-inch CYDs, Freenove 3.2-inch, AWOK, RL Phantom and T-Watch S3 support, with additional capacitive 3.2-inch and S3 Plus work in the next-release pipeline.
 - **Detection intelligence instead of simple hits:** concrete match evidence, per-type alert rules, device policies, chronological EVENTS history and RSSI trends are already merged to `master` for the next release.
-- **Location-aware detection work:** optional CYD GPS builds support both NMEA and FlightMesh-style UBX NAV-PVT/NAV-DOP, and the T-Watch S3 Plus pipeline adds GNSS-aware wardriving and WiGLE export.
+- **Location-aware detection work:** optional CYD GPS builds support both NMEA and UBX NAV-PVT/NAV-DOP, and the T-Watch S3 Plus pipeline adds GNSS-aware wardriving and WiGLE export.
 - **Backward compatibility matters:** this fork intentionally retains CYD BLE OTA and adds migration handling so persisted BLE policy/history data survives MAC-order normalization.
 - **A stronger flasher experience:** board-specific profiles, lab publishing, signed firmware, exact artifact validation, optional performance/GPS variants and a board-code finder are part of the fork roadmap.
 - **Measured performance work:** bounded radio queues, frame/render telemetry, indexed hot-path detection lookup, allocation-reduced BLE parsing and buffered SD logging are released in v1.20.1.
