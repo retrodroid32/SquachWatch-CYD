@@ -2303,20 +2303,44 @@ static void twatchRtcBegin() {
     if (!t && Clock::trusted()) rtcWrite(Clock::nowEpoch());
 }
 
+// Cached battery state shared by the WATCH settings row and the compact
+// top-right status strip. The AXP2101 is the capability gate: boards without
+// this PMU never compile the function, so they never show a made-up battery.
+bool twatchBatteryStatus(uint8_t* pctOut, bool* chargingOut) {
+    if (!s_pmuOk) return false;
+    static uint32_t at = 0;
+    static uint8_t  pct = 0;
+    static bool     charging = false;
+    const uint32_t now = millis();
+    if (!at || now - at >= 2000) {
+        at = now ? now : 1;
+        int p = s_pmu.getBatteryPercent();
+        if (p < 0) p = 0;
+        if (p > 100) p = 100;
+        pct = (uint8_t)p;
+        charging = s_pmu.isCharging();
+    }
+    if (pctOut) *pctOut = pct;
+    if (chargingOut) *chargingOut = charging;
+    return true;
+}
+
 // The WATCH page's BATTERY row: "81% 4.12V", or "CHG 81%" on the cable.
 void twatchBatteryLine(char* out, size_t n) {
-    if (!s_pmuOk) { snprintf(out, n, "?"); return; }
+    uint8_t pct = 0;
+    bool charging = false;
+    if (!twatchBatteryStatus(&pct, &charging)) { snprintf(out, n, "?"); return; }
+
     static uint32_t at = 0;
-    static char     line[16] = "";
+    static uint16_t mv = 0;
     const uint32_t now = millis();
-    if (!line[0] || now - at >= 2000) {   // two I2C reads, not one per frame
-        at = now;
-        const int pct = s_pmu.getBatteryPercent();
-        if (s_pmu.isCharging()) snprintf(line, sizeof line, "CHG %d%%", pct);
-        else snprintf(line, sizeof line, "%d%% %u.%02uV", pct, (unsigned)(s_pmu.getBattVoltage() / 1000),
-                      (unsigned)(s_pmu.getBattVoltage() % 1000 / 10));
+    if (!at || now - at >= 2000) {
+        at = now ? now : 1;
+        mv = s_pmu.getBattVoltage();
     }
-    snprintf(out, n, "%s", line);
+    if (charging) snprintf(out, n, "CHG %u%%", (unsigned)pct);
+    else snprintf(out, n, "%u%% %u.%02uV", (unsigned)pct,
+                  (unsigned)(mv / 1000), (unsigned)(mv % 1000 / 10));
 }
 
 // The chip's own temperature sensor, read at most every two seconds: the
