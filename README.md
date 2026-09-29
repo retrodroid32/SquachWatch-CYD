@@ -214,7 +214,7 @@ other restart from the back too.
 
 **Settings → APPEARANCE → STATUS LIGHT**: the master switch, alerts and
 messages on or off, idle breathe or solid or off, an idle colour that follows
-the theme, the background, or one of nine fixed colours, brightness in five
+the theme, the background, or one of nine fixed colours, brightness in seven
 steps, and a TEST row that plays the lot in six seconds. Boards whose LED pins
 have not been checked (the AWOK and the 3.5") compile it out and say so on
 that screen.

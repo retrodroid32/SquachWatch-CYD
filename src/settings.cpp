@@ -162,7 +162,7 @@ static bool    s_lightAlerts = true;
 static bool    s_lightMsgs   = true;
 static uint8_t s_lightIdle   = 1;    // BREATHE
 static uint8_t s_lightColor  = 0;    // THEME
-static uint8_t s_lightBright = 2;    // of 5
+static uint8_t s_lightBright = 4;    // of 7
 static bool    s_remoteUpdate = false;
 static bool    s_phraseShown  = true;
 static bool    s_updateCheck  = true;
@@ -424,7 +424,11 @@ void load() {
     s_banter       = s_prefs.getUChar("banter", 2);
     if (s_banter > 3) s_banter = 2;
     s_lightColor   = s_prefs.getUChar("ltColor", 0);
-    s_lightBright  = s_prefs.getUChar("ltBright", 2);
+    // Seven steps since v1.25: two dimmer ones went in under the old five,
+    // under a new key. A board that saved one of the five keeps its level
+    // (old 1..5 is new 3..7) instead of dropping two rungs.
+    if (s_prefs.isKey("ltBri7")) s_lightBright = s_prefs.getUChar("ltBri7", 4);
+    else                         s_lightBright = (uint8_t)(s_prefs.getUChar("ltBright", 2) + 2);
     // On by default since v1.7.7: a squad member can only ever make this board
     // install a signed release newer than the one it runs, with a countdown
     // and SKIP, and the trust is the phrase they already hold. Off is for
@@ -438,7 +442,7 @@ void load() {
     Clock::applyZone(s_timeZone);
     if (s_lightIdle > 2)                 s_lightIdle = 1;
     if (s_lightColor >= LIGHT_COLOR_N)   s_lightColor = 0;
-    if (s_lightBright < 1 || s_lightBright > 5) s_lightBright = 2;
+    if (s_lightBright < 1 || s_lightBright > 7) s_lightBright = 4;
     // A saved index from a build with more steps than this one must not walk
     // off the end of the table.
     if (s_scrTimeoutIx >= SCREEN_TIMEOUTS_N) s_scrTimeoutIx = 2;
@@ -644,7 +648,7 @@ void cycleLightColor() {
     else                         s_lightColor++;
     s_prefs.putUChar("ltColor", s_lightColor);
 }
-void cycleLightBrightness() { s_lightBright = (uint8_t)(s_lightBright % 5 + 1);          s_prefs.putUChar("ltBright", s_lightBright); }
+void cycleLightBrightness() { s_lightBright = (uint8_t)(s_lightBright % 7 + 1);          s_prefs.putUChar("ltBri7", s_lightBright); }
 bool remoteUpdate()         { return s_remoteUpdate; }
 void toggleRemoteUpdate()   { s_remoteUpdate = !s_remoteUpdate; s_prefs.putBool("rmtUpd", s_remoteUpdate); }
 bool phraseShown()          { return s_phraseShown; }

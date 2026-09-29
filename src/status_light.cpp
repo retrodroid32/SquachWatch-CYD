@@ -49,14 +49,16 @@ static const uint32_t BREATHE_MS     = 6000;
 static const uint32_t MSG_PERIOD_MS  = 3000;
 static const uint32_t VISIT_MS       = 300;
 
-// The five BRIGHTNESS steps, as a duty cap out of 4095. Perceptual, not
-// linear: the LED is far brighter than a status light needs to be, and 2 of
-// 5 is a bedside glow, not a flashlight.
+// The seven BRIGHTNESS steps, as a duty cap out of 4095. Perceptual, not
+// linear: the LED is far brighter than a status light needs to be, and 4 of
+// 7 is a bedside glow, not a flashlight. The bottom two were added for a
+// dark bedroom, where even the old lowest step lit the ceiling; at 1 a solid
+// idle is 4 counts in 4095, and a breathe there steps rather than glides.
 //
 // Twelve-bit PWM, not eight. At eight bits a purple at brightness 2 came out
 // as (0, 0, 1): the red and green rounded to nothing and only the blue was
 // left, which is what "blue, not purple" on the first Phantom flash was.
-static const uint16_t CAP[5] = { 160, 512, 1280, 2560, 4095 };
+static const uint16_t CAP[7] = { 16, 48, 160, 512, 1280, 2560, 4095 };
 static const uint8_t  PWM_BITS = 12;
 static const uint16_t PWM_MAX  = 4095;
 
@@ -312,7 +314,7 @@ void tick(uint32_t now, const Context& cIn) {
     // curve and costs nothing), then the brightness cap, in twelve bits so
     // the small channels of a dim colour survive.
     uint8_t bi = Settings::lightBrightness();
-    if (bi < 1) bi = 1; else if (bi > 5) bi = 5;
+    if (bi < 1) bi = 1; else if (bi > 7) bi = 7;
 #if STATUS_LIGHT_HW == 2
     // Twice the PWM LED's caps: eight bits leave the low ones only a handful
     // of steps to breathe through. Still a glow at the default (about 16 of
