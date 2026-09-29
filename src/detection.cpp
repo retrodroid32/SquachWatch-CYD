@@ -1,5 +1,7 @@
 // SquachWatch-CYD — DetectionEngine implementation
 #include "detection.h"
+#include "wardrive.h"
+#include "wifi_auth.h"
 #include "serial_flush.h"
 #include "signatures.h"
 #include "settings.h"
@@ -345,6 +347,20 @@ class BleScanCallbacks : public NimBLEScanCallbacks {
         // pointer is good for the whole of this call.
         const uint8_t* mac = adv->getAddress().getBase()->val;
         const std::vector<uint8_t>& payload = adv->getPayload();
+#if defined(TWATCH_S3)
+        // Wardriving keeps printed-order addresses regardless of the detector's
+        // current internal BLE address convention.
+        if (Wardrive::enabled()) {
+            uint8_t printed[6];
+            const uint8_t* nativeMac = adv->getAddress().getBase()->val;
+            for (int i = 0; i < 6; i++) printed[i] = nativeMac[5 - i];
+            char nm[33]; copyAdvName(payload, nm, sizeof nm);
+            AdvFieldView md;
+            bool haveMfgr = advFieldAt(payload, BLE_HS_ADV_TYPE_MFG_DATA, 0, md) && md.len >= 2;
+            uint16_t cid = haveMfgr ? (uint16_t)(md.data[0] | ((uint16_t)md.data[1] << 8)) : 0;
+            Wardrive::noteBle(printed, nm, (int8_t)adv->getRSSI(), haveMfgr, cid);
+        }
+#endif
 #if SQUACH_MESH
         // A peer is handled here and RETURNS, so it never reaches the
         // signature tables and can never become a Detection. Getting that
@@ -762,6 +778,14 @@ bool DetectionEngine::init() {
             // offering a network, and its SSID is throwaway. Its name goes
             // where the SSID would have.
             const bool remoteId = RemoteId::isWifiBeacon(frame, (uint16_t)sigLen);
+#if defined(TWATCH_S3)
+            if (Wardrive::enabled() && sigLen > 40) {
+                const uint16_t cap = (uint16_t)(frame[34] | (frame[35] << 8));
+                Wardrive::noteWifi(frame + 16, ssid,
+                                   WifiAuth::parse(cap, frame + 36, (uint16_t)(sigLen - 40)),
+                                   pkt->rx_ctrl.channel, (int8_t)pkt->rx_ctrl.rssi);
+            }
+#endif
             char pwnName[33];
             if (remoteId) {
                 // Use addr2 (the transmitter) as the device identity. In a
