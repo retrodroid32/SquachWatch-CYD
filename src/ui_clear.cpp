@@ -1715,15 +1715,59 @@ static bool    s_watchPillOn = false;
 // top band covers the clock rather than the clock cutting a hole in the
 // bubble. Returns where the WATCH pill's free span must end, or -1.
 static int16_t s_cornerClockPillR = -1;
+
+#if defined(TWATCH_S3)
+bool twatchBatteryStatus(uint8_t* pctOut, bool* chargingOut); // main.cpp / AXP2101
+
+// Battery-capable boards get a compact percentage at the upper right.
+// A small lightning bolt is drawn only while the PMU reports active charging.
+// Returns the next free x coordinate to the left so GPS/clock indicators can
+// compose without painting over one another.
+static int16_t drawBatteryStatus(TFT_eSPI& t, int w, int16_t rightLimit = -1) {
+    uint8_t pct = 0;
+    bool charging = false;
+    if (!twatchBatteryStatus(&pct, &charging)) return rightLimit;
+
+    if (rightLimit < 0) {
+        const int icons = Theme::titleBarRightIconsX(w);
+        rightLimit = (int16_t)(icons - (icons < w ? 2 : 4));
+    }
+
+    char text[6];
+    snprintf(text, sizeof text, "%u%%", (unsigned)pct);
+    t.setTextSize(1);
+    const int textW = t.textWidth(text);
+    const int boltW = charging ? 9 : 0;
+    const int boxW = textW + boltW + 6;
+    const int x = rightLimit - boxW;
+
+    t.fillRect(x, 1, boxW, 18, TFT_BLACK);
+    int tx = x + 3;
+    if (charging) {
+        const uint16_t bolt = Theme::AMBER;
+        // Font-independent lightning bolt, readable even on the 240px watch.
+        t.fillTriangle(tx + 4, 2, tx, 10, tx + 4, 10, bolt);
+        t.fillTriangle(tx + 3, 9, tx + 8, 9, tx + 2, 17, bolt);
+        tx += 9;
+    }
+    t.setTextColor(Theme::WHITE, TFT_BLACK);
+    t.setCursor(tx, 6);
+    t.print(text);
+    return (int16_t)(x - 4);
+}
+#endif
+
 #if defined(GPS_SUPPORT)
 // GPS fix indicator for GPS firmware variants only. It deliberately draws
 // nothing until the receiver has a fresh fix; losing the fix removes it on
 // the next frame, so the icon can never imply stale location data.
-static int16_t drawGpsFixIcon(TFT_eSPI& t, int w) {
-    if (!Gps::snapshot().fix) return -1;
-    const int icons = Theme::titleBarRightIconsX(w);
-    const int right = icons - (icons < w ? 2 : 4);
-    const int cx = right - 9, cy = 10;
+static int16_t drawGpsFixIcon(TFT_eSPI& t, int w, int16_t rightLimit = -1) {
+    if (!Gps::snapshot().fix) return rightLimit;
+    if (rightLimit < 0) {
+        const int icons = Theme::titleBarRightIconsX(w);
+        rightLimit = (int16_t)(icons - (icons < w ? 2 : 4));
+    }
+    const int cx = rightLimit - 9, cy = 10;
     const uint16_t col = Theme::GREEN;
 
     // Compact GPS reticle: four corner ticks plus a centre lock dot. Primitive
@@ -1742,15 +1786,17 @@ static int16_t drawGpsFixIcon(TFT_eSPI& t, int w) {
 }
 #endif
 #if defined(TWATCH_S3)
-static int16_t drawCornerClock(TFT_eSPI& t, int w) {
-    if (!Clock::trusted()) return -1;
+static int16_t drawCornerClock(TFT_eSPI& t, int w, int16_t rightLimit = -1) {
+    if (!Clock::trusted()) return rightLimit;
     char tm[8];
     Clock::formatTime(tm, sizeof tm, true);
     t.setTextSize(2);
-    const int icons = Theme::titleBarRightIconsX(w);
-    const int right = icons - (icons < w ? 2 : 4);
+    if (rightLimit < 0) {
+        const int icons = Theme::titleBarRightIconsX(w);
+        rightLimit = (int16_t)(icons - (icons < w ? 2 : 4));
+    }
     const int tw = t.textWidth(tm) - 2;   // no spacing column after the last glyph
-    const int x = right - tw;
+    const int x = rightLimit - tw;
     t.fillRect(x - 3, 0, tw + 6, 20, TFT_BLACK);
     t.setTextColor(Theme::CYAN, TFT_BLACK);
     t.setCursor(x, 3);
@@ -2883,13 +2929,21 @@ void uiClearTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool adv
     Theme::drawActiveBackground(t, now, 0, h, eng, advance);
     Theme::clearBackgroundFloor();
     FrameProf::lap(FrameProf::BG);
+    s_cornerClockPillR = -1;
+    if (DrawBand::has(0, titleBottom)) {
+        // Compose from the right edge inward. Capability-specific helpers
+        // simply return the incoming limit when their hardware/status is absent.
+#if defined(TWATCH_S3)
+        s_cornerClockPillR = drawBatteryStatus(t, w, s_cornerClockPillR);
+#endif
 #if defined(GPS_SUPPORT)
-    if (DrawBand::has(0, titleBottom)) s_cornerClockPillR = drawGpsFixIcon(t, w);
+        s_cornerClockPillR = drawGpsFixIcon(t, w, s_cornerClockPillR);
 #endif
 #if defined(TWATCH_S3)
-    // Under everything that moves: see drawCornerClock().
-    if (DrawBand::has(0, titleBottom)) s_cornerClockPillR = drawCornerClock(t, w);
+        // Under everything that moves: see drawCornerClock().
+        s_cornerClockPillR = drawCornerClock(t, w, s_cornerClockPillR);
 #endif
+    }
     // Everything from here that moves by the call, not by the clock, moves
     // on the mascot's clock. See uiMascotStep().
     const bool step = uiMascotStep(now, advance);
