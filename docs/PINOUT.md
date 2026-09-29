@@ -70,7 +70,7 @@ data. Power the receiver from 5V/GND as appropriate, connect **GPS TX only**
 to the board's exposed **GPIO35 / JP3** input, and leave GPS RX disconnected.
 Receive-only operation is sufficient for NMEA position logging and avoids
 USB-console/UART contention. GPIO35 is input-only, which is intentional.
-The GPS firmware defaults to 115200 baud.
+The GPS firmware defaults to 115200 baud and accepts either standard NMEA or UBX NAV-PVT/NAV-DOP, so a receiver configured for FlightMesh does not need to be reconfigured.
 
 GPS is a compile-time/web-flasher option, not a required peripheral. The normal
 40 MHz and 80 MHz firmware remain available without GPS, and the GPS checkbox
