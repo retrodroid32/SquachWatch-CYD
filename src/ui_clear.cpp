@@ -1714,13 +1714,35 @@ static bool    s_watchPillOn = false;
 static int16_t s_cornerClockPillR = -1;
 #if defined(TWATCH_S3)
 void twatchGpsBadge(TFT_eSPI& t);   // main.cpp: S3 Plus GPS counter, under speech bubbles
-static int16_t drawCornerClock(TFT_eSPI& t, int w) {
+bool twatchGpsFixed();              // main.cpp: true only for a fresh S3 Plus fix
+
+static int drawTwatchGpsFixIcon(TFT_eSPI& t, int right) {
+    if (!twatchGpsFixed()) return right;
+    const int cx = right - 9, cy = 10;
+    const uint16_t col = Theme::GREEN;
+    t.fillRect(cx - 7, cy - 7, 15, 15, TFT_BLACK);
+    t.drawFastHLine(cx - 6, cy - 6, 4, col);
+    t.drawFastVLine(cx - 6, cy - 6, 4, col);
+    t.drawFastHLine(cx + 3, cy - 6, 4, col);
+    t.drawFastVLine(cx + 6, cy - 6, 4, col);
+    t.drawFastHLine(cx - 6, cy + 6, 4, col);
+    t.drawFastVLine(cx - 6, cy + 3, 4, col);
+    t.drawFastHLine(cx + 3, cy + 6, 4, col);
+    t.drawFastVLine(cx + 6, cy + 3, 4, col);
+    t.fillCircle(cx, cy, 2, col);
+    return cx - 8 - 4;
+}
+
+static int16_t drawCornerWatchStatus(TFT_eSPI& t, int w) {
+    const int icons = Theme::titleBarRightIconsX(w);
+    int right = icons - (icons < w ? 2 : 4);
+    right = drawTwatchGpsFixIcon(t, right);
+
+    if (!Clock::trusted()) return (int16_t)(right - 1);
     if (!Clock::trusted()) return -1;
     char tm[8];
     Clock::formatTime(tm, sizeof tm, true);
     t.setTextSize(2);
-    const int icons = Theme::titleBarRightIconsX(w);
-    const int right = icons - (icons < w ? 2 : 4);
     const int tw = t.textWidth(tm) - 2;   // no spacing column after the last glyph
     const int x = right - tw;
     t.fillRect(x - 3, 0, tw + 6, 20, TFT_BLACK);
@@ -2856,8 +2878,9 @@ void uiClearTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool adv
     Theme::clearBackgroundFloor();
     FrameProf::lap(FrameProf::BG);
 #if defined(TWATCH_S3)
-    // Under everything that moves: see drawCornerClock().
-    if (DrawBand::has(0, titleBottom)) s_cornerClockPillR = drawCornerClock(t, w);
+    // Compact fix icon + clock sit in the top-right strip; the larger GPS
+    // counter remains top-centre while GPS is running.
+    if (DrawBand::has(0, titleBottom)) s_cornerClockPillR = drawCornerWatchStatus(t, w);
     twatchGpsBadge(t);
 #endif
     // Everything from here that moves by the call, not by the clock, moves
