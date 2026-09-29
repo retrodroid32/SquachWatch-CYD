@@ -1985,6 +1985,73 @@ static void enterLight() {
     uiLightInit(*canvas);
 }
 
+#if defined(CYD32)
+// The 3.2" Sunton CYD has an IP5306 charger/boost, but not every IP5306
+// revision exposes its optional I2C status interface to the ESP32. Probe the
+// conventional 0x75 interface read-only on the board's otherwise-free
+// GPIO21/22 I2C pair. If it does not answer, battery UI stays hidden rather
+// than inventing a percentage. GPS uses GPIO35 on this board, so the probe
+// is independent of the GPS UART.
+static const uint8_t CYD32_IP5306_ADDR = 0x75;
+static bool s_cyd32PmicReadable = false;
+
+static bool cyd32Ip5306Read(uint8_t reg, uint8_t& value) {
+    Wire.beginTransmission(CYD32_IP5306_ADDR);
+    Wire.write(reg);
+    if (Wire.endTransmission(false) != 0) return false;
+    if (Wire.requestFrom(CYD32_IP5306_ADDR, (uint8_t)1) != 1) return false;
+    value = Wire.read();
+    return true;
+}
+
+static void cyd32BatteryBegin() {
+    // GPIO21/22 are not used by the S032R touch/display profile. The actual
+    // backlight is GPIO27; setup below deliberately does not attach the old
+    // 2.8" GPIO21 backlight PWM on CYD32.
+    Wire.begin(21, 22);
+    uint8_t level = 0, charge = 0;
+    s_cyd32PmicReadable =
+        cyd32Ip5306Read(0x78, level) && cyd32Ip5306Read(0x70, charge);
+    if (s_cyd32PmicReadable) {
+        Serial.printf("[pmic] CYD32 IP5306 telemetry found at 0x75 (level=%02X charge=%02X)\n",
+                      (unsigned)level, (unsigned)charge);
+    } else {
+        Serial.println("[pmic] CYD32 IP5306 I2C telemetry not exposed; battery badge disabled");
+    }
+}
+
+// Coarse IP5306 gauge: 100/75/50/25/0 percent. This is intentionally
+// capability-detected, not assumed from the presence of the charger itself.
+bool boardBatteryStatus(uint8_t* pctOut, bool* chargingOut) {
+    if (!s_cyd32PmicReadable) return false;
+
+    static uint32_t at = 0;
+    static uint8_t pct = 0;
+    static bool charging = false;
+    static bool valid = false;
+    const uint32_t now = millis();
+    if (!at || now - at >= 2000) {
+        at = now ? now : 1;
+        uint8_t level = 0, charge = 0;
+        valid = cyd32Ip5306Read(0x78, level) && cyd32Ip5306Read(0x70, charge);
+        if (valid) {
+            switch (level & 0xF0u) {
+                case 0x00: pct = 100; break;
+                case 0x80: pct = 75;  break;
+                case 0xC0: pct = 50;  break;
+                case 0xE0: pct = 25;  break;
+                default:   pct = 0;   break;
+            }
+            charging = (charge & 0x08u) != 0;
+        }
+    }
+    if (!valid) return false;
+    if (pctOut) *pctOut = pct;
+    if (chargingOut) *chargingOut = charging;
+    return true;
+}
+#endif
+
 #if defined(TWATCH_S3)
 // The T-Watch S3's AXP2101 gates the screen backlight (ALDO2), the touch
 // chip (ALDO3), the RTC's supply (ALDO1), the radio (ALDO4) and the haptic
@@ -2323,6 +2390,11 @@ bool twatchBatteryStatus(uint8_t* pctOut, bool* chargingOut) {
     if (pctOut) *pctOut = pct;
     if (chargingOut) *chargingOut = charging;
     return true;
+}
+
+// Same UI-facing contract as the CYD32 probe above.
+bool boardBatteryStatus(uint8_t* pctOut, bool* chargingOut) {
+    return twatchBatteryStatus(pctOut, chargingOut);
 }
 
 // The WATCH page's BATTERY row: "81% 4.12V", or "CHG 81%" on the cable.
@@ -2865,7 +2937,7 @@ void setup() {
     ledcSetup(BL_CH_ORIG, 5000, 8);
     ledcAttachPin(BL_PIN_TWATCH, BL_CH_ORIG);
 #else
-#if !defined(AWOK) && !defined(RLPHANTOM) && !defined(RLPHANTOM_R)
+#if !defined(AWOK) && !defined(RLPHANTOM) && !defined(RLPHANTOM_R) && !defined(CYD32)
     ledcSetup(BL_CH_ORIG, 5000, 8);
     ledcAttachPin(BL_PIN_ORIG, BL_CH_ORIG);
 #endif
@@ -3031,6 +3103,10 @@ void setup() {
         touch.begin(touchSPI);
         touch.setRotation(0);
     }
+#endif
+
+#if defined(CYD32)
+    cyd32BatteryBegin();
 #endif
 
     // Recovery escape hatch: hold touch ANYWHERE for ~1s right here to
