@@ -70,11 +70,11 @@ Fork production remains **v1.20.1**. This document does not authorize a merge, r
 
 ## Result
 
-- **Category 1 — represented:** 37 commits
+- **Category 1 — represented:** 35 commits
 - **Category 2 — fork-specific equivalent:** 5 commits
 - **Category 3 — useful but still missing:** 0 commits
 - **Category 4 — intentionally excluded:** 3 commits
-- **Category 5 — release-history / merge-only / superseded:** 8 commits
+- **Category 5 — release-history / merge-only / superseded:** 10 commits
 - **Total:** 53 commits
 
 ## Open PR dependency map
