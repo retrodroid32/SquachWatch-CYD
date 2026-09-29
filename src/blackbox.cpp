@@ -349,7 +349,7 @@ void noteDetection(const Detection& d, bool again) {
     r.kind    = KIND_DET;
     r.type    = (uint8_t)d.type;
     r.conf    = (uint8_t)d.conf;
-    r.flags   = again ? DET_AGAIN : 0;
+    r.flags   = (uint8_t)((again ? DET_AGAIN : 0) | DET_PRINTED);
     memcpy(r.mac, d.mac, 6);
     r.rssi    = d.rssi;
     r.channel = d.channel;
@@ -380,7 +380,14 @@ void forEachDetection(bool (*fn)(const DetRecord&, void*), void* ctx) {
         if (p[0] == KIND_CLEAR) return false;
         if (p[0] != KIND_DET) return true;
         const W& w = *(const W*)c;
-        return w.fn(*(const DetRecord*)p, w.ctx);
+        const DetRecord& r = *(const DetRecord*)p;
+        if (r.channel != 0 || (r.flags & DET_PRINTED)) return w.fn(r, w.ctx);
+        // BLE rows written before canonical display order kept NimBLE's native
+        // byte order. Translate only at the read boundary; old flash remains
+        // valid and every consumer sees the same conventional address.
+        DetRecord fixed = r;
+        for (int b = 0; b < 6; b++) fixed.mac[b] = r.mac[5 - b];
+        return w.fn(fixed, w.ctx);
     }, &w);
 }
 
