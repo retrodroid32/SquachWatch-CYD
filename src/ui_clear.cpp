@@ -1716,8 +1716,8 @@ static bool    s_watchPillOn = false;
 // bubble. Returns where the WATCH pill's free span must end, or -1.
 static int16_t s_cornerClockPillR = -1;
 
-#if defined(TWATCH_S3)
-bool twatchBatteryStatus(uint8_t* pctOut, bool* chargingOut); // main.cpp / AXP2101
+#if defined(TWATCH_S3) || defined(CYD32)
+bool boardBatteryStatus(uint8_t* pctOut, bool* chargingOut); // main.cpp / board PMIC
 
 // Battery-capable boards get a compact percentage at the upper right.
 // A small lightning bolt is drawn only while the PMU reports active charging.
@@ -1726,7 +1726,7 @@ bool twatchBatteryStatus(uint8_t* pctOut, bool* chargingOut); // main.cpp / AXP2
 static int16_t drawBatteryStatus(TFT_eSPI& t, int w, int16_t rightLimit = -1) {
     uint8_t pct = 0;
     bool charging = false;
-    if (!twatchBatteryStatus(&pct, &charging)) return rightLimit;
+    if (!boardBatteryStatus(&pct, &charging)) return rightLimit;
 
     if (rightLimit < 0) {
         const int icons = Theme::titleBarRightIconsX(w);
@@ -2933,7 +2933,7 @@ void uiClearTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool adv
     if (DrawBand::has(0, titleBottom)) {
         // Compose from the right edge inward. Capability-specific helpers
         // simply return the incoming limit when their hardware/status is absent.
-#if defined(TWATCH_S3)
+#if defined(TWATCH_S3) || defined(CYD32)
         s_cornerClockPillR = drawBatteryStatus(t, w, s_cornerClockPillR);
 #endif
 #if defined(GPS_SUPPORT)
