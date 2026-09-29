@@ -32,6 +32,16 @@ CYAN  = (0, 214, 214)
 # ---- the clips ----
 
 CLIPS = {
+    # v1.25.0 "Trailhead": wardriving on the T-Watch S3 Plus, which the
+    # emulator cannot show (it is not the watch build), so Squachy sets off
+    # and the notes carry the watch. Then the two things that ARE on screen:
+    # the status light's new bottom steps, and headings that no longer fold.
+    "trailhead": [
+        ("clear", 200, 36, ["--noseed", "--bg", "7"], {}, 1500, "SQUACHY IS GOING WARDRIVING"),
+        ("clear", 200, 30, ["--noseed", "--bg", "1"], {}, 1500, "EVERY NETWORK HE HEARS, AND WHERE"),
+        ("light", 10, 14, [], {"SQUACHSIM_LTBRIGHT": "1"}, 1500, "THE STATUS LIGHT GOES DIMMER NOW"),
+        ("settings", 10, 14, ["--scroll", "0"], {}, 1500, "SETTINGS STOPPED FOLDING UP ON YOU"),
+    ],
     # v1.24.1 "Ghost Town": a hotfix with nothing new on screen -- the fix is
     # the absence of phantom FLOCK rows, so the clip is the log as it should
     # read, and Squachy at rest.

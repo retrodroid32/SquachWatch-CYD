@@ -543,6 +543,9 @@ int main(int argc, char** argv) {
     // The desk's HOW MANY follows --crowd, the way the main screen's does.
     for (int g = 0; g < 10 && Settings::deskCrowd() != Settings::meshCrowd(); g++) Settings::cycleDeskCrowd();
     if (getenv("SQUACHSIM_FULLVISIT") && !Settings::deskFullVisit()) Settings::toggleDeskFullVisit();
+    // SQUACHSIM_LTBRIGHT=N: the STATUS LIGHT's BRIGHTNESS step, 1..7.
+    if (const char* lb = getenv("SQUACHSIM_LTBRIGHT"))
+        for (int g = 0; g < 8 && Settings::lightBrightness() != atoi(lb); g++) Settings::cycleLightBrightness();
     // SQUACHSIM_CLOCK="font,size,backdrop", e.g. "1,2,3" for large Bangers over toasters.
     if (const char* ck = getenv("SQUACHSIM_CLOCK")) {
         int f = 0, z = 1, b = 0;
