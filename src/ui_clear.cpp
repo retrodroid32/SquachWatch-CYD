@@ -1747,7 +1747,7 @@ static int16_t drawBatteryStatus(TFT_eSPI& t, int w, int16_t rightLimit = -1) {
 
 #if defined(TWATCH_S3)
 static int16_t drawCornerClock(TFT_eSPI& t, int w, int16_t rightLimit = -1) {
-    if (!Clock::trusted()) return -1;
+    if (!Clock::trusted()) return rightLimit;
     char tm[8];
     Clock::formatTime(tm, sizeof tm, true);
     t.setTextSize(2);
