@@ -1712,16 +1712,51 @@ static bool    s_watchPillOn = false;
 // top band covers the clock rather than the clock cutting a hole in the
 // bubble. Returns where the WATCH pill's free span must end, or -1.
 static int16_t s_cornerClockPillR = -1;
+
+#if defined(TWATCH_S3) || defined(FREENOVE_S3) || defined(CYD32C)
+bool boardBatteryStatus(uint8_t* pctOut, bool* chargingOut); // main.cpp / board power hardware
+
+static int16_t drawBatteryStatus(TFT_eSPI& t, int w, int16_t rightLimit = -1) {
+    uint8_t pct = 0;
+    bool charging = false;
+    if (!boardBatteryStatus(&pct, &charging)) return rightLimit;
+    if (rightLimit < 0) {
+        const int icons = Theme::titleBarRightIconsX(w);
+        rightLimit = (int16_t)(icons - (icons < w ? 2 : 4));
+    }
+    char text[6];
+    snprintf(text, sizeof text, "%u%%", (unsigned)pct);
+    t.setTextSize(1);
+    const int textW = t.textWidth(text);
+    const int boltW = charging ? 9 : 0;
+    const int boxW = textW + boltW + 6;
+    const int x = rightLimit - boxW;
+    t.fillRect(x, 1, boxW, 18, TFT_BLACK);
+    int tx = x + 3;
+    if (charging) {
+        t.fillTriangle(tx + 4, 2, tx, 10, tx + 4, 10, Theme::AMBER);
+        t.fillTriangle(tx + 3, 9, tx + 8, 9, tx + 2, 17, Theme::AMBER);
+        tx += 9;
+    }
+    t.setTextColor(Theme::WHITE, TFT_BLACK);
+    t.setCursor(tx, 6);
+    t.print(text);
+    return (int16_t)(x - 4);
+}
+#endif
+
 #if defined(TWATCH_S3)
-static int16_t drawCornerClock(TFT_eSPI& t, int w) {
-    if (!Clock::trusted()) return -1;
+static int16_t drawCornerClock(TFT_eSPI& t, int w, int16_t rightLimit = -1) {
+    if (!Clock::trusted()) return rightLimit;
     char tm[8];
     Clock::formatTime(tm, sizeof tm, true);
     t.setTextSize(2);
-    const int icons = Theme::titleBarRightIconsX(w);
-    const int right = icons - (icons < w ? 2 : 4);
+    if (rightLimit < 0) {
+        const int icons = Theme::titleBarRightIconsX(w);
+        rightLimit = (int16_t)(icons - (icons < w ? 2 : 4));
+    }
     const int tw = t.textWidth(tm) - 2;   // no spacing column after the last glyph
-    const int x = right - tw;
+    const int x = rightLimit - tw;
     t.fillRect(x - 3, 0, tw + 6, 20, TFT_BLACK);
     t.setTextColor(Theme::CYAN, TFT_BLACK);
     t.setCursor(x, 3);
@@ -2854,10 +2889,16 @@ void uiClearTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool adv
     Theme::drawActiveBackground(t, now, 0, h, eng, advance);
     Theme::clearBackgroundFloor();
     FrameProf::lap(FrameProf::BG);
-#if defined(TWATCH_S3)
-    // Under everything that moves: see drawCornerClock().
-    if (DrawBand::has(0, titleBottom)) s_cornerClockPillR = drawCornerClock(t, w);
+    s_cornerClockPillR = -1;
+    if (DrawBand::has(0, titleBottom)) {
+#if defined(TWATCH_S3) || defined(FREENOVE_S3) || defined(CYD32C)
+        s_cornerClockPillR = drawBatteryStatus(t, w, s_cornerClockPillR);
 #endif
+#if defined(TWATCH_S3)
+        // Under everything that moves: see drawCornerClock().
+        s_cornerClockPillR = drawCornerClock(t, w, s_cornerClockPillR);
+#endif
+    }
     // Everything from here that moves by the call, not by the clock, moves
     // on the mascot's clock. See uiMascotStep().
     const bool step = uiMascotStep(now, advance);
