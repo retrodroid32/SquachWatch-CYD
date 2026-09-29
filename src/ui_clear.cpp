@@ -3,6 +3,9 @@
 #include "clock.h"      // the watch's corner clock
 #include "draw_band.h"
 #include "frame_prof.h"
+#if defined(GPS_SUPPORT)
+#include "gps.h"
+#endif
 // Needed this early: the message helpers sit up with the visit machine,
 // above where the rest of this file pulls these in.
 #include "theme.h"
@@ -1712,6 +1715,32 @@ static bool    s_watchPillOn = false;
 // top band covers the clock rather than the clock cutting a hole in the
 // bubble. Returns where the WATCH pill's free span must end, or -1.
 static int16_t s_cornerClockPillR = -1;
+#if defined(GPS_SUPPORT)
+// GPS fix indicator for GPS firmware variants only. It deliberately draws
+// nothing until the receiver has a fresh fix; losing the fix removes it on
+// the next frame, so the icon can never imply stale location data.
+static int16_t drawGpsFixIcon(TFT_eSPI& t, int w) {
+    if (!Gps::snapshot().fix) return -1;
+    const int icons = Theme::titleBarRightIconsX(w);
+    const int right = icons - (icons < w ? 2 : 4);
+    const int cx = right - 9, cy = 10;
+    const uint16_t col = Theme::GREEN;
+
+    // Compact GPS reticle: four corner ticks plus a centre lock dot. Primitive
+    // drawing keeps it readable on every display without font glyph support.
+    t.fillRect(cx - 7, cy - 7, 15, 15, TFT_BLACK);
+    t.drawFastHLine(cx - 6, cy - 6, 4, col);
+    t.drawFastVLine(cx - 6, cy - 6, 4, col);
+    t.drawFastHLine(cx + 3, cy - 6, 4, col);
+    t.drawFastVLine(cx + 6, cy - 6, 4, col);
+    t.drawFastHLine(cx - 6, cy + 6, 4, col);
+    t.drawFastVLine(cx - 6, cy + 3, 4, col);
+    t.drawFastHLine(cx + 3, cy + 6, 4, col);
+    t.drawFastVLine(cx + 6, cy + 3, 4, col);
+    t.fillCircle(cx, cy, 2, col);
+    return (int16_t)(cx - 8 - 4);
+}
+#endif
 #if defined(TWATCH_S3)
 static int16_t drawCornerClock(TFT_eSPI& t, int w) {
     if (!Clock::trusted()) return -1;
@@ -2854,6 +2883,9 @@ void uiClearTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool adv
     Theme::drawActiveBackground(t, now, 0, h, eng, advance);
     Theme::clearBackgroundFloor();
     FrameProf::lap(FrameProf::BG);
+#if defined(GPS_SUPPORT)
+    if (DrawBand::has(0, titleBottom)) s_cornerClockPillR = drawGpsFixIcon(t, w);
+#endif
 #if defined(TWATCH_S3)
     // Under everything that moves: see drawCornerClock().
     if (DrawBand::has(0, titleBottom)) s_cornerClockPillR = drawCornerClock(t, w);
@@ -2991,8 +3023,8 @@ void uiClearTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool adv
         // pill the other pass had just drawn, and it would stop being tappable.
         if (DrawBand::has(0, titleBottom)) {
             s_watchPillOn = false;
-            // Right of the pill: the watch's corner clock, drawn earlier (see
-            // drawCornerClock()); -1 elsewhere, the old fixed reserve.
+            // Right of the pill: any active corner status drawn earlier (GPS fix
+            // on GPS variants, or the watch clock); -1 keeps the old reserve.
             if (watching || hunting) drawWatchPill(t, w, watching, hunting, s_cornerClockPillR);
         }
     }
