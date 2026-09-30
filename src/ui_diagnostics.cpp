@@ -1,6 +1,7 @@
 // SquachWatch-CYD — on-device diagnostics screen implementation
 #include "ui_diagnostics.h"
 #include "clock.h"
+#include "gps.h"
 #include "theme.h"
 #include "detection.h"
 #include <Arduino.h>
@@ -96,6 +97,11 @@ void uiDiagnosticsTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, co
         Clock::formatClock(clk, sizeof(clk));
         y = drawLine(t, y, Theme::CYAN, "CLOCK:", "%s%s", clk,
                      Clock::trusted() ? "" : "  (TIME <epoch> over serial)");
+#if defined(GPS_SUPPORT)
+        char gps[48];
+        Gps::formatStatus(gps, sizeof(gps));
+        y = drawLine(t, y, Theme::CYAN, "GPS:", "%s", gps);
+#endif
     }
     y = drawLine(t, y, Theme::CYAN, "HEAP:", "%lu free / %lu largest",
                  (unsigned long)info.freeHeap, (unsigned long)info.largestBlock);

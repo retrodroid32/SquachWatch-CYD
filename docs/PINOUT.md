@@ -52,3 +52,28 @@ on the CYD's GPIO header but not used by SquachWatch-CYD v1.0.
 - [Fr4nkFletcher/ESP32-Marauder-Cheap-Yellow-Display](https://github.com/Fr4nkFletcher/ESP32-Marauder-Cheap-Yellow-Display)
 - Sunton schematic for the ESP32-2432S028R (publicly available in
   the witnessmenow wiki).
+
+
+## Optional GPS / GNSS firmware
+
+GPS-capable CYD builds use board-specific UART wiring:
+
+| Board | GPS TX -> ESP32 RX | GPS RX <- ESP32 TX |
+|---|---:|---:|
+| 2.8" CYD profiles | GPIO35 | GPIO22 |
+| 3.2" E32R32P / ESP32-32E | **GPIO35 (JP3)** | **not connected** |
+
+The 3.2" board's 4-pin **5V / GND / TXD / RXD** serial-module connector is
+wired to ESP32 UART0 (GPIO1/GPIO3), the same UART used by the onboard CH340C
+USB bridge and SquachWatch's serial console. It is therefore not used for GPS
+data. Power the receiver from 5V/GND as appropriate, connect **GPS TX only**
+to the board's exposed **GPIO35 / JP3** input, and leave GPS RX disconnected.
+Receive-only operation is sufficient for NMEA position logging and avoids
+USB-console/UART contention. GPIO35 is input-only, which is intentional.
+The GPS firmware defaults to 115200 baud and accepts either standard NMEA or UBX NAV-PVT/NAV-DOP, so a receiver configured for FlightMesh does not need to be reconfigured.
+
+GPS is a compile-time/web-flasher option, not a required peripheral. The normal
+40 MHz and 80 MHz firmware remain available without GPS, and the GPS checkbox
+can be combined with either display-clock choice. GPS builds append
+`gps_epoch,lat,lon,alt_m,sats,hdop,gps_age_ms` to SD detection rows and leave
+the fixed-size BlackBox format unchanged.
