@@ -499,7 +499,10 @@ private:
     static const uint8_t  WIFI_Q_CAP    = 8;
     static const uint32_t STALE_MS      = 60000;
     static const uint32_t ALERT_GRACE_MS= 200;
-    static const uint8_t  RAW_BLE_CAP   = 20;
+    // Manual/raw browsers: enough room for a dense room without making
+    // either list unbounded. Raw BLE is ~2 KB; the Wi-Fi snapshot is ~3 KB.
+    static const uint8_t  RAW_BLE_CAP   = 64;
+    static const uint8_t  RAW_WIFI_CAP  = 64;
 
     // Known BLE detections cross from NimBLE's host task to the Arduino loop
     // through this bounded mailbox. Keeping _log/_typeCounts loop-owned means
@@ -520,6 +523,19 @@ private:
     // than a chronological history.
     RawBleResult _rawBle[RAW_BLE_CAP];
     uint8_t      _rawBleCount = 0;
+
+    // WiFi.scanNetworks() owns its result table and scanDelete() frees it.
+    // Keep a compact snapshot so WATCH/HUNT can temporarily leave the raw
+    // scanner and BACK can restore the exact list instead of rescanning.
+    struct RawWifiResult {
+        uint8_t bssid[6];
+        int8_t  rssi;
+        uint8_t channel;
+        bool    open;
+        char    ssid[33];
+    };
+    RawWifiResult _rawWifi[RAW_WIFI_CAP];
+    uint8_t       _rawWifiCachedCount = 0;
 
     struct WiFiQEntry {
         uint8_t mac[6];

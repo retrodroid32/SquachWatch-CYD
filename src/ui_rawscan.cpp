@@ -5,6 +5,7 @@
 #include "theme.h"
 #include "squachy.h"
 #include "settings.h"
+#include "ignore_list.h"
 #include <Arduino.h>
 
 static int g_scroll = 0;
@@ -108,7 +109,8 @@ RawScanConfirmTap uiRawScanHitConfirm(int x, int y, int screenW, int screenH) {
 // scanning state, the empty state, or the results list) -- called
 // right before every return point in uiRawScanTick() rather than
 // restructuring those into a single shared tail.
-static void drawConfirmPanel(TFT_eSPI& t, int w, int h, const char* label, bool watched, bool hunted) {
+static void drawConfirmPanel(TFT_eSPI& t, int w, int h, const char* label, bool watched, bool hunted,
+                             bool ignored) {
     int px, py, pw, ph, wX, wY, wW, wH, huX, huY, huW, huH, igX, igY, igW, igH, cnX, cnY, cnW, cnH;
     confirmRects(w, h, px, py, pw, ph, wX, wY, wW, wH, huX, huY, huW, huH,
                  igX, igY, igW, igH, cnX, cnY, cnW, cnH);
@@ -136,7 +138,9 @@ static void drawConfirmPanel(TFT_eSPI& t, int w, int h, const char* label, bool 
     Theme::drawButton(t, wX, wY, wW, wH, watched ? "UNWATCH" : "WATCH", watched);
     // Toggles like WATCH beside it -- see that button's comment.
     Theme::drawButton(t, huX, huY, huW, huH, hunted ? "STOP HUNT" : "HUNT", hunted);
-    Theme::drawButton(t, igX, igY, igW, igH, "IGNORE", false);
+    // IGNORE is a toggle too. Make its current state obvious instead of
+    // forcing the user to tap it again just to discover whether it stuck.
+    Theme::drawButton(t, igX, igY, igW, igH, ignored ? "UN-IGNORE" : "IGNORE", ignored);
     Theme::drawButton(t, cnX, cnY, cnW, cnH, "CANCEL", false);
 }
 
@@ -176,7 +180,7 @@ int uiRawScanRowAt(TFT_eSPI& t, int x, int y, int screenW, int screenH) {
 
 void uiRawScanTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool isBle, bool done,
                     bool confirmPending, const char* confirmLabel, bool confirmWatched,
-                    bool confirmHunted, bool advance) {
+                    bool confirmHunted, bool confirmIgnored, bool advance) {
     int w = t.width();
     int h = t.height();
 
@@ -284,7 +288,7 @@ switch (Settings::background()) {
         }
 
         drawBottomBar(t, w, h, isBle);
-        if (confirmPending) drawConfirmPanel(t, w, h, confirmLabel, confirmWatched, confirmHunted);
+        if (confirmPending) drawConfirmPanel(t, w, h, confirmLabel, confirmWatched, confirmHunted, confirmIgnored);
         return;
     }
 
@@ -299,7 +303,7 @@ switch (Settings::background()) {
         t.print(msg);
 
         drawBottomBar(t, w, h, isBle);
-        if (confirmPending) drawConfirmPanel(t, w, h, confirmLabel, confirmWatched, confirmHunted);
+        if (confirmPending) drawConfirmPanel(t, w, h, confirmLabel, confirmWatched, confirmHunted, confirmIgnored);
         return;
     }
 
@@ -344,6 +348,14 @@ switch (Settings::background()) {
                      r->mac[0], r->mac[1], r->mac[2], r->mac[3], r->mac[4], r->mac[5]);
             t.setCursor(4, y + detailY);
             t.print(mac);
+            // Persistent status, not just a one-shot toast: once a device is
+            // ignored the raw list says so beside the MAC on every frame.
+            if (IgnoreList::contains(r->mac)) {
+                const int ix = 4 + t.textWidth(mac) + 8;
+                t.setTextColor(Theme::AMBER, Theme::BG);
+                t.setCursor(ix, y + detailY);
+                t.print("IGNORE");
+            }
 
             t.setTextColor(Theme::VAPOR_PURPLE, Theme::BG);
             t.setCursor(w - rw - 14, y + topPad);
@@ -372,9 +384,13 @@ switch (Settings::background()) {
 
             t.setTextSize(1);
             t.setTextColor(Theme::WHITE, Theme::BG);
-            char line[24];
-            snprintf(line, sizeof(line), "CH%u  %s", (unsigned)eng.rawWifiChannel(idx),
-                     eng.rawWifiOpen(idx) ? "OPEN" : "LOCKED");
+            const uint8_t* bssid = eng.rawWifiBssid(idx);
+            const bool ignored = bssid && IgnoreList::contains(bssid);
+            char line[32];
+            snprintf(line, sizeof(line), "CH%u  %s%s",
+                     (unsigned)eng.rawWifiChannel(idx),
+                     eng.rawWifiOpen(idx) ? "OPEN" : "LOCKED",
+                     ignored ? "  IGNORE" : "");
             t.setCursor(4, y + detailY);
             t.print(line);
 
@@ -389,5 +405,5 @@ switch (Settings::background()) {
     Theme::drawScrollbar(t, w - 4, bodyTop, bodyH, count, max, g_scroll);
 
     drawBottomBar(t, w, h, isBle);
-    if (confirmPending) drawConfirmPanel(t, w, h, confirmLabel, confirmWatched, confirmHunted);
+    if (confirmPending) drawConfirmPanel(t, w, h, confirmLabel, confirmWatched, confirmHunted, confirmIgnored);
 }

@@ -23,7 +23,13 @@ CXX      ?= g++
 CXXFLAGS := -std=c++17 -O1 -g -Wall -Wextra -Wno-unused-parameter \
             -I$(SIM) -I$(INC)
 
-TESTS := remote_id_test ibeacon_test signatures_test emitter_roundtrip_test ignore_list_test hacker_test pwnagotchi_test shim_fidelity_test squachmesh_test qwerty_test meshmsg_test device_info_test security_test emote_script_test blackbox_test bingo_test hunt_test bgretire_test autoquiet_test framepush_test touchfit_test logindex_test dex_test regulars_test detection_labels_test detection_vectors_test detection_evidence_test alert_rules_test ignore_migrate_dev_test ignore_migrate_macs_test ignore_migrate_fail_test spam_test uifit_test
+# Any header edit can change an inline helper, enum, shim, or template used by
+# a host test. The old rules listed only .cpp prerequisites, so make could run
+# a stale binary after a header-only change. Rebuilding the small host suite is
+# cheaper and safer than pretending those dependencies do not exist.
+HOST_HEADERS := $(wildcard $(INC)/*.h) $(wildcard $(SIM)/*.h)
+
+TESTS := remote_id_test ibeacon_test signatures_test emitter_roundtrip_test ignore_list_test hacker_test pwnagotchi_test shim_fidelity_test squachmesh_test qwerty_test meshmsg_test device_info_test security_test emote_script_test blackbox_test bingo_test hunt_test bgretire_test autoquiet_test framepush_test touchfit_test logindex_test dex_test regulars_test detection_labels_test detection_vectors_test detection_evidence_test alert_rules_test ignore_migrate_dev_test ignore_migrate_macs_test ignore_migrate_fail_test spam_test ble_adv_utils_test uifit_test
 
 # Only the units under test get linked in. Pulling the whole firmware
 # would drag in TFT_eSPI, NimBLE and the UI, and a test that needs a
@@ -84,6 +90,7 @@ shim_fidelity_test_SRCS      :=
 touchfit_test_SRCS           :=
 # Header-only tracker flood arithmetic.
 spam_test_SRCS               :=
+ble_adv_utils_test_SRCS       :=
 uifit_test_SRCS               :=
 
 .PHONY: all clean
@@ -93,7 +100,7 @@ $(OUT):
 	@mkdir -p $(OUT)
 
 define TEST_rule
-$(OUT)/$(1): $(1).cpp $$($(1)_SRCS) | $(OUT)
+$(OUT)/$(1): $(1).cpp $($(1)_SRCS) $(HOST_HEADERS) | $(OUT)
 	@$$(CXX) $$(CXXFLAGS) $$($(1)_FLAGS) -o $$@ $$< $$($(1)_SRCS)
 
 .PHONY: run-$(1)
@@ -105,3 +112,32 @@ $(foreach t,$(TESTS),$(eval $(call TEST_rule,$(t))))
 
 clean:
 	@rm -rf $(OUT)
+
+
+# ---- the real SquachMesh cipher, opt-in -------------------------------------
+# This target compiles src/meshcrypto.cpp against the host's mbedTLS 3 package.
+# It is intentionally not part of plain `make`: CI runners do not install
+# libmbedtls-dev, and silently skipping a missing crypto dependency would give a
+# false green. On Debian/Ubuntu:
+#   sudo apt-get install libmbedtls-dev
+#   make -C test crypto
+CRYPTO_SRCS := meshcrypto_test.cpp $(SRC)/meshcrypto.cpp $(SRC)/meshmsg.cpp $(SRC)/meshwords.cpp
+CRYPTO_OBJS := $(addprefix $(OUT)/crypto/,$(notdir $(CRYPTO_SRCS:.cpp=.o)))
+
+.PHONY: crypto
+crypto: $(OUT)/meshcrypto_test
+	@$(OUT)/meshcrypto_test
+
+$(OUT)/crypto:
+	@mkdir -p $(OUT)/crypto
+
+$(OUT)/crypto/%.o: %.cpp $(HOST_HEADERS) | $(OUT)/crypto
+	$(CXX) $(CXXFLAGS) -MMD -MP -DSQUACH_MESH=1 -c -o $@ $<
+
+$(OUT)/crypto/%.o: $(SRC)/%.cpp $(HOST_HEADERS) | $(OUT)/crypto
+	$(CXX) $(CXXFLAGS) -MMD -MP -DSQUACH_MESH=1 -c -o $@ $<
+
+$(OUT)/meshcrypto_test: $(CRYPTO_OBJS)
+	$(CXX) -o $@ $^ -lmbedcrypto
+
+-include $(CRYPTO_OBJS:.o=.d)

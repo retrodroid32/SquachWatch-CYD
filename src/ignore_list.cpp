@@ -40,6 +40,14 @@ static int indexOf(const uint8_t* mac) {
     if (!mac) return -1;
     for (uint8_t i = 0; i < s_count; i++)
         if (memcmp(s_rec[i].mac, mac, 6) == 0) return (int)i;
+    // Before BLE MAC normalization, persisted BLE addresses used NimBLE's
+    // native reversed byte order. Match that legacy form too so an ignored,
+    // trusted, or always-alert device does not silently lose its policy.
+    for (uint8_t i = 0; i < s_count; i++) {
+        bool same = true;
+        for (int b = 0; b < 6 && same; b++) same = (s_rec[i].mac[b] == mac[5 - b]);
+        if (same) return (int)i;
+    }
     return -1;
 }
 

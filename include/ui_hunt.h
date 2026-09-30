@@ -15,8 +15,9 @@ void uiHuntInit(TFT_eSPI& t);
 // than by the clock must sit still for it. Other boards draw once.
 void uiHuntTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool advance = true);
 bool uiHuntHitBack(int x, int y, int screenW, int screenH);
-// STOP: ends the hunt outright (DetectionEngine::clearHunt) and returns to
-// CLEAR. BACK leaves the target set, so the two are not the same exit.
+// STOP ends the hunt outright (DetectionEngine::clearHunt); BACK leaves the
+// target set. main.cpp owns navigation and returns either exit to the screen
+// that launched HUNT when that context is known.
 bool uiHuntHitStop(int x, int y, int screenW, int screenH);
 // True while the gauge is showing CAUGHT: the signal has sat at
 // arm's-length strength for two samples running. The status light reads
