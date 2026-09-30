@@ -11,7 +11,7 @@
 // is a rule and not a shortcut. The CrowPanel 7 gets nothing either: its 4,
 // 16 and 17 are the card slot's data line, the touch clock and a panel data
 // line (crowpanel7_board.h).
-#if defined(ESP32) && !defined(CYD35) && !defined(AWOK) && !defined(TWATCH_S3) && !defined(CROWPANEL7)
+#if defined(ESP32) && !defined(CYD35) && !defined(AWOK) && !defined(TWATCH_S3) && !defined(CROWPANEL7) && !defined(LCDWIKI_ES3C28P)
 #define STATUS_LIGHT_HW 1
 #else
 #define STATUS_LIGHT_HW 0
