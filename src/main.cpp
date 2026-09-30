@@ -892,6 +892,14 @@ static bool readTouchRaw(int16_t& a, int16_t& b) {
 // coming back from a reboot into a dimmed screen with no memory of why would
 // look exactly like a broken backlight.
 static bool s_screenDimmed = false;
+// The BOOT button (GPIO0) on the plain-ESP32 CYDs: a short press turns the
+// screen off or on, a long one starts CHARGE MODE. The S3 boards and the
+// CrowPanel are left out until somebody has pressed theirs.
+#if defined(ESP32) && !defined(SQW_S3) && !defined(CROWPANEL7)
+#define SQW_BOOT_BTN 1
+#else
+#define SQW_BOOT_BTN 0
+#endif
 #if defined(TWATCH_S3)
 // A watch goes dark, not dim. When the screen timeout lands, the backlight
 // goes off and the ST7789 is put to sleep (DISPOFF, SLPIN: about a milliamp
@@ -899,21 +907,21 @@ static bool s_screenDimmed = false;
 // A tap or the crown wakes it: SLPOUT needs 120 ms before DISPON, which is
 // the one delay a person can feel here, and it is once per wake.
 static bool s_panelAsleep = false;
-#if defined(TWATCH_S3)
-// A crown press with the screen on turns it off at once, cable or not.
-// It stays off until the next touch, crown press or alert: lastTouch
-// moving past this moment is what ends it.
-static bool     s_crownDark   = false;
-static uint32_t s_crownDarkAt = 0;
-// After an alert lights a crown-darkened screen, it stays lit until this
-// moment -- the screen timeout, counted from the alert's end -- then goes
-// dark again. 0 = no alert has lit it.
-static uint32_t s_crownLitUntil = 0;
 // On the cable, read every two seconds in twatchRadioTick(). The screen
 // stays lit while it is true: a watch on its charger is a desk clock.
 static bool     s_onUsb = true;
-#endif
 static bool s_radiosResting = false;   // the duty cycle's state; see twatchRadioTick()
+#endif
+#if defined(TWATCH_S3) || SQW_BOOT_BTN
+// A crown press (or the CYDs' BOOT button) with the screen on turns it off
+// at once, cable or not. It stays off until the next touch, press or alert:
+// lastTouch moving past this moment is what ends it.
+static bool     s_crownDark   = false;
+static uint32_t s_crownDarkAt = 0;
+// After an alert lights a button-darkened screen, it stays lit until this
+// moment -- the screen timeout, counted from the alert's end -- then goes
+// dark again. 0 = no alert has lit it.
+static uint32_t s_crownLitUntil = 0;
 #endif
 
 static void applyCpuClock();
@@ -947,6 +955,9 @@ static void applyBrightness() {
     // keeps the firmware's own 0..255-with-255-brightest convention.
     CrowBL::set(duty);
 #else
+#if SQW_BOOT_BTN
+    if (s_crownDark && s_screenDimmed) duty = 0;   // the button turns it OFF, whatever DIM LEVEL says
+#endif
     ledcWrite(BL_CH_ORIG, duty);
     ledcWrite(BL_CH_CAP,  duty);
     ledcWrite(BL_CH_AWOK, duty);
@@ -2817,6 +2828,9 @@ void setup() {
     // while it is still the previous life's, not this one's.
     crashReportInit();
     Serial.begin(SERIAL_BAUD);
+#if SQW_BOOT_BTN
+    pinMode(0, INPUT_PULLUP);   // BOOT: see bootButtonTick()
+#endif
 #if defined(SQW_S3)
     // Native USB: with nothing reading the port, every print would otherwise
     // wait its full timeout for a host, and after the chatty first-boot
@@ -3946,6 +3960,9 @@ static void enterChargeMode() {
 static void exitChargeMode() {
     const uint32_t mins = (millis() - s_chargeAt) / 60000UL;
     s_chargeMode = false;
+#if SQW_BOOT_BTN
+    s_crownDark = false;
+#endif
     engine.wakeRadios();
     applyCpuClock();
     applyBrightness();
@@ -3986,6 +4003,31 @@ static void chargeModeTick(uint32_t now) {
     // on this chip, and the saving was about 25 mA. An idle wait instead.
     delay(40);
 }
+
+#if SQW_BOOT_BTN
+// BOOT, polled every pass (and every 40 ms in charge mode). Released before
+// 1.2 s it is a short press: the screen off, or back on. Held past 1.2 s it
+// starts CHARGE MODE, without waiting for the release. In charge mode either
+// wakes the board. 30 ms of contact before anything counts.
+static void bootButtonTick(uint32_t now) {
+    static bool was = false, longDone = false;
+    static uint32_t downAt = 0;
+    const bool down = digitalRead(0) == LOW;
+    if (down && !was) { downAt = now; longDone = false; }
+    if (down && !longDone && now - downAt >= 1200) {
+        longDone = true;
+        Serial.println("[button] long press");
+        if (s_chargeMode) exitChargeMode(); else s_chargeWanted = true;
+    }
+    if (!down && was && !longDone && now - downAt >= 30) {
+        Serial.println("[button] short press");
+        if (s_chargeMode) exitChargeMode();
+        else if (!s_screenDimmed) { s_crownDark = true; s_crownDarkAt = now; s_crownLitUntil = 0; }
+        else { s_crownDark = false; lastTouch = now; }
+    }
+    was = down;
+}
+#endif
 #endif
 
 void loop() {
@@ -3994,6 +4036,9 @@ void loop() {
     Clock::pollSerial();
     runtimeTick(millis());
 #if defined(ESP32) && !defined(TWATCH_S3)
+#if SQW_BOOT_BTN
+    bootButtonTick(millis());
+#endif
     if (g_consoleCharge) { g_consoleCharge = false; if (s_chargeMode) exitChargeMode(); else s_chargeWanted = true; }
     if (s_chargeWanted && !s_chargeMode) { s_chargeWanted = false; enterChargeMode(); }
     if (s_chargeMode) { chargeModeTick(millis()); return; }
@@ -7054,6 +7099,8 @@ void loop() {
         // On the cable the watch stays lit; on battery the timeout always runs
         // (see Settings::screenTimeoutSec), unless it is set to NEVER.
         if (s_onUsb) wantDim = false;
+#endif
+#if defined(TWATCH_S3) || SQW_BOOT_BTN
         // The crown, which beats the cable, the desk and a timeout of NEVER.
         // A touch since the press, or an alert that wants the screen, ends it.
         //
