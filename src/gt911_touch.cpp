@@ -1,4 +1,4 @@
-#if defined(CROWPANEL7) || defined(CYD32C)
+#if defined(CROWPANEL7) || defined(CYD32C) || defined(CYD35C)
 #include "gt911_touch.h"
 #include <Arduino.h>
 #include <Wire.h>
@@ -66,7 +66,7 @@ static bool i2cPresent(uint8_t addr) {
 // of reset is also what latches its address to 0x5D rather than 0x14, which
 // is why this runs before the identify rather than after a failed one.
 static void wake() {
-#if defined(CYD32C)
+#if defined(CYD32C) || defined(CYD35C)
     // Goodix reset/address-select sequence: INT low while reset is released
     // selects 0x5D, then INT returns to input mode.
     pinMode(PIN_TOUCH_RST, OUTPUT);
