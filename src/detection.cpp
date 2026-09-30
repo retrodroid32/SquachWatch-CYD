@@ -1868,6 +1868,7 @@ void DetectionEngine::startRawWifiScan() {
     // Gate the BLE callback off first (it'd otherwise still be live
     // during the scan) before touching the radio.
     const bool leavingRawBle = (g_rawMode == RawScanMode::BLE);
+    _rawWifiCachedCount = 0;  // a deliberate new sweep replaces the snapshot
     g_rawMode = RawScanMode::WIFI;
     if (leavingRawBle) requestRawBleScanMode();
     esp_wifi_set_promiscuous(false);
@@ -1879,46 +1880,84 @@ bool DetectionEngine::rawWifiScanDone() const {
 }
 
 uint8_t DetectionEngine::rawWifiCount() const {
-    if (!rawWifiScanDone()) return 0;
-    int n = WiFi.scanComplete();
-    return n > 0 ? (uint8_t)n : 0;
+    if (rawWifiScanDone()) {
+        const int n = WiFi.scanComplete();
+        return n > 0 ? (uint8_t)((n > RAW_WIFI_CAP) ? RAW_WIFI_CAP : n) : 0;
+    }
+    return _rawWifiCachedCount;
 }
 
 const char* DetectionEngine::rawWifiSsid(uint8_t idx) const {
     // WiFi.SSID() returns a temporary String -- copy into a static
     // buffer rather than returning a pointer into it (same pattern as
-    // macFmt() below).
+    // macFmt() below). Once the active scan is released, serve the
+    // preserved snapshot instead.
     static char buf[33];
     buf[0] = 0;
-    if (idx < rawWifiCount()) {
-        String s = WiFi.SSID(idx);
-        strncpy(buf, s.c_str(), sizeof(buf) - 1);
+    if (rawWifiScanDone()) {
+        if (idx < rawWifiCount()) {
+            String s = WiFi.SSID(idx);
+            strncpy(buf, s.c_str(), sizeof(buf) - 1);
+            buf[sizeof(buf) - 1] = 0;
+            if (buf[0] == 0) strncpy(buf, "(hidden)", sizeof(buf) - 1);
+        }
+    } else if (idx < _rawWifiCachedCount) {
+        strncpy(buf, _rawWifi[idx].ssid, sizeof(buf) - 1);
         buf[sizeof(buf) - 1] = 0;
-        if (buf[0] == 0) strncpy(buf, "(hidden)", sizeof(buf) - 1);
     }
     return buf;
 }
 
 int8_t DetectionEngine::rawWifiRssi(uint8_t idx) const {
-    return idx < rawWifiCount() ? (int8_t)WiFi.RSSI(idx) : 0;
+    if (rawWifiScanDone())
+        return idx < rawWifiCount() ? (int8_t)WiFi.RSSI(idx) : 0;
+    return idx < _rawWifiCachedCount ? _rawWifi[idx].rssi : 0;
 }
 
 uint8_t DetectionEngine::rawWifiChannel(uint8_t idx) const {
-    return idx < rawWifiCount() ? (uint8_t)WiFi.channel(idx) : 0;
+    if (rawWifiScanDone())
+        return idx < rawWifiCount() ? (uint8_t)WiFi.channel(idx) : 0;
+    return idx < _rawWifiCachedCount ? _rawWifi[idx].channel : 0;
 }
 
 bool DetectionEngine::rawWifiOpen(uint8_t idx) const {
-    return idx < rawWifiCount() && WiFi.encryptionType(idx) == WIFI_AUTH_OPEN;
+    if (rawWifiScanDone())
+        return idx < rawWifiCount() && WiFi.encryptionType(idx) == WIFI_AUTH_OPEN;
+    return idx < _rawWifiCachedCount && _rawWifi[idx].open;
 }
 
 const uint8_t* DetectionEngine::rawWifiBssid(uint8_t idx) const {
-    if (!rawWifiScanDone() || idx >= rawWifiCount()) return nullptr;
-    return WiFi.BSSID(idx);
+    if (rawWifiScanDone())
+        return idx < rawWifiCount() ? WiFi.BSSID(idx) : nullptr;
+    return idx < _rawWifiCachedCount ? _rawWifi[idx].bssid : nullptr;
 }
 
 void DetectionEngine::stopRawScan() {
     const bool leavingRawBle = (g_rawMode == RawScanMode::BLE);
-    if (g_rawMode == RawScanMode::WIFI) WiFi.scanDelete();
+    if (g_rawMode == RawScanMode::WIFI) {
+        // A TRACK THIS TARGET action can temporarily leave this screen.
+        // Copy the completed scan before freeing Arduino-WiFi's table so BACK
+        // can restore the exact rows without another RF sweep.
+        const int n = WiFi.scanComplete();
+        if (n >= 0) {
+            const uint8_t keep = (uint8_t)((n > RAW_WIFI_CAP) ? RAW_WIFI_CAP : n);
+            _rawWifiCachedCount = keep;
+            for (uint8_t i = 0; i < keep; ++i) {
+                RawWifiResult& r = _rawWifi[i];
+                const uint8_t* bssid = WiFi.BSSID(i);
+                if (bssid) memcpy(r.bssid, bssid, sizeof r.bssid);
+                else       memset(r.bssid, 0, sizeof r.bssid);
+                r.rssi = (int8_t)WiFi.RSSI(i);
+                r.channel = (uint8_t)WiFi.channel(i);
+                r.open = WiFi.encryptionType(i) == WIFI_AUTH_OPEN;
+                String s = WiFi.SSID(i);
+                strncpy(r.ssid, s.c_str(), sizeof(r.ssid) - 1);
+                r.ssid[sizeof(r.ssid) - 1] = 0;
+                if (!r.ssid[0]) strncpy(r.ssid, "(hidden)", sizeof(r.ssid) - 1);
+            }
+        }
+        WiFi.scanDelete();
+    }
     g_rawMode = RawScanMode::NONE;
     if (leavingRawBle) requestRawBleScanMode();
     esp_wifi_set_promiscuous(true);
