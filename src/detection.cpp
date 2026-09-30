@@ -384,6 +384,18 @@ class BleScanCallbacks : public NimBLEScanCallbacks {
             memcpy(r.mac, mac, 6);
             r.rssi = adv->getRSSI();
             copyAdvName(payload, r.name, sizeof(r.name));
+            // The raw browser is user-facing and runs only for a focused
+            // eight-second sweep. If our allocation-free AD walker did not
+            // find a name, let NimBLE parse its assembled advert + scan
+            // response as a fallback. Keep the returned std::string alive
+            // while copying it; never take c_str() from a temporary.
+            if (!r.name[0] && adv->haveName()) {
+                const std::string name = adv->getName();
+                if (!name.empty()) {
+                    strncpy(r.name, name.c_str(), sizeof(r.name) - 1);
+                    r.name[sizeof(r.name) - 1] = 0;
+                }
+            }
             g_engine->postRawBle(r);
             return;
         }
@@ -1797,18 +1809,50 @@ void DetectionEngine::postRawBle(RawBleResult r) {
     // how many devices happen to be nearby.
 }
 
+// Manual BLE browsing needs scan responses: many perfectly ordinary BLE
+// devices put their Local Name in the scan response rather than the primary
+// advertisement. The normal detector may deliberately run passive in a busy
+// room for heap safety, but the manual eight-second BLE sweep is bounded and
+// should actively ask for those responses. Stop/restart must happen on the
+// NimBLE host task -- doing it from loop() can free a record underneath a
+// callback on the other core.
+static struct ble_npl_event s_rawBleModeEv;
+static bool                 s_rawBleModeEvReady = false;
+
+static void rawBleModeOnHost(struct ble_npl_event*) {
+    NimBLEScan* scan = NimBLEDevice::getScan();
+    if (!scan || !scan->isScanning()) return;
+
+    // BLE raw scan => active. Anything else => return to the detector's
+    // current AUTO/pinned choice.
+    const bool passive = (g_rawMode == RawScanMode::BLE) ? false : s_wantPassive;
+    if (passive == s_passiveNow) return;
+
+    scan->stop();
+    scan->setActiveScan(!passive);
+    s_passiveNow = passive;
+    scan->start(0, false, true);
+}
+
+static void requestRawBleScanMode() {
+    if (!s_rawBleModeEvReady) {
+        ble_npl_event_init(&s_rawBleModeEv, rawBleModeOnHost, nullptr);
+        s_rawBleModeEvReady = true;
+    }
+    ble_npl_eventq_put(nimble_port_get_dflt_eventq(), &s_rawBleModeEv);
+}
+
 void DetectionEngine::startRawBleScan() {
     if (g_rawMode == RawScanMode::WIFI) WiFi.scanDelete();
     _rawBleCount = 0;
-    // The continuous NimBLE scan (started once, forever, in init())
-    // keeps running -- onResult() just routes into postRawBle() above
-    // instead of the signature matcher while g_rawMode == BLE. WiFi's
-    // promiscuous capture is switched off so the radio is focused on
-    // BLE for the duration, per the "pause the continuous scan and
-    // focus on what we're scanning for" design.
+    // The same indefinite NimBLE scanner is reused, but the focused manual
+    // sweep temporarily forces ACTIVE scanning so Local Names carried in scan
+    // responses are available. The host-task event above performs the safe
+    // restart; leaving raw BLE restores the detector's normal scan mode.
     esp_wifi_set_promiscuous(false);
     g_rawMode = RawScanMode::BLE;
     g_rawBleStartMs = millis();
+    requestRawBleScanMode();
 }
 
 bool DetectionEngine::rawBleScanDone() const {
@@ -1823,7 +1867,9 @@ const RawBleResult* DetectionEngine::rawBleAt(uint8_t idx) const {
 void DetectionEngine::startRawWifiScan() {
     // Gate the BLE callback off first (it'd otherwise still be live
     // during the scan) before touching the radio.
+    const bool leavingRawBle = (g_rawMode == RawScanMode::BLE);
     g_rawMode = RawScanMode::WIFI;
+    if (leavingRawBle) requestRawBleScanMode();
     esp_wifi_set_promiscuous(false);
     WiFi.scanNetworks(true /* async */);
 }
@@ -1871,8 +1917,10 @@ const uint8_t* DetectionEngine::rawWifiBssid(uint8_t idx) const {
 }
 
 void DetectionEngine::stopRawScan() {
+    const bool leavingRawBle = (g_rawMode == RawScanMode::BLE);
     if (g_rawMode == RawScanMode::WIFI) WiFi.scanDelete();
     g_rawMode = RawScanMode::NONE;
+    if (leavingRawBle) requestRawBleScanMode();
     esp_wifi_set_promiscuous(true);
 }
 
