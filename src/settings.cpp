@@ -1,5 +1,6 @@
 // SquachWatch-CYD — persisted user settings implementation
 #include "settings.h"
+#include <string.h>
 #include "clock.h"
 #include "theme.h"
 #include <Preferences.h>
@@ -135,6 +136,9 @@ static uint8_t  s_bleIx        = BLE_LISTEN_DEFAULT;
 static uint8_t  s_idleCpuIx    = IDLE_CPU_DEFAULT;
 static bool     s_wakeOnAlert  = true;
 static bool     s_quietTrack   = true;
+struct __attribute__((packed)) RunEntry { uint16_t boot, minutes; };
+static const uint8_t RUNS_N = 8;
+static RunEntry  s_runs[RUNS_N] = {};
 static bool     s_watchPlus    = false;
 static uint8_t  s_buzzMode     = 2;    // 0 OFF, 1 HIGH, 2 MED, 3 LOW; MED by default
 // The watch's radio duty cycle: on for a few seconds, resting for the rest.
@@ -295,6 +299,24 @@ const char* buzzModeName() {
 void cycleBuzz() {
     s_buzzMode = (uint8_t)((s_buzzMode + 1) % 4);
     s_prefs.putUChar("buzzMode", s_buzzMode);
+}
+void noteRunMinutes(uint16_t boot, uint16_t minutes) {
+    if (s_runs[0].boot == boot) {
+        if (s_runs[0].minutes == minutes) return;
+    } else {
+        memmove(&s_runs[1], &s_runs[0], sizeof(RunEntry) * (RUNS_N - 1));
+        s_runs[0].boot = boot;
+    }
+    s_runs[0].minutes = minutes;
+    s_prefs.putBytes("runs", s_runs, sizeof s_runs);
+}
+uint8_t runHistory(uint16_t* boots, uint16_t* minutes, uint8_t cap) {
+    uint8_t n = 0;
+    for (uint8_t i = 0; i < RUNS_N && n < cap; i++) {
+        if (!s_runs[i].boot) break;
+        boots[n] = s_runs[i].boot; minutes[n] = s_runs[i].minutes; n++;
+    }
+    return n;
 }
 void toggleQuietTrackers() {
     s_quietTrack = !s_quietTrack;
@@ -482,6 +504,7 @@ void load() {
     if (s_idleCpuIx > 2) s_idleCpuIx = IDLE_CPU_DEFAULT;
     s_wakeOnAlert  = s_prefs.getBool("pwrWake", true);
     s_quietTrack   = s_prefs.getBool("qTrack", true);
+    if (s_prefs.getBytesLength("runs") == sizeof s_runs) s_prefs.getBytes("runs", s_runs, sizeof s_runs);
     s_watchPlus    = s_prefs.getBool("wPlus", false);
     // The old on/off switch carries over: a watch that had BUZZ off stays off.
     s_buzzMode     = s_prefs.getUChar("buzzMode", s_prefs.getBool("buzz", true) ? 2 : 0);

@@ -93,6 +93,9 @@ static const SettingsRow ALL_ROWS[] = {
     SettingsRow::REPLAY_INTRO, SettingsRow::SHOW_OFF, SettingsRow::VIEW_DIARY,
     SettingsRow::BINGO, SettingsRow::DEX, SettingsRow::DESK_MODE,
     SettingsRow::POWER_SAVER,
+#if defined(ESP32) && !defined(TWATCH_S3)
+    SettingsRow::CHARGE_MODE,
+#endif
     SettingsRow::SECURITY,
     // CALIBRATE, CHECK COLORS, DIAGNOSTICS and RESET STATS moved behind the
     // SYSTEM row -- see SYSTEM_ROWS. They are the four you touch once a year,
@@ -138,6 +141,9 @@ static const uint8_t WATCH_ROWS_N = sizeof(WATCH_ROWS) / sizeof(WATCH_ROWS[0]);
 static const SettingsRow SYSTEM_ROWS[] = {
 #if defined(FREENOVE_S3)
     SettingsRow::BOARD_BATTERY,
+#endif
+#if defined(ESP32) && !defined(TWATCH_S3)
+    SettingsRow::LAST_RUN,
 #endif
     SettingsRow::CALIBRATE, SettingsRow::CHECK_COLORS,
     SettingsRow::DIAGNOSTICS, SettingsRow::UPDATE_FIRMWARE, SettingsRow::UPDATE_CHECK, SettingsRow::WIFI_NETWORKS,
@@ -922,6 +928,18 @@ static void rowContent(SettingsRow r, const DetectionEngine& eng, char* valBuf, 
         }
 #endif
 #endif
+        case SettingsRow::CHARGE_MODE:
+            label = "CHARGE MODE"; value = "START";
+            break;
+        case SettingsRow::LAST_RUN: {
+            // The boot before this one: how long it ran before it stopped.
+            label = "LAST RUN";
+            uint16_t b[2], m[2];
+            const uint8_t n = Settings::runHistory(b, m, 2);
+            if (n < 2) value = "--";
+            else { snprintf(valBuf, valBufN, "%uh %02um", (unsigned)(m[1] / 60), (unsigned)(m[1] % 60)); value = valBuf; }
+            break;
+        }
         case SettingsRow::POWER_SAVER:
             label = "POWER SAVER"; value = Settings::powerSaver() ? "ON" : "OFF";
             break;

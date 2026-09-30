@@ -220,6 +220,12 @@ namespace Settings {
     // TAGS + RINGS on the watch: AirTags, Tiles, Samsung and Google tags and
     // Ring cameras are logged but never interrupt -- no card, no buzz, no
     // screen waking. On by default: a commute is fifty AirTags an hour.
+    // How long each of the last few boots ran, in minutes, newest first --
+    // the runtime log for boards that cannot read their battery. main.cpp
+    // notes the running boot every ten minutes; the entry for a boot that
+    // ended is how long it lasted (to within ten minutes).
+    void       noteRunMinutes(uint16_t boot, uint16_t minutes);
+    uint8_t    runHistory(uint16_t* boots, uint16_t* minutes, uint8_t cap);
     bool       quietTrackers();
     void       toggleQuietTrackers();
     // Set the first time this watch's GPS answers: it is an S3 Plus, whose

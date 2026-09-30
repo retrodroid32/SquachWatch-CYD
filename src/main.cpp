@@ -3845,10 +3845,129 @@ static void wardriveBegin() {
 }
 #endif
 
+// The runtime log: this boot's minutes, noted every ten minutes. On a board
+// that cannot read its battery, the last note before it died is how long
+// the charge lasted. RUNTIME on the console lists the last eight boots.
+extern volatile bool g_consoleRuntime;   // clock.cpp: RUNTIME
+static void runtimeTick(uint32_t now) {
+    static uint32_t lastAt = 0;
+    static bool first = true;
+    if (first || now - lastAt >= 600000UL) {
+        first = false;
+        lastAt = now;
+        Settings::noteRunMinutes(BlackBox::bootNumber(), (uint16_t)(now / 60000UL));
+    }
+    if (g_consoleRuntime) {
+        g_consoleRuntime = false;
+        uint16_t b[8], m[8];
+        const uint8_t n = Settings::runHistory(b, m, 8);
+        Serial.printf("[runtime] this boot %u, up %lu min; newest first:\n", (unsigned)BlackBox::bootNumber(), (unsigned long)(now / 60000UL));
+        for (uint8_t i = 0; i < n; i++)
+            Serial.printf("[runtime] boot %u ran %uh %02um%s\n", (unsigned)b[i], (unsigned)(m[i] / 60), (unsigned)(m[i] % 60),
+                          i == 0 ? " so far (this one)" : "");
+    }
+}
+
+#if defined(ESP32) && !defined(TWATCH_S3)
+// CHARGE MODE: the board keeps running while it charges -- there is no off
+// switch that leaves the charger on -- and a running board takes most of
+// what a small charger gives (about 200 mA of it). This stops the WiFi and
+// Bluetooth radios, the status light and the backlight and drops the CPU to
+// 80 MHz, so the charger's current goes into the cell. A tap lights the
+// screen for ten seconds with how long it has been charging; a second tap
+// in that window wakes the board. The board cannot tell when the cell is
+// full, so the time is all there is to go on.
+static bool     s_chargeMode = false, s_chargeWasDown = false;
+static uint32_t s_chargeAt = 0, s_chargeLitAt = 0, s_chargeLitUntil = 0, s_chargeDrawnAt = 0;
+
+static void chargeBacklight(uint8_t duty) {
+#if defined(CROWPANEL7)
+    CrowBL::set(duty);
+#else
+    ledcWrite(BL_CH_ORIG, duty);
+    ledcWrite(BL_CH_CAP,  duty);
+    ledcWrite(BL_CH_AWOK, duty);
+#endif
+}
+
+static void chargeDraw(uint32_t now) {
+    s_chargeDrawnAt = now;
+    const int w = tft.width(), h = tft.height();
+    tft.fillScreen(TFT_BLACK);
+    const uint32_t mins = (now - s_chargeAt) / 60000UL;
+    char line[32];
+    tft.setTextDatum(MC_DATUM);
+    tft.setTextColor(Theme::CYAN, TFT_BLACK);
+    tft.setTextSize(3);
+    tft.drawString("CHARGE MODE", w / 2, h / 2 - 50);
+    tft.setTextColor(TFT_WHITE, TFT_BLACK);
+    tft.setTextSize(2);
+    snprintf(line, sizeof line, "Charging %luh %02lum", (unsigned long)(mins / 60), (unsigned long)(mins % 60));
+    tft.drawString(line, w / 2, h / 2 - 10);
+    tft.setTextSize(1);
+    tft.setTextColor(Theme::blend(TFT_BLACK, TFT_WHITE, 170), TFT_BLACK);
+    tft.drawString("Radios and screen are off so the battery fills faster.", w / 2, h / 2 + 20);
+    tft.drawString("About 4-6 hours from empty.", w / 2, h / 2 + 34);
+    tft.setTextColor(Theme::GREEN, TFT_BLACK);
+    tft.setTextSize(2);
+    tft.drawString("TAP AGAIN TO WAKE UP", w / 2, h / 2 + 64);
+    tft.setTextDatum(TL_DATUM);
+}
+
+static void enterChargeMode() {
+    const uint32_t now = millis();
+    s_chargeMode = true;
+    s_chargeAt = now;
+    s_chargeLitAt = now;
+    s_chargeLitUntil = now + 5000;
+    s_chargeWasDown = true;   // the tap that chose the row is not the first tap here
+    engine.restRadios(true);
+    StatusLight::off();
+    setCpuFrequencyMhz(80);
+    s_cpuMhzApplied = 80;
+    chargeBacklight(Settings::brightness() / 2);
+    chargeDraw(now);
+    Serial.println("[charge] CHARGE MODE on: radios, light and backlight off, CPU 80 MHz");
+}
+
+static void exitChargeMode() {
+    const uint32_t mins = (millis() - s_chargeAt) / 60000UL;
+    s_chargeMode = false;
+    engine.wakeRadios();
+    applyCpuClock();
+    applyBrightness();
+    lastTouch = millis();
+    FramePush::invalidate();
+    enterClear();
+    Serial.printf("[charge] CHARGE MODE off after %lu min\n", (unsigned long)mins);
+}
+
+static void chargeModeTick(uint32_t now) {
+    const TouchPoint tp = pollTouch();
+    const bool down = tp.valid;
+    const bool lit = (int32_t)(s_chargeLitUntil - now) > 0;
+    if (down && !s_chargeWasDown) {
+        if (lit && now - s_chargeLitAt > 600) { s_chargeWasDown = true; exitChargeMode(); return; }
+        s_chargeLitAt = now;
+        s_chargeLitUntil = now + 10000;
+        chargeBacklight(Settings::brightness() / 2);
+        chargeDraw(now);
+    }
+    s_chargeWasDown = down;
+    if (lit && now - s_chargeDrawnAt > 30000) chargeDraw(now);
+    if (!lit && s_chargeLitUntil) { chargeBacklight(0); s_chargeLitUntil = 0; }
+    delay(40);   // nothing to animate: let the CPU idle between polls
+}
+#endif
+
 void loop() {
     // Cheap and unconditional: available() is a register read, and this
     // is the only way in for the one serial command the firmware takes.
     Clock::pollSerial();
+    runtimeTick(millis());
+#if defined(ESP32) && !defined(TWATCH_S3)
+    if (s_chargeMode) { chargeModeTick(millis()); return; }
+#endif
     uint32_t frameStartUs = micros();
     s_loopsSinceSay++;   // the real loop rate, pacing delays included; on the [frame] line
     FrameProf::begin();
@@ -5596,6 +5715,10 @@ void loop() {
 #endif
                         case SettingsRow::DETECTION_FILTER: enterDetFilter(); break;
                         case SettingsRow::POWER_SAVER: enterPower(); break;
+#if defined(ESP32) && !defined(TWATCH_S3)
+                        case SettingsRow::CHARGE_MODE: enterChargeMode(); break;
+                        case SettingsRow::LAST_RUN: break;   // a reading, not a switch
+#endif
 #if defined(TWATCH_S3)
                         case SettingsRow::WATCH_RADIO: Settings::cycleRadioDuty(); break;
                         case SettingsRow::WATCH_LISTEN: Settings::cycleBleListen(); break;
