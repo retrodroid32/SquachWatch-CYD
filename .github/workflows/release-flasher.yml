@@ -310,13 +310,7 @@ jobs:
             # Non-classic-ESP32 lab boards cannot use the production ESP32
             # bootloader/table. Give each unpublished S3-class board its own
             # bootloader and partition files; its manifest names these paths.
-            for v in $(python - <<'PY'
-import json
-for b in json.load(open("web-flasher/boards.json"))["boards"]:
-    if b.get("lab") and not b.get("release") and not b.get("shared_esp32"):
-        print(b["id"])
-PY
-            ); do
+            for v in $(python -c 'import json; d=json.load(open("web-flasher/boards.json")); print(" ".join(b["id"] for b in d["boards"] if b.get("lab") and not b.get("release") and not b.get("shared_esp32")))'); do
               cp ".pio/build/$v/bootloader.bin" "$v-bootloader.bin"
               cp ".pio/build/$v/partitions.bin" "$v-partitions.bin"
             done
