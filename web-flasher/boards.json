@@ -188,16 +188,16 @@
     {
       "id": "cyd35c",
       "label": "3.5\" CYD capacitive — ESP32-3248S035C (compile-only)",
-      "manifest": null,
+      "manifest": "manifest-cyd35c.json",
       "visible": false,
       "ci": true,
       "release": false,
       "sign": false,
       "shared_esp32": true,
       "merged": false,
-      "lab": false,
+      "lab": true,
       "cyd28": false,
-      "note": "Compile-validation profile for the Sunton ESP32-3248S035C with ST7796 display and GT911 capacitive touch. Keep unpublished until our hardware validation is complete."
+      "note": "LAB-only Sunton ESP32-3248S035C profile with ST7796 and GT911. Not a release profile; hardware validation required."
     }
   ]
 }
