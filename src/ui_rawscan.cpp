@@ -371,9 +371,13 @@ switch (Settings::background()) {
 
             t.setTextSize(1);
             t.setTextColor(Theme::WHITE, Theme::BG);
-            char line[24];
-            snprintf(line, sizeof(line), "CH%u  %s", (unsigned)eng.rawWifiChannel(idx),
-                     eng.rawWifiOpen(idx) ? "OPEN" : "LOCKED");
+            const uint8_t* bssid = eng.rawWifiBssid(idx);
+            const bool ignored = bssid && IgnoreList::contains(bssid);
+            char line[32];
+            snprintf(line, sizeof(line), "CH%u  %s%s",
+                     (unsigned)eng.rawWifiChannel(idx),
+                     eng.rawWifiOpen(idx) ? "OPEN" : "LOCKED",
+                     ignored ? "  IGNORE" : "");
             t.setCursor(4, y + detailY);
             t.print(line);
 
