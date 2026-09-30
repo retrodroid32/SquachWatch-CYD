@@ -1397,6 +1397,13 @@ static void enterWatchAlert() {
 #endif
 }
 
+// HUNT is a drill-down, not a one-way trip to CLEAR. Remember the screen
+// that launched it so BACK/STOP can return to the user's working context.
+// Raw scans are restarted on return: their radio mode was deliberately
+// stopped while HUNT owned the continuous detector.
+enum class HuntReturn : uint8_t { HOME, LOG, RAWSCAN_BLE, RAWSCAN_WIFI };
+static HuntReturn s_huntReturn = HuntReturn::HOME;
+
 static void enterLog() {
     state = AppState::LOG;
     transitionStart = millis();
@@ -1695,13 +1702,6 @@ static void enterWifiAdd() {
     engine.startRawWifiScan();
     uiWifiAddInit(*canvas);
 }
-
-// HUNT is a drill-down, not a one-way trip to CLEAR. Remember the screen
-// that launched it so BACK/STOP can return to the user's working context.
-// Raw scans are restarted on return: their radio mode was deliberately
-// stopped while HUNT owned the continuous detector.
-enum class HuntReturn : uint8_t { HOME, LOG, RAWSCAN_BLE, RAWSCAN_WIFI };
-static HuntReturn s_huntReturn = HuntReturn::HOME;
 
 static void enterHunt(HuntReturn returnTo = HuntReturn::HOME) {
     s_huntReturn = returnTo;
