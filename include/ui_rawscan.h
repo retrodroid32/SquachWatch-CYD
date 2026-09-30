@@ -21,9 +21,10 @@ void uiRawScanInit(TFT_eSPI& t, bool isBle);
 // already being watched -- the address itself lives in main.cpp, so the
 // comparison happens there and only the answer comes through here. Turns the
 // panel's WATCH button into UNWATCH; see drawConfirmPanel().
+// confirmIgnored does the same for IGNORE -> UN-IGNORE.
 void uiRawScanTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng,
                     bool isBle, bool done, bool confirmPending, const char* confirmLabel,
-                    bool confirmWatched, bool confirmHunted,
+                    bool confirmWatched, bool confirmHunted, bool confirmIgnored,
                     // false on the second of the 3.5"'s band passes: the same
                     // frame again, so the mascot must not step twice.
                     bool advance = true);
