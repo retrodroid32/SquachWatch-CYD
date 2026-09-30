@@ -3991,6 +3991,10 @@ static void chargeModeTick(uint32_t now) {
     // reach a board left charging.
     uart_set_wakeup_threshold(UART_NUM_0, 3);
     esp_sleep_enable_uart_wakeup(0);
+    // A real yield before every sleep: without it this loop never let the
+    // idle task run while awake, and the task watchdog reset the board after
+    // 355 s of charging on the first night (black box, boot 47, WDT).
+    delay(5);
     esp_sleep_enable_timer_wakeup(100000ULL);
     esp_light_sleep_start();
     sleptLast = true;
