@@ -7,6 +7,7 @@
 #include "ota_core.h"
 #include "ota_wifi.h"
 #include "theme.h"
+#include "privacy.h"
 #include "settings.h"
 #include "security.h"
 #include "ignore_list.h"
@@ -139,6 +140,7 @@ static const uint8_t WATCH_ROWS_N = sizeof(WATCH_ROWS) / sizeof(WATCH_ROWS[0]);
 
 // The SYSTEM page: the rarely-needed machinery, off the main list.
 static const SettingsRow SYSTEM_ROWS[] = {
+    SettingsRow::PRIVACY,
 #if defined(FREENOVE_S3)
     SettingsRow::BOARD_BATTERY,
 #endif
@@ -928,6 +930,9 @@ static void rowContent(SettingsRow r, const DetectionEngine& eng, char* valBuf, 
         }
 #endif
 #endif
+        case SettingsRow::PRIVACY:
+            label = "PRIVACY MODE"; value = Settings::privacyMode() ? "ON" : "OFF";
+            break;
         case SettingsRow::CHARGE_MODE:
             label = "CHARGE MODE"; value = "START";
             break;
@@ -1075,8 +1080,9 @@ void uiSettingsTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng) {
     s_hasWatch = eng.watchKind() != DetectionEngine::WatchKind::NONE;
     s_hasHunt  = eng.huntKind()  != DetectionEngine::WatchKind::NONE;
     s_dexCaught = uiDexCaught(eng);
-    if (s_hasWatch) { strncpy(s_watchLabel, eng.watchLabel(), sizeof(s_watchLabel) - 1); s_watchLabel[sizeof(s_watchLabel) - 1] = 0; }
-    if (s_hasHunt)  { strncpy(s_huntLabel,  eng.huntLabel(),  sizeof(s_huntLabel)  - 1); s_huntLabel[sizeof(s_huntLabel)  - 1] = 0; }
+    char pv[40];
+    if (s_hasWatch) { strncpy(s_watchLabel, Privacy::name(eng.watchLabel(), pv, sizeof pv), sizeof(s_watchLabel) - 1); s_watchLabel[sizeof(s_watchLabel) - 1] = 0; }
+    if (s_hasHunt)  { strncpy(s_huntLabel,  Privacy::name(eng.huntLabel(),  pv, sizeof pv), sizeof(s_huntLabel)  - 1); s_huntLabel[sizeof(s_huntLabel)  - 1] = 0; }
 
     int top, bodyBottom, rowH, headerH, tallH;
     computeGeom(t, h, top, bodyBottom, rowH, headerH, tallH);

@@ -226,6 +226,11 @@ namespace Settings {
     // ended is how long it lasted (to within ten minutes).
     void       noteRunMinutes(uint16_t boot, uint16_t minutes);
     uint8_t    runHistory(uint16_t* boots, uint16_t* minutes, uint8_t cap);
+    // PRIVACY MODE (SYSTEM): the screen hides the device half of every
+    // address and all but three characters of every device and network
+    // name. See include/privacy.h. Off by default.
+    bool       privacyMode();
+    void       togglePrivacyMode();
     bool       quietTrackers();
     void       toggleQuietTrackers();
     // Set the first time this watch's GPS answers: it is an S3 Plus, whose

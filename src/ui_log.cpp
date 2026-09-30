@@ -3,6 +3,7 @@
 #include "ui_scroll.h"
 #include "clock.h"
 #include "theme.h"
+#include "privacy.h"
 #include "settings.h"
 #include "blackbox.h"
 #include "detection.h"
@@ -390,9 +391,7 @@ switch (Settings::background()) {
         t.setTextSize(1);
         t.setTextColor(kept ? dim : Theme::WHITE, Theme::BG);
         char mac[24];
-        snprintf(mac, sizeof(mac), "%02X:%02X:%02X:%02X:%02X:%02X",
-                 d->mac[0], d->mac[1], d->mac[2],
-                 d->mac[3], d->mac[4], d->mac[5]);
+        Privacy::mac(mac, sizeof mac, d->mac);
         t.setCursor(8, y + detailY);
         t.print(mac);
 
@@ -471,9 +470,11 @@ switch (Settings::background()) {
             const int nameMax = (w - tw - 14) - 6 - nameX;
             if (nameMax > 0) {
                 char nm[sizeof(d->name) + 16];
-                if (reg && d->name[0]) snprintf(nm, sizeof nm, "%s: %s", reg, d->name);
+                char pv[40];
+                const char* own = Privacy::name(d->name, pv, sizeof pv);
+                if (reg && d->name[0]) snprintf(nm, sizeof nm, "%s: %s", reg, own);
                 else if (reg)          snprintf(nm, sizeof nm, "%s", reg);
-                else                   snprintf(nm, sizeof nm, "%s", d->name);
+                else                   snprintf(nm, sizeof nm, "%s", own);
                 while (nm[0] && t.textWidth(nm) > nameMax) nm[strlen(nm) - 1] = '\0';
                 if (nm[0]) {
                     // Centred against the size-2 type label beside it.

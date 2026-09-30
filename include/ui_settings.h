@@ -71,6 +71,7 @@ enum class SettingsRow : uint8_t {
     BOARD_BATTERY,   // the Freenove S3 only: the cell's voltage, on the SYSTEM page
     CHARGE_MODE,     // the CYD boards: radios and screen off so a battery charges faster
     LAST_RUN,        // the CYD boards: how long the previous boot ran, on the SYSTEM page
+    PRIVACY,         // PRIVACY MODE: addresses and names masked on screen, on the SYSTEM page
     BACK,
     COUNT,
     NONE = 255

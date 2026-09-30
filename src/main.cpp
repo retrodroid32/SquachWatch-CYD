@@ -28,10 +28,6 @@
 #include <Preferences.h>  // AWOK's own per-rotation touch-cal storage; see the AWOK block below pollTouch()'s globals
 #include <esp_heap_caps.h>   // heap_caps_get_largest_free_block() -- diagnostics screen
 #include <esp_system.h>      // esp_reset_reason() -- diagnostics screen
-#if defined(ESP32)
-#include <esp_sleep.h>
-#include <driver/uart.h>      // uart_set_wakeup_threshold -- charge mode's light sleep
-#endif
 // The core dump's own summary -- which task, and where. The emulator has
 // neither header, and nothing to summarise.
 #if __has_include(<esp_core_dump.h>)
@@ -56,6 +52,7 @@
 #include "ui_diagnostics.h"   // CrashReport, used by the breadcrumb below
 #include "blackbox.h"
 #include "gnss.h"
+#include "privacy.h"
 #include "lora_sniffer.h"   // the watch's SX1262; inline no-ops elsewhere
 #include "wardrive.h"
 #include "ui_bingo.h"
@@ -1084,6 +1081,11 @@ static char s_confirmName[sizeof(Detection::name)]     = "";
 static char s_alertVendor[16]   = "";
 static char s_alertName[sizeof(Detection::name)]       = "";
 static char    s_confirmLabel[24];
+// PRIVACY MODE's view of the two strings the confirm panel and MORE INFO
+// draw. The real ones stay in s_confirmLabel / s_confirmName: they are what
+// WATCH and HUNT hand the engine.
+static const char* privLabel(const char* in) { static char b[40]; return Privacy::name(in, b, sizeof b); }
+static const char* privName(const char* in)  { static char b[40]; return Privacy::name(in, b, sizeof b); }
 // LOG's long-press sets this per-row (BLE vs WiFi isn't implied by a
 // "current mode" the way it is for RAWSCAN, which already knows that
 // from s_rawScanIsBle) -- RAWSCAN's own WATCH/HUNT branches don't
@@ -3975,29 +3977,12 @@ static void chargeModeTick(uint32_t now) {
     const bool litNow = s_chargeLitUntil && (int32_t)(s_chargeLitUntil - now) > 0;
     if (litNow && now - s_chargeDrawnAt > 30000) chargeDraw(now);
     if (!litNow && s_chargeLitUntil) { chargeBacklight(0); s_chargeLitUntil = 0; Serial.println("[charge] screen dark"); }
-    // Woken by the console: stay up three seconds so the line, sent again,
-    // lands while the UART is listening.
-    static uint32_t awakeUntil = 0;
-    static bool sleptLast = false;
-    if (sleptLast && esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_UART) { awakeUntil = now + 3000; Serial.println("[charge] console woke me"); }
-    sleptLast = false;
-    if (litNow || (int32_t)(awakeUntil - now) > 0) { delay(40); return; }
-    // Dark: light sleep between polls instead of an idle spin. The radios
-    // are stopped and the backlight PWM is at zero, so nothing is running
-    // that the sleep would disturb; the timer wakes the core ten times a
-    // second to look for a finger. About 10 mA for the board instead of 35.
-    // The console wakes it too (the bytes that woke it are lost; a bench
-    // tool sends its line twice), so CHARGE and the flasher's tools still
-    // reach a board left charging.
-    uart_set_wakeup_threshold(UART_NUM_0, 3);
-    esp_sleep_enable_uart_wakeup(0);
-    // A real yield before every sleep: without it this loop never let the
-    // idle task run while awake, and the task watchdog reset the board after
-    // 355 s of charging on the first night (black box, boot 47, WDT).
-    delay(5);
-    esp_sleep_enable_timer_wakeup(100000ULL);
-    esp_light_sleep_start();
-    sleptLast = true;
+    // No light sleep here. It was tried (2026-09-29) and the chip sometimes
+    // never woke from it -- the RTC watchdog reset the board after 5 h one
+    // time and 20 min the next (black box: WDT, boots 50 and 51). Light
+    // sleep with the Bluetooth controller still powered is not dependable
+    // on this chip, and the saving was about 25 mA. An idle wait instead.
+    delay(40);
 }
 #endif
 
@@ -5022,11 +5007,11 @@ void loop() {
         }
         case AppState::ALERT: {
             const char* alertInfoText = s_infoShowingPrimer ? DetectionInfo::rssiConfidencePrimer()
-                                                              : DetectionInfo::explainFor(s_confirmType, s_confirmVendor, s_confirmName, engine);
+                                                              : DetectionInfo::explainFor(s_confirmType, s_confirmVendor, privName(s_confirmName), engine);
             // No heading during the primer page -- it's about RSSI/
             // confidence in general, not any one detection type.
             const char* alertInfoTypeName = s_infoShowingPrimer ? nullptr
-                                          : DetectionInfo::titleFor(s_confirmType, s_confirmVendor, s_confirmName);
+                                          : DetectionInfo::titleFor(s_confirmType, s_confirmVendor, privName(s_confirmName));
 #if defined(CYD35)
             if (frameBufferOk) {
                 // Same two-pass half-height `frame` trick CLEAR/BOOT
@@ -5233,16 +5218,16 @@ void loop() {
         case AppState::LOG: {
             const char* infoText = s_infoShowingPrimer
                                   ? DetectionInfo::rssiConfidencePrimer()
-                                  : DetectionInfo::explainFor(s_confirmType, s_confirmVendor, s_confirmName, engine);
+                                  : DetectionInfo::explainFor(s_confirmType, s_confirmVendor, privName(s_confirmName), engine);
 
             // No heading during the primer page -- it's about RSSI/
             // confidence in general, not any one detection type.
             const char* infoTypeName = s_infoShowingPrimer ? nullptr
-                                     : DetectionInfo::titleFor(s_confirmType, s_confirmVendor, s_confirmName);
+                                     : DetectionInfo::titleFor(s_confirmType, s_confirmVendor, privName(s_confirmName));
             // Nothing on LOG moves by the call -- the note about
             // drawActiveBackground in ui_log.cpp is a comment, not a call.
             drawTwoBand([&](TFT_eSPI& t, bool) {
-                uiLogTick(t, now, engine, 0, s_confirmPending, s_confirmLabel,
+                uiLogTick(t, now, engine, 0, s_confirmPending, privLabel(s_confirmLabel),
                           s_infoPending, infoTypeName, infoText,
                           engine.isWatched(s_confirmMac, s_confirmIsBle),
                           engine.isHunted(s_confirmMac, s_confirmIsBle),
@@ -5434,7 +5419,7 @@ void loop() {
         case AppState::RAWSCAN: {
             bool done = s_rawScanIsBle ? engine.rawBleScanDone() : engine.rawWifiScanDone();
             drawTwoBand([&](TFT_eSPI& t, bool advance) {
-                uiRawScanTick(t, now, engine, s_rawScanIsBle, done, s_confirmPending, s_confirmLabel,
+                uiRawScanTick(t, now, engine, s_rawScanIsBle, done, s_confirmPending, privLabel(s_confirmLabel),
                               engine.isWatched(s_confirmMac, s_rawScanIsBle),
                               engine.isHunted(s_confirmMac, s_rawScanIsBle),
                               IgnoreList::contains(s_confirmMac), advance);
@@ -5762,6 +5747,11 @@ void loop() {
 #endif
                         case SettingsRow::DETECTION_FILTER: enterDetFilter(); break;
                         case SettingsRow::POWER_SAVER: enterPower(); break;
+                        case SettingsRow::PRIVACY:
+                            Settings::togglePrivacyMode();
+                            Theme::showToast(Settings::privacyMode() ? "PRIVACY MODE ON" : "PRIVACY MODE OFF",
+                                             Settings::privacyMode() ? "Addresses and names are hidden" : nullptr, Theme::CYAN);
+                            break;
 #if defined(ESP32) && !defined(TWATCH_S3)
                         case SettingsRow::CHARGE_MODE: s_chargeWanted = true; break;
                         case SettingsRow::LAST_RUN: break;   // a reading, not a switch
