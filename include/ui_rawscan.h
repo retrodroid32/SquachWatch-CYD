@@ -48,9 +48,7 @@ int uiRawScanRowAt(TFT_eSPI& t, int x, int y, int screenW, int screenH);
 // Hit test for the confirm panel's WATCH/HUNT/CANCEL buttons -- only
 // meaningful while uiRawScanTick() is being called with
 // confirmPending true; main.cpp owns that flag, not this module. WATCH
-// sets the target and returns to CLEAR (fires the full-screen
-// WATCH_ALERT later, passively, whenever it's next seen); HUNT sets
-// the same target but goes straight into the live-tracking HUNT screen
-// instead.
+// toggles passive tracking and leaves this result list in place; HUNT opens
+// the live-tracking screen, whose BACK/STOP returns to this same cached list.
 enum class RawScanConfirmTap { NONE, WATCH, HUNT, IGNORE, CANCEL };
 RawScanConfirmTap uiRawScanHitConfirm(int x, int y, int screenW, int screenH);
