@@ -28,6 +28,10 @@
 #include <Preferences.h>  // AWOK's own per-rotation touch-cal storage; see the AWOK block below pollTouch()'s globals
 #include <esp_heap_caps.h>   // heap_caps_get_largest_free_block() -- diagnostics screen
 #include <esp_system.h>      // esp_reset_reason() -- diagnostics screen
+#if defined(ESP32)
+#include <esp_sleep.h>
+#include <driver/uart.h>      // uart_set_wakeup_threshold -- charge mode's light sleep
+#endif
 // The core dump's own summary -- which task, and where. The emulator has
 // neither header, and nothing to summarise.
 #if __has_include(<esp_core_dump.h>)
@@ -3971,7 +3975,25 @@ static void chargeModeTick(uint32_t now) {
     const bool litNow = s_chargeLitUntil && (int32_t)(s_chargeLitUntil - now) > 0;
     if (litNow && now - s_chargeDrawnAt > 30000) chargeDraw(now);
     if (!litNow && s_chargeLitUntil) { chargeBacklight(0); s_chargeLitUntil = 0; Serial.println("[charge] screen dark"); }
-    delay(40);   // nothing to animate: let the CPU idle between polls
+    // Woken by the console: stay up three seconds so the line, sent again,
+    // lands while the UART is listening.
+    static uint32_t awakeUntil = 0;
+    static bool sleptLast = false;
+    if (sleptLast && esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_UART) { awakeUntil = now + 3000; Serial.println("[charge] console woke me"); }
+    sleptLast = false;
+    if (litNow || (int32_t)(awakeUntil - now) > 0) { delay(40); return; }
+    // Dark: light sleep between polls instead of an idle spin. The radios
+    // are stopped and the backlight PWM is at zero, so nothing is running
+    // that the sleep would disturb; the timer wakes the core ten times a
+    // second to look for a finger. About 10 mA for the board instead of 35.
+    // The console wakes it too (the bytes that woke it are lost; a bench
+    // tool sends its line twice), so CHARGE and the flasher's tools still
+    // reach a board left charging.
+    uart_set_wakeup_threshold(UART_NUM_0, 3);
+    esp_sleep_enable_uart_wakeup(0);
+    esp_sleep_enable_timer_wakeup(100000ULL);
+    esp_light_sleep_start();
+    sleptLast = true;
 }
 #endif
 
@@ -3981,7 +4003,7 @@ void loop() {
     Clock::pollSerial();
     runtimeTick(millis());
 #if defined(ESP32) && !defined(TWATCH_S3)
-    if (g_consoleCharge) { g_consoleCharge = false; s_chargeWanted = true; }
+    if (g_consoleCharge) { g_consoleCharge = false; if (s_chargeMode) exitChargeMode(); else s_chargeWanted = true; }
     if (s_chargeWanted && !s_chargeMode) { s_chargeWanted = false; enterChargeMode(); }
     if (s_chargeMode) { chargeModeTick(millis()); return; }
 #endif
