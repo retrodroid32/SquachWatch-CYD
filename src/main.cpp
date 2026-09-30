@@ -416,6 +416,9 @@ static void drawCrashCard(TFT_eSPI& t) {
 // Confirmed on the watch 2026-09-22: the ST7789 wants inversion on (as
 // LilyGo's own setup says); false showed every colour inverted.
 constexpr bool PANEL_NEEDS_INVERSION = true;
+#elif defined(LCDWIKI_ES3C28P)
+// ILI9341V manufacturer setup uses normal (non-inverted) panel polarity.
+constexpr bool PANEL_NEEDS_INVERSION = false;
 #elif defined(CYD32C)
 // Upstream hardware path uses inversion-on for this ST7789 IPS panel.
 constexpr bool PANEL_NEEDS_INVERSION = true;
@@ -655,6 +658,10 @@ static bool rawReadResistive(int16_t& a, int16_t& b);
 // calibration is needed or wanted.
 static uint16_t CAP_NX_MIN = CROW_CAP_NX_MIN, CAP_NX_MAX = CROW_CAP_NX_MAX;
 static uint16_t CAP_NY_MIN = CROW_CAP_NY_MIN, CAP_NY_MAX = CROW_CAP_NY_MAX;
+#elif defined(LCDWIKI_ES3C28P)
+// FT6336G reports native 240x320 panel coordinates.
+static uint16_t CAP_NX_MIN = 0, CAP_NX_MAX = 240;
+static uint16_t CAP_NY_MIN = 0, CAP_NY_MAX = 320;
 #else
 static uint16_t CAP_NX_MIN = 32,  CAP_NX_MAX = 166;
 static uint16_t CAP_NY_MIN = 10,  CAP_NY_MAX = 308;
@@ -995,6 +1002,10 @@ static void initTouchFit() {
     }
 
     s_calSource = CalSource::BUILT_IN;
+#if defined(LCDWIKI_ES3C28P)
+    s_touchFit = TouchFit::fromRanges(0, 240, 0, 320, w0, h0);
+    return;
+#endif
 #if defined(TOUCH_ON_DISPLAY_BUS) || defined(CYD35)
     TouchFit::Fit old;
     if (fitFromTftEspiBlobs(old)) {
@@ -2953,12 +2964,12 @@ void setup() {
 // the capacitive controller's INTERRUPT line. Driving it high at boot is the
 // same mistake as the LEDC attach further down, just earlier.
 // The CrowPanel 7 uses GPIO21 as panel BLUE-0 data.
-#if !defined(AWOK) && !defined(RLPHANTOM) && !defined(RLPHANTOM_R) && !defined(TWATCH_S3) && !defined(CROWPANEL7) && !defined(CYD32C)
+#if !defined(AWOK) && !defined(RLPHANTOM) && !defined(RLPHANTOM_R) && !defined(TWATCH_S3) && !defined(CROWPANEL7) && !defined(CYD32C) && !defined(LCDWIKI_ES3C28P)
     pinMode(21, OUTPUT); digitalWrite(21, HIGH);
 #endif
-#if defined(TWATCH_S3)
-    // GPIO27 and GPIO32 are the S3's PSRAM lines: touching either hangs the
-    // chip until the watchdog reboots it. The watch's backlight is GPIO45.
+#if defined(TWATCH_S3) || defined(LCDWIKI_ES3C28P)
+    // On N16R8 S3 boards GPIO26-32 belong to OPI flash/PSRAM. LCDWiki and
+    // T-Watch both put the display backlight on safe GPIO45.
     pinMode(45, OUTPUT); digitalWrite(45, HIGH);
 #else
     pinMode(27, OUTPUT); digitalWrite(27, HIGH);
@@ -3024,9 +3035,8 @@ void setup() {
 #if defined(CROWPANEL7)
     // No LEDC at all: the backlight is an I2C command byte. Claiming channels
     // here would only take them away from something that has a pin.
-#elif defined(TWATCH_S3)
-    // One backlight, GPIO45, on the first channel. The CYD pins below are
-    // flash/PSRAM lines and the power chip's interrupt on an S3.
+#elif defined(TWATCH_S3) || defined(LCDWIKI_ES3C28P)
+    // One backlight, GPIO45. Avoid attaching any legacy CYD GPIO on S3.
     ledcSetup(BL_CH_ORIG, 5000, 8);
     ledcAttachPin(BL_PIN_S3, BL_CH_ORIG);
 #else
@@ -3216,6 +3226,13 @@ void setup() {
     Serial.println(usingCapTouch ? "Freenove S3 -- FT6336 capacitive touch answered."
                                  : "Freenove S3 -- FT6336 did not answer; no touch (FNK0104A?).");
     { char b[16]; boardBatteryLine(b, sizeof b); Serial.printf("[batt] %s (raw GPIO9 %u mV)\n", b, (unsigned)analogReadMilliVolts(9)); }
+#elif defined(LCDWIKI_ES3C28P)
+    // LCDWiki ES3C28P/ES3N28P: FT6336G on SDA16/SCL15, reset18, address 0x38.
+    // INT17 is not needed by the polling driver.
+    CapTouch::begin(16, 15, 18, 0x38);
+    usingCapTouch = CapTouch::probe();
+    Serial.println(usingCapTouch ? "LCDWiki ES3C28P -- FT6336G capacitive touch answered."
+                                 : "LCDWiki ES3C28P -- FT6336G did not answer; no touch.");
 #elif defined(TOUCH_ON_DISPLAY_BUS)
     // AWOK's XPT2046 sits on the display's own shared VSPI bus (TOUCH_CS=21,
     // already armed by TFT_eSPI itself once awok_user_setup.h's #define
@@ -3314,14 +3331,15 @@ void setup() {
     // injected against the compiled-in ranges -- a calibration screen would
     // just sit there waiting for a finger.
     initTouchFit();
-#if defined(ESP32) && !defined(CROWPANEL7)
+#if defined(ESP32) && !defined(CROWPANEL7) && !defined(LCDWIKI_ES3C28P)
     if (s_calSource != CalSource::SAVED) {
         Serial.println("Touch: no five-target calibration yet -- running it now.");
         runTouchCalibration();
     }
 #endif
-#if defined(CROWPANEL7)
-    // Never on first boot here. The GT911 reports panel pixels, so the
+#if defined(CROWPANEL7) || defined(LCDWIKI_ES3C28P)
+    // Native-coordinate capacitive touch needs no first-boot hand calibration.
+    // The
     // compiled-in fit is already the identity and there is nothing to
     // calibrate -- making someone tap five targets would only replace an
     // exact mapping with a hand-aimed one. SETTINGS can still run it.
@@ -3330,10 +3348,8 @@ void setup() {
 
     // Seed the PRNG so the digital rain starts in a fresh-looking state
     // on every boot.
-#if defined(CROWPANEL7)
-    // Not analogRead(34) here: GPIO34 is an OPI PSRAM data line on this
-    // board's N16R8 module, and not an ADC pin on the S3 at all. The
-    // hardware RNG is a fine seed and is already fed by the radios.
+#if defined(CROWPANEL7) || defined(LCDWIKI_ES3C28P)
+    // GPIO34 is part of the OPI flash/PSRAM range on N16R8 S3 modules.
     randomSeed(esp_random());
 #else
     // Analog read on a floating pin is plenty.
@@ -6535,6 +6551,8 @@ void loop() {
             info.usingCapTouch = usingCapTouch;
 #if defined(CROWPANEL7)
             info.boardName = "CrowPanel 7";
+#elif defined(LCDWIKI_ES3C28P)
+            info.boardName = "LCDWiki ES3C28P";
 #elif defined(FREENOVE32)
             info.boardName = "Freenove 3.2";
 #elif defined(CYD32)
