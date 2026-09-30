@@ -184,6 +184,20 @@
       "lab": false,
       "cyd28": false,
       "note": "Compile-validation profile for the Sunton ESP32-2432S032C with ST7789 IPS and GT911 capacitive touch. Publication is handled in a separate follow-up PR."
+    },
+    {
+      "id": "lcdwiki-es3c28p",
+      "label": "LCDWiki 2.8\" ESP32-S3 ES3C28P (compile-only)",
+      "manifest": null,
+      "visible": false,
+      "ci": true,
+      "release": false,
+      "sign": false,
+      "shared_esp32": false,
+      "merged": false,
+      "lab": false,
+      "cyd28": false,
+      "note": "Compile-validation profile for LCDWiki ES3C28P/ES3N28P N16R8 with ILI9341V and FT6336G. SD/status-light remain disabled until our hardware validation."
     }
   ]
 }
