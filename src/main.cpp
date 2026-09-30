@@ -1417,6 +1417,17 @@ static void enterRawScan(bool isBle) {
     uiRawScanInit(*canvas, isBle);
 }
 
+static void returnFromHunt() {
+    const HuntReturn dest = s_huntReturn;
+    s_huntReturn = HuntReturn::HOME;  // a later unrelated HUNT starts clean
+    switch (dest) {
+        case HuntReturn::LOG:          enterLog();          break;
+        case HuntReturn::RAWSCAN_BLE:  enterRawScan(true);  break;
+        case HuntReturn::RAWSCAN_WIFI: enterRawScan(false); break;
+        default:                       enterClear();        break;
+    }
+}
+
 static void enterSettings() {
     restoreFrameBuffer();   // lent to a download that did not end in a restart
     Settings::deskActive(false);
@@ -1685,7 +1696,15 @@ static void enterWifiAdd() {
     uiWifiAddInit(*canvas);
 }
 
-static void enterHunt() {
+// HUNT is a drill-down, not a one-way trip to CLEAR. Remember the screen
+// that launched it so BACK/STOP can return to the user's working context.
+// Raw scans are restarted on return: their radio mode was deliberately
+// stopped while HUNT owned the continuous detector.
+enum class HuntReturn : uint8_t { HOME, LOG, RAWSCAN_BLE, RAWSCAN_WIFI };
+static HuntReturn s_huntReturn = HuntReturn::HOME;
+
+static void enterHunt(HuntReturn returnTo = HuntReturn::HOME) {
+    s_huntReturn = returnTo;
     state = AppState::HUNT;
     transitionStart = millis();
     uiHuntInit(*canvas);
@@ -4677,7 +4696,7 @@ void loop() {
                         } else {
                             if (s_confirmIsBle) engine.huntBle(s_confirmMac, s_confirmLabel);
                             else                engine.huntWifi(s_confirmMac, s_confirmLabel);
-                            enterHunt();
+                            enterHunt(HuntReturn::LOG);
                         }
                     } else if (ctap == LogConfirmTap::INFO) {
                         lastTouch = now;
@@ -4828,8 +4847,9 @@ void loop() {
                         } else {
                             if (s_rawScanIsBle) engine.watchBle(s_confirmMac, s_confirmLabel);
                             else                engine.watchWifi(s_confirmMac, s_confirmLabel);
-                            engine.stopRawScan();
-                            enterClear();
+                            Theme::showToast("WATCHING", s_confirmLabel, Theme::CYAN);
+                            // Stay on the scan that launched the target menu.
+                            // The user decides when to leave it.
                         }
                     } else if (ctap == RawScanConfirmTap::IGNORE) {
                         lastTouch = now;
@@ -4853,8 +4873,10 @@ void loop() {
                         } else {
                             if (s_rawScanIsBle) engine.huntBle(s_confirmMac, s_confirmLabel);
                             else                engine.huntWifi(s_confirmMac, s_confirmLabel);
+                            const HuntReturn backTo = s_rawScanIsBle
+                                ? HuntReturn::RAWSCAN_BLE : HuntReturn::RAWSCAN_WIFI;
                             engine.stopRawScan();
-                            enterHunt();
+                            enterHunt(backTo);
                         }
                     } else if (ctap == RawScanConfirmTap::CANCEL) {
                         lastTouch = now;
@@ -6263,10 +6285,10 @@ void loop() {
                     lastTouch = now;
                     engine.clearHunt();
                     Theme::showToast("HUNT STOPPED", nullptr, Theme::CYAN);
-                    enterClear();
+                    returnFromHunt();
                 } else if (uiHuntHitBack(tp.x, tp.y, tft.width(), tft.height())) {
                     lastTouch = now;
-                    enterClear();
+                    returnFromHunt();
                 }
             }
             break;
