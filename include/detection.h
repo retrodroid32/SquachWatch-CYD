@@ -499,7 +499,9 @@ private:
     static const uint8_t  WIFI_Q_CAP    = 8;
     static const uint32_t STALE_MS      = 60000;
     static const uint32_t ALERT_GRACE_MS= 200;
-    static const uint8_t  RAW_BLE_CAP   = 20;
+    // Manual/raw BLE browser: enough room for a dense room without making
+    // the list unbounded. RawBleResult is 32 bytes, so 64 rows use ~2 KB.
+    static const uint8_t  RAW_BLE_CAP   = 64;
 
     // Known BLE detections cross from NimBLE's host task to the Arduino loop
     // through this bounded mailbox. Keeping _log/_typeCounts loop-owned means
