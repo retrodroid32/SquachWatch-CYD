@@ -305,13 +305,7 @@ jobs:
             for v in $(python tools/board_matrix.py list lab); do
               cp ".pio/build/$v/firmware.bin" "$v-firmware.bin"
             done
-            for v in $(python - <<'PY'
-import json
-for b in json.load(open("web-flasher/boards.json"))["boards"]:
-    if b.get("lab") and not b.get("release") and not b.get("shared_esp32"):
-        print(b["id"])
-PY
-            ); do
+            for v in $(python -c 'import json; d=json.load(open("web-flasher/boards.json")); print(" ".join(b["id"] for b in d["boards"] if b.get("lab") and not b.get("release") and not b.get("shared_esp32")))'); do
               cp ".pio/build/$v/bootloader.bin" "$v-bootloader.bin"
               cp ".pio/build/$v/partitions.bin" "$v-partitions.bin"
             done
