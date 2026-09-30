@@ -495,6 +495,23 @@ jobs:
                       shutil.copy(part["path"], "_site/lab-" + part["path"])
                       part["path"] = "lab-" + part["path"]
               json.dump(m, open("_site/manifest-lab-" + board + ".json", "w"), indent=2)
+          # The released page deliberately has a short hard-coded lab manifest
+          # list. A brand-new lab-only board is not in that released HTML yet,
+          # so extend ONLY the mirrored lab deployment's list. The normal page
+          # never executes addLabOptions() unless ?lab=1 is present.
+          extra = [cfg["id"] for cfg in matrix["boards"] if cfg.get("lab") and not cfg.get("release")]
+          if extra:
+              index_path = "_site/index.html"
+              html = open(index_path, encoding="utf-8").read()
+              marker = "'./manifest-lab-twatch-s3.json']"
+              if marker not in html:
+                  raise SystemExit("could not locate released lab manifest list in mirrored index.html")
+              insert = "'./manifest-lab-twatch-s3.json'" + "".join(
+                  ",\n         './manifest-lab-%s.json'" % board for board in extra
+              ) + "]"
+              html = html.replace(marker, insert, 1)
+              open(index_path, "w", encoding="utf-8").write(html)
+              print("lab-only picker entries added:", ", ".join(extra))
           print("lab boards added:", label, ver)
           PY
             echo "live production root preserved; added lab build ${{ steps.ver.outputs.version }}"
