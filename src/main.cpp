@@ -1561,6 +1561,8 @@ static void enterInvite() {
 // INVERT and ROT on the console -- see clock.cpp. Consumed in loop().
 volatile bool g_consoleInvert = false;
 volatile bool g_consoleAdc = false;     // ADC: the spare analog inputs, for finding a battery sense line
+volatile bool g_consolePins = false;    // PINS: digital levels, for finding a button
+volatile bool g_consoleI2c = false;     // I2C: a scan of the touch bus
 volatile bool g_consoleRotate = false;
 volatile bool g_consoleWatchTest = false; // WATCHTEST: watch the newest Bluetooth device, fire its alert
 volatile bool g_consoleRadioTest = false; // RADIO TEST: cycle even on the cable with the screen on (bench)
@@ -4270,6 +4272,29 @@ void loop() {
             uint32_t mv = 0;
             for (int k = 0; k < 16; k++) mv += analogReadMilliVolts(p);
             n += snprintf(line + n, sizeof line - n, "  GPIO%u %lu mV", p, (unsigned long)(mv / 16));
+        }
+        Serial.println(line);
+    }
+    // PINS: the digital level of every pin a button could be on, for finding
+    // one by pressing it. GPIO22 is the only spare the CYDs never configure,
+    // so it gets a pull-up here; the rest are read as they stand.
+    if (g_consolePins) {
+        g_consolePins = false;
+        static bool once = false;
+        if (!once) { once = true; pinMode(22, INPUT_PULLUP); }
+        const uint8_t pins[] = { 0, 22, 5, 18, 19, 23, 26, 35, 36, 39 };
+        char line[120]; int n = snprintf(line, sizeof line, "[pins]");
+        for (uint8_t p : pins) n += snprintf(line + n, sizeof line - n, " %u=%d", p, digitalRead(p));
+        Serial.println(line);
+    }
+    // I2C: what answers on the touch bus. A power chip with a button and a
+    // fuel gauge (an IP5306 at 0x75, say) would show up beside the touch chip.
+    if (g_consoleI2c) {
+        g_consoleI2c = false;
+        char line[160]; int n = snprintf(line, sizeof line, "[i2c]");
+        for (uint8_t a = 8; a < 120; a++) {
+            Wire.beginTransmission(a);
+            if (Wire.endTransmission() == 0 && n < (int)sizeof line - 8) n += snprintf(line + n, sizeof line - n, " 0x%02X", a);
         }
         Serial.println(line);
     }
