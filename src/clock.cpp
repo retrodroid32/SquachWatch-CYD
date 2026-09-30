@@ -21,6 +21,9 @@
 
 // RUNTIME: main.cpp lists how long the last few boots ran.
 volatile bool g_consoleRuntime = false;
+#if defined(ARDUINO_ARCH_ESP32) && !defined(TWATCH_S3)
+extern volatile bool g_consoleCharge;   // main.cpp: CHARGE, the CYDs' charge mode
+#endif
 
 // PRIM, on every build: main.cpp runs the primitive benchmark on its next pass.
 extern volatile bool g_benchPrimNow;
@@ -574,6 +577,9 @@ void pollSerial() {
         }
         if (Lora::console(line)) continue;
         if (strcasecmp(line, "RUNTIME") == 0) { g_consoleRuntime = true; continue; }
+#if defined(ARDUINO_ARCH_ESP32) && !defined(TWATCH_S3)
+        if (strcasecmp(line, "CHARGE") == 0) { g_consoleCharge = true; continue; }
+#endif
 #if defined(ARDUINO_ARCH_ESP32)   // the radios themselves: nothing to ask in the emulator
         if (strcasecmp(line, "RADIO HEAL") == 0) { g_consoleHeal = true; continue; }
         if (strcasecmp(line, "RADIO FULLCAL") == 0) {

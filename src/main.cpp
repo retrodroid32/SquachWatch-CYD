@@ -3873,11 +3873,16 @@ static void runtimeTick(uint32_t now) {
 // switch that leaves the charger on -- and a running board takes most of
 // what a small charger gives (about 200 mA of it). This stops the WiFi and
 // Bluetooth radios, the status light and the backlight and drops the CPU to
-// 80 MHz, so the charger's current goes into the cell. A tap lights the
-// screen for ten seconds with how long it has been charging; a second tap
-// in that window wakes the board. The board cannot tell when the cell is
+// 80 MHz, so the charger's current goes into the cell. The screen shows how
+// long it has been charging for fifteen seconds; a tap on the dark screen
+// shows it again, and a tap while it shows wakes the board. The board cannot tell when the cell is
 // full, so the time is all there is to go on.
 static bool     s_chargeMode = false, s_chargeWasDown = false;
+// Asked for from the Settings row (or CHARGE on the console) and entered at
+// the top of the NEXT loop: entered in the middle of a pass, the rest of
+// that pass went on drawing the Settings screen over the charge screen.
+volatile bool   g_consoleCharge = false;
+static bool     s_chargeWanted = false;
 static uint32_t s_chargeAt = 0, s_chargeLitAt = 0, s_chargeLitUntil = 0, s_chargeDrawnAt = 0;
 
 static void chargeBacklight(uint8_t duty) {
@@ -3910,7 +3915,7 @@ static void chargeDraw(uint32_t now) {
     tft.drawString("About 4-6 hours from empty.", w / 2, h / 2 + 34);
     tft.setTextColor(Theme::GREEN, TFT_BLACK);
     tft.setTextSize(2);
-    tft.drawString("TAP AGAIN TO WAKE UP", w / 2, h / 2 + 64);
+    tft.drawString("TAP TO WAKE UP", w / 2, h / 2 + 64);
     tft.setTextDatum(TL_DATUM);
 }
 
@@ -3919,7 +3924,7 @@ static void enterChargeMode() {
     s_chargeMode = true;
     s_chargeAt = now;
     s_chargeLitAt = now;
-    s_chargeLitUntil = now + 5000;
+    s_chargeLitUntil = now + 15000;
     s_chargeWasDown = true;   // the tap that chose the row is not the first tap here
     engine.restRadios(true);
     StatusLight::off();
@@ -3946,16 +3951,17 @@ static void chargeModeTick(uint32_t now) {
     const TouchPoint tp = pollTouch();
     const bool down = tp.valid;
     const bool lit = (int32_t)(s_chargeLitUntil - now) > 0;
+    if (down != s_chargeWasDown) Serial.printf("[charge] touch %s at %d,%d (lit %d)\n", down ? "down" : "up", tp.x, tp.y, (int)lit);
     if (down && !s_chargeWasDown) {
-        if (lit && now - s_chargeLitAt > 600) { s_chargeWasDown = true; exitChargeMode(); return; }
+        if (lit && now - s_chargeLitAt > 400) { s_chargeWasDown = true; exitChargeMode(); return; }
         s_chargeLitAt = now;
-        s_chargeLitUntil = now + 10000;
+        s_chargeLitUntil = now + 15000;
         chargeBacklight(Settings::brightness() / 2);
         chargeDraw(now);
     }
     s_chargeWasDown = down;
     if (lit && now - s_chargeDrawnAt > 30000) chargeDraw(now);
-    if (!lit && s_chargeLitUntil) { chargeBacklight(0); s_chargeLitUntil = 0; }
+    if (!lit && s_chargeLitUntil) { chargeBacklight(0); s_chargeLitUntil = 0; Serial.println("[charge] screen dark"); }
     delay(40);   // nothing to animate: let the CPU idle between polls
 }
 #endif
@@ -3966,6 +3972,8 @@ void loop() {
     Clock::pollSerial();
     runtimeTick(millis());
 #if defined(ESP32) && !defined(TWATCH_S3)
+    if (g_consoleCharge) { g_consoleCharge = false; s_chargeWanted = true; }
+    if (s_chargeWanted && !s_chargeMode) { s_chargeWanted = false; enterChargeMode(); }
     if (s_chargeMode) { chargeModeTick(millis()); return; }
 #endif
     uint32_t frameStartUs = micros();
@@ -5686,7 +5694,11 @@ void loop() {
                         case SettingsRow::BACKGROUND: Settings::cycleBackground(); break;
                         case SettingsRow::BACKGROUND_LOCK: Settings::toggleBackgroundLocked(); break;
                         case SettingsRow::UPDATE_CHECK:    Settings::toggleUpdateCheck();     break;
-                        case SettingsRow::TIME_ZONE:       Settings::cycleTimeZone();         break;
+                        case SettingsRow::TIME_ZONE:
+                            // Left half back, right half forward -- see the row's label.
+                            Settings::stepTimeZone(gestureStartX < tft.width() / 2 ? -1 : 1);
+                            Settings::markTimeZoneChosen();
+                            break;
                         case SettingsRow::INVERT:
                             Settings::toggleInvert();
                             // XOR against the panel's own baseline, not an
@@ -5716,7 +5728,7 @@ void loop() {
                         case SettingsRow::DETECTION_FILTER: enterDetFilter(); break;
                         case SettingsRow::POWER_SAVER: enterPower(); break;
 #if defined(ESP32) && !defined(TWATCH_S3)
-                        case SettingsRow::CHARGE_MODE: enterChargeMode(); break;
+                        case SettingsRow::CHARGE_MODE: s_chargeWanted = true; break;
                         case SettingsRow::LAST_RUN: break;   // a reading, not a switch
 #endif
 #if defined(TWATCH_S3)

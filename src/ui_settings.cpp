@@ -974,7 +974,10 @@ static void rowContent(SettingsRow r, const DetectionEngine& eng, char* valBuf, 
             else value = "NONE >";
             break;
         case SettingsRow::TIME_ZONE:
-            label = "TIME ZONE"; value = Settings::timeZoneName();
+            // Two arrows like BRIGHT's minus and plus: the left half of the
+            // row steps west, the right half east, so going one past your
+            // zone is one tap back rather than a lap of the world.
+            label = "ZONE <  >"; value = Settings::timeZoneName();
             break;
         case SettingsRow::REPLAY_INTRO:
             label = "REPLAY INTRO";
