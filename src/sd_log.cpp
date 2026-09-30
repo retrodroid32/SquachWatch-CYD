@@ -40,6 +40,12 @@ bool SdLog::begin() {
 #if defined(TWATCH_S3)
     return false;   // no card slot; GPIO19/20 are the S3's USB pins
 #endif
+#if defined(LCDWIKI_ES3C28P)
+    // The contributor port did not provide a trustworthy card-bus mapping.
+    // Do not fall through to classic ESP32 pins 18/19/23 on an S3 and risk
+    // attaching the wrong peripheral. Enable only after real-hardware tracing.
+    return false;
+#endif
 #if defined(CROWPANEL7)
     // A slot, but not brought up in this port: it shares GPIO 4/5/6 with the
     // I2S amplifier behind a switch on the board (K1), and the tested unit
