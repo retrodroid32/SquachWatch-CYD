@@ -694,7 +694,31 @@ jobs:
               raise SystemExit("missing/empty Pages artifact targets:\n" + "\n".join(sorted(set(missing))))
           PY
 
-          if [ "${{ steps.ver.outputs.is_lab }}" != "true" ]; then
+          if [ "${{ steps.ver.outputs.is_lab }}" = "true" ]; then
+            python - <<'PY'
+          import json
+          from pathlib import Path
+          site = Path("_site")
+          matrix = json.load(open("web-flasher/boards.json", encoding="utf-8"))
+          missing = []
+          for board in matrix["boards"]:
+              if not board.get("lab"):
+                  continue
+              mp = site / ("manifest-lab-" + board["id"] + ".json")
+              if not mp.is_file():
+                  missing.append(str(mp))
+                  continue
+              manifest = json.loads(mp.read_text(encoding="utf-8"))
+              for build in manifest.get("builds", []):
+                  for part in build.get("parts", []):
+                      target = site / part["path"]
+                      if not target.is_file() or target.stat().st_size == 0:
+                          missing.append(str(target))
+          if missing:
+              raise SystemExit("missing/empty LAB artifact targets:\n" + "\n".join(sorted(set(missing))))
+          print("validated lab manifests:", sum(1 for b in matrix["boards"] if b.get("lab")))
+          PY
+          else
             for board in $(python tools/board_matrix.py list sign); do
               test -s "$board-firmware.sig"
               test -s "_site/$board-firmware.sig"
