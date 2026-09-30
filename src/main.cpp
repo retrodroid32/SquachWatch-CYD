@@ -3875,7 +3875,7 @@ static void runtimeTick(uint32_t now) {
 // Bluetooth radios, the status light and the backlight and drops the CPU to
 // 80 MHz, so the charger's current goes into the cell. The screen shows how
 // long it has been charging for fifteen seconds; a tap on the dark screen
-// shows it again, and a tap while it shows wakes the board. The board cannot tell when the cell is
+// shows it again for five, and a tap while it shows wakes the board. The board cannot tell when the cell is
 // full, so the time is all there is to go on.
 static bool     s_chargeMode = false, s_chargeWasDown = false;
 // Asked for from the Settings row (or CHARGE on the console) and entered at
@@ -3951,17 +3951,26 @@ static void chargeModeTick(uint32_t now) {
     const TouchPoint tp = pollTouch();
     const bool down = tp.valid;
     const bool lit = (int32_t)(s_chargeLitUntil - now) > 0;
+    // A touch panel can drop out for a poll or two in the middle of one tap;
+    // a new tap only counts once the finger has been off for 150 ms, so one
+    // tap never reads as two and wakes the board by accident.
+    static uint32_t upAt = 0;
     if (down != s_chargeWasDown) Serial.printf("[charge] touch %s at %d,%d (lit %d)\n", down ? "down" : "up", tp.x, tp.y, (int)lit);
-    if (down && !s_chargeWasDown) {
-        if (lit && now - s_chargeLitAt > 400) { s_chargeWasDown = true; exitChargeMode(); return; }
+    if (!down && s_chargeWasDown) upAt = now;
+    if (down && !s_chargeWasDown && now - upAt > 150) {
+        if (lit && now - s_chargeLitAt > 800) { s_chargeWasDown = true; exitChargeMode(); return; }
+        // A tap on the dark screen: the charging time, for five seconds.
         s_chargeLitAt = now;
-        s_chargeLitUntil = now + 15000;
+        s_chargeLitUntil = now + 5000;
         chargeBacklight(Settings::brightness() / 2);
         chargeDraw(now);
     }
     s_chargeWasDown = down;
-    if (lit && now - s_chargeDrawnAt > 30000) chargeDraw(now);
-    if (!lit && s_chargeLitUntil) { chargeBacklight(0); s_chargeLitUntil = 0; Serial.println("[charge] screen dark"); }
+    // Asked again, not reused: a tap above has just lit the screen, and the
+    // answer from the top of this tick put it straight back out.
+    const bool litNow = s_chargeLitUntil && (int32_t)(s_chargeLitUntil - now) > 0;
+    if (litNow && now - s_chargeDrawnAt > 30000) chargeDraw(now);
+    if (!litNow && s_chargeLitUntil) { chargeBacklight(0); s_chargeLitUntil = 0; Serial.println("[charge] screen dark"); }
     delay(40);   // nothing to animate: let the CPU idle between polls
 }
 #endif
