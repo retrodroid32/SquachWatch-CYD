@@ -8,6 +8,7 @@
 #include "dex.h"
 #include "regulars.h"
 #include "clock.h"
+#include "ble_adv_utils.h"
 #include <Arduino.h>
 #include <WiFi.h>
 #include <esp_wifi.h>
@@ -102,20 +103,7 @@ static bool advFieldAt(const std::vector<uint8_t>& payload, uint8_t type,
 }
 
 static void copyAdvName(const std::vector<uint8_t>& payload, char* dst, size_t dstSize) {
-    if (!dst || dstSize == 0) return;
-    dst[0] = 0;
-
-    // Match NimBLE's getName() semantics: prefer a complete name anywhere in
-    // the assembled payload, then fall back to the shortened/incomplete name.
-    AdvFieldView name;
-    if (!advFieldAt(payload, BLE_HS_ADV_TYPE_COMP_NAME, 0, name) &&
-        !advFieldAt(payload, BLE_HS_ADV_TYPE_INCOMP_NAME, 0, name)) {
-        return;
-    }
-
-    const size_t n = name.len < (dstSize - 1) ? name.len : (dstSize - 1);
-    if (n) memcpy(dst, name.data, n);
-    dst[n] = 0;
+    BleAdv::copyLocalName(payload.data(), payload.size(), dst, dstSize);
 }
 
 static bool matchKnownServiceUuid16(const std::vector<uint8_t>& payload,
@@ -341,9 +329,12 @@ class BleScanCallbacks : public NimBLEScanCallbacks {
             s_advertsDropped++;
             return;
         }
-        // 2.x hands back a reference to the device's own address, so the
-        // pointer is good for the whole of this call.
-        const uint8_t* mac = adv->getAddress().getBase()->val;
+        // NimBLE exposes ble_addr_t::val in controller/native byte order.
+        // Keep that representation only for stack-internal mesh handling, then
+        // normalize once for every user-facing/stored SquachWatch address.
+        const uint8_t* nimbleMac = adv->getAddress().getBase()->val;
+        uint8_t mac[6];
+        BleAdv::canonicalMacFromNimble(nimbleMac, mac);
         const std::vector<uint8_t>& payload = adv->getPayload();
 #if SQUACH_MESH
         // A peer is handled here and RETURNS, so it never reaches the
@@ -361,7 +352,7 @@ class BleScanCallbacks : public NimBLEScanCallbacks {
             for (uint8_t i = 0;; i++) {
                 AdvFieldView md;
                 if (!advFieldAt(payload, BLE_HS_ADV_TYPE_MFG_DATA, i, md)) break;
-                if (Mesh::onManufacturerData(md.data, md.len, mac, millis())) ours = true;
+                if (Mesh::onManufacturerData(md.data, md.len, nimbleMac, millis())) ours = true;
             }
             // A SquachWatch is not a detection, but it can be a hunt target:
             // the SQUAD screen's HUNT aims the gauge at one. Its advert feeds
@@ -393,6 +384,18 @@ class BleScanCallbacks : public NimBLEScanCallbacks {
             memcpy(r.mac, mac, 6);
             r.rssi = adv->getRSSI();
             copyAdvName(payload, r.name, sizeof(r.name));
+            // The raw browser is user-facing and runs only for a focused
+            // eight-second sweep. If our allocation-free AD walker did not
+            // find a name, let NimBLE parse its assembled advert + scan
+            // response as a fallback. Keep the returned std::string alive
+            // while copying it; never take c_str() from a temporary.
+            if (!r.name[0] && adv->haveName()) {
+                const std::string name = adv->getName();
+                if (!name.empty()) {
+                    strncpy(r.name, name.c_str(), sizeof(r.name) - 1);
+                    r.name[sizeof(r.name) - 1] = 0;
+                }
+            }
             g_engine->postRawBle(r);
             return;
         }
@@ -1806,18 +1809,50 @@ void DetectionEngine::postRawBle(RawBleResult r) {
     // how many devices happen to be nearby.
 }
 
+// Manual BLE browsing needs scan responses: many perfectly ordinary BLE
+// devices put their Local Name in the scan response rather than the primary
+// advertisement. The normal detector may deliberately run passive in a busy
+// room for heap safety, but the manual eight-second BLE sweep is bounded and
+// should actively ask for those responses. Stop/restart must happen on the
+// NimBLE host task -- doing it from loop() can free a record underneath a
+// callback on the other core.
+static struct ble_npl_event s_rawBleModeEv;
+static bool                 s_rawBleModeEvReady = false;
+
+static void rawBleModeOnHost(struct ble_npl_event*) {
+    NimBLEScan* scan = NimBLEDevice::getScan();
+    if (!scan || !scan->isScanning()) return;
+
+    // BLE raw scan => active. Anything else => return to the detector's
+    // current AUTO/pinned choice.
+    const bool passive = (g_rawMode == RawScanMode::BLE) ? false : s_wantPassive;
+    if (passive == s_passiveNow) return;
+
+    scan->stop();
+    scan->setActiveScan(!passive);
+    s_passiveNow = passive;
+    scan->start(0, false, true);
+}
+
+static void requestRawBleScanMode() {
+    if (!s_rawBleModeEvReady) {
+        ble_npl_event_init(&s_rawBleModeEv, rawBleModeOnHost, nullptr);
+        s_rawBleModeEvReady = true;
+    }
+    ble_npl_eventq_put(nimble_port_get_dflt_eventq(), &s_rawBleModeEv);
+}
+
 void DetectionEngine::startRawBleScan() {
     if (g_rawMode == RawScanMode::WIFI) WiFi.scanDelete();
     _rawBleCount = 0;
-    // The continuous NimBLE scan (started once, forever, in init())
-    // keeps running -- onResult() just routes into postRawBle() above
-    // instead of the signature matcher while g_rawMode == BLE. WiFi's
-    // promiscuous capture is switched off so the radio is focused on
-    // BLE for the duration, per the "pause the continuous scan and
-    // focus on what we're scanning for" design.
+    // The same indefinite NimBLE scanner is reused, but the focused manual
+    // sweep temporarily forces ACTIVE scanning so Local Names carried in scan
+    // responses are available. The host-task event above performs the safe
+    // restart; leaving raw BLE restores the detector's normal scan mode.
     esp_wifi_set_promiscuous(false);
     g_rawMode = RawScanMode::BLE;
     g_rawBleStartMs = millis();
+    requestRawBleScanMode();
 }
 
 bool DetectionEngine::rawBleScanDone() const {
@@ -1832,7 +1867,10 @@ const RawBleResult* DetectionEngine::rawBleAt(uint8_t idx) const {
 void DetectionEngine::startRawWifiScan() {
     // Gate the BLE callback off first (it'd otherwise still be live
     // during the scan) before touching the radio.
+    const bool leavingRawBle = (g_rawMode == RawScanMode::BLE);
+    _rawWifiCachedCount = 0;  // a deliberate new sweep replaces the snapshot
     g_rawMode = RawScanMode::WIFI;
+    if (leavingRawBle) requestRawBleScanMode();
     esp_wifi_set_promiscuous(false);
     WiFi.scanNetworks(true /* async */);
 }
@@ -1842,46 +1880,86 @@ bool DetectionEngine::rawWifiScanDone() const {
 }
 
 uint8_t DetectionEngine::rawWifiCount() const {
-    if (!rawWifiScanDone()) return 0;
-    int n = WiFi.scanComplete();
-    return n > 0 ? (uint8_t)n : 0;
+    if (rawWifiScanDone()) {
+        const int n = WiFi.scanComplete();
+        return n > 0 ? (uint8_t)((n > RAW_WIFI_CAP) ? RAW_WIFI_CAP : n) : 0;
+    }
+    return _rawWifiCachedCount;
 }
 
 const char* DetectionEngine::rawWifiSsid(uint8_t idx) const {
     // WiFi.SSID() returns a temporary String -- copy into a static
     // buffer rather than returning a pointer into it (same pattern as
-    // macFmt() below).
+    // macFmt() below). Once the active scan is released, serve the
+    // preserved snapshot instead.
     static char buf[33];
     buf[0] = 0;
-    if (idx < rawWifiCount()) {
-        String s = WiFi.SSID(idx);
-        strncpy(buf, s.c_str(), sizeof(buf) - 1);
+    if (rawWifiScanDone()) {
+        if (idx < rawWifiCount()) {
+            String s = WiFi.SSID(idx);
+            strncpy(buf, s.c_str(), sizeof(buf) - 1);
+            buf[sizeof(buf) - 1] = 0;
+            if (buf[0] == 0) strncpy(buf, "(hidden)", sizeof(buf) - 1);
+        }
+    } else if (idx < _rawWifiCachedCount) {
+        strncpy(buf, _rawWifi[idx].ssid, sizeof(buf) - 1);
         buf[sizeof(buf) - 1] = 0;
-        if (buf[0] == 0) strncpy(buf, "(hidden)", sizeof(buf) - 1);
     }
     return buf;
 }
 
 int8_t DetectionEngine::rawWifiRssi(uint8_t idx) const {
-    return idx < rawWifiCount() ? (int8_t)WiFi.RSSI(idx) : 0;
+    if (rawWifiScanDone())
+        return idx < rawWifiCount() ? (int8_t)WiFi.RSSI(idx) : 0;
+    return idx < _rawWifiCachedCount ? _rawWifi[idx].rssi : 0;
 }
 
 uint8_t DetectionEngine::rawWifiChannel(uint8_t idx) const {
-    return idx < rawWifiCount() ? (uint8_t)WiFi.channel(idx) : 0;
+    if (rawWifiScanDone())
+        return idx < rawWifiCount() ? (uint8_t)WiFi.channel(idx) : 0;
+    return idx < _rawWifiCachedCount ? _rawWifi[idx].channel : 0;
 }
 
 bool DetectionEngine::rawWifiOpen(uint8_t idx) const {
-    return idx < rawWifiCount() && WiFi.encryptionType(idx) == WIFI_AUTH_OPEN;
+    if (rawWifiScanDone())
+        return idx < rawWifiCount() && WiFi.encryptionType(idx) == WIFI_AUTH_OPEN;
+    return idx < _rawWifiCachedCount && _rawWifi[idx].open;
 }
 
 const uint8_t* DetectionEngine::rawWifiBssid(uint8_t idx) const {
-    if (!rawWifiScanDone() || idx >= rawWifiCount()) return nullptr;
-    return WiFi.BSSID(idx);
+    if (rawWifiScanDone())
+        return idx < rawWifiCount() ? WiFi.BSSID(idx) : nullptr;
+    return idx < _rawWifiCachedCount ? _rawWifi[idx].bssid : nullptr;
 }
 
 void DetectionEngine::stopRawScan() {
-    if (g_rawMode == RawScanMode::WIFI) WiFi.scanDelete();
+    const bool leavingRawBle = (g_rawMode == RawScanMode::BLE);
+    if (g_rawMode == RawScanMode::WIFI) {
+        // A TRACK THIS TARGET action can temporarily leave this screen.
+        // Copy the completed scan before freeing Arduino-WiFi's table so BACK
+        // can restore the exact rows without another RF sweep.
+        const int n = WiFi.scanComplete();
+        if (n >= 0) {
+            const uint8_t keep = (uint8_t)((n > RAW_WIFI_CAP) ? RAW_WIFI_CAP : n);
+            _rawWifiCachedCount = keep;
+            for (uint8_t i = 0; i < keep; ++i) {
+                RawWifiResult& r = _rawWifi[i];
+                const uint8_t* bssid = WiFi.BSSID(i);
+                if (bssid) memcpy(r.bssid, bssid, sizeof r.bssid);
+                else       memset(r.bssid, 0, sizeof r.bssid);
+                r.rssi = (int8_t)WiFi.RSSI(i);
+                r.channel = (uint8_t)WiFi.channel(i);
+                r.open = WiFi.encryptionType(i) == WIFI_AUTH_OPEN;
+                String s = WiFi.SSID(i);
+                strncpy(r.ssid, s.c_str(), sizeof(r.ssid) - 1);
+                r.ssid[sizeof(r.ssid) - 1] = 0;
+                if (!r.ssid[0]) strncpy(r.ssid, "(hidden)", sizeof(r.ssid) - 1);
+            }
+        }
+        WiFi.scanDelete();
+    }
     g_rawMode = RawScanMode::NONE;
+    if (leavingRawBle) requestRawBleScanMode();
     esp_wifi_set_promiscuous(true);
 }
 
