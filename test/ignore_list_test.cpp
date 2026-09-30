@@ -55,6 +55,15 @@ int main() {
     ck("dev gone", bytesOnDisk("dev") == 0);
     ck("macs gone", bytesOnDisk("macs") == 0);
 
+    suite("Legacy reversed BLE policy still matches");
+    {
+        const uint8_t fwd[6] = { 0x5E, 0xC5, 0xC1, 0xCF, 0x45, 0xC4 };
+        const uint8_t oldOrder[6] = { 0xC4, 0x45, 0xCF, 0xC1, 0xC5, 0x5E };
+        ck("save legacy ignore", IgnoreList::setPolicy(oldOrder, DetectionType::AIRTAG, IgnoreList::Policy::IGNORE));
+        ck("canonical address inherits ignore", IgnoreList::contains(fwd));
+        ck("canonical unignore removes legacy entry", IgnoreList::remove(fwd) && !IgnoreList::contains(oldOrder));
+    }
+
     std::filesystem::remove_all(dir);
     return report();
 }

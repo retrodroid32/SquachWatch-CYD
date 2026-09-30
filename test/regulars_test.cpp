@@ -44,6 +44,19 @@ int main() {
     mac(m, 10);
     ck("a newcomer is in", Regulars::daysFor(m) == 1);
 
+    suite("Legacy reversed BLE regular keeps identity");
+    {
+        Regulars::reset();
+        const uint8_t oldOrder[6] = { 0xC4, 0x45, 0xCF, 0xC1, 0xC5, 0x5E };
+        const uint8_t fwd[6] = { 0x5E, 0xC5, 0xC1, 0xCF, 0x45, 0xC4 };
+        for (uint32_t d = 300; d < 303; d++) Regulars::noteOnDay(oldOrder, DetectionType::TILE, d);
+        const char* was = Regulars::nameFor(oldOrder);
+        ck("legacy entry is named", was != nullptr);
+        ck("canonical order finds the same entry", was && Regulars::nameFor(fwd) == was);
+        Regulars::noteOnDay(fwd, DetectionType::TILE, 303);
+        ck("canonical sighting advances the same regular", Regulars::daysFor(fwd) == 4);
+    }
+
     suite("Reset");
     Regulars::reset();
     ck("empty", Regulars::count() == 0 && Regulars::daysFor(tag) == 0);
