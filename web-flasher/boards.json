@@ -188,16 +188,16 @@
     {
       "id": "lcdwiki-es3c28p",
       "label": "LCDWiki 2.8\" ESP32-S3 ES3C28P (compile-only)",
-      "manifest": null,
+      "manifest": "manifest-lcdwiki-es3c28p.json",
       "visible": false,
       "ci": true,
       "release": false,
       "sign": false,
       "shared_esp32": false,
       "merged": false,
-      "lab": false,
+      "lab": true,
       "cyd28": false,
-      "note": "Compile-validation profile for LCDWiki ES3C28P/ES3N28P N16R8 with ILI9341V and FT6336G. SD/status-light remain disabled until our hardware validation."
+      "note": "LAB-only LCDWiki ES3C28P/ES3N28P N16R8 profile with ILI9341V and FT6336G. SD/status-light remain disabled until hardware validation."
     }
   ]
 }
