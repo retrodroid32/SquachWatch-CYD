@@ -1468,7 +1468,8 @@
          './manifest-lab-cyd-ili9341.json', './manifest-lab-cyd-ili9341-fast.json',
          './manifest-lab-rlphantom-r.json', './manifest-lab-freenove32.json',
          './manifest-lab-twatch-s3.json', './manifest-lab-freenove-s3.json',
-         './manifest-lab-crowpanel7.json', './manifest-lab-cyd32c.json'].forEach(function (path) {
+         './manifest-lab-crowpanel7.json', './manifest-lab-cyd32c.json',
+         './manifest-lab-cyd35-fast.json'].forEach(function (path) {
           fetch(path, { cache: 'no-store' })
             .then(function (r) { return r.ok ? r.json() : null; })
             .then(function (m) {
