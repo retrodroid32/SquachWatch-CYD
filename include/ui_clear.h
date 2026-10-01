@@ -47,9 +47,10 @@ bool uiClearBubbleHit(int x, int y);
 // The "+N" squad badge beside a visitor, which opens the SQUAD screen.
 bool uiClearSquadHit(int x, int y);
 
-// Independent WATCH and HUNT indicators in CLEAR's title bar. WATCH opens the
-// watched-target status screen; HUNT re-enters the live hunt gauge. Either can
-// exist alone, or both can be drawn side by side.
+// Independent WATCH and HUNT indicators immediately above CLEAR's device
+// counters. WATCH is anchored left and opens watched-target status; HUNT is
+// anchored right and opens the ranked hunt roster. Coordinates are derived
+// from the live display geometry so portrait/landscape rotations stay aligned.
 bool uiClearWatchPillHit(int x, int y);
 bool uiClearHuntPillHit(int x, int y);
 // The NEARBY headline, which only exists while something is live. Long-pressing
