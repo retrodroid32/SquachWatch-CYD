@@ -3515,12 +3515,21 @@ static inline void drawTwoBand(F&& draw) {
 #if defined(CYD35)
     if (frameBufferOk) {
         const int halfH = tft.height() / 2;
+        // The sprite is cleared before each band. It is ONE half-height
+        // buffer used for both, so whatever a screen does not repaint is the
+        // OTHER band's picture, and it showed: a screen that fills its
+        // background once in its Init and then draws rows over it (the
+        // diary) had the top half's leftovers under the bottom half, which
+        // read as the screen drawn twice (issue #25). Every Init fills with
+        // Theme::BG, so that is what an unpainted pixel should be.
         DrawBand::set(0, halfH);
         frame.setViewport(0, 0, tft.width(), tft.height(), true);
+        frame.fillRect(0, 0, tft.width(), tft.height(), Theme::BG);
         draw((TFT_eSPI&)frame, true);
         pushFrame(0, 0);
         DrawBand::set(halfH, tft.height());
         frame.setViewport(0, -halfH, tft.width(), tft.height(), true);
+        frame.fillRect(0, 0, tft.width(), tft.height(), Theme::BG);
         draw((TFT_eSPI&)frame, false);
         pushFrame(0, halfH);
         DrawBand::all();
@@ -6145,7 +6154,17 @@ void loop() {
             lastTouch = now;
             // The board redraws only what changed, so it is the same with the
             // frame buffer and without it (given up for a download).
-            drawTwoBand([&](TFT_eSPI& t, bool) { uiWifiPassTick(t, now); });
+            drawTwoBand([&](TFT_eSPI& t, bool) {
+#if defined(CYD35)
+                // This screen repaints only what changed, which needs a
+                // buffer that still holds the rest. The 3.5" has half a
+                // buffer shared by two bands, so there it draws everything,
+                // every band: the keyboard's top half was being pushed to
+                // the bottom half as well (issue #25).
+                if (frameBufferOk) uiWifiPassRedrawAll();
+#endif
+                uiWifiPassTick(t, now);
+            });
             if (touchJustDown)    uiWifiPassTouch(tp.x, tp.y, now, WifiPassTouch::DOWN);
             else if (tp.valid)    uiWifiPassTouch(tp.x, tp.y, now, WifiPassTouch::MOVE);
             else if (touchJustUp) uiWifiPassTouch(tp.x, tp.y, now, WifiPassTouch::UP);

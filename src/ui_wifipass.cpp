@@ -344,6 +344,8 @@ void uiWifiPassTouch(int x, int y, uint32_t now, WifiPassTouch phase) {
     }
 }
 
+void uiWifiPassRedrawAll() { s_full = true; }
+
 WifiPassResult uiWifiPassResult() { return s_result; }
 const char*    uiWifiPassText()   { return s_buf; }
 const char*    uiWifiPassSsid()   { return s_ssid; }
