@@ -35,6 +35,7 @@ BOARDS = {
     # Sunton ESP32-2432S032C (DIYmalls, Amazon B0CLGDHS16): 3.2in ST7789 IPS,
     # GT911 capacitive touch, a battery charger. Issue #6's board. 2026-09-28.
     "14:33:5c:6c:20:b8": ("cyd32c",     "Sunton ESP32-2432S032C, 3.2in ST7789 IPS, GT911 capacitive touch"),
+    "14:33:5c:6d:22:84": ("cyd32c",     "Sunton ESP32-2432S032C, the second one (2026-09-30)"),
     # 88:57:21:2e:e6:e0 runs SquachEmit, not this firmware. It is the only
     # CAPACITIVE 2.8in; to test capacitive touch, list it here as cyd-fast
     # for the test and comment it out again after (done 2026-09-21).
