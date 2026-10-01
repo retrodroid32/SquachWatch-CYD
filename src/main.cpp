@@ -6319,12 +6319,19 @@ void loop() {
                 // The ranked target list: tap opens the gauge; drag scrolls.
                 static bool listGesture = false, listMoved = false;
                 static int listStartX = 0, listStartY = 0, listLastY = -1;
+                static int listTarget = -1;
                 if (touchJustDown) {
                     listGesture = true;
                     listMoved = false;
                     listStartX = tp.x;
                     listStartY = tp.y;
                     listLastY = tp.y;
+                    // Freeze the target under the finger at touch-down. RSSI
+                    // sorting can legitimately reorder rows while the finger
+                    // is held; release must still open the row the user
+                    // actually pressed, not whichever target moved there.
+                    listTarget = uiHuntListHitTarget(*canvas, tp.x, tp.y,
+                                                     tft.width(), tft.height());
                 }
                 if (tp.valid && listGesture) {
                     const int dy = tp.y - listLastY;
@@ -6337,9 +6344,7 @@ void loop() {
                 if (touchJustUp && listGesture) {
                     if (!listMoved) {
                         lastTouch = now;
-                        const int target = uiHuntListHitTarget(*canvas, listStartX, listStartY,
-                                                               tft.width(), tft.height());
-                        if (target >= 0 && engine.activateHuntTarget((uint8_t)target)) {
+                        if (listTarget >= 0 && engine.activateHuntTarget((uint8_t)listTarget)) {
                             uiHuntInit(*canvas);
                         } else if (uiHuntListHitBack(listStartX, listStartY,
                                                      tft.width(), tft.height())) {
