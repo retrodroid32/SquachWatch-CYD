@@ -1761,12 +1761,15 @@ static void drawTargetPill(TFT_eSPI& t, int x, const char* txt, uint16_t accent,
 
 // Two independent controls in the title bar. A passive WATCH and an active
 // HUNT can coexist, so neither is allowed to hide the other or steal its tap.
-static void drawTargetPills(TFT_eSPI& t, int screenW, bool watching, bool hunting, int spanR = -1) {
+static void drawTargetPills(TFT_eSPI& t, int screenW, bool watching, uint8_t huntCount, int spanR = -1) {
     t.setTextSize(1);
+    const bool hunting = huntCount > 0;
+    char huntText[12];
+    snprintf(huntText, sizeof huntText, "HUNT %u", (unsigned)huntCount);
     const int spanL = 32;
     if (spanR < 0) spanR = screenW - 54;
     const int watchW = 16 + t.textWidth("WATCH") + 7;
-    const int huntW  = 16 + t.textWidth("HUNT") + 7;
+    const int huntW  = 16 + t.textWidth(huntText) + 7;
     const int gap = (watching && hunting) ? 8 : 0;
     const int total = (watching ? watchW : 0) + (hunting ? huntW : 0) + gap;
     int x = spanL + ((spanR - spanL) - total) / 2;
@@ -1778,7 +1781,7 @@ static void drawTargetPills(TFT_eSPI& t, int screenW, bool watching, bool huntin
         x += watchW + gap;
     }
     if (hunting) {
-        drawTargetPill(t, x, "HUNT", Theme::AMBER, true,
+        drawTargetPill(t, x, huntText, Theme::AMBER, true,
                        s_hpX, s_hpY, s_hpW, s_hpH, s_huntPillOn);
     }
 }
@@ -3007,7 +3010,7 @@ void uiClearTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool adv
     // whenever either target is set.
     {
         const bool watching = eng.watchKind() != DetectionEngine::WatchKind::NONE;
-        const bool hunting  = eng.huntKind()  != DetectionEngine::WatchKind::NONE;
+        const uint8_t hunting = eng.huntTargetCount();
         // The flag goes inside the guard with the drawing it describes. Left
         // outside it, the pass that cannot reach the title bar would clear a
         // pill the other pass had just drawn, and it would stop being tappable.

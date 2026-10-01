@@ -1994,7 +1994,7 @@ static void performWipe(WipeBoot after) {
 #endif
     engine.clearLog();
     engine.clearWatch();
-    engine.clearHunt();
+    engine.clearHunts();
     if (after == WipeBoot::LOCKED) Security::lock();
     enterClear();
 #endif
@@ -4271,10 +4271,11 @@ void loop() {
                 enterWatchAlert();
             } else if (touchJustDown && (now - lastTouch) > TOUCH_DEBOUNCE_MS &&
                        uiClearHuntPillHit(tp.x, tp.y)) {
-                // HUNT is active navigation: jump straight back into the live
-                // gauge for the already-selected hunt target.
+                // The HUNT pill is the selected-target roster. Clear only
+                // the active gauge selection; every queued target stays.
                 lastTouch = now;
                 sqActive  = false;
+                engine.deactivateHunt();
                 enterHunt(HuntReturn::HOME);
             } else if (touchJustDown && (now - lastTouch) > TOUCH_DEBOUNCE_MS &&
                        uiClearSquadHit(tp.x, tp.y)) {
@@ -4707,17 +4708,15 @@ void loop() {
                     } else if (ctap == LogConfirmTap::HUNT) {
                         lastTouch = now;
                         s_confirmPending = false;
-                        // Toggles, same as WATCH above it. Stopping a hunt
-                        // stays here: HUNT MODE is somewhere to GO, and there
-                        // is nowhere to go once the target is gone.
-                        if (engine.isHunted(s_confirmMac, s_confirmIsBle)) {
-                            engine.clearHunt();
-                            Theme::showToast("HUNT STOPPED", nullptr, Theme::CYAN);
-                        } else {
-                            if (s_confirmIsBle) engine.huntBle(s_confirmMac, s_confirmLabel);
-                            else                engine.huntWifi(s_confirmMac, s_confirmLabel);
-                            enterHunt(HuntReturn::LOG);
-                        }
+                        const DetectionEngine::HuntToggle r = s_confirmIsBle
+                            ? engine.toggleHuntBle(s_confirmMac, s_confirmLabel)
+                            : engine.toggleHuntWifi(s_confirmMac, s_confirmLabel);
+                        if (r == DetectionEngine::HuntToggle::ADDED)
+                            Theme::showToast("ADDED TO HUNT", s_confirmLabel, Theme::AMBER);
+                        else if (r == DetectionEngine::HuntToggle::REMOVED)
+                            Theme::showToast("REMOVED FROM HUNT", s_confirmLabel, Theme::CYAN);
+                        else
+                            Theme::showToast("HUNT LIST FULL", "Maximum 8 targets", Theme::AMBER);
                     } else if (ctap == LogConfirmTap::INFO) {
                         lastTouch = now;
                         s_confirmPending = false;
@@ -4901,20 +4900,15 @@ void loop() {
                     } else if (ctap == RawScanConfirmTap::HUNT) {
                         lastTouch = now;
                         s_confirmPending = false;
-                        // See the LOG screen's copy: same toggle. Stopping
-                        // leaves the scan running, because the list you were
-                        // looking at is still the thing you came here for.
-                        if (engine.isHunted(s_confirmMac, s_rawScanIsBle)) {
-                            engine.clearHunt();
-                            Theme::showToast("HUNT STOPPED", nullptr, Theme::CYAN);
-                        } else {
-                            if (s_rawScanIsBle) engine.huntBle(s_confirmMac, s_confirmLabel);
-                            else                engine.huntWifi(s_confirmMac, s_confirmLabel);
-                            const HuntReturn backTo = s_rawScanIsBle
-                                ? HuntReturn::RAWSCAN_BLE : HuntReturn::RAWSCAN_WIFI;
-                            engine.stopRawScan();
-                            enterHunt(backTo);
-                        }
+                        const DetectionEngine::HuntToggle r = s_rawScanIsBle
+                            ? engine.toggleHuntBle(s_confirmMac, s_confirmLabel)
+                            : engine.toggleHuntWifi(s_confirmMac, s_confirmLabel);
+                        if (r == DetectionEngine::HuntToggle::ADDED)
+                            Theme::showToast("ADDED TO HUNT", s_confirmLabel, Theme::AMBER);
+                        else if (r == DetectionEngine::HuntToggle::REMOVED)
+                            Theme::showToast("REMOVED FROM HUNT", s_confirmLabel, Theme::CYAN);
+                        else
+                            Theme::showToast("HUNT LIST FULL", "Maximum 8 targets", Theme::AMBER);
                     } else if (ctap == RawScanConfirmTap::CANCEL) {
                         lastTouch = now;
                         s_confirmPending = false;
@@ -5147,8 +5141,8 @@ void loop() {
                             Theme::showToast("WATCH STOPPED", nullptr, Theme::CYAN);
                             break;
                         case SettingsRow::HUNT_TARGET:
-                            engine.clearHunt();
-                            Theme::showToast("HUNT STOPPED", nullptr, Theme::CYAN);
+                            engine.clearHunts();
+                            Theme::showToast("HUNT LIST CLEARED", nullptr, Theme::CYAN);
                             break;
                         case SettingsRow::THEME:      Settings::cyclePalette(); break;
                         case SettingsRow::BACKGROUND: Settings::cycleBackground(); break;
@@ -5669,8 +5663,8 @@ void loop() {
                     case SquadHit::HUNT: {
                         const uint8_t* mac = uiSquadSelectedMac();
                         if (!mac) break;
-                        if (!engine.isHunted(mac, true)) engine.huntBle(mac, uiSquadSelectedName());
-                        enterHunt();
+                        if (engine.huntBle(mac, uiSquadSelectedName())) enterHunt();
+                        else Theme::showToast("HUNT LIST FULL", "Maximum 8 targets", Theme::AMBER);
                         break;
                     }
                     case SquadHit::ADD: {
@@ -6316,16 +6310,57 @@ void loop() {
             break;
         }
         case AppState::HUNT: {
-            drawTwoBand([&](TFT_eSPI& t, bool advance) { uiHuntTick(t, now, engine, advance); });
-            if (tp.valid && (now - lastTouch) > TOUCH_DEBOUNCE_MS) {
+            drawTwoBand([&](TFT_eSPI& t, bool advance) {
+                uiHuntTick(t, now, engine, advance);
+                Theme::drawToast(t, now);
+            });
+
+            if (engine.huntKind() == DetectionEngine::WatchKind::NONE) {
+                // The ranked target list: tap opens the gauge; drag scrolls.
+                static bool listGesture = false, listMoved = false;
+                static int listStartX = 0, listStartY = 0, listLastY = -1;
+                if (touchJustDown) {
+                    listGesture = true;
+                    listMoved = false;
+                    listStartX = tp.x;
+                    listStartY = tp.y;
+                    listLastY = tp.y;
+                }
+                if (tp.valid && listGesture) {
+                    const int dy = tp.y - listLastY;
+                    if (abs(dy) > 10) {
+                        listMoved = true;
+                        uiHuntListScroll(dy > 0 ? -1 : 1);
+                        listLastY = tp.y;
+                    }
+                }
+                if (touchJustUp && listGesture) {
+                    if (!listMoved) {
+                        lastTouch = now;
+                        const int target = uiHuntListHitTarget(*canvas, listStartX, listStartY,
+                                                               tft.width(), tft.height());
+                        if (target >= 0 && engine.activateHuntTarget((uint8_t)target)) {
+                            uiHuntInit(*canvas);
+                        } else if (uiHuntListHitBack(listStartX, listStartY,
+                                                     tft.width(), tft.height())) {
+                            returnFromHunt();
+                        }
+                    }
+                    listGesture = false;
+                }
+            } else if (tp.valid && (now - lastTouch) > TOUCH_DEBOUNCE_MS) {
                 if (uiHuntHitStop(tp.x, tp.y, tft.width(), tft.height())) {
                     lastTouch = now;
-                    engine.clearHunt();
-                    Theme::showToast("HUNT STOPPED", nullptr, Theme::CYAN);
-                    returnFromHunt();
+                    engine.clearHunt();  // removes only this target from the selected list
+                    Theme::showToast("REMOVED FROM HUNT", nullptr, Theme::CYAN);
+                    if (engine.huntTargetCount()) uiHuntInit(*canvas);
+                    else returnFromHunt();
                 } else if (uiHuntHitBack(tp.x, tp.y, tft.width(), tft.height())) {
                     lastTouch = now;
-                    returnFromHunt();
+                    // BACK leaves the target selected and returns to the HUNT
+                    // roster; the roster's BACK leaves HUNT entirely.
+                    engine.deactivateHunt();
+                    uiHuntInit(*canvas);
                 }
             }
             break;

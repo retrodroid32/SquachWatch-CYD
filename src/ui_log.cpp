@@ -309,7 +309,7 @@ static void drawConfirmPanel(TFT_eSPI& t, int w, int h, const char* label,
     // the next tap rather than the thing already done.
     Theme::drawButton(t, wX, wY, wW, wH, watched ? "UNWATCH" : "WATCH", watched);
     // Toggles like WATCH beside it -- see that button's comment.
-    Theme::drawButton(t, huX, huY, huW, huH, hunted ? "STOP HUNT" : "HUNT", hunted);
+    Theme::drawButton(t, huX, huY, huW, huH, hunted ? "REMOVE HUNT" : "ADD HUNT", hunted);
     Theme::drawButton(t, igX, igY, igW, igH, ignored ? "UNIGNORE" : "IGNORE", ignored);
     Theme::drawButton(t, infX, infY, infW, infH, "MORE INFO", false);
     Theme::drawButton(t, cnX, cnY, cnW, cnH, "CANCEL", false);

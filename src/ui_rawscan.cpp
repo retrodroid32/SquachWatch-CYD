@@ -137,7 +137,7 @@ static void drawConfirmPanel(TFT_eSPI& t, int w, int h, const char* label, bool 
     // other button in this app says "this one is on".
     Theme::drawButton(t, wX, wY, wW, wH, watched ? "UNWATCH" : "WATCH", watched);
     // Toggles like WATCH beside it -- see that button's comment.
-    Theme::drawButton(t, huX, huY, huW, huH, hunted ? "STOP HUNT" : "HUNT", hunted);
+    Theme::drawButton(t, huX, huY, huW, huH, hunted ? "REMOVE HUNT" : "ADD HUNT", hunted);
     // IGNORE is a toggle too. Make its current state obvious instead of
     // forcing the user to tap it again just to discover whether it stuck.
     Theme::drawButton(t, igX, igY, igW, igH, ignored ? "UN-IGNORE" : "IGNORE", ignored);

@@ -19,6 +19,12 @@ bool uiHuntHitBack(int x, int y, int screenW, int screenH);
 // target set. main.cpp owns navigation and returns either exit to the screen
 // that launched HUNT when that context is known.
 bool uiHuntHitStop(int x, int y, int screenW, int screenH);
+
+// When no single target is active, HUNT MODE becomes the ranked selected-
+// targets list. The hit returns the DetectionEngine storage index to activate.
+int  uiHuntListHitTarget(TFT_eSPI& t, int x, int y, int screenW, int screenH);
+bool uiHuntListHitBack(int x, int y, int screenW, int screenH);
+void uiHuntListScroll(int delta);
 // True while the gauge is showing CAUGHT: the signal has sat at
 // arm's-length strength for two samples running. The status light reads
 // it so the catch shows from the back of the board too.

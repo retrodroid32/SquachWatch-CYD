@@ -445,28 +445,43 @@ public:
     // advertisement/frame.
     bool watchHitPending();
 
-    // ---- Hunt target (HUNT MODE's live gauge) -------------------------
-    // A second, completely independent slot from the watch target above
-    // -- picking HUNT on a device no longer overwrites whatever's being
-    // passively WATCHed (or vice versa), so you can leave a watch
-    // running in the background and go fox-hunt something else entirely
-    // without losing it. Same session-only lifetime, same one-target-
-    // at-a-time replacement rule, just its own mac/label/RSSI history.
-    // No alert flag/cooldown of its own -- HUNT MODE is a screen you're
-    // actively looking at already, so there's nothing to pop up over.
-    void huntBle(const uint8_t* mac, const char* name);
-    void huntWifi(const uint8_t* bssid, const char* ssid);
-    void clearHunt();
-    // The hunt half of isWatched(), and for the same reason: HUNT was the
-    // other one-way door -- clearHunt() had no caller outside the wipe, so a
-    // hunt could only be replaced, never ended.
-    bool isHunted(const uint8_t* mac, bool ble) const {
-        if (_huntKind != (ble ? WatchKind::BLE : WatchKind::WIFI)) return false;
-        return memcmp(mac, _huntMac, 6) == 0;
-    }
-    WatchKind huntKind() const { return _huntKind; }
+    // ---- Hunt targets + active HUNT MODE target -----------------------
+    // Up to eight session-only targets may be selected at once. The HUNT
+    // list ranks them by current RSSI; one of those targets can then be made
+    // active for the existing full-screen gauge. WATCH remains completely
+    // independent.
+    static const uint8_t HUNT_TARGET_CAP = 8;
+    struct HuntTargetInfo {
+        WatchKind kind = WatchKind::NONE;
+        uint8_t   mac[6] = {0};
+        char      label[24] = "";
+        int8_t    rssi = -127;
+        int8_t    previousRssi = -127;
+        uint8_t   samples = 0;
+        RssiTrend trend = RssiTrend::UNKNOWN;
+        uint32_t  lastSeenMs = 0;
+        bool      seen = false;
+    };
+    enum class HuntToggle : uint8_t { ADDED, REMOVED, FULL };
+
+    HuntToggle toggleHuntBle(const uint8_t* mac, const char* name);
+    HuntToggle toggleHuntWifi(const uint8_t* bssid, const char* ssid);
+    bool       isHunted(const uint8_t* mac, bool ble) const;
+    uint8_t    huntTargetCount() const { return _huntTargetCount; }
+    bool       huntTargetInfo(uint8_t idx, HuntTargetInfo& out) const;
+    bool       activateHuntTarget(uint8_t idx);
+    void       deactivateHunt();       // leave the gauge; keep the selected list
+    void       clearHunt();            // remove the active target from the selected list
+    void       clearHunts();           // remove every selected target
+
+    // Direct entry used by places such as the SquachMesh roster: ensure this
+    // target is selected and make it the active gauge target immediately.
+    bool huntBle(const uint8_t* mac, const char* name);
+    bool huntWifi(const uint8_t* bssid, const char* ssid);
+
+    WatchKind huntKind() const { return _huntKind; }   // active gauge target, if any
     const char* huntLabel() const { return _huntLabel; }
-    uint8_t huntRssiCount() const { return _huntRssiCount; }
+    uint8_t huntRssiCount() const;
     int8_t  huntRssiAt(uint8_t idx) const;
 
     // Called from the BLE scan callback (every advertisement, any
@@ -636,20 +651,34 @@ private:
     uint32_t _watchRssiLastMs = 0;
     void recordWatchRssi(int8_t rssi);
 
-    // Hunt target -- see the public huntBle()/huntWifi() section above.
-    // Deliberately a whole separate mac/label/history from the watch
-    // fields above rather than reusing them, so HUNT and WATCH can
-    // point at two different devices at once. checkHuntWifi() is called
-    // from processWiFiQ() the same way checkWatchWifi() is.
+    // Selected HUNT targets. Each keeps only eight cadence-limited RSSI
+    // samples: enough for the shared trend classifier and the ranked list,
+    // while eight targets still cost well under half a kilobyte.
+    static const uint8_t HUNT_RSSI_CAP = 8;
+    struct HuntEntry {
+        WatchKind kind = WatchKind::NONE;
+        uint8_t   mac[6] = {0};
+        char      label[24] = "";
+        int8_t    rssiHist[HUNT_RSSI_CAP] = {0};
+        uint8_t   rssiHead = 0;
+        uint8_t   rssiCount = 0;
+        uint32_t  rssiLastMs = 0;
+        uint32_t  lastSeenMs = 0;
+    };
+    HuntEntry _huntTargets[HUNT_TARGET_CAP] = {};
+    uint8_t   _huntTargetCount = 0;
+
+    // The one target currently open in the full HUNT gauge. It always points
+    // at an entry above; BACK can deactivate it without dropping the entry.
     WatchKind _huntKind = WatchKind::NONE;
     uint8_t   _huntMac[6] = {0};
     char      _huntLabel[24] = "";
-    int8_t    _huntRssiHist[WATCH_RSSI_CAP] = {0};
-    uint8_t   _huntRssiHead  = 0;
-    uint8_t   _huntRssiCount = 0;
-    uint32_t  _huntRssiLastMs = 0;
-    void checkHuntWifi(const uint8_t* mac, int8_t rssi);
-    void recordHuntRssi(int8_t rssi);
+
+    int8_t  findHuntTarget(const uint8_t* mac, WatchKind kind) const;
+    HuntToggle toggleHunt(const uint8_t* mac, const char* label, WatchKind kind);
+    void    checkHuntWifi(const uint8_t* mac, int8_t rssi);
+    void    noteHuntRssi(HuntEntry& e, int8_t rssi);
+    int8_t  huntEntryRssiAt(const HuntEntry& e, uint8_t idx) const;
 
     // The most recently decoded Remote ID broadcast, and whose it is.
     RemoteId::Info _rid;
