@@ -166,6 +166,22 @@ static void rowLayout(TFT_eSPI& t, int w, int h, int& bodyTop, int& bodyBottom, 
     rowH = 1 /* topPad */ + nameH + detailH + 2;
 }
 
+// Persistent per-row target state. Keep these as separate coloured words
+// rather than folding them into the MAC/channel string: that is the same
+// visual treatment IGNORE already uses, and it lets WATCH/HUNT coexist.
+static void drawTargetFlags(TFT_eSPI& t, int x, int y,
+                            bool watched, bool hunted, bool ignored) {
+    auto flag = [&](const char* label, uint16_t color) {
+        t.setTextColor(color, Theme::BG);
+        t.setCursor(x, y);
+        t.print(label);
+        x += t.textWidth(label) + 8;
+    };
+    if (watched) flag("WATCH",  Theme::CYAN);
+    if (hunted)  flag("HUNT",   Theme::VAPOR_PINK);
+    if (ignored) flag("IGNORE", Theme::AMBER);
+}
+
 // Row index (0 = topmost visible, adjusted for current scroll) a tap
 // at (x,y) falls within, or -1 if it's outside the list entirely (the
 // Squachy strip, the button bar, or past the last row). Used to
@@ -348,14 +364,11 @@ switch (Settings::background()) {
                      r->mac[0], r->mac[1], r->mac[2], r->mac[3], r->mac[4], r->mac[5]);
             t.setCursor(4, y + detailY);
             t.print(mac);
-            // Persistent status, not just a one-shot toast: once a device is
-            // ignored the raw list says so beside the MAC on every frame.
-            if (IgnoreList::contains(r->mac)) {
-                const int ix = 4 + t.textWidth(mac) + 8;
-                t.setTextColor(Theme::AMBER, Theme::BG);
-                t.setCursor(ix, y + detailY);
-                t.print("IGNORE");
-            }
+            const bool watched = eng.isWatched(r->mac, true);
+            const bool hunted  = eng.isHunted(r->mac, true);
+            const bool ignored = IgnoreList::contains(r->mac);
+            drawTargetFlags(t, 4 + t.textWidth(mac) + 8, y + detailY,
+                            watched, hunted, ignored);
 
             t.setTextColor(Theme::VAPOR_PURPLE, Theme::BG);
             t.setCursor(w - rw - 14, y + topPad);
@@ -392,14 +405,12 @@ switch (Settings::background()) {
                      eng.rawWifiOpen(idx) ? "OPEN" : "LOCKED");
             t.setCursor(4, y + detailY);
             t.print(line);
-            // Match BLE's persistent ignore treatment: status text remains
-            // white, with a separate amber IGNORE marker beside it.
-            if (ignored) {
-                const int ix = 4 + t.textWidth(line) + 8;
-                t.setTextColor(Theme::AMBER, Theme::BG);
-                t.setCursor(ix, y + detailY);
-                t.print("IGNORE");
-            }
+            // Match BLE's persistent state treatment: status text remains
+            // white, with separate coloured WATCH/HUNT/IGNORE markers.
+            const bool watched = bssid && eng.isWatched(bssid, false);
+            const bool hunted  = bssid && eng.isHunted(bssid, false);
+            drawTargetFlags(t, 4 + t.textWidth(line) + 8, y + detailY,
+                            watched, hunted, ignored);
 
             t.setTextColor(Theme::VAPOR_PURPLE, Theme::BG);
             t.setCursor(w - wifiRw - 14, y + topPad);
