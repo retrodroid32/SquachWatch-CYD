@@ -4217,6 +4217,13 @@ void showToast(const char* head, const char* sub, uint16_t accent, uint32_t ms) 
     s_toastUntil  = millis() + ms;
 }
 
+void clearToast() {
+    s_toastHead[0] = '\0';
+    s_toastSub[0]  = '\0';
+    s_toastAccent  = 0;
+    s_toastUntil   = 0;
+}
+
 bool toastActive(uint32_t now) {
     return s_toastUntil && (int32_t)(s_toastUntil - now) > 0;
 }

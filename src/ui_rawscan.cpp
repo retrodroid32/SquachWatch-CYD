@@ -387,12 +387,19 @@ switch (Settings::background()) {
             const uint8_t* bssid = eng.rawWifiBssid(idx);
             const bool ignored = bssid && IgnoreList::contains(bssid);
             char line[32];
-            snprintf(line, sizeof(line), "CH%u  %s%s",
+            snprintf(line, sizeof(line), "CH%u  %s",
                      (unsigned)eng.rawWifiChannel(idx),
-                     eng.rawWifiOpen(idx) ? "OPEN" : "LOCKED",
-                     ignored ? "  IGNORE" : "");
+                     eng.rawWifiOpen(idx) ? "OPEN" : "LOCKED");
             t.setCursor(4, y + detailY);
             t.print(line);
+            // Match BLE's persistent ignore treatment: status text remains
+            // white, with a separate amber IGNORE marker beside it.
+            if (ignored) {
+                const int ix = 4 + t.textWidth(line) + 8;
+                t.setTextColor(Theme::AMBER, Theme::BG);
+                t.setCursor(ix, y + detailY);
+                t.print("IGNORE");
+            }
 
             t.setTextColor(Theme::VAPOR_PURPLE, Theme::BG);
             t.setCursor(w - wifiRw - 14, y + topPad);

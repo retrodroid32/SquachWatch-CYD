@@ -4780,7 +4780,11 @@ void loop() {
                                 engine.clearLog();
                                 BlackBox::markCleared();   // or a restart brings it all back
                                 Squachy::trigger(Squachy::Event::LOG_CLEARED);
-                                enterClear();
+                                // The confirmation has served its purpose.
+                                // Remove it immediately and refresh LOG in place
+                                // instead of throwing the user back to CLEAR.
+                                Theme::clearToast();
+                                enterLog();
                             } else {
                                 clrArmed = true;
                                 clrArmedAt = now;

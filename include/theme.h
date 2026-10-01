@@ -198,6 +198,10 @@ namespace Theme {
     // like tapping CANCEL, so without this there is no evidence the tap did
     // anything at all. `sub` may be nullptr.
     void showToast(const char* head, const char* sub, uint16_t accent, uint32_t ms = 1500);
+    // Dismiss a live toast immediately. Used when the action a confirmation
+    // toast was guarding has completed, so stale instructions do not remain
+    // painted over the resulting screen.
+    void clearToast();
     bool toastActive(uint32_t now);
 
     // No-op unless a toast is live. Call last, after the screen has drawn.
