@@ -47,11 +47,11 @@ bool uiClearBubbleHit(int x, int y);
 // The "+N" squad badge beside a visitor, which opens the SQUAD screen.
 bool uiClearSquadHit(int x, int y);
 
-// The watch/hunt indicator, bottom left of CLEAR. True when a tap landed on
-// it; main.cpp opens the watch-alert screen, which is where the target is
-// named and where REMOVE FROM WATCH LIST lives. Only ever true while a watch
-// or a hunt is actually set -- the pill is not drawn otherwise.
+// Independent WATCH and HUNT indicators in CLEAR's title bar. WATCH opens the
+// watched-target status screen; HUNT re-enters the live hunt gauge. Either can
+// exist alone, or both can be drawn side by side.
 bool uiClearWatchPillHit(int x, int y);
+bool uiClearHuntPillHit(int x, int y);
 // The NEARBY headline, which only exists while something is live. Long-pressing
 // it opens the closest device -- see main.cpp. False whenever it is not drawn.
 bool uiClearNearbyHit(int x, int y);

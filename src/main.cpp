@@ -3802,11 +3802,11 @@ void loop() {
                       state == AppState::SECURITY || state == AppState::STATUS_LIGHT ||
                       state == AppState::DESK) &&
         Theme::settingsButtonHit(tp.x, tp.y) &&
-        // ...but not where the watch/hunt pill is sitting. The gear's tap box
+        // ...but not where either target pill is sitting. The gear's tap box
         // is 55x50, much larger than its 28px glyph, so it reaches into the
-        // title bar's middle where the pill lives. The pill is only ever drawn
-        // while a target is set, so this gives up nothing the rest of the time.
-        !(state == AppState::CLEAR && uiClearWatchPillHit(tp.x, tp.y)) &&
+        // title bar's middle. The pills only exist while their targets are set.
+        !(state == AppState::CLEAR &&
+          (uiClearWatchPillHit(tp.x, tp.y) || uiClearHuntPillHit(tp.x, tp.y))) &&
         (now - lastTouch) > TOUCH_DEBOUNCE_MS) {
         lastTouch = now;
         if (state == AppState::STATUS_LIGHT) {
@@ -4264,13 +4264,18 @@ void loop() {
                 enterMeshCompose();
             } else if (touchJustDown && (now - lastTouch) > TOUCH_DEBOUNCE_MS &&
                        uiClearWatchPillHit(tp.x, tp.y)) {
-                // The watch/hunt pill. Opens the alert screen, which names the
-                // target and carries REMOVE FROM WATCH LIST -- the same screen
-                // a real sighting would have opened, just asked for rather
-                // than waited for.
+                // WATCH is passive status: open the watched-target screen,
+                // including its RSSI history and UNWATCH action.
                 lastTouch = now;
                 sqActive  = false;
                 enterWatchAlert();
+            } else if (touchJustDown && (now - lastTouch) > TOUCH_DEBOUNCE_MS &&
+                       uiClearHuntPillHit(tp.x, tp.y)) {
+                // HUNT is active navigation: jump straight back into the live
+                // gauge for the already-selected hunt target.
+                lastTouch = now;
+                sqActive  = false;
+                enterHunt(HuntReturn::HOME);
             } else if (touchJustDown && (now - lastTouch) > TOUCH_DEBOUNCE_MS &&
                        uiClearSquadHit(tp.x, tp.y)) {
                 // The squad badge, ahead of the scene gestures for the same

@@ -1703,6 +1703,7 @@ static void drawSquadBadge(TFT_eSPI& t, int rightX, int bottomY, uint8_t count) 
 // Squachy, it is the state of a detection feature, and boring mode keeps all
 // of those.
 static bool    s_watchPillOn = false;
+static bool    s_huntPillOn  = false;
 
 // The watch's corner clock: 12-hour, cyan on a black tile like the icons, just
 // left of whichever right-hand icons are showing (the corner itself when
@@ -1730,40 +1731,56 @@ static int16_t drawCornerClock(TFT_eSPI& t, int w) {
 }
 #endif
 static int16_t s_wpX = 0, s_wpY = 0, s_wpW = 0, s_wpH = 0;
+static int16_t s_hpX = 0, s_hpY = 0, s_hpW = 0, s_hpH = 0;
 
-// spanR: the right end of the free span. -1 keeps the old fixed reserve for
-// the rotate button and the padlock; the watch passes the corner clock's
-// left edge instead, which already sits left of both.
-static void drawWatchPill(TFT_eSPI& t, int screenW, bool watching, bool hunting, int spanR = -1) {
-    // HUNT wins the label when both are set: it is the active, look-at-me mode.
-    // The two are independent slots (see DetectionEngine), so both can be on.
-    const char* txt = hunting ? "HUNT" : "WATCH";
-    const uint16_t accent = hunting ? Theme::AMBER : Theme::CYAN;
-    t.setTextSize(1);
-    // 16 in a 20px bar: two rows of clearance top and bottom.
+static void drawTargetPill(TFT_eSPI& t, int x, const char* txt, uint16_t accent,
+                           bool hunting,
+                           int16_t& hitX, int16_t& hitY, int16_t& hitW, int16_t& hitH,
+                           bool& hitOn) {
     const int bh = 16;
     const int bw = 16 + t.textWidth(txt) + 7;
-    // Left edge of the free span, past the gear. The right limit is the rotate
-    // icon (28) plus the lock (26) -- reserve both whether or not either is
-    // showing, so the pill cannot move when a PIN is set or rotation locked.
-    const int spanL = 32;
-    if (spanR < 0) spanR = screenW - 54;
-    int x = spanL + ((spanR - spanL) - bw) / 2;
-    if (x < spanL) x = spanL;
     const int y = (20 - bh) / 2;
     t.fillRoundRect(x, y, bw, bh, 4, Theme::BG);
     t.drawRoundRect(x, y, bw, bh, 4, accent);
-    // An eye: open for a passive watch, with a line through it for a hunt.
+    // Open eye for WATCH; struck-through eye for the more active HUNT state.
     t.drawCircle(x + 9, y + bh / 2, 4, accent);
     t.fillCircle(x + 9, y + bh / 2, 1, accent);
     if (hunting) t.drawFastHLine(x + 3, y + bh / 2, 12, accent);
     t.setTextColor(accent, Theme::BG);
     t.setCursor(x + 16, y + (bh - 8) / 2);
     t.print(txt);
-    // A finger-sized target: the bar is only 20px tall, so grow downward.
-    s_wpX = (int16_t)(x - 4); s_wpY = (int16_t)0;
-    s_wpW = (int16_t)(bw + 8); s_wpH = (int16_t)(bh + 14);
-    s_watchPillOn = true;
+
+    // Grow mostly downward, where the title bar has room. Keep only 2 px of
+    // horizontal growth so WATCH and HUNT never acquire overlapping hit boxes.
+    hitX = (int16_t)(x - 2);
+    hitY = 0;
+    hitW = (int16_t)(bw + 4);
+    hitH = (int16_t)(bh + 14);
+    hitOn = true;
+}
+
+// Two independent controls in the title bar. A passive WATCH and an active
+// HUNT can coexist, so neither is allowed to hide the other or steal its tap.
+static void drawTargetPills(TFT_eSPI& t, int screenW, bool watching, bool hunting, int spanR = -1) {
+    t.setTextSize(1);
+    const int spanL = 32;
+    if (spanR < 0) spanR = screenW - 54;
+    const int watchW = 16 + t.textWidth("WATCH") + 7;
+    const int huntW  = 16 + t.textWidth("HUNT") + 7;
+    const int gap = (watching && hunting) ? 8 : 0;
+    const int total = (watching ? watchW : 0) + (hunting ? huntW : 0) + gap;
+    int x = spanL + ((spanR - spanL) - total) / 2;
+    if (x < spanL) x = spanL;
+
+    if (watching) {
+        drawTargetPill(t, x, "WATCH", Theme::CYAN, false,
+                       s_wpX, s_wpY, s_wpW, s_wpH, s_watchPillOn);
+        x += watchW + gap;
+    }
+    if (hunting) {
+        drawTargetPill(t, x, "HUNT", Theme::AMBER, true,
+                       s_hpX, s_hpY, s_hpW, s_hpH, s_huntPillOn);
+    }
 }
 
 // The NEARBY headline's last drawn rectangle, grown to a finger-sized target.
@@ -1778,6 +1795,11 @@ bool uiClearNearbyHit(int x, int y) {
 bool uiClearWatchPillHit(int x, int y) {
     return s_watchPillOn &&
            x >= s_wpX && x < s_wpX + s_wpW && y >= s_wpY && y < s_wpY + s_wpH;
+}
+
+bool uiClearHuntPillHit(int x, int y) {
+    return s_huntPillOn &&
+           x >= s_hpX && x < s_hpX + s_hpW && y >= s_hpY && y < s_hpY + s_hpH;
 }
 
 bool uiClearSquadHit(int x, int y) {
@@ -2991,9 +3013,10 @@ void uiClearTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool adv
         // pill the other pass had just drawn, and it would stop being tappable.
         if (DrawBand::has(0, titleBottom)) {
             s_watchPillOn = false;
-            // Right of the pill: the watch's corner clock, drawn earlier (see
+            s_huntPillOn  = false;
+            // Right of the pills: the watch's corner clock, drawn earlier (see
             // drawCornerClock()); -1 elsewhere, the old fixed reserve.
-            if (watching || hunting) drawWatchPill(t, w, watching, hunting, s_cornerClockPillR);
+            if (watching || hunting) drawTargetPills(t, w, watching, hunting, s_cornerClockPillR);
         }
     }
 
