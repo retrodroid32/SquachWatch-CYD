@@ -32,6 +32,17 @@ CYAN  = (0, 214, 214)
 # ---- the clips ----
 
 CLIPS = {
+    # v1.26.0 "Off the Grid": LoRa on the watches (not something the emulator
+    # can draw: it is not the watch build and has no LoRa radio), so the clip
+    # shows what IS on every screen: PRIVACY MODE, the same LOG before and
+    # after, an alert under it, and its row on the SYSTEM page.
+    "off-the-grid": [
+        ("clear", 200, 30, ["--noseed", "--bg", "8"], {}, 1500, "SQUACHY GREW A THIRD EAR: LORA, ON THE WATCHES"),
+        ("log", 20, 20, [], {}, 1700, "FILMING? YOUR LOG LOOKS LIKE THIS..."),
+        ("log", 20, 20, [], {"SQUACHSIM_PRIVACY": "1"}, 2200, "...PRIVACY MODE MAKES IT THIS"),
+        ("alert", 40, 30, [], {"SQUACHSIM_PRIVACY": "1"}, 1800, "SAME ALERT. NOBODY'S NAME ON IT."),
+        ("settings", 10, 14, ["--scroll", "0"], {"SQUACHSIM_PAGE": "2", "SQUACHSIM_PRIVACY": "1"}, 1800, "SETTINGS > SYSTEM > PRIVACY MODE"),
+    ],
     # v1.25.0 "Trailhead": wardriving on the T-Watch S3 Plus, which the
     # emulator cannot show (it is not the watch build), so Squachy sets off
     # and the notes carry the watch. Then the two things that ARE on screen:
