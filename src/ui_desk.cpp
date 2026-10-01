@@ -1,5 +1,6 @@
 // SquachWatch-CYD — desk mode. See ui_desk.h.
 #include "ui_desk.h"
+#include "ui_fit.h"
 #include "clock.h"
 #include "theme.h"
 #include "squachy.h"
@@ -363,12 +364,13 @@ static void drawAlertCard(TFT_eSPI& t, int barY, uint32_t now, bool compact, int
         t.setCursor(right - t.textWidth(s), ty);
         t.print(s);
     };
+    const int glyphs = compact ? 7 : 11;
     char ty[13];
-    snprintf(ty, sizeof ty, compact ? "%.7s" : "%.11s", detectionTypeName(d.type));
+    UiFit::fitHead(ty, sizeof ty, detectionTypeName(d.type), glyphs);
     printRight(ty, y + 4, c);
     // The device's own name where it has one, else the vendor; what fits.
     char who[13];
-    snprintf(who, sizeof who, compact ? "%.7s" : "%.11s", d.name[0] ? d.name : vendorText(d));
+    UiFit::fitHead(who, sizeof who, d.name[0] ? d.name : vendorText(d), glyphs);
     printRight(who, y + 15, Theme::WHITE);
     char sig[16];
     snprintf(sig, sizeof sig, "%d dBm", d.rssi);

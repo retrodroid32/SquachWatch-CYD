@@ -9,6 +9,7 @@
 #include "squachy.h"
 #include "settings.h"
 #include "security.h"
+#include "ui_fit.h"
 
 namespace Theme {
 
@@ -544,7 +545,7 @@ void drawButtonBar(TFT_eSPI& t, ButtonId highlighted, ButtonBarMode mode) {
 
 ButtonId hitTestButtonBar(int x, int y, int screenW, int screenH) {
     ButtonBarGeom g = computeButtonBar(screenW, screenH);
-    if (y < g.y || y > g.y + g.h) return ButtonId::NONE;
+    if (y < g.y || y >= screenH) return ButtonId::NONE;
     if (x >= g.x[0] && x <= g.x[0] + g.w[0]) return ButtonId::SCAN;
     if (x >= g.x[1] && x <= g.x[1] + g.w[1]) return ButtonId::LOG;
     if (x >= g.x[2] && x <= g.x[2] + g.w[2]) return ButtonId::CLR;
@@ -4200,18 +4201,27 @@ void dimRegion(TFT_eSPI& t, int x, int y, int w, int h, uint8_t amount) {
         t.drawFastHLine(x, yy, w, BG);
 }
 
-static char     s_toastHead[18] = {0};
-static char     s_toastSub[22]  = {0};
+static const size_t TOAST_HEAD_CAP = 24;
+static const size_t TOAST_SUB_CAP  = 48;
+static const uint8_t TOAST_SUB_LINES = 3;
+static const int TOAST_SUB_LINE_H = 10;
+static char     s_toastHead[TOAST_HEAD_CAP] = {0};
+static char     s_toastSub[TOAST_SUB_CAP]  = {0};
 static uint16_t s_toastAccent   = 0;
 static uint32_t s_toastUntil    = 0;
 
 void showToast(const char* head, const char* sub, uint16_t accent, uint32_t ms) {
-    strncpy(s_toastHead, head ? head : "", sizeof(s_toastHead) - 1);
-    s_toastHead[sizeof(s_toastHead) - 1] = 0;
-    strncpy(s_toastSub, sub ? sub : "", sizeof(s_toastSub) - 1);
-    s_toastSub[sizeof(s_toastSub) - 1] = 0;
+    UiFit::fitHead(s_toastHead, sizeof s_toastHead, head ? head : "", (int)sizeof s_toastHead - 1);
+    UiFit::fitHead(s_toastSub, sizeof s_toastSub, sub ? sub : "", (int)sizeof s_toastSub - 1);
     s_toastAccent = accent;
     s_toastUntil  = millis() + ms;
+}
+
+void clearToast() {
+    s_toastHead[0] = '\0';
+    s_toastSub[0]  = '\0';
+    s_toastAccent  = 0;
+    s_toastUntil   = 0;
 }
 
 bool toastActive(uint32_t now) {
@@ -4223,15 +4233,34 @@ void drawToast(TFT_eSPI& t, uint32_t now) {
     if ((int32_t)(now - s_toastUntil) >= 0) { s_toastUntil = 0; return; }
 
     const int w = t.width(), h = t.height();
+    const int maxW = w - 20;
+    const int pad = 15;
+    t.setTextFont(1);
+    t.setTextWrap(false);
+
     t.setTextSize(2);
-    int bw = t.textWidth(s_toastHead) + 30;
+    char head[TOAST_HEAD_CAP];
+    int headRoom = UiFit::chars(maxW - 16, 2);
+    UiFit::fitHead(head, sizeof head, s_toastHead, headRoom);
+
+    char lines[TOAST_SUB_LINES][48] = {};
+    uint8_t n = 0;
+    int bw = t.textWidth(head) + 16;
     if (s_toastSub[0]) {
         t.setTextSize(1);
-        const int sw = t.textWidth(s_toastSub) + 30;
-        if (sw > bw) bw = sw;
+        if (t.textWidth(s_toastSub) + 2 * pad <= maxW) {
+            strncpy(lines[0], s_toastSub, sizeof(lines[0]) - 1);
+            n = 1;
+        } else {
+            n = wrapText(t, s_toastSub, maxW - 2 * pad, lines, TOAST_SUB_LINES);
+        }
+        for (uint8_t i = 0; i < n; ++i) {
+            int lw = t.textWidth(lines[i]) + 2 * pad;
+            if (lw > bw) bw = lw;
+        }
     }
-    if (bw > w - 20) bw = w - 20;
-    const int bh = s_toastSub[0] ? 48 : 34;
+    if (bw > maxW) bw = maxW;
+    const int bh = n ? 48 + (n - 1) * TOAST_SUB_LINE_H : 34;
     const int bx = (w - bw) / 2, by = (h - bh) / 2;
 
     t.fillRect(bx, by, bw, bh, BG);
@@ -4240,13 +4269,15 @@ void drawToast(TFT_eSPI& t, uint32_t now) {
 
     t.setTextSize(2);
     t.setTextColor(s_toastAccent, BG);
-    t.setCursor(bx + (bw - t.textWidth(s_toastHead)) / 2, by + 8);
-    t.print(s_toastHead);
-    if (s_toastSub[0]) {
+    t.setCursor(bx + (bw - t.textWidth(head)) / 2, by + 8);
+    t.print(head);
+    if (n) {
         t.setTextSize(1);
         t.setTextColor(WHITE, BG);
-        t.setCursor(bx + (bw - t.textWidth(s_toastSub)) / 2, by + 31);
-        t.print(s_toastSub);
+        for (uint8_t i = 0; i < n; ++i) {
+            t.setCursor(bx + (bw - t.textWidth(lines[i])) / 2, by + 31 + i * TOAST_SUB_LINE_H);
+            t.print(lines[i]);
+        }
     }
 }
 

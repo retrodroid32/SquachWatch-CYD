@@ -1,6 +1,7 @@
 // SquachWatch-CYD — manual raw BLE/WiFi scanner screen implementation
 #include "ui_rawscan.h"
 #include "ui_scroll.h"
+#include "ui_fit.h"
 #include "theme.h"
 #include "squachy.h"
 #include "settings.h"
@@ -50,8 +51,8 @@ void uiRawScanScroll(int delta) {
 RawScanTap uiRawScanHitTest(int x, int y, int screenW, int screenH) {
     int bx, by, bw, bh, ax, ay, aw, ah;
     bottomButtonRects(screenW, screenH, bx, by, bw, bh, ax, ay, aw, ah);
-    if (x >= bx && x <= bx + bw && y >= by && y <= by + bh) return RawScanTap::BACK;
-    if (x >= ax && x <= ax + aw && y >= ay && y <= ay + ah) return RawScanTap::SWITCH;
+    if (x >= bx && x <= bx + bw && y >= by && y < screenH) return RawScanTap::BACK;
+    if (x >= ax && x <= ax + aw && y >= ay && y < screenH) return RawScanTap::SWITCH;
     return RawScanTap::NONE;
 }
 
@@ -163,6 +164,22 @@ static void rowLayout(TFT_eSPI& t, int w, int h, int& bodyTop, int& bodyBottom, 
     t.setTextSize(1);
     int detailH = t.fontHeight();
     rowH = 1 /* topPad */ + nameH + detailH + 2;
+}
+
+// Persistent per-row target state. Keep these as separate coloured words
+// rather than folding them into the MAC/channel string: that is the same
+// visual treatment IGNORE already uses, and it lets WATCH/HUNT coexist.
+static void drawTargetFlags(TFT_eSPI& t, int x, int y,
+                            bool watched, bool hunted, bool ignored) {
+    auto flag = [&](const char* label, uint16_t color) {
+        t.setTextColor(color, Theme::BG);
+        t.setCursor(x, y);
+        t.print(label);
+        x += t.textWidth(label) + 8;
+    };
+    if (watched) flag("WATCH",  Theme::CYAN);
+    if (hunted)  flag("HUNT",   Theme::VAPOR_PINK);
+    if (ignored) flag("IGNORE", Theme::AMBER);
 }
 
 // Row index (0 = topmost visible, adjusted for current scroll) a tap
@@ -327,10 +344,18 @@ switch (Settings::background()) {
         if (isBle) {
             const RawBleResult* r = eng.rawBleAt(idx);
             if (!r) break;
+            t.setTextSize(1);
+            char rssi[12];
+            snprintf(rssi, sizeof(rssi), "%ddBm", r->rssi);
+            const int rw = t.textWidth(rssi);
+            const int ax = w - rw - 14 - 11;
+            char fittedName[40];
+            UiFit::fitMid(fittedName, sizeof fittedName, r->name[0] ? r->name : "(unnamed)",
+                          UiFit::chars(ax - 6, 2));
             t.setTextSize(2);
             t.setTextColor(Theme::CYAN, Theme::BG);
             t.setCursor(4, y + topPad);
-            t.print(r->name[0] ? r->name : "(unnamed)");
+            t.print(fittedName);
 
             t.setTextSize(1);
             t.setTextColor(Theme::WHITE, Theme::BG);
@@ -339,19 +364,13 @@ switch (Settings::background()) {
                      r->mac[0], r->mac[1], r->mac[2], r->mac[3], r->mac[4], r->mac[5]);
             t.setCursor(4, y + detailY);
             t.print(mac);
-            // Persistent status, not just a one-shot toast: once a device is
-            // ignored the raw list says so beside the MAC on every frame.
-            if (IgnoreList::contains(r->mac)) {
-                const int ix = 4 + t.textWidth(mac) + 8;
-                t.setTextColor(Theme::AMBER, Theme::BG);
-                t.setCursor(ix, y + detailY);
-                t.print("IGNORE");
-            }
+            const bool watched = eng.isWatched(r->mac, true);
+            const bool hunted  = eng.isHunted(r->mac, true);
+            const bool ignored = IgnoreList::contains(r->mac);
+            drawTargetFlags(t, 4 + t.textWidth(mac) + 8, y + detailY,
+                            watched, hunted, ignored);
 
             t.setTextColor(Theme::VAPOR_PURPLE, Theme::BG);
-            char rssi[12];
-            snprintf(rssi, sizeof(rssi), "%ddBm", r->rssi);
-            int rw = t.textWidth(rssi);
             t.setCursor(w - rw - 14, y + topPad);
             t.print(rssi);
             // Closer or further since the last reading: an arrow beside the
@@ -359,34 +378,43 @@ switch (Settings::background()) {
             // a wobble of under four dB, which is what a still device does.
             {
                 const int d  = (int)r->rssi - (int)r->prev;
-                const int ax = w - rw - 14 - 11, ay = y + topPad + 1;
+                const int ay = y + topPad + 1;
                 if (d >= 4)       t.fillTriangle(ax, ay + 6, ax + 6, ay + 6, ax + 3, ay, Theme::GREEN);
                 else if (d <= -4) t.fillTriangle(ax, ay, ax + 6, ay, ax + 3, ay + 6, Theme::RED);
             }
         } else {
+            t.setTextSize(1);
+            char wifiRssi[12];
+            snprintf(wifiRssi, sizeof(wifiRssi), "%ddBm", eng.rawWifiRssi(idx));
+            const int wifiRw = t.textWidth(wifiRssi);
+            char fittedSsid[40];
+            UiFit::fitMid(fittedSsid, sizeof fittedSsid, eng.rawWifiSsid(idx),
+                          UiFit::chars(w - wifiRw - 20, 2));
             t.setTextSize(2);
             t.setTextColor(Theme::CYAN, Theme::BG);
             t.setCursor(4, y + topPad);
-            t.print(eng.rawWifiSsid(idx));
+            t.print(fittedSsid);
 
             t.setTextSize(1);
             t.setTextColor(Theme::WHITE, Theme::BG);
             const uint8_t* bssid = eng.rawWifiBssid(idx);
             const bool ignored = bssid && IgnoreList::contains(bssid);
             char line[32];
-            snprintf(line, sizeof(line), "CH%u  %s%s",
+            snprintf(line, sizeof(line), "CH%u  %s",
                      (unsigned)eng.rawWifiChannel(idx),
-                     eng.rawWifiOpen(idx) ? "OPEN" : "LOCKED",
-                     ignored ? "  IGNORE" : "");
+                     eng.rawWifiOpen(idx) ? "OPEN" : "LOCKED");
             t.setCursor(4, y + detailY);
             t.print(line);
+            // Match BLE's persistent state treatment: status text remains
+            // white, with separate coloured WATCH/HUNT/IGNORE markers.
+            const bool watched = bssid && eng.isWatched(bssid, false);
+            const bool hunted  = bssid && eng.isHunted(bssid, false);
+            drawTargetFlags(t, 4 + t.textWidth(line) + 8, y + detailY,
+                            watched, hunted, ignored);
 
             t.setTextColor(Theme::VAPOR_PURPLE, Theme::BG);
-            char rssi[12];
-            snprintf(rssi, sizeof(rssi), "%ddBm", eng.rawWifiRssi(idx));
-            int rw = t.textWidth(rssi);
-            t.setCursor(w - rw - 14, y + topPad);
-            t.print(rssi);
+            t.setCursor(w - wifiRw - 14, y + topPad);
+            t.print(wifiRssi);
         }
 
         y += rowH;

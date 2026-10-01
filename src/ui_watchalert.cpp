@@ -175,5 +175,5 @@ void uiWatchAlertTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, boo
 bool uiWatchAlertHitRemove(TFT_eSPI& t, int x, int y) {
     int bx, by, bw, bh;
     removeRect(t, bx, by, bw, bh);
-    return x >= bx && x <= bx + bw && y >= by && y <= by + bh;
+    return x >= bx && x <= bx + bw && y >= by && y < t.height();
 }
