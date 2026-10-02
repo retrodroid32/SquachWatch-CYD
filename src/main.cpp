@@ -3376,14 +3376,16 @@ void setup() {
     } else {
         if (wb == WipeBoot::LOCKED) Security::lock();
         Squachy::trigger(Squachy::Event::BOOTED, DetectionType::UNKNOWN, engine.lifetimeTotal());
-        // A build that is not a release -- a commit past a tag, or a dirty
-        // tree, which is every test-flasher build -- wears the Legend look
-        // from boot, so the aura can be seen without five hundred catches.
-        // A release is stamped with the bare tag and never does. LEGEND on
-        // the console turns it off and on.
+        // A build that is not a release wears the Legend look from boot, so
+        // the aura can be seen without five hundred catches. A release is
+        // stamped with the bare tag, "v1.26.0", and never does. Anything else
+        // is a test build: a commit past a tag or a dirty tree here, and on
+        // the test flasher a bare commit hash -- GitHub checks out one commit
+        // and no tags, so `git describe` has no tag to count from and the
+        // stamp has no '-' in it. LEGEND on the console turns it off and on.
         // TAKE THIS OUT once the aura has shipped: it is here to show one
         // feature, and every later test build would be gold for no reason.
-        if (strchr(FIRMWARE_VERSION, '-')) {
+        if (FIRMWARE_VERSION[0] != 'v' || strchr(FIRMWARE_VERSION, '-')) {
             Squachy::previewLegend(true);
             Serial.println("[legend] test build: wearing the Legend look (console LEGEND toggles it)");
         }
