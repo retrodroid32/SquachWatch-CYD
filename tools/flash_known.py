@@ -36,6 +36,11 @@ BOARDS = {
     # GT911 capacitive touch, a battery charger. Issue #6's board. 2026-09-28.
     "14:33:5c:6c:20:b8": ("cyd32c",     "Sunton ESP32-2432S032C, 3.2in ST7789 IPS, GT911 capacitive touch"),
     "14:33:5c:6d:22:84": ("cyd32c",     "Sunton ESP32-2432S032C, the second one (2026-09-30)"),
+    # RockBase NM-CYD-C5 (Amazon B0H1QCHMW6): a 2.8in CYD on an ESP32-C5,
+    # PR #21's board. Native USB, its MAC as the serial number. esptool prints
+    # an eight-byte MAC first for this chip; the six-byte one is "BASE MAC",
+    # which read_mac() prefers. 2026-10-02.
+    "3c:dc:75:9d:5d:20": ("nm-cyd-c5",  "RockBase NM-CYD-C5, 2.8in on an ESP32-C5, native USB"),
     # 88:57:21:2e:e6:e0 runs SquachEmit, not this firmware. It is the only
     # CAPACITIVE 2.8in; to test capacitive touch, list it here as cyd-fast
     # for the test and comment it out again after (done 2026-09-21).
@@ -57,10 +62,15 @@ PIO  = os.path.join(PENV, "pio.exe")
 def read_mac(port):
     out = subprocess.run([PY, "-m", "esptool", "--port", port, "--baud", "115200", "read_mac"],
                          capture_output=True, text=True).stdout
+    mac = None
     for line in out.splitlines():
-        if line.startswith("MAC: "):
-            return line[5:].strip().lower()
-    return None
+        # A chip with an eight-byte MAC (the C5) prints that as "MAC:" and the
+        # six-byte one as "BASE MAC:"; the table is keyed on six bytes.
+        if line.startswith("BASE MAC:"):
+            return line.split(":", 1)[1].strip().lower()
+        if line.startswith("MAC: ") and mac is None:
+            mac = line[5:].strip().lower()
+    return mac
 
 
 def main():
