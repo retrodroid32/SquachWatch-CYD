@@ -32,6 +32,20 @@ CYAN  = (0, 214, 214)
 # ---- the clips ----
 
 CLIPS = {
+    # v1.27.0 "Power-Up": the Legend's aura replaces the top hat, and the
+    # YZZERD wizard, unlocked by tapping XYZZY on the TERMINAL background.
+    # SQUACHSIM_LEGEND wears the Legend look without the catches; the
+    # SQUACHSIM_XYZZY scenes keep the word up and tap it three times.
+    "power-up": [
+        ("clear", 260, 36, ["--noseed", "--bg", "5"], {"SQUACHSIM_LEGEND": "1"}, 1500, "500 CATCHES USED TO GET YOU A TOP HAT"),
+        ("clear", 260, 36, ["--noseed", "--bg", "8"], {"SQUACHSIM_LEGEND": "1"}, 1500, "NOW YOU GET THIS"),
+        ("clear", 40, 24, ["--noseed", "--bg", "4"], {"SQUACHSIM_XYZZY": "1"}, 1200, "SOMETHING KEEPS TYPING ON THE TERMINAL..."),
+        ("clear", 400, 30, ["--noseed", "--bg", "4", "--tap", "40:64:80", "--tap", "200:256:80", "--tap", "380:64:80"],
+         {"SQUACHSIM_XYZZY": "1"}, 1500, "TAP IT THREE TIMES. SOMETHING HAPPENS."),
+        ("clear", 260, 36, ["--noseed", "--bg", "4", "--outfit", "15"], {}, 1500, "MEET YZZERD"),
+        ("clear", 260, 36, ["--noseed", "--bg", "1", "--outfit", "15"], {"SQUACHSIM_LEGEND": "1"}, 1600, "A LEGENDARY WIZARD. ON FIRE. ON PURPOSE."),
+        ("settings", 10, 14, ["--scroll", "0"], {"SQUACHSIM_PAGE": "1", "SQUACHSIM_LEGEND": "1"}, 1600, "SETTINGS > APPEARANCE > AURA"),
+    ],
     # v1.26.0 "Off the Grid": LoRa on the watches (not something the emulator
     # can draw: it is not the watch build and has no LoRa radio), so the clip
     # shows what IS on every screen: PRIVACY MODE, the same LOG before and

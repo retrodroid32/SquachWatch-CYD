@@ -32,7 +32,7 @@ enum class SettingsRow : uint8_t {
     RESET_STATS,
     SQUACHY_NAME,   // opens the payphone; SquachMesh builds only
     SQUACHMESH,     // announce ourselves to other SquachWatches
-    APPEARANCE,     // opens the APPEARANCE page: the display rows, and the hat
+    APPEARANCE,     // opens the APPEARANCE page: the display rows, and the aura
     AURA,           // on the APPEARANCE page, once he is a Legend
     SYSTEM,         // opens the SYSTEM page: calibrate, colours, diagnostics, reset
     WATCH_TARGET,   // "WATCHING: <name>", only while a watch is set. Taps clear it.
