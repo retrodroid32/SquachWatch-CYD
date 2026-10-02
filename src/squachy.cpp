@@ -4889,7 +4889,10 @@ static int outfitReach(OutfitId o) {
     }
 }
 
-bool hasAura() { return currentStage() == GrowthStage::LEGEND; }
+// The aura is the Legend's, and the master unlock's: "give me everything"
+// includes the best thing there is. Only the aura -- the unlock does not make
+// him a Legend, so his growth-stage colouring stays what he has earned.
+bool hasAura() { return currentStage() == GrowthStage::LEGEND || s_allOutfitsUnlocked; }
 
 // How far past the top edge a costume is allowed to go, as a percentage of
 // his drawn height. Not zero: seating the horn and the ears completely
@@ -5455,7 +5458,7 @@ static void drawBody(TFT_eSPI& t, int cx, int hy, int headTopY, uint32_t now, Mo
     // outfit set as a preview (see setOutfitPreview), and he does not get to
     // wear his host's fire. Which also keeps it off the outfit picker's
     // preview, where it would be in the way of the costume being chosen.
-    const bool aura = currentStage() == GrowthStage::LEGEND && Settings::auraShown() && s_outfitOverride < 0;
+    const bool aura = hasAura() && Settings::auraShown() && s_outfitOverride < 0;
     // With it on, his outline is the blue of the fire's inner edge, so the
     // fire grows out of a rim rather than standing behind a dark line.
     const uint16_t keyCol = aura ? auraKey(now, m)

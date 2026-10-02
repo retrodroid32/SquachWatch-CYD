@@ -465,6 +465,10 @@ int main(int argc, char** argv) {
     if (outfitIdx >= 0) {
         Squachy::unlockAllOutfits();
         for (int k = 0; k < outfitIdx; k++) Squachy::cycleOutfit();
+        // The master unlock lights the aura too. A render of an outfit is a
+        // render of the outfit -- the gallery, the demo clips -- so put it
+        // out unless SQUACHSIM_LEGEND asked for it.
+        if (!getenv("SQUACHSIM_LEGEND") && Settings::auraShown()) Settings::toggleAura();
     }
     // --pet N picks the companion: 0 off, 1 VAPOR SHAGGY, 2 the yeti. The
     // unlock comes with it, the same way --outfit unlocks what it selects.

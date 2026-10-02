@@ -191,8 +191,8 @@ namespace Squachy {
     // reboots -- the fact that the card has been shown is saved.
     bool consumePetUnlockCard();
     bool petUnlocked();
-    // Legend stage, where the aura comes in -- and so where the
-    // APPEARANCE page's AURA row appears.
+    // Legend stage or the master unlock, where the aura comes in -- and so
+    // where the APPEARANCE page's AURA row appears.
     bool hasAura();
     // Wear the Legend look before it is earned, until the next boot: the
     // emulator, the console's LEGEND, and builds that are not a release.
