@@ -1574,6 +1574,9 @@ volatile bool g_consoleInvert = false;
 volatile bool g_consoleAdc = false;     // ADC: the spare analog inputs, for finding a battery sense line
 volatile bool g_consoleXyzzy = false;   // XYZZY: the TERMINAL background types the magic word now
 volatile bool g_consoleLegend = false;  // LEGEND: wear the Legend look (and its aura) until the next boot, or take it off
+volatile bool g_consoleOutfitSet = false;  // OUTFIT n: wear costume n until the next boot, for timing it; -1 takes it off
+volatile int8_t g_consoleOutfit = -1;
+volatile bool g_consoleAura = false;  // AURA: the APPEARANCE page's AURA row, LIT or OUT, from the console
 volatile bool g_consolePins = false;    // PINS: digital levels, for finding a button
 volatile bool g_consoleI2c = false;     // I2C: a scan of the touch bus
 volatile bool g_consoleRotate = false;
@@ -4324,6 +4327,16 @@ void loop() {
         g_consoleLegend = false;
         Squachy::previewLegend(!Squachy::legendPreview());
         Serial.printf("[legend] preview %s\n", Squachy::legendPreview() ? "ON" : "off");
+    }
+    if (g_consoleAura) {
+        g_consoleAura = false;
+        Settings::toggleAura();
+        Serial.printf("[aura] %s\n", Settings::auraShown() ? "LIT" : "OUT");
+    }
+    if (g_consoleOutfitSet) {
+        g_consoleOutfitSet = false;
+        Squachy::wearForBench(g_consoleOutfit);
+        Serial.printf("[outfit] bench %d until the next boot\n", (int)g_consoleOutfit);
     }
     if (g_consoleXyzzy) {
         g_consoleXyzzy = false;

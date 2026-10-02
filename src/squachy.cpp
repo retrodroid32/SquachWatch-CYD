@@ -1179,9 +1179,16 @@ static uint8_t activeShadeIdx() {
     return s_shadeIdx;
 }
 
+// The console's OUTFIT n: wear a costume until the next boot without owning
+// it, for timing one on a board. Not a preview: it is his own body, so the
+// aura stays on and nothing is saved. -1 is off.
+static int8_t s_benchOutfit = -1;
+void wearForBench(int8_t idx) { s_benchOutfit = (idx >= 0 && idx < (int8_t)OUTFITS_N) ? idx : -1; }
+
 static OutfitId currentOutfit() {
     if (s_outfitOverride >= 0 && s_outfitOverride < (int8_t)OUTFITS_N)
         return (OutfitId)s_outfitOverride;
+    if (s_benchOutfit >= 0) return (OutfitId)s_benchOutfit;
     if (s_outfitIdx >= OUTFITS_N || !outfitUnlocked(s_outfitIdx)) s_outfitIdx = 0;
     return (OutfitId)s_outfitIdx;
 }
