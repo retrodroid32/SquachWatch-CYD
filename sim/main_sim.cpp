@@ -301,7 +301,7 @@ static void usage() {
         "  --frames N        animation warm-up frames before capture (default 90)\n"
         "  --onboard         let Squachy's first-boot walkthrough run\n"
         "  --sequence N      capture N consecutive frames instead of one\n"
-        "  --tap F:X:Y       tap the BACKGROUND at x,y on warm-up frame F (repeatable)\n"
+        "  --tap F:X:Y       tap x,y on frame F: Squachy if he is there, else the background\n"
         "  --raw PATH        write raw RGB888 frames to PATH instead of PNGs --\n"
         "                    what the GUI consumes, no encode/decode on either side\n");
 }
@@ -1020,6 +1020,13 @@ int main(int argc, char** argv) {
     // passes each tap on to Squachy, the way main.cpp does on a board -- so
     // three --tap flags can play the whole YZZERD unlock.
     const bool xyzzy = getenv("SQUACHSIM_XYZZY") != nullptr;
+    // A tap that lands on Squachy is his, as main.cpp has it: noted where it
+    // landed, then a pet (or, on his shades with the aura lit, a reading).
+    // Anything else is the background's.
+    auto tapAt = [&](int x, int y, uint32_t when) {
+        if (Squachy::hitTest(x, y)) { Squachy::noteTapAt(x, y); Squachy::trigger(Squachy::Event::PETTED); }
+        else Theme::backgroundTap(x, y, when);
+    };
     auto xyzzyStep = [&]() {
         if (!xyzzy) return;
         Theme::summonXyzzy();
@@ -1032,7 +1039,7 @@ int main(int argc, char** argv) {
         // backgroundTap() hit-tests published positions and ignores anything
         // that has not been refreshed in the last few frames.
         for (int k = 0; k < tapN; k++)
-            if (taps[k].f == i) Theme::backgroundTap(taps[k].x, taps[k].y, tNow);
+            if (taps[k].f == i) tapAt(taps[k].x, taps[k].y, tNow);
         xyzzyStep();
     }
 
@@ -1052,7 +1059,7 @@ int main(int argc, char** argv) {
         // --tap frame numbers run straight on through the capture, so a tap
         // can land on a frame you can actually look at afterwards.
         for (int k = 0; k < tapN; k++)
-            if (taps[k].f == frames + s) Theme::backgroundTap(taps[k].x, taps[k].y, sNow);
+            if (taps[k].f == frames + s) tapAt(taps[k].x, taps[k].y, sNow);
         xyzzyStep();
         frame.pushSprite(0, 0);
         std::vector<uint8_t> rgb = toRgb888(tft.pixelsRGB565());
