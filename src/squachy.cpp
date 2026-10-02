@@ -3944,23 +3944,31 @@ static void o9BehindHead(TFT_eSPI& t, int cx2, int hh, float scale) {
         ty[i] = hh + S(O9_HAIR[i][5]) + (int)(cosf(ph) * 1.0f);
     }
     // Outlined by one copy of each spike pushed a pixel out from its middle.
-    for (uint8_t pass = 0; pass < 2; pass++) {
-        for (uint8_t i = 0; i < 8; i++) {
-            int vx[3] = { cx2 + S(O9_HAIR[i][0]), cx2 + S(O9_HAIR[i][2]), tx[i] };
-            int vy[3] = { hh + S(O9_HAIR[i][1]), hh + S(O9_HAIR[i][3]), ty[i] };
-            if (pass == 0) {
-                const int mx = (vx[0] + vx[1] + vx[2]) / 3, my = (vy[0] + vy[1] + vy[2]) / 3;
-                for (uint8_t k = 0; k < 3; k++) {
-                    vx[k] += (vx[k] > mx) - (vx[k] < mx);
-                    vy[k] += (vy[k] > my) - (vy[k] < my);
-                }
-                vy[2] -= 1;
-            }
-            t.fillTriangle(vx[0], vy[0], vx[1], vy[1], vx[2], vy[2], pass == 0 ? TFT_BLACK : O9_GOLD);
+    for (uint8_t i = 0; i < 8; i++) {
+        int vx[3] = { cx2 + S(O9_HAIR[i][0]), cx2 + S(O9_HAIR[i][2]), tx[i] };
+        int vy[3] = { hh + S(O9_HAIR[i][1]), hh + S(O9_HAIR[i][3]), ty[i] };
+        const int mx = (vx[0] + vx[1] + vx[2]) / 3, my = (vy[0] + vy[1] + vy[2]) / 3;
+        for (uint8_t k = 0; k < 3; k++) {
+            vx[k] += (vx[k] > mx) - (vx[k] < mx);
+            vy[k] += (vy[k] > my) - (vy[k] < my);
         }
+        t.fillTriangle(vx[0], vy[0], vx[1], vy[1], vx[2], vy[2] - 1, TFT_BLACK);
     }
-    // Shaded down the right of each spike so it reads as a sheaf, a light
-    // line up the middle, and a glint running up one spike at a time.
+    // Each spike is gold down its left and a darker gold down its right, so
+    // it reads as a sheaf. The two halves are filled once each -- the left,
+    // the sliver along the base that rounding the middle leaves, and then the
+    // right -- where the whole spike used to be filled gold and half of it
+    // filled again. All the lefts go on before any right, as the whole spikes
+    // did, so a spike's shade is never under its neighbour's gold.
+    for (uint8_t i = 0; i < 8; i++) {
+        const int ax = cx2 + S(O9_HAIR[i][0]), ay = hh + S(O9_HAIR[i][1]);
+        const int bx = cx2 + S(O9_HAIR[i][2]), by = hh + S(O9_HAIR[i][3]);
+        const int mx = cx2 + S((O9_HAIR[i][0] + O9_HAIR[i][2]) / 2), my = hh + S((O9_HAIR[i][1] + O9_HAIR[i][3]) / 2);
+        t.fillTriangle(ax, ay, mx, my, tx[i], ty[i], O9_GOLD);
+        t.fillTriangle(ax, ay, bx, by, mx, my, O9_GOLD);
+    }
+    // The right halves, a light line up the middle, and a glint running up
+    // one spike at a time.
     for (uint8_t i = 0; i < 8; i++) {
         const int mx = cx2 + S((O9_HAIR[i][0] + O9_HAIR[i][2]) / 2), my = hh + S((O9_HAIR[i][1] + O9_HAIR[i][3]) / 2);
         t.fillTriangle(mx, my, cx2 + S(O9_HAIR[i][2]), hh + S(O9_HAIR[i][3]), tx[i], ty[i], O9_GOLDDK);
