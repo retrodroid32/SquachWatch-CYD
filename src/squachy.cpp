@@ -3688,11 +3688,12 @@ static void yzRobe(TFT_eSPI& t, int cx2, int hy, float scale) {
     for (int k = 0; k < 2; k++) {
         const int sg  = k == 0 ? -1 : 1;
         const int out = (k == 0) ? fx[k] + S(1) : fx[k] + S(12) - S(1);
-        inked(TFT_BLACK, YZ_DARK, [&](int ox, int oy, uint16_t c) {
-            t.fillRoundRect(fx[k] + ox, fy[k] + oy, S(12), S(6), 2, c);
-            t.fillTriangle(out + ox, fy[k] + S(1) + oy, out + ox, fy[k] + S(6) - 1 + oy,
-                           out + sg * S(5) + ox, fy[k] + S(4) + oy, c);
-        });
+        // One copy a pixel bigger for the outline, like the robe.
+        t.fillRoundRect(fx[k] - 1, fy[k] - 1, S(12) + 2, S(6) + 2, 3, TFT_BLACK);
+        t.fillTriangle(out, fy[k] + S(1) - 1, out, fy[k] + S(6), out + sg * (S(5) + 1), fy[k] + S(4), TFT_BLACK);
+        t.fillRect(out + sg * S(5), fy[k] + S(4) - 1, 1, 3, TFT_BLACK);
+        t.fillRoundRect(fx[k], fy[k], S(12), S(6), 2, YZ_DARK);
+        t.fillTriangle(out, fy[k] + S(1), out, fy[k] + S(6) - 1, out + sg * S(5), fy[k] + S(4), YZ_DARK);
     }
 }
 
@@ -3718,9 +3719,8 @@ static void yzBehindHead(TFT_eSPI& t, int cx2, int hh, float scale) {
     // Gold epaulettes, with a fringe.
     for (int8_t sg = -1; sg <= 1; sg += 2) {
         const int ex = cx2 + sg * S(14);
-        inked(TFT_BLACK, YZ_GOLD, [&](int ox, int oy, uint16_t c) {
-            t.fillEllipse(ex + ox, s_yzHy + S(23) + oy, S(6), S(2), c);
-        });
+        t.fillEllipse(ex, s_yzHy + S(23), S(6) + 1, S(2) + 1, TFT_BLACK);
+        t.fillEllipse(ex, s_yzHy + S(23), S(6), S(2), YZ_GOLD);
         for (int k = -1; k <= 1; k++)
             t.fillRect(ex + k * S(3) - 1, s_yzHy + S(24), 2, S(3), YZ_GOLD);
     }
@@ -3728,11 +3728,13 @@ static void yzBehindHead(TFT_eSPI& t, int cx2, int hh, float scale) {
 
 // The hat's cone: base to shoulder to tip. cut > 0 keeps only the right-hand
 // part of it, which is the shade.
-static void yzCone(TFT_eSPI& t, int cx, int hh, float scale, int ox, int oy, uint16_t c, int cut = 0) {
+// g > 0 is the same cone g pixels bigger all round, for its outline.
+static void yzCone(TFT_eSPI& t, int cx, int hh, float scale, int ox, int oy, uint16_t c, int cut = 0, int g = 0) {
     static const int8_t SP[3][2] = { {0, 11}, {-13, 5}, {-24, 0} };     // y, half-width
+    if (g) t.drawFastVLine(cx + ox, hh + (int)(SP[2][0] * scale) + oy - g, g, c);
     for (uint8_t i = 0; i < 2; i++) {
         const int ay = hh + (int)(SP[i][0] * scale) + oy, by = hh + (int)(SP[i + 1][0] * scale) + oy;
-        const int aw = (int)(SP[i][1] * scale), bw = (int)(SP[i + 1][1] * scale);
+        const int aw = (int)(SP[i][1] * scale) + g, bw = (int)(SP[i + 1][1] * scale) + g;
         const int al = cx + ox - aw + (2 * aw * cut) / 100, bl = cx + ox - bw + (2 * bw * cut) / 100;
         t.fillTriangle(al, ay, cx + ox + aw, ay, cx + ox + bw, by, c);
         t.fillTriangle(al, ay, cx + ox + bw, by, bl, by, c);
@@ -3773,17 +3775,20 @@ static void yzFront(TFT_eSPI& t, int cx2, int hh, uint32_t now, Mood m, float sc
     t.drawLine(cx2 - S(7), hh + S(27), cx2 - S(6), hh + S(35), YZ_BEARDSH);
     t.drawLine(cx2 + S(7), hh + S(27), cx2 + S(6), hh + S(35), YZ_BEARDSH);
     // The moustache, over the top of his mouth.
-    inked(ink, YZ_BEARD, [&](int ox, int oy, uint16_t c) {
-        wideLine(t, cx2 - S(1) + ox, hh + S(15) + oy, cx2 - S(9) + ox, hh + S(17) + oy, S(3), c);
-        wideLine(t, cx2 + S(1) + ox, hh + S(15) + oy, cx2 + S(9) + ox, hh + S(17) + oy, S(3), c);
-    });
+    wideLine(t, cx2 - S(1), hh + S(15), cx2 - S(9), hh + S(17), S(3) + 2, ink);
+    wideLine(t, cx2 + S(1), hh + S(15), cx2 + S(9), hh + S(17), S(3) + 2, ink);
+    wideLine(t, cx2 - S(1), hh + S(15), cx2 - S(9), hh + S(17), S(3), YZ_BEARD);
+    wideLine(t, cx2 + S(1), hh + S(15), cx2 + S(9), hh + S(17), S(3), YZ_BEARD);
 
     // The hat: brim, cone, a shade down the right, gold bands.
     const int brimY = hh + S(1), brimRx = S(18), brimRy = S(3);
-    inked(ink, YZ_ROBE, [&](int ox, int oy, uint16_t c) {
-        t.fillEllipse(cx2 + ox, brimY + oy, brimRx, brimRy, c);
-        yzCone(t, cx2, hh, scale, ox, oy, c);
-    });
+    // Outlined by one copy a pixel bigger, like the robe and the beard: the
+    // hat is the biggest thing on his head, and four shifted copies of it
+    // under the real one was a tenth of everything he drew.
+    t.fillEllipse(cx2, brimY, brimRx + 1, brimRy + 1, ink);
+    yzCone(t, cx2, hh, scale, 0, 0, ink, 0, 1);
+    t.fillEllipse(cx2, brimY, brimRx, brimRy, YZ_ROBE);
+    yzCone(t, cx2, hh, scale, 0, 0, YZ_ROBE);
     yzCone(t, cx2, hh, scale, 0, 0, YZ_DARK, 62);
     // Half-width of the cone at yu units above its base.
     auto coneW = [&](float yu) {
