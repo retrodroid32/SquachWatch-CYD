@@ -1010,6 +1010,15 @@ int main(int argc, char** argv) {
         else                             uiSettingsScroll(1);
     }
 
+    // SQUACHSIM_XYZZY=1 keeps the magic word up on the TERMINAL background and
+    // passes each tap on to Squachy, the way main.cpp does on a board -- so
+    // three --tap flags can play the whole YZZERD unlock.
+    const bool xyzzy = getenv("SQUACHSIM_XYZZY") != nullptr;
+    auto xyzzyStep = [&]() {
+        if (!xyzzy) return;
+        Theme::summonXyzzy();
+        if (const uint8_t said = Theme::consumeXyzzy()) Squachy::magicWord(said);
+    };
     for (int i = 0; i < frames; i++) {
         const uint32_t tNow = now + (uint32_t)i * STEP_MS;
         if (!tick(tNow)) { usage(); return 2; }
@@ -1018,6 +1027,7 @@ int main(int argc, char** argv) {
         // that has not been refreshed in the last few frames.
         for (int k = 0; k < tapN; k++)
             if (taps[k].f == i) Theme::backgroundTap(taps[k].x, taps[k].y, tNow);
+        xyzzyStep();
     }
 
     // Capture runs on from where the warm-up left off, so a sequence is
@@ -1037,6 +1047,7 @@ int main(int argc, char** argv) {
         // can land on a frame you can actually look at afterwards.
         for (int k = 0; k < tapN; k++)
             if (taps[k].f == frames + s) Theme::backgroundTap(taps[k].x, taps[k].y, sNow);
+        xyzzyStep();
         frame.pushSprite(0, 0);
         std::vector<uint8_t> rgb = toRgb888(tft.pixelsRGB565());
 

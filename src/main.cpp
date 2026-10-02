@@ -1572,6 +1572,7 @@ static void enterInvite() {
 // INVERT and ROT on the console -- see clock.cpp. Consumed in loop().
 volatile bool g_consoleInvert = false;
 volatile bool g_consoleAdc = false;     // ADC: the spare analog inputs, for finding a battery sense line
+volatile bool g_consoleXyzzy = false;   // XYZZY: the TERMINAL background types the magic word now
 volatile bool g_consolePins = false;    // PINS: digital levels, for finding a button
 volatile bool g_consoleI2c = false;     // I2C: a scan of the touch bus
 volatile bool g_consoleRotate = false;
@@ -4318,6 +4319,11 @@ void loop() {
     // ADC: every input-only analog pin the CYDs leave free, in millivolts,
     // averaged over 16 reads. A battery divider shows up as about half the
     // cell's voltage, and moves when the cell is unplugged.
+    if (g_consoleXyzzy) {
+        g_consoleXyzzy = false;
+        Theme::summonXyzzy();
+        Serial.println("[xyzzy] the terminal types it now (TERMINAL background only)");
+    }
     if (g_consoleAdc) {
         g_consoleAdc = false;
         const uint8_t pins[] = { 34, 35, 36, 39 };
@@ -4802,6 +4808,7 @@ void loop() {
             if (Theme::consumeEyeCatch())       Squachy::unlockVoidEye();
             if (Theme::consumeLodgeKnock())     Squachy::unlockParka();
             if (Theme::consumeSharkCatch())     Squachy::unlockShark();
+            if (const uint8_t said = Theme::consumeXyzzy()) Squachy::magicWord(said);
     if (Theme::consumePetUnlock())      Squachy::unlockPet();
 
             bool boring = Settings::boringMode();
