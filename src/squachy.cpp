@@ -5805,6 +5805,39 @@ static void drawBody(TFT_eSPI& t, int cx, int hy, int headTopY, uint32_t now, Mo
     // ground is where his soles are, which a crouch leaves put while hy sinks.
     if (aura) auraBack(t, cx2, hy, hy + S(55) - crouch, now, m, scale);
     const int kb = (S(1) < 1) ? 1 : S(1);          // rim thickness, min 1px
+
+    // ---- what a costume hides is not drawn ------------------------------
+    // He is drawn back to front and a costume goes on over him, so some of
+    // him was being painted only to be painted over: a torso under a robe, a
+    // foot under a boot. Each piece skipped below is skipped only where the
+    // thing that covers it is known to cover all of it, and the test of that
+    // was not the reasoning but the emulator: every outfit through every move
+    // he has, rendered both ways, without one pixel different.
+    const bool yz = (outfitNow == OutfitId::YZZERD), o9 = (outfitNow == OutfitId::OVER9000);
+    // YZZERD's robe: the first row below its outline, which ends a row under
+    // its hem (see yzRobe(), which works the hem out the same way). Carried
+    // by the scruff his legs kick sideways, so there nothing is assumed.
+    int robeEnd = -30000;
+    if (yz && !s_dangle) {
+        int hem = hy + S(48);
+        if (m != Mood::WALK && hem > hy + S(49) - crouch) hem = hy + S(49) - crouch;
+        robeEnd = hem + 2;
+    }
+    // His feet, under YZZERD's slippers (the same shape) and OVER 9000's boots.
+    const bool feetHidden = yz || o9;
+    // His torso, under the robe, the gi, or a garment drawn as the very same
+    // rounded box in another colour.
+    const bool torsoHidden = o9 || robeEnd >= hy + S(23) + S(18) ||
+                             outfitNow == OutfitId::SPACE || outfitNow == OutfitId::PLUMBER ||
+                             outfitNow == OutfitId::TALLBRO || outfitNow == OutfitId::CAPTAIN;
+    // A leg and its outline, from robeEnd down.
+    auto legKey = [&](int x, int y, int w, int h) {
+        if (!SQUACHY_KEYLINE) return;
+        int y0 = y - kb;
+        const int y1 = y + h + kb;
+        if (y0 < robeEnd) y0 = robeEnd;
+        if (y1 > y0) t.fillRect(x - kb, y0, w + 2 * kb, y1 - y0, keyCol);
+    };
     auto keyRR = [&](int x, int y, int w, int h, int r) {
         if (SQUACHY_KEYLINE) t.fillRoundRect(x - kb, y - kb, w + 2 * kb, h + 2 * kb, r, keyCol);
     };
@@ -5859,7 +5892,8 @@ static void drawBody(TFT_eSPI& t, int cx, int hy, int headTopY, uint32_t now, Mo
             // left at the base position showed as a black cap above a bowed
             // head.
             t.fillRoundRect(cx2 - S(16), hy + s_headDrop + actHead - S(1), S(32), S(26), S(8), keyCol);
-        t.fillRoundRect(cx2 - S(torsoHalf() + 1), hy + S(22), S(2 * torsoHalf() + 2), S(20), S(6), keyCol);
+        if (robeEnd < hy + S(22) + S(20))
+            t.fillRoundRect(cx2 - S(torsoHalf() + 1), hy + S(22), S(2 * torsoHalf() + 2), S(20), S(6), keyCol);
     }
 
     // ---- shadow ------------------------------------------------------
@@ -5943,6 +5977,12 @@ static void drawBody(TFT_eSPI& t, int cx, int hy, int headTopY, uint32_t now, Mo
     const bool bros = (outfitNow == OutfitId::PLUMBER || outfitNow == OutfitId::TALLBRO);
     const uint16_t legCol = bros ? t.color565(36, 73, 170)
                           : (outfitNow == OutfitId::SPACE) ? t.color565(219, 219, 255) : furMain;
+    auto legFill = [&](int x, int y, int w, int h) {
+        int y0 = y;
+        const int y1 = y + h;
+        if (y0 < robeEnd) y0 = robeEnd;
+        if (y1 > y0) t.fillRect(x, y0, w, y1 - y0, legCol);
+    };
 
     // Legs + big bigfoot feet — a simple alternating step lift while
     // walking (TFT_eSPI has no canvas-style transforms to pivot a real
@@ -5963,8 +6003,10 @@ static void drawBody(TFT_eSPI& t, int cx, int hy, int headTopY, uint32_t now, Mo
         t.fillRect(cx2 + S(2) + kR,  hy + S(40), S(8), S(12), legCol);
         s_footLx = cx2 - S(13) + kL; s_footLy = hy + S(51);
         s_footRx = cx2 + S(1)  + kR; s_footRy = hy + S(51);
-        t.fillRoundRect(s_footLx, s_footLy, S(12), S(6), 2, furLight);
-        t.fillRoundRect(s_footRx, s_footRy, S(12), S(6), 2, furLight);
+        if (!feetHidden) {
+            t.fillRoundRect(s_footLx, s_footLy, S(12), S(6), 2, furLight);
+            t.fillRoundRect(s_footRx, s_footRy, S(12), S(6), 2, furLight);
+        }
     } else if (m == Mood::WALK) {
         // Feet stop while he is striking a beat. A walk cycle still
         // running under a character who has visibly paused is the single
@@ -5983,32 +6025,37 @@ static void drawBody(TFT_eSPI& t, int cx, int hy, int headTopY, uint32_t now, Mo
         //
         // Pinning the top is also what a leg does: the hip is a joint, the
         // foot is what travels.
-        keyR(cx2 - S(10), hy + S(40), S(8), S(10) + legL);
-        keyR(cx2 + S(2),  hy + S(40), S(8), S(10) + legR);
+        legKey(cx2 - S(10), hy + S(40), S(8), S(10) + legL);
+        legKey(cx2 + S(2),  hy + S(40), S(8), S(10) + legR);
         keyRR(cx2 - S(13), hy + S(49) + legL, S(12), S(6), 2);
         keyRR(cx2 + S(1),  hy + S(49) + legR, S(12), S(6), 2);
-        t.fillRect(cx2 - S(10), hy + S(40), S(8), S(10) + legL, legCol);
-        t.fillRect(cx2 + S(2),  hy + S(40), S(8), S(10) + legR, legCol);
+        legFill(cx2 - S(10), hy + S(40), S(8), S(10) + legL);
+        legFill(cx2 + S(2),  hy + S(40), S(8), S(10) + legR);
         s_footLx = cx2 - S(13); s_footLy = hy + S(49) + legL;
         s_footRx = cx2 + S(1);  s_footRy = hy + S(49) + legR;
-        t.fillRoundRect(s_footLx, s_footLy, S(12), S(6), 2, furLight);
-        t.fillRoundRect(s_footRx, s_footRy, S(12), S(6), 2, furLight);
+        if (!feetHidden) {
+            t.fillRoundRect(s_footLx, s_footLy, S(12), S(6), 2, furLight);
+            t.fillRoundRect(s_footRx, s_footRy, S(12), S(6), 2, furLight);
+        }
     } else {
         const int legH = S(10) - crouch, footY = hy + S(49) - crouch;
-        keyR(cx2 - S(10), hy + S(40), S(8), legH);
-        keyR(cx2 + S(2),  hy + S(40), S(8), legH);
+        legKey(cx2 - S(10), hy + S(40), S(8), legH);
+        legKey(cx2 + S(2),  hy + S(40), S(8), legH);
         keyRR(cx2 - S(13), footY, S(12), S(6), 2);
         keyRR(cx2 + S(1),  footY, S(12), S(6), 2);
-        t.fillRect(cx2 - S(10), hy + S(40), S(8), legH, legCol);
-        t.fillRect(cx2 + S(2),  hy + S(40), S(8), legH, legCol);
+        legFill(cx2 - S(10), hy + S(40), S(8), legH);
+        legFill(cx2 + S(2),  hy + S(40), S(8), legH);
         s_footLx = cx2 - S(13); s_footLy = footY;
         s_footRx = cx2 + S(1);  s_footRy = footY;
-        t.fillRoundRect(s_footLx, s_footLy, S(12), S(6), 2, furLight);
-        t.fillRoundRect(s_footRx, s_footRy, S(12), S(6), 2, furLight);
+        if (!feetHidden) {
+            t.fillRoundRect(s_footLx, s_footLy, S(12), S(6), 2, furLight);
+            t.fillRoundRect(s_footRx, s_footRy, S(12), S(6), 2, furLight);
+        }
     }
 
     // Body — broad, stocky torso instead of a slim rounded rect.
-    t.fillRoundRect(cx2 - S(torsoHalf()), hy + S(23), S(2 * torsoHalf()), S(18), S(5), furMain);
+    if (!torsoHidden)
+        t.fillRoundRect(cx2 - S(torsoHalf()), hy + S(23), S(2 * torsoHalf()), S(18), S(5), furMain);
     // No highlight down the sides. There used to be a light strip down each
     // edge, exactly under where the arms hang, so it was invisible at rest and
     // appeared as a second, lighter pair of arms the moment a pose lifted one.
