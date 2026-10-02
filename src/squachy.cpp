@@ -1174,11 +1174,19 @@ static OutfitId currentOutfit() {
 // Permanent fur re-tint milestones, gated off the same lifetime total
 // as the detection-milestone quips (see MILESTONES) rather than a
 // separate threshold set — reuses s_cachedLifetimeTotal, which is kept
-// current by every DETECTION/BOOTED trigger. Legend also unlocks the
-// small hat drawn in drawBody().
+// current by every DETECTION/BOOTED trigger. Legend also lights the
+// aura drawn behind him in drawBody().
 enum class GrowthStage : uint8_t { FLEDGLING, TRACKER, VETERAN, LEGEND };
 
+// The Legend look, worn before it is earned: the emulator, the console's
+// LEGEND, and builds that are not a release, so the aura can be looked at
+// without five hundred catches. Not saved; gone at the next boot.
+static bool s_legendPreview = false;
+void previewLegend(bool on) { s_legendPreview = on; }
+bool legendPreview() { return s_legendPreview; }
+
 static GrowthStage currentStage() {
+    if (s_legendPreview) return GrowthStage::LEGEND;
     if (s_cachedLifetimeTotal >= 500) return GrowthStage::LEGEND;
     if (s_cachedLifetimeTotal >= 100) return GrowthStage::VETERAN;
     if (s_cachedLifetimeTotal >= 25)  return GrowthStage::TRACKER;
@@ -4881,32 +4889,7 @@ static int outfitReach(OutfitId o) {
     }
 }
 
-// Where the Legend top hat's brim rests, in units above the head anchor: on
-// top of whatever is highest on him. Read off drawOutfit() the same way
-// outfitReach() is. On the costumes that are already a hat it goes ON the
-// hat -- funnier than leaving it off, as long as it is seated, not floating.
-static const int TOP_HAT_H = 11;   // brim bottom to crown top
-static int topHatSeat(OutfitId o) {
-    switch (o) {
-        // Both points are one pixel wide at the very top. 9 sinks the brim
-        // down onto the cone and the tricorn, far enough that it is plainly
-        // sitting on them rather than balanced on a pinpoint.
-        case OutfitId::TINFOIL:  return  9;   // pushed down onto the cone
-        case OutfitId::CAPTAIN:  return  9;   // ...and onto the tricorn
-        case OutfitId::PARKA:    return 14;   // on the hood
-        case OutfitId::YZZERD:   return 14;   // over the cone's top half, the star out above
-        case OutfitId::SHARK:    return 13;   // on the shark hood, under the fin
-        case OutfitId::SPACE:    return  9;   // on the dome
-        case OutfitId::WOLFPELT: return  7;   // on the pelt, between the ears
-        case OutfitId::TALLBRO:  return  9;   // on the cap
-        case OutfitId::PLUMBER:  return  7;
-        case OutfitId::VOIDEYE:  return  4;   // perched on the sphere
-        case OutfitId::UNICORN:  return  2;   // the horn comes up through it
-        default:                 return  3;   // on his hair, over the tuft tips
-    }
-}
-
-bool hasTopHat() { return currentStage() == GrowthStage::LEGEND; }
+bool hasAura() { return currentStage() == GrowthStage::LEGEND; }
 
 // How far past the top edge a costume is allowed to go, as a percentage of
 // his drawn height. Not zero: seating the horn and the ears completely
@@ -4914,6 +4897,266 @@ bool hasTopHat() { return currentStage() == GrowthStage::LEGEND; }
 // shrink whenever you put a hat on him. A tenth is enough that they read as
 // running past the edge rather than as being chopped off.
 static const int OVERFLOW_PCT = 10;
+
+// ---- THE AURA: what a Legend wears ------------------------------------------
+// Five hundred catches used to earn a top hat. It had to be sat on every
+// costume by hand, it was a hat on a hat over the tall ones, and because the
+// whole of it was held on screen it made a Legend a tenth SMALLER than
+// everyone else. This is what he gets instead: one sheet of flame wrapped
+// round him from one foot, up over his head, and down to the other, drawn
+// behind him so his own body covers its inner edge. Nothing sits on his head,
+// so he is full size, and it needs fitting to no costume.
+//
+// The sheet is a strip. Its inner edge is a path just inside his outline
+// (AURA_PATH). Its outer edge is that path pushed outward, and along it runs
+// a row of gold licks, each thrown up and out, whose lengths ride a sawtooth
+// that climbs both sides from his feet to the peak. That climbing is what
+// makes the edge lick like fire instead of standing still like a collar.
+//
+// It fades across its width, blue against him to gold at the edge. A panel
+// with four levels of blue cannot blend that, so it is bands: deep blue,
+// azure, ice and pale yellow in the body, gold in the licks. Going by way of
+// the pale ones is what keeps the middle from turning the grey-green a
+// straight mix of blue and gold gives.
+//
+// Thirteen separate tongues of fire stood round him came first. They read as
+// thirteen things.
+//
+// It follows his mood, as YZZERD's magic does: startled by a detection it
+// stands half as tall again and flickers twice as fast, and rings of light
+// run out along the floor; asleep it sinks to a low blue pilot light and lets
+// go of no embers.
+//
+// Nothing is stored: every length is a function of the clock, so a banded
+// board draws both halves of him alike.
+
+static const uint16_t AURA_COL[5] = {
+    yz565(0, 73, 255), yz565(36, 146, 255), yz565(182, 255, 255), yz565(255, 255, 170), yz565(255, 219, 0)
+};
+// Asleep: the same fire with the gold gone out of it.
+static const uint16_t AURA_LOW[5] = {
+    yz565(0, 36, 170), yz565(0, 73, 255), yz565(0, 73, 255), yz565(36, 146, 255), yz565(36, 146, 255)
+};
+
+// 0..1: how far into a surge the aura is. One every 6.4 s, 0.7 s long, up
+// fast and down slow.
+static float auraSurge(uint32_t now) {
+    const uint32_t ph = now % 6400u;
+    if (ph >= 700u) return 0.0f;
+    return ph < 150u ? (float)ph / 150.0f : 1.0f - (float)(ph - 150u) / 550.0f;
+}
+
+// The inner edge, left foot to the peak; the right side is its mirror. x and
+// y in units from his centre and head top, sat a unit inside his outline so
+// no background shows between him and the fire. Then which way the fire
+// stands off that point, in tenths, and how far, in units: out sideways and
+// short at his feet, more and more upward and longer toward the top.
+//
+// `in` is how far inside his outline the point sits. Down his sides the
+// path runs along his TORSO, behind his arms, not round them: his arms swing,
+// and a path drawn round where they hang let the background show under his
+// hands every time they swung up. The fire's bands are measured from his
+// outline, not from the path, so the blue is as wide beside an arm as it is
+// beside his head.
+struct AuraPt { int8_t x, y, dx, dy, len, in; };
+static const AuraPt AURA_PATH[12] = {
+    {-11, 55, -10, -2, 8,  0},
+    {-11, 50, -10, -3, 10, 0},
+    {-10, 44, -10, -3, 10, 4},
+    {-10, 37, -10, -5, 8,  8},
+    {-10, 30, -9, -7, 8,   8},
+    {-11, 24, -9, -7, 8,   7},
+    {-16, 16, -8, -8, 9,   0},
+    {-15, 8,  -7, -9, 10,  0},
+    {-13, 2,  -6, -10, 11, 0},
+    {-8,  0,  -4, -11, 13, 0},
+    {-3,  0,  -2, -11, 15, 0},
+    {0,   0,   0, -11, 18, 0},          // the peak
+};
+static const uint8_t AURA_N = 23;      // 11 + the peak + 11
+
+// The colour of his outline while the aura is on: the blue of the fire's
+// inner edge, flashing to ice on a surge.
+static uint16_t auraKey(uint32_t now, Mood m) {
+    if (m == Mood::SLEEPY)  return AURA_LOW[1];
+    if (m == Mood::SHOCKED) return ((now / 110u) & 1u) ? AURA_COL[2] : AURA_COL[1];
+    return auraSurge(now) > 0.5f ? AURA_COL[2] : AURA_COL[1];
+}
+
+static void auraBack(TFT_eSPI& t, int cx2, int hy, int ground, uint32_t now, Mood m, float scale) {
+    auto S = [scale](int v) { return (int)(v * scale); };
+    const bool asleep = (m == Mood::SLEEPY), alarm = (m == Mood::SHOCKED);
+    // Startled is one long surge; asleep there are none.
+    const float surge = alarm ? 1.0f : (asleep ? 0.0f : auraSurge(now));
+    const float tall  = asleep ? 0.45f : 1.0f;
+    const uint32_t per = alarm ? 450u : (asleep ? 1800u : 900u);
+    const uint32_t slot = now / (alarm ? 60u : 90u);
+    const uint16_t* col = asleep ? AURA_LOW : AURA_COL;
+    const float wt = (float)(now % per) / (float)per * 6.2831853f;
+
+    // Two costumes give him a head far wider than his own -- the parka's hood
+    // and the void eye's sphere -- and round his own head the fire was simply
+    // hidden behind them. For those the top six points of the path go round a
+    // circle the size of the costume instead.
+    int hoodR = 0, hoodY = 0;
+    {
+        const OutfitId fit = currentOutfit();
+        if (fit == OutfitId::PARKA)        { hoodR = 22; hoodY = 8; }
+        else if (fit == OutfitId::VOIDEYE) { hoodR = 20; hoodY = 14; }
+    }
+    // cos and sin of the six angles round that circle, in hundredths, from
+    // level with its middle up to straight over it.
+    static const int8_t HC[6] = { 99, 97, 81, 53, 24, 0 };
+    static const int8_t HS[6] = { -14, 24, 59, 85, 97, 100 };
+    auto pathPt = [&](uint8_t j) {
+        AuraPt p = AURA_PATH[j];
+        if (hoodR > 0 && j >= 6) {
+            p.x  = (int8_t)(-(hoodR * HC[j - 6]) / 100);
+            p.y  = (int8_t)(hoodY - (hoodR * HS[j - 6]) / 100);
+            p.dx = (int8_t)(-HC[j - 6] / 10);
+            p.dy = (int8_t)(-HS[j - 6] / 10 - 2);
+            p.in = 0;
+        }
+        return p;
+    };
+
+    // The body of the aura: four bands, blue against him out to pale yellow.
+    // It breathes rather than flickers -- one slow swell running up from his
+    // feet -- because the flicker is the gold's job, below. A whole sheet
+    // that jumps about reads as a cut-out being shaken, not as fire.
+    static const uint8_t CUT[5] = { 0, 34, 60, 82, 100 };
+    int   ex[AURA_N], ey[AURA_N];          // the outer edge of the body, for the licks
+    float wv[AURA_N];                     // how far up its lick each point is, 0..1
+    int px[5], py[5], qx[5], qy[5];
+    for (uint8_t i = 0; i < AURA_N; i++) {
+        const uint8_t j = i <= 11 ? i : (uint8_t)(22 - i);      // which table row
+        const int sg = i <= 11 ? 1 : -1;                         // mirrored on the right
+        const AuraPt p = pathPt(j);
+        const float sw = sinf((float)j * 0.9f - wt + (sg < 0 ? 1.6f : 0.0f));
+        // The lick wave: a sawtooth that climbs him. Each lick creeps out as
+        // it rises and then snaps back, which is what a flame's edge does and
+        // a ripple's does not. The two sides are half a wave apart.
+        float ph = (float)j * 0.36f - (float)(now % per) / (float)per + (sg < 0 ? 0.5f : 0.0f);
+        ph -= floorf(ph);
+        wv[i] = ph * ph;
+        // The body swells under each lick, so the gold is the tip of a
+        // bulge in the fire and not a spike stuck on a smooth shell.
+        float len = (float)p.len * tall * (0.52f + 0.08f * sw + 0.22f * wv[i] + 0.30f * surge);
+        // By his legs it never thins enough to let the background in.
+        if (j <= 2 && len < (float)p.len * tall * 0.86f) len = (float)p.len * tall * 0.86f;
+        const int bx = cx2 + sg * S(p.x);
+        int by = hy + S(p.y);
+        if (by > ground - 1) by = ground - 1;                    // a crouch: stay on the floor
+        const float ux = (float)(sg * p.dx) / 10.0f * scale, uy = (float)p.dy / 10.0f * scale;
+        qx[0] = bx; qy[0] = by;
+        for (uint8_t k = 1; k < 5; k++) {
+            const float d = (float)p.in + len * (float)CUT[k] / 100.0f;
+            qx[k] = bx + (int)(ux * d);
+            qy[k] = by + (int)(uy * d);
+        }
+        if (i > 0) {
+            for (uint8_t k = 0; k < 4; k++) {
+                t.fillTriangle(px[k], py[k], px[k + 1], py[k + 1], qx[k + 1], qy[k + 1], col[k]);
+                t.fillTriangle(px[k], py[k], qx[k + 1], qy[k + 1], qx[k], qy[k], col[k]);
+            }
+        }
+        for (uint8_t k = 0; k < 5; k++) { px[k] = qx[k]; py[k] = qy[k]; }
+        ex[i] = qx[4]; ey[i] = qy[4];
+    }
+    // The licks: one gold tooth on every stretch of the edge, its point thrown
+    // up and out from the higher end of the stretch, so they all lean the way
+    // fire leans. Together they are one unbroken gold edge.
+    for (uint8_t i = 0; i + 1 < AURA_N; i++) {
+        const uint8_t u  = i <= 10 ? (uint8_t)(i + 1) : i;              // the higher end
+        const uint8_t ju = u <= 11 ? u : (uint8_t)(22 - u);
+        const int sg = i <= 10 ? 1 : -1;
+        const AuraPt p = pathPt(ju);
+        const uint32_t h = yzHash(slot * 17u + i * 29u);
+        // At his feet they are short: thrown sideways along the floor they
+        // were needles.
+        const float L = (float)p.len * (ju <= 1 ? 0.40f : 0.80f) * tall
+                      * (0.22f + 0.78f * wv[u] + (float)(h & 63u) / 320.0f + 0.50f * surge) * scale;
+        // Out as much as up. Thrown nearly straight up they were needles
+        // down his sides, where the edge itself runs straight up.
+        const int ax = ex[u] + (int)((float)(sg * p.dx) / 10.0f * L * 0.95f);
+        const int ay = ey[u] + (int)((float)p.dy / 10.0f * L * 0.95f) - (int)(L * 0.50f);
+        t.fillTriangle(ex[i], ey[i], ex[i + 1], ey[i + 1], ax, ay, col[4]);
+        // A pale heart to each lick, so the gold is its rim.
+        const int mx = (ex[i] + ex[i + 1]) / 2, my = (ey[i] + ey[i + 1]) / 2;
+        t.fillTriangle((ex[i] + mx) / 2, (ey[i] + my) / 2, (ex[i + 1] + mx) / 2, (ey[i + 1] + my) / 2,
+                       mx + (ax - mx) * 48 / 100, my + (ay - my) * 48 / 100, col[3]);
+    }
+    // Wisps: bright threads climbing through the blue, three a side, so the
+    // inside of the aura is moving too and not only its edge.
+    if (!asleep) {
+        for (uint8_t k = 0; k < 6; k++) {
+            const int sg = (k & 1) ? -1 : 1;
+            const uint32_t wp = (now + (uint32_t)k * 517u) % 1500u;
+            const float f = 1.0f + (float)wp / 1500.0f * 4.9f;          // which stretch of the path: his legs and sides
+            const uint8_t j0 = (uint8_t)f;
+            const float fr = f - (float)j0;
+            const AuraPt& a = AURA_PATH[j0];
+            const AuraPt& b = AURA_PATH[j0 + 1];
+            // A third of the way out across the body of the aura.
+            const float x0 = (float)a.x + (float)a.dx / 10.0f * ((float)a.in + (float)a.len * 0.26f);
+            const float y0 = (float)a.y + (float)a.dy / 10.0f * ((float)a.in + (float)a.len * 0.26f);
+            const float x1 = (float)b.x + (float)b.dx / 10.0f * ((float)b.in + (float)b.len * 0.26f);
+            const float y1 = (float)b.y + (float)b.dy / 10.0f * ((float)b.in + (float)b.len * 0.26f);
+            const float wx = x0 + (x1 - x0) * fr, wy = y0 + (y1 - y0) * fr;
+            const int sx = cx2 + sg * (int)(wx * scale), sy = hy + (int)(wy * scale);
+            const int tx = cx2 + sg * (int)((wx + (x1 - x0) * 0.7f) * scale), ty = hy + (int)((wy + (y1 - y0) * 0.7f) * scale);
+            // Two plain lines side by side. wideLine's round ends made each
+            // wisp a little cross.
+            t.drawLine(sx, sy, tx, ty, col[2]);
+            t.drawLine(sx + sg, sy, tx + sg, ty, col[2]);
+        }
+    }
+    if (alarm) {
+        // Startled: two rings of light chasing each other outward along the
+        // floor, the way YZZERD's circle bursts.
+        for (uint8_t k = 0; k < 2; k++) {
+            const uint32_t ph = (now + (uint32_t)k * 260u) % 520u;
+            const int rx = S(18) + (int)(ph * (uint32_t)S(20) / 520u);
+            t.drawEllipse(cx2, ground - S(1), rx, (rx * 5) / 27, ph < 300u ? AURA_COL[3] : AURA_COL[4]);
+        }
+    }
+    if (asleep) return;
+    // Embers: gold sparks let go by the edge, drifting up and out and dying.
+    for (uint8_t i = 0; i < 9; i++) {
+        const uint32_t tt = (alarm ? now * 2u : now) + (uint32_t)i * 148u;
+        const uint32_t ph = tt % 1330u;
+        const uint32_t h = yzHash(tt / 1330u * 19u + i);
+        const int side = (h & 1u) ? 1 : -1;
+        const int x0 = cx2 + side * S(8 + (int)((h >> 1) % 18u));
+        const int y0 = hy + S((int)((h >> 8) % 40u)) - S(12);
+        const int ex = x0 + side * (int)(ph * (uint32_t)S(5) / 1330u);
+        const int ey = y0 - (int)(ph * (uint32_t)S(16) / 1330u);
+        if (ph < 600u)       t.fillRect(ex - 1, ey - 1, 3, 3, AURA_COL[4]);
+        else if (ph < 1050u) t.fillRect(ex, ey, 2, 2, AURA_COL[4]);
+        else                 t.drawPixel(ex, ey, AURA_COL[3]);
+    }
+}
+
+// In front of him: a thread of lightning, now and then. Three short lines
+// from a place hashed off the clock, for a tenth of a second; twice as often
+// while he is startled, never while he sleeps.
+static void auraFront(TFT_eSPI& t, int cx2, int hy, int ground, uint32_t now, Mood m, float scale) {
+    auto S = [scale](int v) { return (int)(v * scale); };
+    (void)ground;
+    if (m == Mood::SLEEPY) return;
+    const uint32_t per = (m == Mood::SHOCKED) ? 450u : 1900u;
+    if ((now % per) >= 110u) return;
+    const uint32_t h = yzHash(now / per * 23u + 5u);
+    const int side = (h & 1u) ? 1 : -1;
+    int x = cx2 + side * S(6 + (int)((h >> 1) % 12u)), y = hy + S(6 + (int)((h >> 6) % 34u));
+    for (uint8_t i = 0; i < 3; i++) {
+        const uint32_t g = yzHash(h + i * 7u);
+        const int nx = x + side * (i == 1 ? -S(2) : S(3 + (int)(g % 3u))), ny = y + S(3 + (int)((g >> 4) % 4u));
+        t.drawLine(x, y, nx, ny, TFT_WHITE);
+        t.drawLine(x + 1, y, nx + 1, ny, AURA_COL[2]);
+        x = nx; y = ny;
+    }
+}
 
 // Draws Squachy at an already-animated anchor (hy = head-top Y for this
 // exact frame). Bob is computed once in tick() so it can also drive the
@@ -5208,9 +5451,20 @@ static void drawBody(TFT_eSPI& t, int cx, int hy, int headTopY, uint32_t now, Mo
     // Silhouette keyline helpers. Drawn as slightly expanded copies UNDER
     // each shape, so no per-pose outline maths is needed -- whatever the
     // limb does, its outline does too.
-    const uint16_t keyCol = (outfitNow == OutfitId::PARKA)
+    // The Legend's aura. On our own Squachy only: a visitor is drawn with his
+    // outfit set as a preview (see setOutfitPreview), and he does not get to
+    // wear his host's fire. Which also keeps it off the outfit picker's
+    // preview, where it would be in the way of the costume being chosen.
+    const bool aura = currentStage() == GrowthStage::LEGEND && Settings::auraShown() && s_outfitOverride < 0;
+    // With it on, his outline is the blue of the fire's inner edge, so the
+    // fire grows out of a rim rather than standing behind a dark line.
+    const uint16_t keyCol = aura ? auraKey(now, m)
+                          : (outfitNow == OutfitId::PARKA)
                             ? t.color565(138, 68, 8)      // a seam, not an edge
                             : blend(FUR_DARK, BLACK, 150);
+    // Behind him like the wings, the hide, the tail and the rune circle. The
+    // ground is where his soles are, which a crouch leaves put while hy sinks.
+    if (aura) auraBack(t, cx2, hy, hy + S(55) - crouch, now, m, scale);
     const int kb = (S(1) < 1) ? 1 : S(1);          // rim thickness, min 1px
     auto keyRR = [&](int x, int y, int w, int h, int r) {
         if (SQUACHY_KEYLINE) t.fillRoundRect(x - kb, y - kb, w + 2 * kb, h + 2 * kb, r, keyCol);
@@ -5838,20 +6092,6 @@ static void drawBody(TFT_eSPI& t, int cx, int hy, int headTopY, uint32_t now, Mo
     // would show around it. Everything inside keeps its original indentation
     // so this stays a two-line change instead of a two-hundred-line reformat.
     const bool hideFace = (outfitNow == OutfitId::VOIDEYE);
-    // The Legend top hat -- see where it goes on, in the head group below.
-    // Out here because the void eye skips that group and still wears it.
-    const bool legendHat = currentStage() == GrowthStage::LEGEND && Settings::topHatShown();
-    auto topHat = [&](int seat) {                // seat: the brim's bottom edge
-        // Charcoal inside a lighter rim, not flat black: most of his
-        // backgrounds are a night sky, and a black hat against one is a pink
-        // band floating over his head with nothing holding it up.
-        const uint16_t rim = blend(BLACK, WHITE, 140), felt = blend(BLACK, WHITE, 60);
-        t.fillRoundRect(cx2 - S(9) - 1, seat - S(3) - 1, S(18) + 2, S(3) + 2, 1, rim);
-        t.fillRect(cx2 - S(5) - 1, seat - S(TOP_HAT_H) - 1, S(10) + 2, S(9) + 1, rim);
-        t.fillRoundRect(cx2 - S(9), seat - S(3), S(18), S(3), 1, felt);
-        t.fillRect(cx2 - S(5), seat - S(TOP_HAT_H), S(10), S(9), felt);
-        t.fillRect(cx2 - S(5), seat - S(5), S(10), S(2), VAPOR_PINK);
-    };
     // PARKA has no mouth. Guarded at each draw rather than painted over
     // afterwards: the mouth moves and changes shape with the mood, so no
     // fixed patch covers all of them, and one big enough to try spills off
@@ -5957,8 +6197,6 @@ static void drawBody(TFT_eSPI& t, int cx, int hy, int headTopY, uint32_t now, Mo
         keyT(cx2 + S(5),  hh + S(3), cx2 + S(9), hh - S(4), cx2 + S(13),hh + S(3));
         t.fillTriangle(cx2 + S(5),  hh + S(3), cx2 + S(9), hh - S(4), cx2 + S(13),hh + S(3), furLight);
     }
-
-    // (The Legend top hat goes on after drawOutfit(), below.)
 
     // Ears — small and tucked close, like a real Sasquach rather than
     // a cartoon animal's.
@@ -6176,16 +6414,6 @@ static void drawBody(TFT_eSPI& t, int cx, int hy, int headTopY, uint32_t now, Mo
 
     drawOutfit(t, cx2, hh, now, m, scale, outfitNow);
 
-    // A tiny top hat, unlocked once he reaches Legend stage, seated on top of
-    // whatever is highest on his head -- see topHatSeat(). After the costume,
-    // so it sits on a cap or a hood or a pelt rather than under it.
-    //
-    // It used to hover five units above his tallest tuft on every outfit
-    // alike, which put it floating over the tinfoil cone, over both caps,
-    // outside the space helmet and half behind the captain's hat, and the
-    // void eye, drawn with his face hidden, never got one at all.
-    if (legendHat) topHat(hh - S(topHatSeat(outfitNow)));
-
     // The headset, in the head group so it rides every bob and squash with
     // him. The band arcs over his crown from cup to cup; the cups sit on his
     // ears; the mic boom curls round to the corner of his mouth.
@@ -6281,6 +6509,9 @@ static void drawBody(TFT_eSPI& t, int cx, int hy, int headTopY, uint32_t now, Mo
             t.fillRect(px - S(3), py - S(3), S(6), S(6), Theme::colorFor(s_recentTypes[i]));
         }
     }
+
+    // The aura's lightning, in front of him and his costume.
+    if (aura) auraFront(t, cx2, hy, hy + S(55) - crouch, now, m, scale);
 
     // The name sticker, last of all so it sits on top of whatever the costume
     // put on his chest. It is pinned to the torso, so it bobs, crouches and
@@ -6896,16 +7127,10 @@ void tick(TFT_eSPI& t, int cx, int topY, int availHeight, uint32_t now,
     if (!s_company) {
         const int A    = availHeight - bubbleRowH;
         const int Cy   = topY + bubbleRowH;
-        // A Legend's top hat is held to the same line as his crest -- all of
-        // it on screen, not the tenth a costume may run past the edge. A hat
-        // clipped at the top is a brim and a pink band, which is what it was
-        // on every Legend until this; he draws a little smaller instead.
-        int crestR = CREST_REACH;
-        // ...and not when it has been taken off, so he gets his size back.
-        if (currentStage() == GrowthStage::LEGEND && Settings::topHatShown()) {
-            const int hatR = topHatSeat(currentOutfit()) + TOP_HAT_H;
-            if (hatR > crestR) crestR = hatR;
-        }
+        // (A Legend's top hat used to raise this, so the whole hat stayed on
+        // screen, and he drew a tenth smaller for it. The aura that replaced
+        // it is behind him and free to run off the top.)
+        const int crestR = CREST_REACH;
         const int num  = baseH * (TOP_MARGIN - Cy) + crestR * A;
         const int den  = baseH + crestR;
         if (num > 0) {

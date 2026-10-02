@@ -130,9 +130,9 @@ namespace Settings {
     bool       rotationLocked();
     void       toggleRotationLock();
 
-    // The Legend top hat: worn unless taken off on the APPEARANCE page.
-    bool       topHatShown();
-    void       toggleTopHat();
+    // The Legend's aura: lit unless put out on the APPEARANCE page.
+    bool       auraShown();
+    void       toggleAura();
 
     // Last rotation (0..3, TFT_eSPI's setRotation() values) the rotate
     // button left the screen on -- so it comes back up the same way

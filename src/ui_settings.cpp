@@ -108,14 +108,14 @@ static const SettingsRow ALL_ROWS[] = {
 static const uint8_t ALL_ROWS_N = sizeof(ALL_ROWS) / sizeof(ALL_ROWS[0]);
 
 // The APPEARANCE page: everything about how HE looks, then everything about
-// how the SCREEN looks. The Legend top hat only gets a row once he has a hat
-// to take off.
+// how the SCREEN looks. The Legend's aura only gets a row once he has an aura
+// to put out.
 static const SettingsRow APPEARANCE_ROWS[] = {
     // How HE looks comes first -- these are the rows people open this page to
-    // change, and they were a scroll away on the main list. TOP HAT only
+    // change, and they were a scroll away on the main list. AURA only
     // appears once it has been earned; see buildDisplayList().
     SettingsRow::SQUACHY_SIZE, SettingsRow::OUTFIT, SettingsRow::PET,
-    SettingsRow::SHADES_COLOR, SettingsRow::BANTER, SettingsRow::TOP_HAT,
+    SettingsRow::SHADES_COLOR, SettingsRow::BANTER, SettingsRow::AURA,
     // Then how the SCREEN looks.
     SettingsRow::THEME, SettingsRow::BACKGROUND, SettingsRow::BACKGROUND_LOCK, SettingsRow::BRIGHTNESS,
     SettingsRow::INVERT, SettingsRow::RGB_SWAP, SettingsRow::ROTATION_LOCK,
@@ -183,7 +183,7 @@ static_assert(WATCH_ROWS_N <= LIST_MAX_N, "the display list is sized off LIST_MA
 // look identical, so somebody looking for OUTFIT after turning boring mode on
 // had no way to learn where it went.
 //
-// This is deliberately NOT how unearned things behave: PET and TOP HAT stay
+// This is deliberately NOT how unearned things behave: PET and AURA stay
 // hidden entirely (see buildDisplayList), because a greyed-out row saying
 // "not found yet" hands over the existence of a secret.
 static bool isSquachyOnlyRow(SettingsRow r) {
@@ -197,7 +197,7 @@ static bool isSquachyOnlyRow(SettingsRow r) {
            r == SettingsRow::SQUACHMESH ||
            r == SettingsRow::SHADES_COLOR || r == SettingsRow::SQUACHY_SIZE ||
            r == SettingsRow::OUTFIT ||
-           r == SettingsRow::PET || r == SettingsRow::TOP_HAT;
+           r == SettingsRow::PET || r == SettingsRow::AURA;
 }
 
 enum class RowGroupId : uint8_t { APPEARANCE, BEHAVIOR, SQUACHY, SYSTEM, DESK, SQUAD, WATCH };
@@ -245,7 +245,7 @@ static RowGroupId groupFor(SettingsRow r) {
         case SettingsRow::ROTATION_LOCK:
         case SettingsRow::STATUS_LIGHT:
         case SettingsRow::SHADES_COLOR:
-        case SettingsRow::TOP_HAT:
+        case SettingsRow::AURA:
         // SIZE, OUTFIT and PET moved onto the APPEARANCE page with the rest of
         // how he looks. They answer APPEARANCE rather than SQUACHY so the page
         // draws under one header instead of splitting in two.
@@ -337,12 +337,12 @@ static uint8_t buildDisplayList(DisplayItem* out) {
         const SettingsRow r = src[i];
         // Boring mode greys these instead of hiding them -- see
         // isSquachyOnlyRow(). They stay in the list; drawing handles the rest.
-        // PET and TOP HAT are hidden by not being EARNED rather than by a
+        // PET and AURA are hidden by not being EARNED rather than by a
         // mode. Showing a permanently-off row for something you have never
-        // seen would give the secret away -- and a switch for a hat he is
-        // not wearing yet would be a switch that does nothing.
+        // seen would give the secret away -- and a switch for an aura he
+        // does not have yet would be a switch that does nothing.
         if (r == SettingsRow::PET && !Squachy::petUnlocked()) continue;
-        if (r == SettingsRow::TOP_HAT && !Squachy::hasTopHat()) continue;
+        if (r == SettingsRow::AURA && !Squachy::hasAura()) continue;
         // Not a secret, just impossible: a board without a second app slot or
         // a Bluetooth server has nothing to update into.
         if ((r == SettingsRow::UPDATE_FIRMWARE || r == SettingsRow::UPDATE_CHECK) && !OtaCore::available()) continue;
@@ -1059,8 +1059,8 @@ static void rowContent(SettingsRow r, const DetectionEngine& eng, char* valBuf, 
         case SettingsRow::APPEARANCE:
             label = "APPEARANCE"; value = ">";
             break;
-        case SettingsRow::TOP_HAT:
-            label = "TOP HAT"; value = Settings::topHatShown() ? "SHOWN" : "HIDDEN";
+        case SettingsRow::AURA:
+            label = "AURA"; value = Settings::auraShown() ? "LIT" : "OUT";
             break;
         case SettingsRow::BACK:
             label = "< BACK";

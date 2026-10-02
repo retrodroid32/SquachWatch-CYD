@@ -1573,6 +1573,7 @@ static void enterInvite() {
 volatile bool g_consoleInvert = false;
 volatile bool g_consoleAdc = false;     // ADC: the spare analog inputs, for finding a battery sense line
 volatile bool g_consoleXyzzy = false;   // XYZZY: the TERMINAL background types the magic word now
+volatile bool g_consoleLegend = false;  // LEGEND: wear the Legend look (and its aura) until the next boot, or take it off
 volatile bool g_consolePins = false;    // PINS: digital levels, for finding a button
 volatile bool g_consoleI2c = false;     // I2C: a scan of the touch bus
 volatile bool g_consoleRotate = false;
@@ -3375,6 +3376,17 @@ void setup() {
     } else {
         if (wb == WipeBoot::LOCKED) Security::lock();
         Squachy::trigger(Squachy::Event::BOOTED, DetectionType::UNKNOWN, engine.lifetimeTotal());
+        // A build that is not a release -- a commit past a tag, or a dirty
+        // tree, which is every test-flasher build -- wears the Legend look
+        // from boot, so the aura can be seen without five hundred catches.
+        // A release is stamped with the bare tag and never does. LEGEND on
+        // the console turns it off and on.
+        // TAKE THIS OUT once the aura has shipped: it is here to show one
+        // feature, and every later test build would be gold for no reason.
+        if (strchr(FIRMWARE_VERSION, '-')) {
+            Squachy::previewLegend(true);
+            Serial.println("[legend] test build: wearing the Legend look (console LEGEND toggles it)");
+        }
         enterBoot();
     }
 }
@@ -4319,6 +4331,11 @@ void loop() {
     // ADC: every input-only analog pin the CYDs leave free, in millivolts,
     // averaged over 16 reads. A battery divider shows up as about half the
     // cell's voltage, and moves when the cell is unplugged.
+    if (g_consoleLegend) {
+        g_consoleLegend = false;
+        Squachy::previewLegend(!Squachy::legendPreview());
+        Serial.printf("[legend] preview %s\n", Squachy::legendPreview() ? "ON" : "off");
+    }
     if (g_consoleXyzzy) {
         g_consoleXyzzy = false;
         Theme::summonXyzzy();
@@ -5956,7 +5973,7 @@ void loop() {
                         case SettingsRow::BINGO:        enterBingo(); break;
                         case SettingsRow::DEX:          enterDex(); break;
                         case SettingsRow::APPEARANCE:  uiSettingsOpenAppearance(true); break;
-                        case SettingsRow::TOP_HAT:     Settings::toggleTopHat(); break;
+                        case SettingsRow::AURA:        Settings::toggleAura(); break;
                         // From a sub-page, back to the main list; from the
                         // main list, out.
                         case SettingsRow::BACK:

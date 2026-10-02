@@ -58,6 +58,7 @@ extern volatile bool g_benchUpdateStop;
 extern volatile bool g_consoleInvert;
 extern volatile bool g_consoleAdc;
 extern volatile bool g_consoleXyzzy;
+extern volatile bool g_consoleLegend;
 extern volatile bool g_consolePins;
 extern volatile bool g_consoleI2c;
 extern volatile bool g_consoleWatchTest;
@@ -546,6 +547,7 @@ void pollSerial() {
         if (strcasecmp(line, "INVERT") == 0) { g_consoleInvert = true; continue; }
         if (strcasecmp(line, "ADC") == 0)    { g_consoleAdc = true; continue; }
         if (strcasecmp(line, "XYZZY") == 0)  { g_consoleXyzzy = true; continue; }
+        if (strcasecmp(line, "LEGEND") == 0) { g_consoleLegend = true; continue; }
         if (strcasecmp(line, "PINS") == 0)   { g_consolePins = true; continue; }
         if (strcasecmp(line, "I2C") == 0)    { g_consoleI2c = true; continue; }
         if (strcasecmp(line, "WATCHTEST") == 0) { g_consoleWatchTest = true; continue; }
