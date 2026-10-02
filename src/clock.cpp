@@ -19,6 +19,12 @@
 #include "squachy.h"     // TEMPO, his durations
 #include "lora_sniffer.h" // LORA ..., the radio (a no-op on a board without one)
 
+// RUNTIME: main.cpp lists how long the last few boots ran.
+volatile bool g_consoleRuntime = false;
+#if defined(ARDUINO_ARCH_ESP32) && !defined(TWATCH_S3)
+extern volatile bool g_consoleCharge;   // main.cpp: CHARGE, the CYDs' charge mode
+#endif
+
 // PRIM, on every build: main.cpp runs the primitive benchmark on its next pass.
 extern volatile bool g_benchPrimNow;
 #if defined(ARDUINO_ARCH_ESP32)
@@ -51,6 +57,13 @@ extern volatile bool g_benchUpdateStop;
 // from the console, for bringing up a panel nobody can read yet.
 extern volatile bool g_consoleInvert;
 extern volatile bool g_consoleAdc;
+extern volatile bool g_consoleXyzzy;
+extern volatile bool g_consoleLegend;
+extern volatile bool g_consoleOutfitSet;
+extern volatile bool g_consoleAura;
+extern volatile int8_t g_consoleOutfit;
+extern volatile bool g_consolePins;
+extern volatile bool g_consoleI2c;
 extern volatile bool g_consoleWatchTest;
 extern volatile bool g_consoleRotate;
 extern volatile bool g_consoleBatt;
@@ -536,6 +549,12 @@ void pollSerial() {
         }
         if (strcasecmp(line, "INVERT") == 0) { g_consoleInvert = true; continue; }
         if (strcasecmp(line, "ADC") == 0)    { g_consoleAdc = true; continue; }
+        if (strcasecmp(line, "XYZZY") == 0)  { g_consoleXyzzy = true; continue; }
+        if (strcasecmp(line, "LEGEND") == 0) { g_consoleLegend = true; continue; }
+        if (strcasecmp(line, "AURA") == 0)   { g_consoleAura = true; continue; }
+        if (strncasecmp(line, "OUTFIT ", 7) == 0) { g_consoleOutfit = (int8_t)atoi(line + 7); g_consoleOutfitSet = true; continue; }
+        if (strcasecmp(line, "PINS") == 0)   { g_consolePins = true; continue; }
+        if (strcasecmp(line, "I2C") == 0)    { g_consoleI2c = true; continue; }
         if (strcasecmp(line, "WATCHTEST") == 0) { g_consoleWatchTest = true; continue; }
         if (strcasecmp(line, "ROT") == 0)    { g_consoleRotate = true; continue; }
         if (strcasecmp(line, "BATT") == 0)    { g_consoleBatt = true; continue; }
@@ -570,6 +589,10 @@ void pollSerial() {
             continue;
         }
         if (Lora::console(line)) continue;
+        if (strcasecmp(line, "RUNTIME") == 0) { g_consoleRuntime = true; continue; }
+#if defined(ARDUINO_ARCH_ESP32) && !defined(TWATCH_S3)
+        if (strcasecmp(line, "CHARGE") == 0) { g_consoleCharge = true; continue; }
+#endif
 #if defined(ARDUINO_ARCH_ESP32)   // the radios themselves: nothing to ask in the emulator
         if (strcasecmp(line, "RADIO HEAL") == 0) { g_consoleHeal = true; continue; }
         if (strcasecmp(line, "RADIO FULLCAL") == 0) {

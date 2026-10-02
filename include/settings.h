@@ -130,9 +130,9 @@ namespace Settings {
     bool       rotationLocked();
     void       toggleRotationLock();
 
-    // The Legend top hat: worn unless taken off on the APPEARANCE page.
-    bool       topHatShown();
-    void       toggleTopHat();
+    // The Legend's aura: lit unless put out on the APPEARANCE page.
+    bool       auraShown();
+    void       toggleAura();
 
     // Last rotation (0..3, TFT_eSPI's setRotation() values) the rotate
     // button left the screen on -- so it comes back up the same way
@@ -217,6 +217,27 @@ namespace Settings {
     // worse than useless.
     bool       wakeOnAlert();
     void       toggleWakeOnAlert();
+    // TAGS + RINGS on the watch: AirTags, Tiles, Samsung and Google tags and
+    // Ring cameras are logged but never interrupt -- no card, no buzz, no
+    // screen waking. On by default: a commute is fifty AirTags an hour.
+    // How long each of the last few boots ran, in minutes, newest first --
+    // the runtime log for boards that cannot read their battery. main.cpp
+    // notes the running boot every ten minutes; the entry for a boot that
+    // ended is how long it lasted (to within ten minutes).
+    void       noteRunMinutes(uint16_t boot, uint16_t minutes);
+    uint8_t    runHistory(uint16_t* boots, uint16_t* minutes, uint8_t cap);
+    // PRIVACY MODE (SYSTEM): the screen hides the device half of every
+    // address and all but three characters of every device and network
+    // name. See include/privacy.h. Off by default.
+    bool       privacyMode();
+    void       togglePrivacyMode();
+    bool       quietTrackers();
+    void       toggleQuietTrackers();
+    // Set the first time this watch's GPS answers: it is an S3 Plus, whose
+    // bigger cell takes a faster charge. Never cleared by a GPS that is
+    // merely switched off.
+    bool       watchPlus();
+    void       setWatchPlus();
     // The T-Watch's buzz on an alert (the DRV2605 haptic motor). Kept on
     // every board so the settings file reads the same; only the watch has
     // a motor to use it.
@@ -228,12 +249,6 @@ namespace Settings {
     uint8_t    buzzStrength();
     const char* buzzModeName();
     void       cycleBuzz();
-    // STEADY POWER on the watch: the power chip's DC1, which feeds the
-    // ESP32 and its radio, held in PWM instead of dropping to PFM at light
-    // load. A test for the deaf radios: PFM ripple is the kind of noise a
-    // receiver hears first. Off by default; costs a few mA.
-    bool       steadyPower();
-    void       toggleSteadyPower();
 
     // The watch's radio duty cycle; see RADIO_DUTY_NAMES in settings.cpp.
     // 0 when the saver is off. Watch only.

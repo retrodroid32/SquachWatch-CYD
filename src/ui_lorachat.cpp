@@ -11,6 +11,7 @@
 #include "lora_meshcore.h"
 #include "settings.h"
 #include "theme.h"
+#include "privacy.h"
 #include <Arduino.h>
 #include <string.h>
 
@@ -196,7 +197,10 @@ void uiLoraChatTick(TFT_eSPI& t, uint32_t now) {
         age(now, r.ms, ago, sizeof ago);
         t.setTextColor(accent, Theme::BG);
         t.setCursor(6, y);
-        t.print(r.sender);
+        {
+            char pv[40];
+            t.print(Privacy::name(r.sender, pv, sizeof pv));
+        }
         t.setTextColor(Theme::blend(Theme::BG, Theme::WHITE, 120), Theme::BG);
         t.print("  ");
         t.print(r.chan);

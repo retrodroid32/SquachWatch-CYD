@@ -32,6 +32,31 @@ CYAN  = (0, 214, 214)
 # ---- the clips ----
 
 CLIPS = {
+    # v1.27.0 "Power-Up": the Legend's aura replaces the top hat, and the
+    # YZZERD wizard, unlocked by tapping XYZZY on the TERMINAL background.
+    # SQUACHSIM_LEGEND wears the Legend look without the catches; the
+    # SQUACHSIM_XYZZY scenes keep the word up and tap it three times.
+    "power-up": [
+        ("clear", 260, 36, ["--noseed", "--bg", "5"], {"SQUACHSIM_LEGEND": "1"}, 1500, "500 CATCHES USED TO GET YOU A TOP HAT"),
+        ("clear", 260, 36, ["--noseed", "--bg", "8"], {"SQUACHSIM_LEGEND": "1"}, 1500, "NOW YOU GET THIS"),
+        ("clear", 40, 24, ["--noseed", "--bg", "4"], {"SQUACHSIM_XYZZY": "1"}, 1200, "SOMETHING KEEPS TYPING ON THE TERMINAL..."),
+        ("clear", 400, 30, ["--noseed", "--bg", "4", "--tap", "40:64:80", "--tap", "200:256:80", "--tap", "380:64:80"],
+         {"SQUACHSIM_XYZZY": "1"}, 1500, "TAP IT THREE TIMES. SOMETHING HAPPENS."),
+        ("clear", 260, 36, ["--noseed", "--bg", "4", "--outfit", "15"], {}, 1500, "MEET YZZERD"),
+        ("clear", 260, 36, ["--noseed", "--bg", "1", "--outfit", "15"], {"SQUACHSIM_LEGEND": "1"}, 1600, "A LEGENDARY WIZARD. ON FIRE. ON PURPOSE."),
+        ("settings", 10, 14, ["--scroll", "0"], {"SQUACHSIM_PAGE": "1", "SQUACHSIM_LEGEND": "1"}, 1600, "SETTINGS > APPEARANCE > AURA"),
+    ],
+    # v1.26.0 "Off the Grid": LoRa on the watches (not something the emulator
+    # can draw: it is not the watch build and has no LoRa radio), so the clip
+    # shows what IS on every screen: PRIVACY MODE, the same LOG before and
+    # after, an alert under it, and its row on the SYSTEM page.
+    "off-the-grid": [
+        ("clear", 200, 30, ["--noseed", "--bg", "8"], {}, 1500, "SQUACHY GREW A THIRD EAR: LORA, ON THE WATCHES"),
+        ("log", 20, 20, [], {}, 1700, "FILMING? YOUR LOG LOOKS LIKE THIS..."),
+        ("log", 20, 20, [], {"SQUACHSIM_PRIVACY": "1"}, 2200, "...PRIVACY MODE MAKES IT THIS"),
+        ("alert", 40, 30, [], {"SQUACHSIM_PRIVACY": "1"}, 1800, "SAME ALERT. NOBODY'S NAME ON IT."),
+        ("settings", 10, 14, ["--scroll", "0"], {"SQUACHSIM_PAGE": "2", "SQUACHSIM_PRIVACY": "1"}, 1800, "SETTINGS > SYSTEM > PRIVACY MODE"),
+    ],
     # v1.25.0 "Trailhead": wardriving on the T-Watch S3 Plus, which the
     # emulator cannot show (it is not the watch build), so Squachy sets off
     # and the notes carry the watch. Then the two things that ARE on screen:

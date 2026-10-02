@@ -52,6 +52,7 @@
 #include "ui_diagnostics.h"   // CrashReport, used by the breadcrumb below
 #include "blackbox.h"
 #include "gnss.h"
+#include "privacy.h"
 #include "lora_sniffer.h"   // the watch's SX1262; inline no-ops elsewhere
 #include "wardrive.h"
 #include "ui_bingo.h"
@@ -907,6 +908,14 @@ static bool readTouchRaw(int16_t& a, int16_t& b) {
 // coming back from a reboot into a dimmed screen with no memory of why would
 // look exactly like a broken backlight.
 static bool s_screenDimmed = false;
+// The BOOT button (GPIO0) on the plain-ESP32 CYDs: a short press turns the
+// screen off or on, a long one starts CHARGE MODE. The S3 boards and the
+// CrowPanel are left out until somebody has pressed theirs.
+#if defined(ESP32) && !defined(SQW_S3) && !defined(CROWPANEL7)
+#define SQW_BOOT_BTN 1
+#else
+#define SQW_BOOT_BTN 0
+#endif
 #if defined(TWATCH_S3)
 // A watch goes dark, not dim. When the screen timeout lands, the backlight
 // goes off and the ST7789 is put to sleep (DISPOFF, SLPIN: about a milliamp
@@ -914,21 +923,21 @@ static bool s_screenDimmed = false;
 // A tap or the crown wakes it: SLPOUT needs 120 ms before DISPON, which is
 // the one delay a person can feel here, and it is once per wake.
 static bool s_panelAsleep = false;
-#if defined(TWATCH_S3)
-// A crown press with the screen on turns it off at once, cable or not.
-// It stays off until the next touch, crown press or alert: lastTouch
-// moving past this moment is what ends it.
-static bool     s_crownDark   = false;
-static uint32_t s_crownDarkAt = 0;
-// After an alert lights a crown-darkened screen, it stays lit until this
-// moment -- the screen timeout, counted from the alert's end -- then goes
-// dark again. 0 = no alert has lit it.
-static uint32_t s_crownLitUntil = 0;
 // On the cable, read every two seconds in twatchRadioTick(). The screen
 // stays lit while it is true: a watch on its charger is a desk clock.
 static bool     s_onUsb = true;
-#endif
 static bool s_radiosResting = false;   // the duty cycle's state; see twatchRadioTick()
+#endif
+#if defined(TWATCH_S3) || SQW_BOOT_BTN
+// A crown press (or the CYDs' BOOT button) with the screen on turns it off
+// at once, cable or not. It stays off until the next touch, press or alert:
+// lastTouch moving past this moment is what ends it.
+static bool     s_crownDark   = false;
+static uint32_t s_crownDarkAt = 0;
+// After an alert lights a button-darkened screen, it stays lit until this
+// moment -- the screen timeout, counted from the alert's end -- then goes
+// dark again. 0 = no alert has lit it.
+static uint32_t s_crownLitUntil = 0;
 #endif
 
 static void applyCpuClock();
@@ -969,6 +978,9 @@ static void applyBrightness() {
     // select. Three shots in the foot from what looks like dead code.
     ledcWrite(TFT_BL, duty);
 #else
+#if SQW_BOOT_BTN
+    if (s_crownDark && s_screenDimmed) duty = 0;   // the button turns it OFF, whatever DIM LEVEL says
+#endif
     ledcWrite(BL_CH_ORIG, duty);
     ledcWrite(BL_CH_CAP,  duty);
     ledcWrite(BL_CH_AWOK, duty);
@@ -1103,6 +1115,11 @@ static char s_confirmName[sizeof(Detection::name)]     = "";
 static char s_alertVendor[16]   = "";
 static char s_alertName[sizeof(Detection::name)]       = "";
 static char    s_confirmLabel[24];
+// PRIVACY MODE's view of the two strings the confirm panel and MORE INFO
+// draw. The real ones stay in s_confirmLabel / s_confirmName: they are what
+// WATCH and HUNT hand the engine.
+static const char* privLabel(const char* in) { static char b[40]; return Privacy::name(in, b, sizeof b); }
+static const char* privName(const char* in)  { static char b[40]; return Privacy::name(in, b, sizeof b); }
 // LOG's long-press sets this per-row (BLE vs WiFi isn't implied by a
 // "current mode" the way it is for RAWSCAN, which already knows that
 // from s_rawScanIsBle) -- RAWSCAN's own WATCH/HUNT branches don't
@@ -1129,6 +1146,19 @@ static bool twatchStill();
 #endif
 static bool alertMayInterrupt(const Detection& d) {
     const bool exempt = engine.isWatched(d.mac, true) || engine.isWatched(d.mac, false);
+#if defined(TWATCH_S3)
+    // TAGS + RINGS: logged, never announced. A day's wear was 50 screen
+    // wakes an hour on the drive home, 52 of 83 sightings AirTags from 42
+    // different passing cars, and 126 of 256 at work from twelve Rings.
+    if (!exempt && Settings::quietTrackers()) {
+        switch (d.type) {
+            case DetectionType::AIRTAG: case DetectionType::TILE: case DetectionType::SAMSUNG_TAG:
+            case DetectionType::GOOGLE_TAG: case DetectionType::RING:
+                return false;
+            default: break;
+        }
+    }
+#endif
     // A flood of fake tags of this type: one alert says so, and the rest are
     // logged without interrupting until it has been quiet five minutes. See
     // spam_watch.h. A device you asked to WATCH still always gets through.
@@ -1565,6 +1595,13 @@ static void enterInvite() {
 // INVERT and ROT on the console -- see clock.cpp. Consumed in loop().
 volatile bool g_consoleInvert = false;
 volatile bool g_consoleAdc = false;     // ADC: the spare analog inputs, for finding a battery sense line
+volatile bool g_consoleXyzzy = false;   // XYZZY: the TERMINAL background types the magic word now
+volatile bool g_consoleLegend = false;  // LEGEND: wear the Legend look (and its aura) until the next boot, or take it off
+volatile bool g_consoleOutfitSet = false;  // OUTFIT n: wear costume n until the next boot, for timing it; -1 takes it off
+volatile int8_t g_consoleOutfit = -1;
+volatile bool g_consoleAura = false;  // AURA: the APPEARANCE page's AURA row, LIT or OUT, from the console
+volatile bool g_consolePins = false;    // PINS: digital levels, for finding a button
+volatile bool g_consoleI2c = false;     // I2C: a scan of the touch bus
 volatile bool g_consoleRotate = false;
 volatile bool g_consoleWatchTest = false; // WATCHTEST: watch the newest Bluetooth device, fire its alert
 volatile bool g_consoleRadioTest = false; // RADIO TEST: cycle even on the cable with the screen on (bench)
@@ -2534,26 +2571,23 @@ static void twatchXtalTick(uint32_t now) {
                   (unsigned long)n, (unsigned long)us, (long)s_xtalPpm, s_xtalChipC,
                   (unsigned long)advertsSeen(), (unsigned long)wifiFramesSeen());
 }
-void twatchXtalLine(char* out, size_t n) {
-    switch (s_xtalState) {
-        case 1: {
-            const uint32_t el = (millis() - s_xtalStartMs) / 1000u;
-            snprintf(out, n, "%lus", (unsigned long)(el < XTAL_SECS ? XTAL_SECS - el : 0));
-            break;
-        }
-        case 2:  snprintf(out, n, "%+ld PPM", (long)s_xtalPpm); break;
-        case 3:  snprintf(out, n, "FAILED"); break;
-        default: snprintf(out, n, "GO"); break;
-    }
+
+// DC1 -- the ESP32 and its radio -- in the chip's automatic PWM/PFM. The
+// STEADY POWER row that forced PWM was a test for the deaf radios, which
+// were never the supply's fault (the slim WiFi re-init, fixed in v1.21.0);
+// set at boot so a watch that saved STEADY ON goes back to automatic.
+// The charge current. 200 mA suits the plain T-Watch S3's small cell; the
+// S3 Plus has about twice the cell and took 3 h 18 min from empty to 94% at
+// 200 mA while running (2026-09-29). 400 mA on a watch known to be a Plus.
+static void twatchApplyCharge() {
+    if (!s_pmuOk) return;
+    s_pmu.setChargerConstantCurr(Settings::watchPlus() ? XPOWERS_AXP2101_CHG_CUR_400MA : XPOWERS_AXP2101_CHG_CUR_200MA);
+    Serial.printf("[pmu] charge %s\n", Settings::watchPlus() ? "400 mA (S3 Plus)" : "200 mA");
 }
 
-// STEADY POWER: DC1 -- the ESP32 and its radio -- in forced PWM, or back to
-// the chip's automatic PWM/PFM. Applied at boot and on every toggle.
 static void twatchApplySteady() {
     if (!s_pmuOk) return;
-    s_pmu.settDC1WorkModeToPwm(Settings::steadyPower() ? 1 : 0);
-    Serial.printf("[pmu] DC1 %s (reg 0x81 = %02X)\n", Settings::steadyPower() ? "forced PWM (STEADY POWER)" : "automatic PWM/PFM",
-                  (unsigned)s_pmu.readRegister(0x81));
+    s_pmu.settDC1WorkModeToPwm(0);
 }
 
 static void twatchBatterySample(uint8_t why) {
@@ -2571,7 +2605,7 @@ static void twatchBatterySample(uint8_t why) {
     if (!s_panelAsleep)     r.flags |= BlackBox::BATT_SCREEN_ON;
     if (!s_radiosResting)   r.flags |= BlackBox::BATT_RADIOS_ON;
     r.chipC   = (int8_t)twatchChipC();
-    r.steady  = Settings::steadyPower() ? 1 : 0;
+    r.steady  = 0;
     r.adverts = advertsSeen();
     r.frames  = wifiFramesSeen();
     BlackBox::noteBattery(r);
@@ -2701,20 +2735,6 @@ static void twatchPowerCycle(uint8_t count, uint8_t why) {
     delay(100);
     esp_sleep_enable_timer_wakeup(1000000ULL);
     esp_deep_sleep_start();
-}
-
-// RADIO RESET under WATCH: two taps within three seconds, so a stray one
-// does not blank the watch. Does not spend the self-heal's allowance.
-static uint32_t s_radioResetArmedAt = 0;
-bool twatchRadioResetArmed() {
-    return s_radioResetArmedAt && millis() - s_radioResetArmedAt < 3000;
-}
-static void twatchRadioResetTap() {
-    if (!twatchRadioResetArmed()) { s_radioResetArmedAt = millis(); if (!s_radioResetArmedAt) s_radioResetArmedAt = 1; return; }
-    s_radioResetArmedAt = 0;
-    Serial.printf("[heal] RADIO RESET tapped: %lu adverts and %lu WiFi frames since boot; restarting\n",
-                  (unsigned long)advertsSeen(), (unsigned long)wifiFramesSeen());
-    twatchPowerCycle(0, BlackBox::BATT_WHY_RESET);
 }
 
 static bool bleShouldHear() {
@@ -2874,6 +2894,9 @@ void setup() {
     // while it is still the previous life's, not this one's.
     crashReportInit();
     Serial.begin(SERIAL_BAUD);
+#if SQW_BOOT_BTN
+    pinMode(0, INPUT_PULLUP);   // BOOT: see bootButtonTick()
+#endif
 #if defined(SQW_S3)
     // Native USB: with nothing reading the port, every print would otherwise
     // wait its full timeout for a host, and after the chatty first-boot
@@ -2981,7 +3004,8 @@ void setup() {
     twatchRtcBegin();      // after Clock::begin(): a real time beats the note's guess
     twatchHapticBegin();
     twatchMotionBegin();
-    twatchApplySteady();   // after Settings::load(), which it reads
+    twatchApplySteady();   // after Settings::load()
+    twatchApplyCharge();
 #endif
     Security::begin();
     // Which version lives in this slot, and whether this boot is a fresh
@@ -3600,12 +3624,21 @@ static inline void drawTwoBand(F&& draw) {
 #if defined(CYD35)
     if (frameBufferOk) {
         const int halfH = tft.height() / 2;
+        // The sprite is cleared before each band. It is ONE half-height
+        // buffer used for both, so whatever a screen does not repaint is the
+        // OTHER band's picture, and it showed: a screen that fills its
+        // background once in its Init and then draws rows over it (the
+        // diary) had the top half's leftovers under the bottom half, which
+        // read as the screen drawn twice (issue #25). Every Init fills with
+        // Theme::BG, so that is what an unpainted pixel should be.
         DrawBand::set(0, halfH);
         frame.setViewport(0, 0, tft.width(), tft.height(), true);
+        frame.fillRect(0, 0, tft.width(), tft.height(), Theme::BG);
         draw((TFT_eSPI&)frame, true);
         pushFrame(0, 0);
         DrawBand::set(halfH, tft.height());
         frame.setViewport(0, -halfH, tft.width(), tft.height(), true);
+        frame.fillRect(0, 0, tft.width(), tft.height(), Theme::BG);
         draw((TFT_eSPI&)frame, false);
         pushFrame(0, halfH);
         DrawBand::all();
@@ -3660,6 +3693,15 @@ static uint32_t    s_lastScreenAt   = 0;     // transitionStart of the screen be
 static bool     s_gpsOn = false, s_gpsFound = false;
 static uint8_t  s_gpsTry = 0;           // index into GPS_BAUDS, then the DC4 retry
 static uint32_t s_gpsTryAt = 0, s_gpsSumAt = 0, s_gpsGoodAt = 0;
+// Resting: indoors the GPS searches flat out all day and never fixes (3.7 h
+// at work on 2026-09-29). After SEARCH_FIRST_MS with no fix it is powered
+// down for REST_MS, then gets RETRY_MS to find the sky before resting again;
+// a fix resets it to the long first search.
+static const uint32_t GPS_SEARCH_FIRST_MS = 10u * 60u * 1000u;
+static const uint32_t GPS_RETRY_MS        = 2u * 60u * 1000u;
+static const uint32_t GPS_REST_MS         = 5u * 60u * 1000u;
+static bool     s_gpsResting = false, s_gpsRetried = false;
+static uint32_t s_gpsSearchFrom = 0, s_gpsRestUntil = 0, s_gpsLastFixAt = 0;
 static const uint32_t GPS_BAUDS[] = { 38400, 9600, 115200 };
 // The best since switched on, for a watch that was off the cable while it
 // happened: GPS STATUS asks.
@@ -3691,6 +3733,7 @@ static void gpsStart(bool summaries) {
     s_gpsOn = true; s_gpsFound = false; s_gpsTry = 0;
     s_gpsSummaries = summaries;
     s_gpsOnAt = millis(); s_gpsFirstFixMs = 0;
+    s_gpsResting = false; s_gpsRetried = false; s_gpsSearchFrom = millis(); s_gpsLastFixAt = 0;
     s_gpsBestView = s_gpsBestHeard = s_gpsBestUsed = 0;
     Gnss::reset();
     gpsPower(true, false);
@@ -3701,6 +3744,7 @@ static void gpsStart(bool summaries) {
 
 static void gpsStop() {
     s_gpsOn = false;
+    s_gpsResting = false;
     Serial1.end();
     gpsPower(false, false);
 }
@@ -3760,7 +3804,8 @@ void twatchGpsBadge(TFT_eSPI& t) {
     const Gnss::Fix& f = Gnss::fix();
     const bool fix = Gnss::fresh(millis());
     char txt[40];
-    if (!s_gpsFound)                   snprintf(txt, sizeof txt, "GPS STARTING");
+    if (s_gpsResting)                  snprintf(txt, sizeof txt, "GPS RESTING");
+    else if (!s_gpsFound)              snprintf(txt, sizeof txt, "GPS STARTING");
     else if (fix && Wardrive::enabled()) snprintf(txt, sizeof txt, "GPS FIX %u  %lu ROWS", f.used, (unsigned long)Wardrive::count());
     else if (fix)                      snprintf(txt, sizeof txt, "GPS FIX  %u SATS", f.used);
     else                               snprintf(txt, sizeof txt, "GPS %u HEARD  %u USED", k.heard, f.used);
@@ -3853,12 +3898,38 @@ static void gpsTick() {
     if (Gnss::faked()) Gnss::fake(Gnss::fix().lat7, Gnss::fix().lon7, Clock::isSet() ? Clock::nowEpoch() : 0, millis());
 
     if (!s_gpsOn) { Wardrive::tick(millis()); return; }
+    if (s_gpsResting) {
+        if ((int32_t)(millis() - s_gpsRestUntil) < 0) { Wardrive::tick(millis()); return; }
+        // Back on, on the rails and baud that worked, for a short look.
+        s_gpsResting = false; s_gpsRetried = true; s_gpsSearchFrom = millis();
+        gpsPower(true, s_gpsTry >= 3);
+        delay(50);
+        gpsOpen(GPS_BAUDS[s_gpsTry % 3]);
+        Serial.println("[gps] awake again: looking for the sky");
+    }
     while (Serial1.available()) Gnss::feed((char)Serial1.read(), millis());
     const uint32_t now = millis();
+    if (Gnss::fresh(now) && !Gnss::faked()) { s_gpsLastFixAt = now; s_gpsRetried = false; }
+    if (s_gpsFound && !Gnss::fresh(now)) {
+        const uint32_t from = (int32_t)(s_gpsLastFixAt - s_gpsSearchFrom) > 0 ? s_gpsLastFixAt : s_gpsSearchFrom;
+        if (now - from > (s_gpsRetried ? GPS_RETRY_MS : GPS_SEARCH_FIRST_MS)) {
+            Serial1.end();
+            gpsPower(false, false);
+            s_gpsResting = true;
+            s_gpsRestUntil = now + GPS_REST_MS;
+            Serial.printf("[gps] no fix for %lu s: resting %lu s\n", (unsigned long)((now - from) / 1000),
+                          (unsigned long)(GPS_REST_MS / 1000));
+            Wardrive::tick(now);
+            return;
+        }
+    }
     if (!s_gpsFound) {
         if (Gnss::good() - s_gpsGoodAt >= 3) {
             s_gpsFound = true;
             Serial.printf("[gps] a GNSS is talking at %lu baud\n", (unsigned long)GPS_BAUDS[s_gpsTry % 3]);
+            // A GPS answered: this is an S3 Plus, and its bigger cell can
+            // take the faster charge from now on.
+            if (!Settings::watchPlus()) { Settings::setWatchPlus(); twatchApplyCharge(); }
         } else if (now - s_gpsTryAt > 2500) {
             // Three bauds with BLDO1 and DC3, then the same three with DC4 too.
             s_gpsTry++;
@@ -3898,9 +3969,11 @@ static void gpsTick() {
     }
 }
 
-// For the WARDRIVE row: 0 off, 1 looking for the module, 2 no fix, 3 fix.
+// For the WARDRIVE row: 0 off, 1 looking for the module, 2 no fix, 3 fix,
+// 4 resting between looks.
 uint8_t twatchGpsState() {
     if (!s_gpsOn) return 0;
+    if (s_gpsResting) return 4;
     if (!s_gpsFound) return 1;
     return Gnss::fresh(millis()) ? 3 : 2;
 }
@@ -3912,10 +3985,182 @@ static void wardriveBegin() {
 }
 #endif
 
+// The runtime log: this boot's minutes, noted every ten minutes. On a board
+// that cannot read its battery, the last note before it died is how long
+// the charge lasted. RUNTIME on the console lists the last eight boots.
+extern volatile bool g_consoleRuntime;   // clock.cpp: RUNTIME
+static void runtimeTick(uint32_t now) {
+    static uint32_t lastAt = 0;
+    static bool first = true;
+    if (first || now - lastAt >= 600000UL) {
+        first = false;
+        lastAt = now;
+        Settings::noteRunMinutes(BlackBox::bootNumber(), (uint16_t)(now / 60000UL));
+    }
+    if (g_consoleRuntime) {
+        g_consoleRuntime = false;
+        uint16_t b[8], m[8];
+        const uint8_t n = Settings::runHistory(b, m, 8);
+        Serial.printf("[runtime] this boot %u, up %lu min; newest first:\n", (unsigned)BlackBox::bootNumber(), (unsigned long)(now / 60000UL));
+        for (uint8_t i = 0; i < n; i++)
+            Serial.printf("[runtime] boot %u ran %uh %02um%s\n", (unsigned)b[i], (unsigned)(m[i] / 60), (unsigned)(m[i] % 60),
+                          i == 0 ? " so far (this one)" : "");
+    }
+}
+
+#if defined(ESP32) && !defined(TWATCH_S3)
+// CHARGE MODE: the board keeps running while it charges -- there is no off
+// switch that leaves the charger on -- and a running board takes most of
+// what a small charger gives (about 200 mA of it). This stops the WiFi and
+// Bluetooth radios, the status light and the backlight and drops the CPU to
+// 80 MHz, so the charger's current goes into the cell. The screen shows how
+// long it has been charging for fifteen seconds; a tap on the dark screen
+// shows it again for five, and a tap while it shows wakes the board. The board cannot tell when the cell is
+// full, so the time is all there is to go on.
+static bool     s_chargeMode = false, s_chargeWasDown = false;
+// Asked for from the Settings row (or CHARGE on the console) and entered at
+// the top of the NEXT loop: entered in the middle of a pass, the rest of
+// that pass went on drawing the Settings screen over the charge screen.
+volatile bool   g_consoleCharge = false;
+static bool     s_chargeWanted = false;
+static uint32_t s_chargeAt = 0, s_chargeLitAt = 0, s_chargeLitUntil = 0, s_chargeDrawnAt = 0;
+
+static void chargeBacklight(uint8_t duty) {
+#if defined(CROWPANEL7)
+    CrowBL::set(duty);
+#else
+    ledcWrite(BL_CH_ORIG, duty);
+    ledcWrite(BL_CH_CAP,  duty);
+    ledcWrite(BL_CH_AWOK, duty);
+#endif
+}
+
+static void chargeDraw(uint32_t now) {
+    s_chargeDrawnAt = now;
+    const int w = tft.width(), h = tft.height();
+    tft.fillScreen(TFT_BLACK);
+    const uint32_t mins = (now - s_chargeAt) / 60000UL;
+    char line[32];
+    tft.setTextDatum(MC_DATUM);
+    tft.setTextColor(Theme::CYAN, TFT_BLACK);
+    tft.setTextSize(3);
+    tft.drawString("CHARGE MODE", w / 2, h / 2 - 50);
+    tft.setTextColor(TFT_WHITE, TFT_BLACK);
+    tft.setTextSize(2);
+    snprintf(line, sizeof line, "Charging %luh %02lum", (unsigned long)(mins / 60), (unsigned long)(mins % 60));
+    tft.drawString(line, w / 2, h / 2 - 10);
+    tft.setTextSize(1);
+    tft.setTextColor(Theme::blend(TFT_BLACK, TFT_WHITE, 170), TFT_BLACK);
+    tft.drawString("Radios and screen are off so the battery fills faster.", w / 2, h / 2 + 20);
+    tft.drawString("About 4-6 hours from empty.", w / 2, h / 2 + 34);
+    tft.setTextColor(Theme::GREEN, TFT_BLACK);
+    tft.setTextSize(2);
+    tft.drawString("TAP TO WAKE UP", w / 2, h / 2 + 64);
+    tft.setTextDatum(TL_DATUM);
+}
+
+static void enterChargeMode() {
+    const uint32_t now = millis();
+    s_chargeMode = true;
+    s_chargeAt = now;
+    s_chargeLitAt = now;
+    s_chargeLitUntil = now + 15000;
+    s_chargeWasDown = true;   // the tap that chose the row is not the first tap here
+    engine.restRadios(true);
+    StatusLight::off();
+    setCpuFrequencyMhz(80);
+    s_cpuMhzApplied = 80;
+    chargeBacklight(Settings::brightness() / 2);
+    chargeDraw(now);
+    Serial.println("[charge] CHARGE MODE on: radios, light and backlight off, CPU 80 MHz");
+}
+
+static void exitChargeMode() {
+    const uint32_t mins = (millis() - s_chargeAt) / 60000UL;
+    s_chargeMode = false;
+#if SQW_BOOT_BTN
+    s_crownDark = false;
+#endif
+    engine.wakeRadios();
+    applyCpuClock();
+    applyBrightness();
+    lastTouch = millis();
+    FramePush::invalidate();
+    enterClear();
+    Serial.printf("[charge] CHARGE MODE off after %lu min\n", (unsigned long)mins);
+}
+
+static void chargeModeTick(uint32_t now) {
+    const TouchPoint tp = pollTouch();
+    const bool down = tp.valid;
+    const bool lit = (int32_t)(s_chargeLitUntil - now) > 0;
+    // A touch panel can drop out for a poll or two in the middle of one tap;
+    // a new tap only counts once the finger has been off for 150 ms, so one
+    // tap never reads as two and wakes the board by accident.
+    static uint32_t upAt = 0;
+    if (down != s_chargeWasDown) Serial.printf("[charge] touch %s at %d,%d (lit %d)\n", down ? "down" : "up", tp.x, tp.y, (int)lit);
+    if (!down && s_chargeWasDown) upAt = now;
+    if (down && !s_chargeWasDown && now - upAt > 150) {
+        if (lit && now - s_chargeLitAt > 800) { s_chargeWasDown = true; exitChargeMode(); return; }
+        // A tap on the dark screen: the charging time, for five seconds.
+        s_chargeLitAt = now;
+        s_chargeLitUntil = now + 5000;
+        chargeBacklight(Settings::brightness() / 2);
+        chargeDraw(now);
+    }
+    s_chargeWasDown = down;
+    // Asked again, not reused: a tap above has just lit the screen, and the
+    // answer from the top of this tick put it straight back out.
+    const bool litNow = s_chargeLitUntil && (int32_t)(s_chargeLitUntil - now) > 0;
+    if (litNow && now - s_chargeDrawnAt > 30000) chargeDraw(now);
+    if (!litNow && s_chargeLitUntil) { chargeBacklight(0); s_chargeLitUntil = 0; Serial.println("[charge] screen dark"); }
+    // No light sleep here. It was tried (2026-09-29) and the chip sometimes
+    // never woke from it -- the RTC watchdog reset the board after 5 h one
+    // time and 20 min the next (black box: WDT, boots 50 and 51). Light
+    // sleep with the Bluetooth controller still powered is not dependable
+    // on this chip, and the saving was about 25 mA. An idle wait instead.
+    delay(40);
+}
+
+#if SQW_BOOT_BTN
+// BOOT, polled every pass (and every 40 ms in charge mode). Released before
+// 1.2 s it is a short press: the screen off, or back on. Held past 1.2 s it
+// starts CHARGE MODE, without waiting for the release. In charge mode either
+// wakes the board. 30 ms of contact before anything counts.
+static void bootButtonTick(uint32_t now) {
+    static bool was = false, longDone = false;
+    static uint32_t downAt = 0;
+    const bool down = digitalRead(0) == LOW;
+    if (down && !was) { downAt = now; longDone = false; }
+    if (down && !longDone && now - downAt >= 1200) {
+        longDone = true;
+        Serial.println("[button] long press");
+        if (s_chargeMode) exitChargeMode(); else s_chargeWanted = true;
+    }
+    if (!down && was && !longDone && now - downAt >= 30) {
+        Serial.println("[button] short press");
+        if (s_chargeMode) exitChargeMode();
+        else if (!s_screenDimmed) { s_crownDark = true; s_crownDarkAt = now; s_crownLitUntil = 0; }
+        else { s_crownDark = false; lastTouch = now; }
+    }
+    was = down;
+}
+#endif
+#endif
+
 void loop() {
     // Cheap and unconditional: available() is a register read, and this
     // is the only way in for the one serial command the firmware takes.
     Clock::pollSerial();
+    runtimeTick(millis());
+#if defined(ESP32) && !defined(TWATCH_S3)
+#if SQW_BOOT_BTN
+    bootButtonTick(millis());
+#endif
+    if (g_consoleCharge) { g_consoleCharge = false; if (s_chargeMode) exitChargeMode(); else s_chargeWanted = true; }
+    if (s_chargeWanted && !s_chargeMode) { s_chargeWanted = false; enterChargeMode(); }
+    if (s_chargeMode) { chargeModeTick(millis()); return; }
+#endif
     uint32_t frameStartUs = micros();
     s_loopsSinceSay++;   // the real loop rate, pacing delays included; on the [frame] line
     FrameProf::begin();
@@ -4182,6 +4427,26 @@ void loop() {
     // ADC: every input-only analog pin the CYDs leave free, in millivolts,
     // averaged over 16 reads. A battery divider shows up as about half the
     // cell's voltage, and moves when the cell is unplugged.
+    if (g_consoleLegend) {
+        g_consoleLegend = false;
+        Squachy::previewLegend(!Squachy::legendPreview());
+        Serial.printf("[legend] preview %s\n", Squachy::legendPreview() ? "ON" : "off");
+    }
+    if (g_consoleAura) {
+        g_consoleAura = false;
+        Settings::toggleAura();
+        Serial.printf("[aura] %s\n", Settings::auraShown() ? "LIT" : "OUT");
+    }
+    if (g_consoleOutfitSet) {
+        g_consoleOutfitSet = false;
+        Squachy::wearForBench(g_consoleOutfit);
+        Serial.printf("[outfit] bench %d until the next boot\n", (int)g_consoleOutfit);
+    }
+    if (g_consoleXyzzy) {
+        g_consoleXyzzy = false;
+        Theme::summonXyzzy();
+        Serial.println("[xyzzy] the terminal types it now (TERMINAL background only)");
+    }
     if (g_consoleAdc) {
         g_consoleAdc = false;
         const uint8_t pins[] = { 34, 35, 36, 39 };
@@ -4190,6 +4455,29 @@ void loop() {
             uint32_t mv = 0;
             for (int k = 0; k < 16; k++) mv += analogReadMilliVolts(p);
             n += snprintf(line + n, sizeof line - n, "  GPIO%u %lu mV", p, (unsigned long)(mv / 16));
+        }
+        Serial.println(line);
+    }
+    // PINS: the digital level of every pin a button could be on, for finding
+    // one by pressing it. GPIO22 is the only spare the CYDs never configure,
+    // so it gets a pull-up here; the rest are read as they stand.
+    if (g_consolePins) {
+        g_consolePins = false;
+        static bool once = false;
+        if (!once) { once = true; pinMode(22, INPUT_PULLUP); }
+        const uint8_t pins[] = { 0, 22, 5, 18, 19, 23, 26, 35, 36, 39 };
+        char line[120]; int n = snprintf(line, sizeof line, "[pins]");
+        for (uint8_t p : pins) n += snprintf(line + n, sizeof line - n, " %u=%d", p, digitalRead(p));
+        Serial.println(line);
+    }
+    // I2C: what answers on the touch bus. A power chip with a button and a
+    // fuel gauge (an IP5306 at 0x75, say) would show up beside the touch chip.
+    if (g_consoleI2c) {
+        g_consoleI2c = false;
+        char line[160]; int n = snprintf(line, sizeof line, "[i2c]");
+        for (uint8_t a = 8; a < 120; a++) {
+            Wire.beginTransmission(a);
+            if (Wire.endTransmission() == 0 && n < (int)sizeof line - 8) n += snprintf(line + n, sizeof line - n, " 0x%02X", a);
         }
         Serial.println(line);
     }
@@ -4643,6 +4931,7 @@ void loop() {
             if (Theme::consumeEyeCatch())       Squachy::unlockVoidEye();
             if (Theme::consumeLodgeKnock())     Squachy::unlockParka();
             if (Theme::consumeSharkCatch())     Squachy::unlockShark();
+            if (const uint8_t said = Theme::consumeXyzzy()) Squachy::magicWord(said);
     if (Theme::consumePetUnlock())      Squachy::unlockPet();
 
             bool boring = Settings::boringMode();
@@ -4927,11 +5216,11 @@ void loop() {
         }
         case AppState::ALERT: {
             const char* alertInfoText = s_infoShowingPrimer ? DetectionInfo::rssiConfidencePrimer()
-                                                              : DetectionInfo::explainFor(s_confirmType, s_confirmVendor, s_confirmName, engine);
+                                                              : DetectionInfo::explainFor(s_confirmType, s_confirmVendor, privName(s_confirmName), engine);
             // No heading during the primer page -- it's about RSSI/
             // confidence in general, not any one detection type.
             const char* alertInfoTypeName = s_infoShowingPrimer ? nullptr
-                                          : DetectionInfo::titleFor(s_confirmType, s_confirmVendor, s_confirmName);
+                                          : DetectionInfo::titleFor(s_confirmType, s_confirmVendor, privName(s_confirmName));
 #if defined(CYD35)
             if (frameBufferOk) {
                 // Same two-pass half-height `frame` trick CLEAR/BOOT
@@ -5138,16 +5427,16 @@ void loop() {
         case AppState::LOG: {
             const char* infoText = s_infoShowingPrimer
                                   ? DetectionInfo::rssiConfidencePrimer()
-                                  : DetectionInfo::explainFor(s_confirmType, s_confirmVendor, s_confirmName, engine);
+                                  : DetectionInfo::explainFor(s_confirmType, s_confirmVendor, privName(s_confirmName), engine);
 
             // No heading during the primer page -- it's about RSSI/
             // confidence in general, not any one detection type.
             const char* infoTypeName = s_infoShowingPrimer ? nullptr
-                                     : DetectionInfo::titleFor(s_confirmType, s_confirmVendor, s_confirmName);
+                                     : DetectionInfo::titleFor(s_confirmType, s_confirmVendor, privName(s_confirmName));
             // Nothing on LOG moves by the call -- the note about
             // drawActiveBackground in ui_log.cpp is a comment, not a call.
             drawTwoBand([&](TFT_eSPI& t, bool) {
-                uiLogTick(t, now, engine, 0, s_confirmPending, s_confirmLabel,
+                uiLogTick(t, now, engine, 0, s_confirmPending, privLabel(s_confirmLabel),
                           s_infoPending, infoTypeName, infoText,
                           engine.isWatched(s_confirmMac, s_confirmIsBle),
                           engine.isHunted(s_confirmMac, s_confirmIsBle),
@@ -5339,7 +5628,7 @@ void loop() {
         case AppState::RAWSCAN: {
             bool done = s_rawScanIsBle ? engine.rawBleScanDone() : engine.rawWifiScanDone();
             drawTwoBand([&](TFT_eSPI& t, bool advance) {
-                uiRawScanTick(t, now, engine, s_rawScanIsBle, done, s_confirmPending, s_confirmLabel,
+                uiRawScanTick(t, now, engine, s_rawScanIsBle, done, s_confirmPending, privLabel(s_confirmLabel),
                               engine.isWatched(s_confirmMac, s_rawScanIsBle),
                               engine.isHunted(s_confirmMac, s_rawScanIsBle),
                               IgnoreList::contains(s_confirmMac), advance);
@@ -5634,7 +5923,11 @@ void loop() {
                         case SettingsRow::BACKGROUND: Settings::cycleBackground(); break;
                         case SettingsRow::BACKGROUND_LOCK: Settings::toggleBackgroundLocked(); break;
                         case SettingsRow::UPDATE_CHECK:    Settings::toggleUpdateCheck();     break;
-                        case SettingsRow::TIME_ZONE:       Settings::cycleTimeZone();         break;
+                        case SettingsRow::TIME_ZONE:
+                            // Left half back, right half forward -- see the row's label.
+                            Settings::stepTimeZone(gestureStartX < tft.width() / 2 ? -1 : 1);
+                            Settings::markTimeZoneChosen();
+                            break;
                         case SettingsRow::INVERT:
                             Settings::toggleInvert();
                             // XOR against the panel's own baseline, not an
@@ -5663,20 +5956,27 @@ void loop() {
 #endif
                         case SettingsRow::DETECTION_FILTER: enterDetFilter(); break;
                         case SettingsRow::POWER_SAVER: enterPower(); break;
+                        case SettingsRow::PRIVACY:
+                            Settings::togglePrivacyMode();
+                            Theme::showToast(Settings::privacyMode() ? "PRIVACY MODE ON" : "PRIVACY MODE OFF",
+                                             Settings::privacyMode() ? "Addresses and names are hidden" : nullptr, Theme::CYAN);
+                            break;
+#if defined(ESP32) && !defined(TWATCH_S3)
+                        case SettingsRow::CHARGE_MODE: s_chargeWanted = true; break;
+                        case SettingsRow::LAST_RUN: break;   // a reading, not a switch
+#endif
 #if defined(TWATCH_S3)
                         case SettingsRow::WATCH_RADIO: Settings::cycleRadioDuty(); break;
                         case SettingsRow::WATCH_LISTEN: Settings::cycleBleListen(); break;
                         case SettingsRow::WATCH_IDLE_CPU: Settings::cycleIdleCpu(); applyCpuClock(); break;
                         case SettingsRow::WATCH_BATTERY: break;   // a reading, not a switch
-                        case SettingsRow::WATCH_RADIO_RESET: twatchRadioResetTap(); break;
-                        case SettingsRow::WATCH_STEADY:
-                            Settings::toggleSteadyPower();
-                            twatchApplySteady();
-                            twatchBatterySample(BlackBox::BATT_WHY_TIMER);   // a line in the log at the switch
-                            break;
                         case SettingsRow::WATCH_TEMP: break;   // a reading, not a switch
-                        case SettingsRow::WATCH_XTAL: twatchXtalStart(); break;
                         case SettingsRow::WATCH_SETTINGS: uiSettingsOpenPage(SettingsPage::WATCH); break;
+                        case SettingsRow::WATCH_QUIET_TAGS:
+                            Settings::toggleQuietTrackers();
+                            Theme::showToast("TAGS + RINGS", Settings::quietTrackers() ? "Logged, no wake or buzz" : "Alert like the rest",
+                                             Theme::CYAN);
+                            break;
 #if SQUACH_LORA
                         case SettingsRow::WATCH_LORA:
                             Settings::cycleLoraListen();
@@ -5779,7 +6079,7 @@ void loop() {
                         case SettingsRow::BINGO:        enterBingo(); break;
                         case SettingsRow::DEX:          enterDex(); break;
                         case SettingsRow::APPEARANCE:  uiSettingsOpenAppearance(true); break;
-                        case SettingsRow::TOP_HAT:     Settings::toggleTopHat(); break;
+                        case SettingsRow::AURA:        Settings::toggleAura(); break;
                         // From a sub-page, back to the main list; from the
                         // main list, out.
                         case SettingsRow::BACK:
@@ -5984,7 +6284,17 @@ void loop() {
             lastTouch = now;
             // The board redraws only what changed, so it is the same with the
             // frame buffer and without it (given up for a download).
-            drawTwoBand([&](TFT_eSPI& t, bool) { uiWifiPassTick(t, now); });
+            drawTwoBand([&](TFT_eSPI& t, bool) {
+#if defined(CYD35)
+                // This screen repaints only what changed, which needs a
+                // buffer that still holds the rest. The 3.5" has half a
+                // buffer shared by two bands, so there it draws everything,
+                // every band: the keyboard's top half was being pushed to
+                // the bottom half as well (issue #25).
+                if (frameBufferOk) uiWifiPassRedrawAll();
+#endif
+                uiWifiPassTick(t, now);
+            });
             if (touchJustDown)    uiWifiPassTouch(tp.x, tp.y, now, WifiPassTouch::DOWN);
             else if (tp.valid)    uiWifiPassTouch(tp.x, tp.y, now, WifiPassTouch::MOVE);
             else if (touchJustUp) uiWifiPassTouch(tp.x, tp.y, now, WifiPassTouch::UP);
@@ -6938,6 +7248,8 @@ void loop() {
         // On the cable the watch stays lit; on battery the timeout always runs
         // (see Settings::screenTimeoutSec), unless it is set to NEVER.
         if (s_onUsb) wantDim = false;
+#endif
+#if defined(TWATCH_S3) || SQW_BOOT_BTN
         // The crown, which beats the cable, the desk and a timeout of NEVER.
         // A touch since the press, or an alert that wants the screen, ends it.
         //

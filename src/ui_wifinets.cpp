@@ -2,6 +2,7 @@
 #include "ui_wifinets.h"
 #include "ota_wifi.h"
 #include "theme.h"
+#include "privacy.h"
 #include <Arduino.h>
 #include <stdio.h>
 #include <string.h>
@@ -131,7 +132,8 @@ void uiWifiNetsTick(TFT_eSPI& t, uint32_t now) {
         const int   tagW = tag[0] ? t.textWidth(tag) + 6 : 0;
         const int maxChars = (w - 16 - 12 - tagW) / t.textWidth("M");
         char name[40];
-        snprintf(name, sizeof name, "%.*s", maxChars > 32 ? 32 : maxChars, OtaWifi::savedSsidAt((uint8_t)i));
+        char pv[40];
+        snprintf(name, sizeof name, "%.*s", maxChars > 32 ? 32 : maxChars, Privacy::name(OtaWifi::savedSsidAt((uint8_t)i), pv, sizeof pv));
         t.setTextColor(Theme::WHITE, Theme::TASKBAR);
         t.setCursor(14, y + 4);
         t.print(name);
@@ -206,7 +208,8 @@ void uiWifiAddTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng) {
         const int   tagW = tag[0] ? t.textWidth(tag) + 6 : 0;
         const int maxChars = (w - 16 - 12 - 20 - tagW) / t.textWidth("M");
         char name[40];
-        snprintf(name, sizeof name, "%.*s", maxChars > 32 ? 32 : maxChars, ssid[0] ? ssid : "(hidden)");
+        char pv[40];
+        snprintf(name, sizeof name, "%.*s", maxChars > 32 ? 32 : maxChars, ssid[0] ? Privacy::name(ssid, pv, sizeof pv) : "(hidden)");
         t.setTextColor(Theme::WHITE, Theme::TASKBAR);
         t.setCursor(14, y + (ROW_H - t.fontHeight()) / 2);
         t.print(name);

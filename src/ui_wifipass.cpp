@@ -1,6 +1,7 @@
 // SquachWatch-CYD — the WiFi password keyboard. See include/ui_wifipass.h.
 #include "ui_wifipass.h"
 #include "theme.h"
+#include "privacy.h"
 #include <Arduino.h>
 #include <stdio.h>
 #include <string.h>
@@ -265,7 +266,8 @@ void drawAll(TFT_eSPI& t, uint32_t now) {
     t.setCursor(BACK_X + BACK_W + 8, BACK_Y + 11);
     char ssid[40];
     const int maxChars = (w - (BACK_X + BACK_W + 8) - MARGIN) / t.textWidth("M");
-    snprintf(ssid, sizeof ssid, "%.*s", maxChars > 32 ? 32 : maxChars, s_ssid);
+    char pv[40];
+    snprintf(ssid, sizeof ssid, "%.*s", maxChars > 32 ? 32 : maxChars, Privacy::name(s_ssid, pv, sizeof pv));
     t.print(ssid);
     drawField(t, w, now);
     drawShow(t, w);
@@ -341,6 +343,8 @@ void uiWifiPassTouch(int x, int y, uint32_t now, WifiPassTouch phase) {
         }
     }
 }
+
+void uiWifiPassRedrawAll() { s_full = true; }
 
 WifiPassResult uiWifiPassResult() { return s_result; }
 const char*    uiWifiPassText()   { return s_buf; }

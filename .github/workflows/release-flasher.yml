@@ -586,7 +586,7 @@ jobs:
           import json, shutil, os
           label = "${{ steps.ver.outputs.label }}"
           ver   = "${{ steps.ver.outputs.version }}"
-          for board in ("cyd", "cyd-ili9341", "cyd-fast", "cyd-ili9341-fast", "rlphantom-r", "freenove32", "cyd32c", "twatch-s3", "freenove-s3", "crowpanel7"):
+          for board in ("cyd", "cyd-ili9341", "cyd-fast", "cyd-ili9341-fast", "cyd35-fast", "rlphantom-r", "freenove32", "cyd32c", "twatch-s3", "freenove-s3", "crowpanel7"):
               shutil.copy(board + "-firmware.bin", "_site/lab-" + board + "-firmware.bin")
               if os.path.exists(board + "-firmware.sig"):
                   shutil.copy(board + "-firmware.sig", "_site/lab-" + board + "-firmware.sig")
