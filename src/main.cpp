@@ -6580,6 +6580,7 @@ void loop() {
                     // Back to the main screen to watch the swap happen.
                     case SquadHit::INVITED: enterClear(); break;
                     case SquadHit::REPLY:   enterMeshCompose(); break;
+                    case SquadHit::SEND:    enterMeshCompose(); break;
                     // A fox hunt: their board is the target, the HUNT gauge the
                     // receiver. Already hunting them: just go to the gauge.
                     case SquadHit::HUNT: {
