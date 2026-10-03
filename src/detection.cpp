@@ -2267,7 +2267,7 @@ DetectionEngine::HuntToggle DetectionEngine::toggleHunt(const uint8_t* mac,
     if (_huntTargetCount >= HUNT_TARGET_CAP) return HuntToggle::FULL;
 
     HuntEntry& e = _huntTargets[_huntTargetCount++];
-    e = WatchEntry();
+    e = HuntEntry();
     e.kind = kind;
     memcpy(e.mac, mac, 6);
     const char* fallback = (kind == WatchKind::BLE) ? "Unnamed device" : "(hidden)";
