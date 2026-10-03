@@ -255,6 +255,9 @@ namespace Squachy {
     // tapped while it asks WHAT REEKS?! -- see Theme::consumeOwlReek(). Not a
     // no-op once earned: he answers the owl either way.
     void unlockShambler();
+    // Whether the SHAMBLER is wearable (earned, or the master unlock). The
+    // owl stops asking WHAT REEKS?! once it is -- see Theme::setOwlAsks().
+    bool shamblerUnlocked();
 
     // Unlock announcements. Any outfit that becomes available -- by
     // crossing its lifetime-detection threshold, or by the werewolf

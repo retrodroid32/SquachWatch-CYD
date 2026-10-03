@@ -13,7 +13,7 @@
 #include "meshtutor.h"
 #include "squachy.h"
 #include "detection.h"
-#include "ignore_list.h"   // the NEARBY headline leaves ignored devices out
+#include "ignore_list.h"   // the NEARBY headline leaves ignored and snoozed devices out
 #include "emote_script.h"
 #include <esp_system.h>
 #include "crowd_bench.h"
@@ -3026,13 +3026,14 @@ void uiClearTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool adv
     for (uint8_t i = 0; i < (uint8_t)DetectionType::COUNT; i++) {
         if (eng.countByType((DetectionType)i) > 0) { anyActive = true; break; }
     }
-    // ...and not only things you told it to ignore. Your own AirTag and your
-    // own doorbell are counted -- the counters stay honest, as IgnoreList
-    // promises -- but they are not news, and a headline that never goes away
-    // because of them is one you stop reading (asked for 2026-10-03). A
+    // ...and not only things you told it to ignore or snooze. Your own AirTag
+    // and your own doorbell are counted -- the counters stay honest, as
+    // IgnoreList promises -- but they are not news, and a headline that never
+    // goes away because of them is one you stop reading (asked for
+    // 2026-10-03, IGNORE first, then SNOOZE too: silenced() is both). A
     // deauth flood is an attack with no device of its own to ignore, so it
     // always counts. Looked up four times a second, not every frame: the log
-    // is 64 rows and the ignore list 64 MACs.
+    // is 64 rows, the ignore list 64 MACs and the snoozes 32.
     if (anyActive) {
         static uint32_t s_unAt = 0;
         static bool     s_un   = true;
@@ -3041,7 +3042,7 @@ void uiClearTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool adv
             s_un = eng.countByType(DetectionType::DEAUTH) > 0;
             for (uint8_t i = 0; !s_un && i < eng.logCount(); i++) {
                 const Detection* d = eng.logAt(i);
-                if (d && d->active && !IgnoreList::contains(d->mac)) s_un = true;
+                if (d && d->active && !IgnoreList::silenced(d->mac)) s_un = true;
             }
         }
         anyActive = s_un;

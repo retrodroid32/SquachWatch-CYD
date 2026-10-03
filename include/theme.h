@@ -513,6 +513,9 @@ namespace Theme {
     // WHAT REEKS?! (every third time he speaks). main.cpp turns it into
     // Squachy::unlockShambler().
     bool consumeOwlReek();
+    // Whether the owl still asks WHAT REEKS?! at all: main.cpp passes false
+    // once the SHAMBLER is unlocked, and that slot becomes an ordinary quip.
+    void setOwlAsks(bool on);
     // XYZZY, on the TERMINAL background: the terminal types the word now and
     // then, and each tap on it is reported here once -- 1, 2, then 3, which is
     // the YZZERD unlock, then round again. 0 when nothing new was tapped.

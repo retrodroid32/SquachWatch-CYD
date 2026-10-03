@@ -5033,6 +5033,7 @@ void loop() {
             if (Theme::consumeEyeCatch())       Squachy::unlockVoidEye();
             if (Theme::consumeLodgeKnock())     Squachy::unlockParka();
             if (Theme::consumeOwlReek())        Squachy::unlockShambler();
+            Theme::setOwlAsks(!Squachy::shamblerUnlocked());   // answered: he moves on
             if (Theme::consumeSharkCatch())     Squachy::unlockShark();
             if (const uint8_t said = Theme::consumeXyzzy()) Squachy::magicWord(said);
     if (Theme::consumePetUnlock())      Squachy::unlockPet();

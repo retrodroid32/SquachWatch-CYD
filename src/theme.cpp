@@ -4621,6 +4621,11 @@ static bool     s_lodgePending = false;
 static int      s_owlX = 0, s_owlY = 0, s_owlBubX = 0, s_owlBubY = 0, s_owlBubW = 0, s_owlBubH = 0;
 static uint32_t s_owlReekAt = 0;
 static bool     s_owlReekPending = false;
+// Whether he still asks at all. main.cpp turns it off once the SHAMBLER is
+// his: the question has been answered, and a bird saying one line forever
+// is a bird nobody looks at.
+static bool     s_owlAsks = true;
+void setOwlAsks(bool on) { s_owlAsks = on; }
 
 // Where the toasters cameo is RIGHT NOW, so a tap can find him. Same shape
 // as the lodge and the starfield eye: the drawing code publishes a box each
@@ -5583,9 +5588,11 @@ void drawFire(TFT_eSPI& t, uint32_t now, int yStart, int yEnd) {
             // tap on him while he is asking it is the SHAMBLER unlock (see
             // backgroundTap()). Every third, not one in ten like a quip:
             // once a minute and a half is findable; once in five minutes,
-            // at three and a half seconds a time, is not.
+            // at three and a half seconds a time, is not. Once the costume
+            // is earned he stops asking (setOwlAsks), and that slot goes back
+            // to an ordinary quip.
             const uint32_t slot = now / CYCLE;
-            const bool reek = !wolfOut && (slot % 3) == 1;
+            const bool reek = s_owlAsks && !wolfOut && (slot % 3) == 1;
             const char* q = wolfOut
                 ? SCARED[((now - s_wolfAt) / 1400) % (sizeof(SCARED) / sizeof(SCARED[0]))]
                 : reek ? "WHAT REEKS?!"

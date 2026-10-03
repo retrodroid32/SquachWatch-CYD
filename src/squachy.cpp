@@ -2505,6 +2505,11 @@ bool isHeld() { return s_grabbed || s_dangle; }
 
 // The owl on the FIRE background asked WHAT REEKS?! and got tapped for it.
 // Like the shark, not silent the second time: the owl is always right.
+bool shamblerUnlocked() {
+    ensurePrefsLoaded();
+    return outfitUnlocked((uint8_t)OutfitId::SHAMBLER);
+}
+
 void unlockShambler() {
     ensurePrefsLoaded();
     mood      = Mood::BOUNCE;

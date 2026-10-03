@@ -576,10 +576,15 @@ int main(int argc, char** argv) {
     // SQUACHSIM_IGNOREALL=1: every seeded device goes on the IGNORE list, for
     // checking that the NEARBY headline leaves ignored devices out while the
     // counters still count them.
-    if (getenv("SQUACHSIM_IGNOREALL")) {
+    // SQUACHSIM_SNOOZEALL=1 snoozes them instead, for the same check.
+    if (getenv("SQUACHSIM_IGNOREALL") || getenv("SQUACHSIM_SNOOZEALL")) {
         IgnoreList::begin();
+        const bool snooze = getenv("SQUACHSIM_SNOOZEALL") != nullptr;
         for (uint8_t i = 0; i < engine.logCount(); i++)
-            if (const Detection* d = engine.logAt(i)) IgnoreList::add(d->mac, d->type);
+            if (const Detection* d = engine.logAt(i)) {
+                if (snooze) IgnoreList::snooze(d->mac);
+                else        IgnoreList::add(d->mac, d->type);
+            }
     }
 
     if (onboard) Squachy::trigger(Squachy::Event::BOOTED);
@@ -1067,7 +1072,9 @@ int main(int argc, char** argv) {
             Theme::backgroundTap(x, y, when);
             if (Theme::consumeOwlReek()) Squachy::unlockShambler();
         }
+        Theme::setOwlAsks(!Squachy::shamblerUnlocked());
     };
+    Theme::setOwlAsks(!Squachy::shamblerUnlocked());
     auto xyzzyStep = [&]() {
         if (!xyzzy) return;
         Theme::summonXyzzy();
