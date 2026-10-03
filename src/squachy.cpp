@@ -25,6 +25,18 @@ static inline uint32_t tempo(uint32_t ms) { return ms * s_tempoPct / 100; }
 #endif
 #include <Arduino.h>
 #include <Preferences.h>
+// -DSQW_SQUACHY_LAPS splits his draw time onto the [frame] line's x slots:
+// x6 tick() before drawBody, x1 drawBody's start, x2 the fur colours, x3 a
+// costume's back layer, x4 the aura, x5 everything from the outline to the
+// name sticker. Off, the macro is nothing. Used on the C5 on 2026-10-02:
+// plain Squachy 7.3 ms (faster than the ESP32's 9.7), the aura 3.8, a float-
+// heavy costume another 4-5 -- so his own drawing was never the slow part.
+#if defined(SQW_SQUACHY_LAPS) && defined(ESP_PLATFORM)
+#include "frame_prof.h"
+#define SQ_LAP(x) FrameProf::lap(FrameProf::x)
+#else
+#define SQ_LAP(x) ((void)0)
+#endif
 
 namespace Squachy {
 
@@ -5568,6 +5580,7 @@ static void drawBody(TFT_eSPI& t, int cx, int hy, int headTopY, uint32_t now, Mo
     // drawn, not as a post-hoc overlay in drawOutfit() (there's no
     // cheap way to "repaint" an already-drawn silhouette a different
     // color without redrawing every shape that used the old one).
+    SQ_LAP(X1);
     OutfitId outfitNow = currentOutfit();
     // His own fur, kept for the outfits that dress the body in a colour and
     // then need the head -- and the hands -- back.
@@ -5625,6 +5638,7 @@ static void drawBody(TFT_eSPI& t, int cx, int hy, int headTopY, uint32_t now, Mo
     // which are recoloured to match it -- so a rainbow here repaints only the
     // legs and leaves them a different colour from the coat above them.
     // YZZERD too: the sleeves' bells and cuffs are fixed colours the same way.
+    SQ_LAP(X2);
     if (s_legendary && now < s_legendaryUntil && outfitNow != OutfitId::PARKA && outfitNow != OutfitId::YZZERD && outfitNow != OutfitId::OVER9000) {
         float ph = (float)(now % 900) / 900.0f;
         furMain  = blend(CYAN, VAPOR_PINK, (uint16_t)(ph * 256.0f));
@@ -5823,7 +5837,9 @@ static void drawBody(TFT_eSPI& t, int cx, int hy, int headTopY, uint32_t now, Mo
                             : blend(FUR_DARK, BLACK, 150);
     // Behind him like the wings, the hide, the tail and the rune circle. The
     // ground is where his soles are, which a crouch leaves put while hy sinks.
+    SQ_LAP(X3);
     if (aura) auraBack(t, cx2, hy, hy + S(55) - crouch, now, m, scale);
+    SQ_LAP(X4);
     const int kb = (S(1) < 1) ? 1 : S(1);          // rim thickness, min 1px
 
     // ---- what a costume hides is not drawn ------------------------------
@@ -6929,6 +6945,7 @@ static void drawBody(TFT_eSPI& t, int cx, int hy, int headTopY, uint32_t now, Mo
 
     // The aura's lightning, in front of him and his costume.
     if (aura) auraFront(t, cx2, hy, hy + S(55) - crouch, now, m, scale);
+    SQ_LAP(X5);
 
     // The name sticker, last of all so it sits on top of whatever the costume
     // put on his chest. It is pinned to the torso, so it bobs, crouches and
@@ -7971,6 +7988,7 @@ void tick(TFT_eSPI& t, int cx, int topY, int availHeight, uint32_t now,
     s_reachLevel = s_hostReachLevel;
     s_actPose    = s_hostAct;
     s_actReact   = (mood == Mood::SHOCKED && (int32_t)(s_hostActUntil - now) > 0) ? s_hostReact : -1;
+    SQ_LAP(X6);
     drawBody(t, bodyCx, hy, headTopY, now, mood, scale);
     s_actReact   = -1;
     if (now < s_petFxUntil) drawHeartFx(t, bodyCx, headTopY, now);
