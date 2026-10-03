@@ -2068,7 +2068,7 @@ DetectionEngine::WatchToggle DetectionEngine::toggleWatch(const uint8_t* mac,
             _watchTargets[i] = _watchTargets[i + 1];
         if (_watchTargetCount) {
             _watchTargetCount--;
-            memset(&_watchTargets[_watchTargetCount], 0, sizeof(_watchTargets[0]));
+            _watchTargets[_watchTargetCount] = WatchEntry();
         }
         if (wasActive) deactivateWatch();
         return WatchToggle::REMOVED;
@@ -2076,7 +2076,7 @@ DetectionEngine::WatchToggle DetectionEngine::toggleWatch(const uint8_t* mac,
 
     if (_watchTargetCount >= WATCH_TARGET_CAP) return WatchToggle::FULL;
     WatchEntry& e = _watchTargets[_watchTargetCount++];
-    memset(&e, 0, sizeof e);
+    e = WatchEntry();
     e.kind = kind;
     memcpy(e.mac, mac, 6);
     const char* fallback = (kind == WatchKind::BLE) ? "Unnamed device" : "(hidden)";
@@ -2142,13 +2142,13 @@ void DetectionEngine::clearWatch() {
         for (uint8_t i = (uint8_t)found; i + 1 < _watchTargetCount; i++)
             _watchTargets[i] = _watchTargets[i + 1];
         _watchTargetCount--;
-        memset(&_watchTargets[_watchTargetCount], 0, sizeof(_watchTargets[0]));
+        _watchTargets[_watchTargetCount] = WatchEntry();
     }
     deactivateWatch();
 }
 
 void DetectionEngine::clearWatches() {
-    memset(_watchTargets, 0, sizeof _watchTargets);
+    for (uint8_t i = 0; i < WATCH_TARGET_CAP; i++) _watchTargets[i] = WatchEntry();
     _watchTargetCount = 0;
     deactivateWatch();
 }
@@ -2233,7 +2233,7 @@ int8_t DetectionEngine::watchRssiAt(uint8_t idx) const {
     return found >= 0 ? watchEntryRssiAt(_watchTargets[(uint8_t)found], idx) : 0;
 }
 
-int8_t DetectionEngine::findHuntTargetint8_t DetectionEngine::findHuntTarget(const uint8_t* mac, WatchKind kind) const {
+int8_t DetectionEngine::findHuntTarget(const uint8_t* mac, WatchKind kind) const {
     if (!mac || kind == WatchKind::NONE) return -1;
     for (uint8_t i = 0; i < _huntTargetCount; i++) {
         if (_huntTargets[i].kind == kind && memcmp(_huntTargets[i].mac, mac, 6) == 0)
@@ -2267,7 +2267,7 @@ DetectionEngine::HuntToggle DetectionEngine::toggleHunt(const uint8_t* mac,
     if (_huntTargetCount >= HUNT_TARGET_CAP) return HuntToggle::FULL;
 
     HuntEntry& e = _huntTargets[_huntTargetCount++];
-    memset(&e, 0, sizeof e);
+    e = WatchEntry();
     e.kind = kind;
     memcpy(e.mac, mac, 6);
     const char* fallback = (kind == WatchKind::BLE) ? "Unnamed device" : "(hidden)";

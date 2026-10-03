@@ -181,12 +181,12 @@ DetectionEngine::WatchToggle DetectionEngine::toggleWatch(const uint8_t* mac, co
     if (found >= 0) {
         const bool active = _watchKind == kind && memcmp(_watchMac, mac, 6) == 0;
         for (uint8_t i=(uint8_t)found; i+1<_watchTargetCount; i++) _watchTargets[i]=_watchTargets[i+1];
-        if (_watchTargetCount) { _watchTargetCount--; memset(&_watchTargets[_watchTargetCount],0,sizeof(_watchTargets[0])); }
+        if (_watchTargetCount) { _watchTargetCount--; _watchTargets[_watchTargetCount] = WatchEntry(); }
         if (active) deactivateWatch();
         return WatchToggle::REMOVED;
     }
     if (_watchTargetCount >= WATCH_TARGET_CAP) return WatchToggle::FULL;
-    WatchEntry& e=_watchTargets[_watchTargetCount++]; memset(&e,0,sizeof e); e.kind=kind;
+    WatchEntry& e=_watchTargets[_watchTargetCount++]; e=WatchEntry(); e.kind=kind;
     if (mac) memcpy(e.mac,mac,6);
     snprintf(e.label,sizeof e.label,"%s",(label&&label[0])?label:(kind==WatchKind::BLE?"Unnamed device":"(hidden)"));
     return WatchToggle::ADDED;
@@ -204,8 +204,8 @@ bool DetectionEngine::watchTargetInfo(uint8_t idx, WatchTargetInfo& out) const {
 }
 bool DetectionEngine::activateWatchTarget(uint8_t idx){ if(idx>=_watchTargetCount)return false; const WatchEntry&e=_watchTargets[idx]; _watchKind=e.kind; memcpy(_watchMac,e.mac,6); snprintf(_watchLabel,sizeof _watchLabel,"%s",e.label); return true; }
 void DetectionEngine::deactivateWatch(){ _watchKind=WatchKind::NONE; memset(_watchMac,0,sizeof _watchMac); _watchLabel[0]=0; }
-void DetectionEngine::clearWatch(){ if(_watchKind==WatchKind::NONE)return; int8_t f=findWatchTarget(_watchMac,_watchKind); if(f>=0){ for(uint8_t i=(uint8_t)f;i+1<_watchTargetCount;i++)_watchTargets[i]=_watchTargets[i+1]; _watchTargetCount--; memset(&_watchTargets[_watchTargetCount],0,sizeof(_watchTargets[0])); } deactivateWatch(); }
-void DetectionEngine::clearWatches(){ memset(_watchTargets,0,sizeof _watchTargets); _watchTargetCount=0; deactivateWatch(); }
+void DetectionEngine::clearWatch(){ if(_watchKind==WatchKind::NONE)return; int8_t f=findWatchTarget(_watchMac,_watchKind); if(f>=0){ for(uint8_t i=(uint8_t)f;i+1<_watchTargetCount;i++)_watchTargets[i]=_watchTargets[i+1]; _watchTargetCount--; _watchTargets[_watchTargetCount] = WatchEntry(); } deactivateWatch(); }
+void DetectionEngine::clearWatches(){ for(uint8_t i=0;i<WATCH_TARGET_CAP;i++)_watchTargets[i]=WatchEntry(); _watchTargetCount=0; deactivateWatch(); }
 void DetectionEngine::watchBle(const uint8_t* mac,const char* name){ int8_t i=findWatchTarget(mac,WatchKind::BLE); if(i<0){ if(toggleWatchBle(mac,name)!=WatchToggle::ADDED)return; i=findWatchTarget(mac,WatchKind::BLE);} if(i>=0)activateWatchTarget((uint8_t)i); }
 void DetectionEngine::watchWifi(const uint8_t* mac,const char* name){ int8_t i=findWatchTarget(mac,WatchKind::WIFI); if(i<0){ if(toggleWatchWifi(mac,name)!=WatchToggle::ADDED)return; i=findWatchTarget(mac,WatchKind::WIFI);} if(i>=0)activateWatchTarget((uint8_t)i); }
 void DetectionEngine::noteWatchRssi(WatchEntry& e,int8_t rssi){ e.lastSeenMs=millis(); e.rssiHist[e.rssiHead]=rssi; e.rssiHead=(uint8_t)((e.rssiHead+1)%WATCH_RSSI_CAP); if(e.rssiCount<WATCH_RSSI_CAP)e.rssiCount++; }
@@ -215,7 +215,7 @@ bool DetectionEngine::watchHitPending(){ for(uint8_t i=0;i<_watchTargetCount;i++
 uint8_t DetectionEngine::watchRssiCount() const { int8_t f=findWatchTarget(_watchMac,_watchKind); return f>=0?_watchTargets[(uint8_t)f].rssiCount:0; }
 int8_t DetectionEngine::watchRssiAt(uint8_t idx) const { int8_t f=findWatchTarget(_watchMac,_watchKind); return f>=0?watchEntryRssiAt(_watchTargets[(uint8_t)f],idx):0; }
 
-int8_t DetectionEngine::findHuntTargetint8_t DetectionEngine::findHuntTarget(const uint8_t* mac, WatchKind kind) const {
+int8_t DetectionEngine::findHuntTarget(const uint8_t* mac, WatchKind kind) const {
     if (!mac || kind == WatchKind::NONE) return -1;
     for (uint8_t i = 0; i < _huntTargetCount; i++) {
         if (_huntTargets[i].kind == kind && memcmp(_huntTargets[i].mac, mac, 6) == 0)
