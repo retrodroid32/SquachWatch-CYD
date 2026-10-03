@@ -82,8 +82,45 @@ jobs:
           esac
           echo "skip=false" >> "$GITHUB_OUTPUT"
 
-  build-and-release:
+  # The RockBase NM-CYD-C5 (ESP32-C5, PR #21) builds in a runner of its own.
+  # Its platform is pioarduino (Arduino 3.3 / IDF 5.5), whose installer puts
+  # a core of its own into whatever Python it runs in -- on a Windows bench it
+  # left `pio` unable to start for every other board (2026-10-02). So it never
+  # shares a runner with the Xtensa builds; it hands its four files over as
+  # an artifact. Allowed to fail: a release is never held up by the one board
+  # most people do not have, and the main job attaches what it gets.
+  build-c5:
     needs: preflight
+    if: needs.preflight.outputs.skip != 'true'
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+      - name: Install PlatformIO
+        run: pip install --upgrade platformio
+      - name: Build RockBase NM-CYD-C5 (ESP32-C5)
+        run: pio run -e nm-cyd-c5
+      - name: Collect
+        run: |
+          mkdir -p c5
+          cp .pio/build/nm-cyd-c5/bootloader.bin .pio/build/nm-cyd-c5/partitions.bin .pio/build/nm-cyd-c5/firmware.bin c5/
+          # boot_app0 lives in the framework the C5 was built with, not the
+          # Xtensa boards' one.
+          cp "$(find ~/.platformio/packages -path '*framework-arduinoespressif32*/tools/partitions/boot_app0.bin' | head -1)" c5/boot_app0.bin
+          ls -l c5
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nm-cyd-c5
+          path: c5/
+          retention-days: 7
+
+  build-and-release:
+    needs: [preflight, build-c5]
     if: needs.preflight.outputs.skip != 'true'
     runs-on: ubuntu-latest
     environment:
@@ -191,9 +228,34 @@ jobs:
           # it is compiled to keep its code honest but NOT published anywhere.
           pio run -e rlphantom
 
+      - name: Fetch the NM-CYD-C5 build
+        # Only if its runner managed one (see build-c5). The C5 is download-
+        # only for now: the bootloader sits at 0x2000 on this chip, there is a
+        # boot_app0 at 0xe000, the flash is 16 MB, and the browser flasher's
+        # library has not been shown to handle a C5 -- so it joins the
+        # Release as files for esptool (docs/NM-CYD-C5.md) and stays off the
+        # web page and the Pages site.
+        if: needs.build-c5.result == 'success'
+        uses: actions/download-artifact@v4
+        with:
+          name: nm-cyd-c5
+          path: c5
+
       - name: Merge into one flashable image (per board)
         run: |
           pip install esptool
+          if [ -f c5/firmware.bin ]; then
+            # Four parts and NO merged image for this board, on purpose: a
+            # merged image starts at 0x0 and so covers 0x9000-0xe000, which
+            # is NVS, and flashing it wipes every setting on the board. The
+            # four-part esptool command is in docs/NM-CYD-C5.md.
+            cp c5/firmware.bin   nm-cyd-c5-firmware.bin
+            cp c5/bootloader.bin esp32c5-bootloader.bin
+            cp c5/partitions.bin nm-cyd-c5-partitions.bin
+            cp c5/boot_app0.bin  esp32c5-boot_app0.bin
+          else
+            echo "::warning::No NM-CYD-C5 build this run; the release goes out without it."
+          fi
           python -m esptool --chip esp32 merge_bin \
             -o firmware-cyd-merged.bin \
             --flash_mode dio --flash_freq 40m --flash_size 4MB \
@@ -455,6 +517,7 @@ jobs:
             manifest-cyd-fast.json \
             manifest-cyd-ili9341-fast.json \
             manifest-cyd35-fast.json \
+            $(ls nm-cyd-c5-*.bin esp32c5-*.bin 2>/dev/null) \
             $(ls *-firmware.sig 2>/dev/null)
 
       - name: Build the browser emulator

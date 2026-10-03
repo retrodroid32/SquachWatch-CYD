@@ -82,9 +82,15 @@ it on.
 
 Other boards have builds of their own -- `platformio.ini` has one
 `[env:...]` each, with what is and is not confirmed on it. The newest is the
-**Freenove ESP32-S3 Display 2.8"** (FNK0104B, `[env:freenove-s3]`): an S3
-with capacitive touch, an SDMMC card slot, a WS2812 status light and a
-battery connector. Pins in [docs/PINOUT.md](docs/PINOUT.md).
+**RockBase NM-CYD-C5** (`[env:nm-cyd-c5]`): the classic 2.8" CYD's glass on
+an **ESP32-C5**, the first RISC-V chip here, with dual-band Wi-Fi 6, 16 MB of
+flash and 8 MB of PSRAM. It runs the whole firmware but is download-only for
+now: flash it with esptool from the release files, as
+[docs/NM-CYD-C5.md](docs/NM-CYD-C5.md) explains, because the browser flasher's
+library has not been shown to handle a C5. Before it, the **Freenove ESP32-S3
+Display 2.8"** (FNK0104B, `[env:freenove-s3]`): an S3 with capacitive touch, an
+SDMMC card slot, a WS2812 status light and a battery connector. Pins in
+[docs/PINOUT.md](docs/PINOUT.md).
 
 ## Web Flash
 
@@ -393,13 +399,13 @@ one board by hand, then UPDATE SQUAD from it.
 
 ## Every outfit
 
-Squachy has fifteen costumes. Most are earned by detection count; five are
+Squachy has sixteen costumes. Most are earned by detection count; six are
 hidden behind things nobody tells you about, on the background they belong
 to. Two of them are in the animation at the top of this page.
 
 <p align="center">
   <img src="docs/outfits.png" width="880"
-       alt="All fifteen of Squachy's outfits, rendered by the firmware">
+       alt="All sixteen of Squachy's outfits, rendered by the firmware">
 </p>
 
 No fabricated marketing shots, which was the promise here before there was

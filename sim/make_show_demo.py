@@ -32,6 +32,18 @@ CYAN  = (0, 214, 214)
 # ---- the clips ----
 
 CLIPS = {
+    # v1.28.0 "Over 9000": the scouter unlock (a tap on his shades with the
+    # aura lit, which --tap lands on him), the outfit it earns, and the tank
+    # redrawn in whole numbers. The C5 is a chip, not a screen, so it gets a
+    # caption. SQUACHSIM_LEGEND lights the aura without the catches.
+    "over-9000": [
+        ("clear", 260, 30, ["--noseed", "--bg", "5"], {"SQUACHSIM_LEGEND": "1"}, 1500, "A LEGEND. THOSE SHADES READ MORE THAN LIGHT..."),
+        ("clear", 30, 104, ["--noseed", "--bg", "5", "--tap", "40:160:88"], {"SQUACHSIM_LEGEND": "1"}, 1800, "TAP THEM. HOLD STILL. READING..."),
+        ("clear", 260, 36, ["--noseed", "--bg", "1", "--outfit", "16"], {"SQUACHSIM_LEGEND": "1"}, 1600, "OVER 9000. OBVIOUSLY."),
+        ("clear", 260, 36, ["--noseed", "--bg", "8", "--outfit", "16"], {}, 1400, "GOLD HAIR, TORN SLEEVE, STATIC. IT'S A LOOK."),
+        ("clear", 200, 36, ["--noseed", "--bg", "3"], {}, 1600, "THE TANK DRAWS IN WHOLE NUMBERS NOW. SAME FISH."),
+        ("clear", 200, 30, ["--noseed", "--bg", "7"], {}, 1800, "AND A NEW CHIP: THE ESP32-C5. FIRST RISC-V BOARD."),
+    ],
     # v1.27.0 "Power-Up": the Legend's aura replaces the top hat, and the
     # YZZERD wizard, unlocked by tapping XYZZY on the TERMINAL background.
     # SQUACHSIM_LEGEND wears the Legend look without the catches; the
