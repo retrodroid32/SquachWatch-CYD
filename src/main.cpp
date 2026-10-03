@@ -4649,9 +4649,23 @@ void loop() {
             break;
         }
         case AppState::WATCH_LIST: {
-            drawTwoBand([&](TFT_eSPI& t, bool) {
-                uiWatchListTick(t, now, engine);
-            });
+            // Retained roster: the underlying WATCH RSSI history samples at
+            // ~2 s, so repainting/pushing this static list every main-loop
+            // pass only creates unnecessary panel traffic. Draw immediately
+            // on entry/touch, then at the same 2 s cadence as the data.
+            static uint32_t wlLastDrawAt = 0, wlEntryAt = 0;
+            const bool wlNewEntry = wlEntryAt != transitionStart;
+            const bool wlNeedsDraw = wlNewEntry || touchJustDown || touchJustUp ||
+                                     tp.valid || (now - wlLastDrawAt >= 2000);
+            if (wlNeedsDraw) {
+                wlEntryAt = transitionStart;
+                wlLastDrawAt = now;
+                drawTwoBand([&](TFT_eSPI& t, bool) {
+                    uiWatchListTick(t, now, engine);
+                });
+            } else {
+                renderedThisLoop = false;
+            }
 
             static bool wlGesture=false, wlMoved=false;
             static int wlStartX=0, wlStartY=0, wlLastY=-1;
@@ -6381,9 +6395,22 @@ void loop() {
             break;
         }
         case AppState::HUNT_LIST: {
-            drawTwoBand([&](TFT_eSPI& t, bool) {
-                uiHuntListTick(t, now, engine);
-            });
+            // Same retained-screen rule as WATCH_LIST. The selected targets'
+            // signal histories only advance at ~2 s intervals, so the panel
+            // stays completely untouched between meaningful roster updates.
+            static uint32_t hlLastDrawAt = 0, hlEntryAt = 0;
+            const bool hlNewEntry = hlEntryAt != transitionStart;
+            const bool hlNeedsDraw = hlNewEntry || touchJustDown || touchJustUp ||
+                                     tp.valid || (now - hlLastDrawAt >= 2000);
+            if (hlNeedsDraw) {
+                hlEntryAt = transitionStart;
+                hlLastDrawAt = now;
+                drawTwoBand([&](TFT_eSPI& t, bool) {
+                    uiHuntListTick(t, now, engine);
+                });
+            } else {
+                renderedThisLoop = false;
+            }
 
             static bool listGesture = false, listMoved = false;
             static int listStartX = 0, listStartY = 0, listLastY = -1;
