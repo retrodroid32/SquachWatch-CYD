@@ -1538,6 +1538,7 @@ static void enterInvite() {
 
 // INVERT and ROT on the console -- see clock.cpp. Consumed in loop().
 volatile bool g_consoleInvert = false;
+volatile bool g_consoleAdc = false;      // ADC: spare input-only analog pins on ESP32 CYD hardware
 volatile bool g_consoleRotate = false;
 volatile bool g_consoleRadioTest = false; // RADIO TEST: cycle even on the cable with the screen on (bench)
 volatile bool g_consoleBatt    = false;   // BATT: one reading, now
@@ -3750,6 +3751,30 @@ void loop() {
             }
             Serial.println(line);
         }
+    }
+#endif
+#if defined(ARDUINO_ARCH_ESP32) && !defined(SQW_S3) && !defined(CROWPANEL7)
+    if (g_consoleAdc) {
+        g_consoleAdc = false;
+        const uint8_t pins[] = {
+            34,
+#if !(defined(GPS_SUPPORT) && defined(GPS_RX_PIN) && GPS_RX_PIN == 35)
+            35,
+#endif
+            36, 39
+        };
+        char line[112];
+        int n = snprintf(line, sizeof line, "[adc]");
+        for (uint8_t p : pins) {
+            uint32_t mv = 0;
+            for (int k = 0; k < 16; k++) mv += analogReadMilliVolts(p);
+            n += snprintf(line + n, sizeof line - n, "  GPIO%u %lu mV",
+                          p, (unsigned long)(mv / 16));
+        }
+#if defined(GPS_SUPPORT) && defined(GPS_RX_PIN) && GPS_RX_PIN == 35
+        n += snprintf(line + n, sizeof line - n, "  GPIO35 GPS RX");
+#endif
+        Serial.println(line);
     }
 #endif
     if (g_consoleInvert) {
