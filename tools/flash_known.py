@@ -116,6 +116,19 @@ def main():
                             "0x8000", os.path.join(build, "partitions.bin"),
                             "0xe000", boot_app0,
                             "0x10000", os.path.join(build, "firmware.bin")], cwd=ROOT)
+    elif env == "nm-cyd-c5":
+        # The C5's toolchain (pioarduino) installs its own core into whatever
+        # penv runs it, and run from the shared one it broke `pio` for every
+        # board (2026-10-02). It lives in a core dir of its own, and its
+        # installer refuses an MSys shell, so MSYSTEM is dropped from the
+        # environment it sees.
+        core = os.path.join(os.path.expanduser("~"), ".pioarduino")
+        pio  = os.path.join(core, "penv", "Scripts", "pio.exe")
+        if not os.path.exists(pio):
+            sys.exit("the C5 builds from %s; make that venv first (pip install pioarduino)" % pio)
+        e = {k: v for k, v in os.environ.items() if k != "MSYSTEM"}
+        e["PLATFORMIO_CORE_DIR"] = core
+        r = subprocess.run([pio, "run", "-e", build_env, "-t", "upload", "--upload-port", port], cwd=ROOT, env=e)
     else:
         r = subprocess.run([PIO, "run", "-e", build_env, "-t", "upload", "--upload-port", port], cwd=ROOT)
     sys.exit(r.returncode)
