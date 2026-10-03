@@ -42,6 +42,7 @@
 #include "notices.h"
 #include "theme.h"            // the crash card on the splash
 #include "clock.h"
+#include "gps.h"
 
 // Written every second, read once on the next boot. RTC_NOINIT_ATTR is the
 // point: it survives a software reset WITHOUT being zeroed on the way back
@@ -2831,6 +2832,7 @@ void setup() {
     // saved rotation instead of always starting from the board default.
     Settings::load();
     Clock::begin();   // after Settings: the zone is applied there, the history here
+    Gps::begin();      // no-op in ordinary builds; UART2 only exists in GPS variants
 #if defined(TWATCH_S3)
     twatchRtcBegin();      // after Clock::begin(): a real time beats the note's guess
     twatchHapticBegin();
@@ -3526,6 +3528,7 @@ void loop() {
         }, nullptr);
     }
 #endif
+    Gps::tick(now);     // bounded UART/NMEA work; may establish UTC once per boot
     Clock::tick(now);   // the note to self, when it is due
 #if SQUACH_MESH && defined(BENCH_TOOLS)
     if (g_benchUpdateNow && (state == AppState::CLEAR || state == AppState::DESK)) {
