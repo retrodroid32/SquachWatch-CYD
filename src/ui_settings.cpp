@@ -32,10 +32,6 @@ static int g_scrollFor[5] = { 0, 0, 0, 0, 0 };
 // strip, so a disagreement puts the last row under it, untappable.
 #define PINNED_BACK_H (Theme::pinnedBackH(screenW))
 
-// Which groups are folded shut. Session-only on purpose: a fold is a "get this
-// out of my way for a minute", not a preference worth surviving a reboot.
-static bool s_folded[7] = { false, false, false, false, false, false, false };
-
 // Whether a watch/hunt target exists. Set every tick from the engine, read by
 // buildDisplayList() -- which has no engine of its own, and is called by the
 // hit test as well as the draw. Same pattern ui_clear.cpp uses for its crowd.
@@ -342,9 +338,6 @@ static uint8_t buildDisplayList(DisplayItem* out) {
             lastGroup = g;
             haveLastGroup = true;
         }
-        // Folded: the heading is still drawn (that is what you tap to unfold),
-        // its rows are not.
-        if (s_folded[(uint8_t)g]) continue;
         out[count].isHeader = false;
         out[count].group = g;
         out[count].row = rows[i];
@@ -434,13 +427,11 @@ static void computeGeom(TFT_eSPI& t, int screenH, int& top, int& bodyBottom,
 // row above the one you pressed.
 
 void uiSettingsInit(TFT_eSPI& t) {
-    // Arriving at Settings is arriving at its main page, at the top, with
-    // nothing folded. Scroll memory is for moving BETWEEN pages inside one
-    // visit -- carrying it across a fresh entry would drop you mid-list with
-    // no idea why.
+    // Arriving at Settings is arriving at its main page, at the top. Scroll
+    // memory is for moving BETWEEN pages inside one visit -- carrying it
+    // across a fresh entry would drop you mid-list with no idea why.
     s_page = SettingsPage::MAIN;
     for (uint8_t i = 0; i < 5; i++) g_scrollFor[i] = 0;
-    for (uint8_t i = 0; i < 7; i++) s_folded[i] = false;
     // Any pending question dies with the screen. Coming back to Settings and
     // finding a confirm panel still up from last time would be answering
     // something you no longer remember asking.
@@ -1120,37 +1111,6 @@ switch (Settings::background()) {
     // Over the top of everything, so the list is still visible around it and
     // it is obvious which screen you are being asked about.
     drawSettingsConfirm(t, w, h);
-}
-
-bool uiSettingsTapHeader(TFT_eSPI& t, int x, int y, int screenW, int screenH) {
-    (void)x; (void)screenW;
-    int top, bodyBottom, rowH, headerH, tallH;
-    computeGeom(t, screenH, top, bodyBottom, rowH, headerH, tallH);
-
-    DisplayItem items[LIST_MAX_N + 7];
-    uint8_t n = buildDisplayList(items);
-    // Same clamp the draw applies, so a tap can never be tested against a
-    // scroll position the screen is not actually showing.
-    { const int m = maxScroll(items, n, top, bodyBottom, rowH, headerH, tallH);
-      if (g_scroll > m) g_scroll = m; }
-
-    int cy = top;
-    int idx = g_scroll;
-    while (idx < n) {
-        int itemH = itemHeight(items[idx], rowH, headerH, tallH);
-        if (cy + itemH > bodyBottom) break;
-        if (y >= cy && y < cy + itemH && items[idx].isHeader) {
-            const uint8_t g = (uint8_t)items[idx].group;
-            s_folded[g] = !s_folded[g];
-            // Folding shortens the list under your finger; an old scroll
-            // offset would leave you staring at blank space below the end.
-            g_scroll = 0;
-            return true;
-        }
-        cy += itemH;
-        idx++;
-    }
-    return false;
 }
 
 SettingsRow uiSettingsHitTest(TFT_eSPI& t, int x, int y, int screenW, int screenH) {
