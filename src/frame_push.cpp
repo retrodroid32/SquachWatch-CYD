@@ -50,10 +50,16 @@ static const uint32_t PX_PER_BURST = 32;
 // trade to make on five boards for one percent on the sixth.
 static const int32_t MAX_ROWS = 480;   // the 3.5" in portrait, the tallest there is
 static uint32_t s_rowHash[MAX_ROWS];
-#if defined(NM_CYD_C5)
-// The frame before last's hashes too, for the C5's two-buffer push: a row
-// whose hash goes A, B, A is a screen drawing on top of the frame before
-// instead of its own, which the two buffers would turn into a flicker.
+// -DSQW_C5_FLIP_DIAG=1: the frame before last's hashes too, for the C5's
+// two-buffer push. A row whose hash goes A, B, A is a screen drawing on top
+// of the frame before instead of its own, which the two buffers would turn
+// into a flicker. Every screen checked clean by eye on 2026-10-02 (the
+// counter's 40-120 rows per 300 frames were the aura's own blink), so this
+// is off; turn it on when a new screen shows a flicker on the C5.
+#ifndef SQW_C5_FLIP_DIAG
+#define SQW_C5_FLIP_DIAG 0
+#endif
+#if defined(NM_CYD_C5) && SQW_C5_FLIP_DIAG
 static uint32_t s_rowHash2[MAX_ROWS];
 static uint32_t s_flipRows = 0, s_flipFrames = 0;
 #endif
@@ -404,14 +410,14 @@ static bool pushNow(TFT_eSPI& tft, const uint8_t* src, int32_t w, int32_t h, int
     for (int32_t r = 0; r < h; r++) {
         const uint32_t hv = rowHash(src + (size_t)r * (size_t)w, w);
         changed[r] = full || hv != s_rowHash[y + r];
-#if defined(NM_CYD_C5)
+#if defined(NM_CYD_C5) && SQW_C5_FLIP_DIAG
         if (s_valid && hv != s_rowHash[y + r] && hv == s_rowHash2[y + r]) s_flipRows++;
         s_rowHash2[y + r] = s_rowHash[y + r];
 #endif
         s_rowHash[y + r] = hv;
         if (changed[r]) nChanged++;
     }
-#if defined(NM_CYD_C5)
+#if defined(NM_CYD_C5) && SQW_C5_FLIP_DIAG
     if (++s_flipFrames == 300) {
         Serial.printf("[push] rows that went A,B,A in 300 frames: %lu%s\n", (unsigned long)s_flipRows,
                       s_flipRows ? "  <-- a screen may be drawing on the frame before" : "");
