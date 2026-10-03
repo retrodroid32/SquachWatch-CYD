@@ -27,6 +27,9 @@
 #include <XPT2046_Touchscreen.h>
 #include <Preferences.h>  // AWOK's own per-rotation touch-cal storage; see the AWOK block below pollTouch()'s globals
 #include <esp_heap_caps.h>   // heap_caps_get_largest_free_block() -- diagnostics screen
+#if defined(NM_CYD_C5)
+#include <esp_memory_utils.h> // esp_ptr_external_ram(): is the frame in PSRAM? (IDF 5 only)
+#endif
 #include <esp_system.h>      // esp_reset_reason() -- diagnostics screen
 // The core dump's own summary -- which task, and where. The emulator has
 // neither header, and nothing to summarise.
@@ -3164,17 +3167,31 @@ void setup() {
     // CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL (4 KB here) is served from PSRAM
     // regardless. Measured: the frame landed at 0x3D8BC308, which is PSRAM.
     // Raise that threshold for this one allocation and put it straight back.
+    //
+    // NOT the C5, though its frame goes to PSRAM the same way and draws at
+    // 8-20 fps for it (bg 15-77 ms, 2026-10-02). Kept internal there, the
+    // 75 KB left 38 KB of heap after WiFi and Bluetooth's start-up fell over
+    // a null pointer and rebooted the board every five seconds. The frame
+    // stays external on the C5 until something else makes room.
     heap_caps_malloc_extmem_enable(1u << 20);
 #endif
     const bool frameOk = frame.createSprite(tft.width(), tft.height());
 #if defined(CROWPANEL7) && CROWPANEL_FRAME_INTERNAL
     heap_caps_malloc_extmem_enable(CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL);
-    // Say where it landed: internal SRAM sits at 0x3FC8xxxx on the S3, PSRAM
-    // at 0x3C000000..0x3DFFFFFF, and a frame in the wrong one is the twitch.
+#endif
+#if (defined(CROWPANEL7) && CROWPANEL_FRAME_INTERNAL) || defined(NM_CYD_C5)
+    // Say where it landed: a frame in the wrong memory is the CrowPanel's
+    // twitch and the C5's eight frames a second.
     if (frameOk) {
-        const uintptr_t a = (uintptr_t)frame.buf();
-        Serial.printf("[boot] frame %ux%u at %p (%s)\n", (unsigned)frame.bufW(), (unsigned)frame.bufH(), (void*)a,
-                      (a >= 0x3C000000u && a < 0x3E000000u) ? "PSRAM" : "internal");
+        const void* a = frame.buf();
+#if defined(NM_CYD_C5)
+        const bool ext = esp_ptr_external_ram(a);
+#else
+        // The S3's PSRAM window; internal SRAM sits at 0x3FC8xxxx.
+        const bool ext = ((uintptr_t)a >= 0x3C000000u && (uintptr_t)a < 0x3E000000u);
+#endif
+        Serial.printf("[boot] frame %ux%u at %p (%s)\n", (unsigned)frame.bufW(), (unsigned)frame.bufH(), a,
+                      ext ? "PSRAM" : "internal");
     }
 #endif
     if (!frameOk) {
