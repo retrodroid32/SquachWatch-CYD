@@ -3644,10 +3644,9 @@ static inline void pushFrame(int x, int y) {
     // other buffer, which holds the frame before last. Nothing is copied
     // across: copying the 75 KB through PSRAM cost 13 ms a frame (measured),
     // more than the wait it was meant to save, and every screen draws its
-    // whole picture every frame. The push task keeps a count of rows that
-    // ever flip-flop between the two buffers (see FramePush), which is what
-    // a screen relying on the frame before would show up as. The wait inside
-    // asyncSubmit() is what "push" measures now.
+    // whole picture every frame (checked by eye on every screen; FramePush
+    // has a counter behind SQW_C5_FLIP_DIAG for the day one does not). The
+    // wait inside asyncSubmit() is what "push" measures now.
     if (s_frameB && frame.getColorDepth() == 8 && FramePush::asyncOn()) {
         // Between the last push finishing and this one starting the bus is
         // free: the one place touch can be read without waiting on a frame.
