@@ -3386,22 +3386,36 @@ static bool clearShouldRender(uint32_t now, const DetectionEngine& eng,
 static uint32_t s_bandUs[2] = {0, 0};      // measurement: the 3.5"'s two draw passes
 #endif
 
+// Physical-write diagnostics for the two target rosters.
+static uint8_t  s_rosterPushesThisLoop = 0;
+static uint32_t s_rosterPushDiagAt = 0;
+
 static inline void pushFrame(int x, int y) {
 #if defined(TWATCH_S3)
     if (s_panelAsleep) return;   // nothing to show it to; see applyBrightness()
 #endif
     uint32_t t0 = micros();
-    // The overlapped push converts the next 64 bytes while the previous 64
-    // are on the wire, instead of spinning -- see frame_push.h. It declines
-    // rather than half-draws, and the ordinary push is what it declines to;
-    // both leave the frame fully on the panel before the clock below stops,
-    // so DIAGNOSTICS and the [frame] line measure the same thing either way.
-    // The buffer and its REAL size: with a viewport set the sprite reports the
-    // viewport's size, not the buffer's, and cyd35 pushes through one.
-    if (frame.getColorDepth() != 8 ||
-        !FramePush::push(tft, frame.buf(), frame.bufW(), frame.bufH(), x, y)) {
+    const bool roster =
+        state == AppState::WATCH_LIST || state == AppState::HUNT_LIST;
+
+    if (roster) {
+        // Isolation path: no changed-row hashing, no multiple address-window
+        // spans and no periodic FramePush full refresh. The complete sprite is
+        // transferred in one ordinary TFT_eSPI operation.
+        s_rosterPushesThisLoop++;
         frame.pushSprite(x, y);
-        FramePush::invalidate();   // the panel now holds something push() did not record
+        FramePush::invalidate();
+
+        if (s_rosterPushesThisLoop > 1 &&
+            millis() - s_rosterPushDiagAt >= 1000) {
+            s_rosterPushDiagAt = millis();
+            Serial.printf("[roster-push] WARNING state=%u pushes=%u x=%d y=%d\n",
+                          (unsigned)state, (unsigned)s_rosterPushesThisLoop, x, y);
+        }
+    } else if (frame.getColorDepth() != 8 ||
+               !FramePush::push(tft, frame.buf(), frame.bufW(), frame.bufH(), x, y)) {
+        frame.pushSprite(x, y);
+        FramePush::invalidate();
     }
     s_pushAccumUs += micros() - t0;
 }
@@ -3483,6 +3497,7 @@ void loop() {
     s_loopsSinceSay++;   // the real loop rate, pacing delays included; on the [frame] line
     FrameProf::begin();
     s_pushAccumUs = 0;
+    s_rosterPushesThisLoop = 0;
     FramePush::newFrame();
     bool renderedThisLoop = true;
     uint32_t now = millis();
@@ -6481,6 +6496,14 @@ void loop() {
         FrameProf::lap(FrameProf::PUSH);
     }
 #endif
+
+    if ((state == AppState::WATCH_LIST || state == AppState::HUNT_LIST) &&
+        now - s_rosterPushDiagAt >= 1000) {
+        s_rosterPushDiagAt = now;
+        Serial.printf("[roster-push] state=%u physical-pushes=%u framebuffer=%s\n",
+                      (unsigned)state, (unsigned)s_rosterPushesThisLoop,
+                      frameBufferOk ? "yes" : "no");
+    }
 
     const uint32_t frameUs = micros() - frameStartUs;
     if (renderedThisLoop) {
