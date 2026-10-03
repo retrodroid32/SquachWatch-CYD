@@ -290,7 +290,21 @@ static void pushRowsDma(TFT_eSPI& tft, const uint8_t* p, int32_t w, int32_t rows
         const int32_t n  = rows < CHUNK_ROWS ? rows : CHUNK_ROWS;
         const uint32_t px = (uint32_t)n * (uint32_t)w;
         uint16_t* b = s_bounce[k & 1];
-        for (uint32_t i = 0; i < px; i++) b[i] = s_lut[p[i]];
+        // Four pixels per read: the source is PSRAM, where a byte costs the
+        // same as a word, and this task shares the one core with the
+        // drawing, so every cycle here is a cycle the frame does not get.
+        // Rows are a multiple of four pixels and word-aligned (rowHash
+        // relies on the same), so px is too.
+        {
+            const uint32_t* p4 = (const uint32_t*)p;
+            uint32_t*       b4 = (uint32_t*)b;
+            for (uint32_t i = 0; i < px; i += 4) {
+                const uint32_t v = *p4++;
+                b4[0] = (uint32_t)s_lut[v & 0xff]         | ((uint32_t)s_lut[(v >> 8) & 0xff] << 16);
+                b4[1] = (uint32_t)s_lut[(v >> 16) & 0xff] | ((uint32_t)s_lut[v >> 24] << 16);
+                b4 += 2;
+            }
+        }
         if (inFlight) {
             spi_transaction_t* done = nullptr;
             spi_device_get_trans_result(dmaHAL, &done, portMAX_DELAY);
