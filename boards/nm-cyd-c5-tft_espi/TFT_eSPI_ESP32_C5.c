@@ -822,15 +822,28 @@ bool TFT_eSPI::initDMA(bool ctrl_cs)
     .duty_cycle_pos = 0,
     .cs_ena_pretrans = 0,
     .cs_ena_posttrans = 0,
+#ifdef SQW_C5_DMA_HZ
+    .clock_speed_hz = SQW_C5_DMA_HZ,   // SquachWatch: the DMA push's own clock (the raw path's SPI_FREQUENCY is 20 MHz)
+#else
     .clock_speed_hz = SPI_FREQUENCY,
+#endif
     .input_delay_ns = 0,
     .spics_io_num = pin,
+#ifdef SQW_C5_DMA_HZ
+    // SquachWatch: the push only ever sends. Full duplex with no dummy cycles
+    // is held to about 28 Mbit/s by the driver however fast the device clock
+    // is set (measured 1.47 ms per 2,560 pixels); half duplex is not.
+    .flags = SPI_DEVICE_NO_DUMMY | SPI_DEVICE_HALFDUPLEX,
+#else
     .flags = SPI_DEVICE_NO_DUMMY, //0,
+#endif
     .queue_size = 1,
     .pre_cb = 0, //dc_callback, //Callback to handle D/C line
     .post_cb = 0
   };
-  ret = spi_bus_initialize(spi_host, &buscfg, DMA_CHANNEL);
+  // SquachWatch: IDF 5 on a GDMA chip takes only SPI_DMA_CH_AUTO here; a
+  // channel number is ESP_ERR_INVALID_ARG, and ESP_ERROR_CHECK would abort.
+  ret = spi_bus_initialize(spi_host, &buscfg, SPI_DMA_CH_AUTO);
   ESP_ERROR_CHECK(ret);
   ret = spi_bus_add_device(spi_host, &devcfg, &dmaHAL);
   ESP_ERROR_CHECK(ret);

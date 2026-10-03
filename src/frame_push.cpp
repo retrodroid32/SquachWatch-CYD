@@ -2,6 +2,12 @@
 #include <TFT_eSPI.h>
 #if defined(NM_CYD_C5)
 #include <soc/pcr_reg.h>
+#include <esp_heap_caps.h>
+#include <driver/spi_master.h>
+#include <string.h>
+// The driver's device handle: a global in the processor port the library
+// compiles in, outside any namespace.
+extern spi_device_handle_t dmaHAL;
 #endif
 
 namespace FramePush {
@@ -212,6 +218,112 @@ static void pushPixels(const uint8_t* p, uint32_t total) {
 // here, and only ever while this file owns the bus.
 #if defined(NM_CYD_C5)
 
+// ---- the wire by DMA: step one of overlapping the push with the drawing --
+// On this chip the push is 20 ms of a 50 ms frame, and the register push
+// above spends it SPINNING: 93% of the time is the wire (quietradio's
+// measurement), and the one core this chip has stands and watches it. The
+// plan is to hand the wire to the DMA engine and draw the next frame while it
+// runs. This is the first step, and it changes the frame rate by nothing: the
+// same rows go out, by DMA, with the CPU still waiting on each chunk -- so
+// that the only question it answers is "does the driver's DMA path put the
+// right picture on this panel". Eight rows at a time through two bounce
+// buffers in internal RAM (DMA cannot read the frame, which is in PSRAM):
+// one converts while the other is on the wire. Then the push moves to a
+// task of its own and the waiting goes to the drawing (step two).
+//
+// -DSQW_C5_DMA=0 is the register push, unchanged.
+#ifndef SQW_C5_DMA
+#define SQW_C5_DMA 1
+#endif
+#if SQW_C5_DMA
+static uint16_t* s_bounce[2] = { nullptr, nullptr };
+static int32_t   s_bounceW  = 0;
+static int8_t    s_dmaState = 0;             // 0 untried, 1 on, -1 not available
+static const int32_t CHUNK_ROWS = 8;
+
+static bool c5Dma(TFT_eSPI& tft, int32_t w) {
+    if (s_dmaState) return s_dmaState > 0 && s_bounceW == w;
+    s_dmaState = -1;
+    for (int k = 0; k < 2; k++)
+        s_bounce[k] = (uint16_t*)heap_caps_malloc((size_t)w * CHUNK_ROWS * sizeof(uint16_t),
+                                                  MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
+    if (!s_bounce[0] || !s_bounce[1]) {
+        Serial.println("[push] C5 DMA: no room for the bounce buffers; the register push stays");
+        return false;
+    }
+    if (!tft.initDMA(false)) {
+        Serial.println("[push] C5 DMA: the driver would not start; the register push stays");
+        return false;
+    }
+    tft.setSwapBytes(false);                 // the table is already in wire order
+    s_bounceW  = w;
+    s_dmaState = 1;
+    Serial.printf("[push] C5 DMA on: %d-row chunks of %u bytes, heap %lu\n",
+                  (int)CHUNK_ROWS, (unsigned)(w * CHUNK_ROWS * 2), (unsigned long)ESP.getFreeHeap());
+    return true;
+}
+
+// `rows` rows of `w` pixels from p, the window already set.
+//
+// DIAG: the first attempt, through the library's pushPixelsDMA (queued,
+// interrupt-driven), hung in its wait on the very first chunk, nothing
+// printed. This pass goes through the driver's POLLING transmit instead --
+// no interrupt, the driver spins on the hardware itself -- and says where it
+// is, to tell "the transfer never starts" from "the interrupt never comes".
+static void pushRowsDma(TFT_eSPI& tft, const uint8_t* p, int32_t w, int32_t rows) {
+    (void)tft;
+    static bool first = true;
+    static uint32_t convUs = 0, txUs = 0, chunks = 0;
+    int k = 0;
+    while (rows > 0) {
+        const int32_t n  = rows < CHUNK_ROWS ? rows : CHUNK_ROWS;
+        const uint32_t px = (uint32_t)n * (uint32_t)w;
+        uint16_t* b = s_bounce[k++ & 1];
+        const uint32_t t0 = micros();
+        for (uint32_t i = 0; i < px; i++) b[i] = s_lut[p[i]];
+        const uint32_t t1 = micros();
+        spi_transaction_t t;
+        memset(&t, 0, sizeof t);
+        t.tx_buffer = b;
+        t.length    = px * 16;
+        if (first) { Serial.printf("[push] DMA first chunk: %u px, polling transmit...\n", (unsigned)px); Serial.flush(); }
+        static uint32_t startUs = 0;
+        // Interrupt mode: queue it, then block until the driver's interrupt
+        // says it is done. Blocking is the point -- in step two this runs in
+        // a task of its own and the drawing gets the CPU while the wire works.
+        esp_err_t r = spi_device_queue_trans(dmaHAL, &t, portMAX_DELAY);
+        const uint32_t t2 = micros();
+        if (r == ESP_OK) { spi_transaction_t* done = nullptr; r = spi_device_get_trans_result(dmaHAL, &done, portMAX_DELAY); }
+        convUs += t1 - t0; startUs += t2 - t1; txUs += micros() - t2;
+        if (++chunks == 500) {
+            Serial.printf("[push] DMA per chunk: convert %lu us, start %lu us, wait %lu us (%d rows, %u px)\n",
+                          (unsigned long)(convUs / chunks), (unsigned long)(startUs / chunks), (unsigned long)(txUs / chunks), (int)CHUNK_ROWS, (unsigned)px);
+            convUs = txUs = startUs = chunks = 0;
+        }
+        if (first) {
+            Serial.printf("[push] DMA first chunk done: %d  SPI_DMA_CONF=0x%08X SPI_USER=0x%08X SPI_CLOCK=0x%08X PCR_CLKM=0x%08X\n", (int)r,
+                          (unsigned)READ_PERI_REG(SPI_DMA_CONF_REG(SPI_PORT)), (unsigned)READ_PERI_REG(SPI_USER_REG(SPI_PORT)),
+                          (unsigned)READ_PERI_REG(SPI_CLOCK_REG(SPI_PORT)), (unsigned)READ_PERI_REG(PCR_SPI2_CLKM_CONF_REG));
+            int freq = 0;
+            spi_device_get_actual_freq(dmaHAL, &freq);
+            Serial.printf("[push] DMA device clock: %d kHz\n", freq);
+            Serial.flush(); first = false;
+        }
+        if (r != ESP_OK) { Serial.printf("[push] DMA transmit failed: %d; the register push takes over\n", (int)r); s_dmaState = -1; return; }
+        p += px;
+        rows -= n;
+    }
+    // Back to CPU mode before the library writes a register again. The
+    // driver leaves the engine's DMA enables set, and a register-fed
+    // transfer with DMA_TX_ENA on waits for descriptors that never come:
+    // that was the hang after the first chunk (2026-10-02).
+    CLEAR_PERI_REG_MASK(SPI_DMA_CONF_REG(SPI_PORT), SPI_DMA_TX_ENA | SPI_DMA_RX_ENA);
+    SET_PERI_REG_MASK(SPI_DMA_CONF_REG(SPI_PORT), SPI_BUF_AFIFO_RST | SPI_DMA_AFIFO_RST);
+    CLEAR_PERI_REG_MASK(SPI_DMA_CONF_REG(SPI_PORT), SPI_BUF_AFIFO_RST | SPI_DMA_AFIFO_RST);
+    SQW_SPI_LATCH();
+}
+#endif
+
 // 0 selects the undivided module clock; 1..63 divide it by N+1.
 #ifndef SQW_C5_SPI_DIV
 #define SQW_C5_SPI_DIV 0
@@ -295,13 +407,35 @@ bool push(TFT_eSPI& tft, const uint8_t* src, int32_t w, int32_t h, int32_t x, in
         for (int i = 0; i < n; i++)
             if (((uint32_t)(spans[i].r1 - spans[i].r0) * (uint32_t)w) % PX_PER_BURST) { spans[0].r0 = 0; spans[0].r1 = h; n = 1; break; }
         tft.startWrite();
-#if defined(NM_CYD_C5)
+#if defined(NM_CYD_C5) && SQW_C5_DMA
+        // By DMA when the driver will have it; the register push, with its
+        // raised clock, when not. The driver runs its own clock (see
+        // SQW_C5_DMA_HZ), so the raise is only for the register path.
+        const bool dma = c5Dma(tft, w);
+        // The clock raise even by DMA: startWrite() has just set the SPI
+        // clock register to the library's 20 MHz, and the driver programs
+        // its own 80 MHz only when a different device last had the bus --
+        // with one device it never does again, and its transfers ran at the
+        // library's clock (28 Mbit/s measured, 1.45 ms per 2,560 pixels).
+        const uint32_t c5pcr = sqwC5SpiClockRaise();
+        // The bus for the whole frame: the driver's per-transfer lock is a
+        // scheduling point, and on one core that is where the radio tasks
+        // get in between chunks.
+        if (dma) spi_device_acquire_bus(dmaHAL, portMAX_DELAY);
+#elif defined(NM_CYD_C5)
         // Inside the transaction, after beginTransaction has had its say.
         const uint32_t c5pcr = sqwC5SpiClockRaise();
 #endif
         for (int i = 0; i < n; i++) {
             const int32_t r0 = spans[i].r0, r1 = spans[i].r1;
             tft.setAddrWindow(x, y + r0, w, r1 - r0);
+#if defined(NM_CYD_C5) && SQW_C5_DMA
+            if (dma) {
+                pushRowsDma(tft, src + (size_t)r0 * (size_t)w, w, r1 - r0);
+                s_lastRows += r1 - r0;
+                continue;
+            }
+#endif
             WRITE_PERI_REG(SPI_MOSI_DLEN_REG(SPI_PORT), 511);
             // Once per span, not once per burst. Per the C5 TRM (ch.33, SPI
             // Controller): SPI_UPDATE "synchronize[s] SPI registers from APB
@@ -324,7 +458,10 @@ bool push(TFT_eSPI& tft, const uint8_t* src, int32_t w, int32_t h, int32_t x, in
             pushPixels(src + (size_t)r0 * (size_t)w, (uint32_t)(r1 - r0) * (uint32_t)w);
             s_lastRows += r1 - r0;
         }
-#if defined(NM_CYD_C5)
+#if defined(NM_CYD_C5) && SQW_C5_DMA
+        if (dma) spi_device_release_bus(dmaHAL);
+        sqwC5SpiClockRestore(c5pcr);
+#elif defined(NM_CYD_C5)
         sqwC5SpiClockRestore(c5pcr);
 #endif
         tft.endWrite();
