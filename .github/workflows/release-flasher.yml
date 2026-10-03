@@ -608,8 +608,11 @@ jobs:
             # and table are named differently from the shared ESP32 pair, and
             # without them every lab run left the public watch install 404ing
             # on two of its four files (v1.20.0 until this was caught).
+            # esp32c5-* for the same reason: the C5's bootloader and boot_app0
+            # were not in the list, and the first lab run after v1.28.0 failed
+            # the check below instead of deploying a C5 install with two 404s.
             gh release download "$LATEST" -D _site --clobber \
-              -p '*-firmware.bin' -p 'manifest-*.json' -p 'esp32-*.bin' -p 'esp32s3-*.bin' \
+              -p '*-firmware.bin' -p 'manifest-*.json' -p 'esp32-*.bin' -p 'esp32s3-*.bin' -p 'esp32c5-*.bin' \
               -p '*-partitions.bin' -p '*-firmware.sig' || true
             # Every file a restored public manifest names must be here, or the
             # public page 404s on it. Fail the run rather than deploy that.
