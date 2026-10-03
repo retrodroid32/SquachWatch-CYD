@@ -129,11 +129,12 @@ void uiWatchAlertListScroll(int delta){
     int n=(int)s_watchScroll+delta; if(n<0)n=0; if(n>=s_watchCount)n=s_watchCount?s_watchCount-1:0; s_watchScroll=(uint8_t)n;
 }
 
-void uiWatchAlertTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool advance) {
+void uiWatchAlertTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng,
+                      bool advance, bool rosterView) {
     int w = t.width();
     int h = t.height();
 
-    if (eng.watchKind() == DetectionEngine::WatchKind::NONE) {
+    if (rosterView) {
         drawWatchList(t, now, eng);
         return;
     }

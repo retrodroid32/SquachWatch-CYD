@@ -13,7 +13,8 @@ void uiHuntInit(TFT_eSPI& t);
 // `advance` is false on the second of the 3.5"'s two band passes -- the
 // same frame drawn again -- so anything that steps by the call rather
 // than by the clock must sit still for it. Other boards draw once.
-void uiHuntTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool advance = true);
+void uiHuntTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng,
+                bool advance = true, bool rosterView = false);
 bool uiHuntHitBack(int x, int y, int screenW, int screenH);
 // STOP ends the hunt outright (DetectionEngine::clearHunt); BACK leaves the
 // target set. main.cpp owns navigation and returns either exit to the screen

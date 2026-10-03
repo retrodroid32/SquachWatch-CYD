@@ -278,12 +278,13 @@ void uiHuntListScroll(int delta) {
     s_listScroll = (uint8_t)n;
 }
 
-void uiHuntTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool advance) {
+void uiHuntTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng,
+                bool advance, bool rosterView) {
     int w = t.width(), h = t.height();
 
-    // No active gauge target means the user is browsing the selected HUNT
-    // list. This is also the HUNT pill's landing page.
-    if (eng.huntKind() == DetectionEngine::WatchKind::NONE) {
+    // Roster/detail selection is owned by main.cpp. Engine target state may
+    // update while this screen is open, but that must never switch renderers.
+    if (rosterView) {
         drawHuntList(t, now, eng);
         return;
     }
