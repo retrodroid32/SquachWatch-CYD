@@ -1182,6 +1182,9 @@ static void refreshOutfitUnlocks() {
 // that path would leave two versions to keep in step.
 static int8_t s_outfitOverride = -1;
 static int8_t s_shadeOverride  = -1;
+// A visitor's aura: -1 is nobody's business (our own rule applies), 0 and 1
+// are what his advert said. See setAuraPreview().
+static int8_t s_auraOverride   = -1;
 
 // Every read of the shade tint goes through this so an override cannot be
 // half-applied -- the lens and the frame are drawn in different places and
@@ -2292,6 +2295,10 @@ void setOutfitPreview(int8_t idx) {
 
 void setShadesPreview(int8_t idx) {
     s_shadeOverride = idx;
+}
+
+void setAuraPreview(int8_t on) {
+    s_auraOverride = on;
 }
 
 static const char* s_nameTag = nullptr;
@@ -5824,11 +5831,14 @@ static void drawBody(TFT_eSPI& t, int cx, int hy, int headTopY, uint32_t now, Mo
     // Silhouette keyline helpers. Drawn as slightly expanded copies UNDER
     // each shape, so no per-pose outline maths is needed -- whatever the
     // limb does, its outline does too.
-    // The Legend's aura. On our own Squachy only: a visitor is drawn with his
-    // outfit set as a preview (see setOutfitPreview), and he does not get to
-    // wear his host's fire. Which also keeps it off the outfit picker's
-    // preview, where it would be in the way of the costume being chosen.
-    const bool aura = hasAura() && Settings::auraShown() && s_outfitOverride < 0;
+    // The Legend's aura. Ours on our own Squachy; a visitor is drawn with his
+    // outfit set as a preview (see setOutfitPreview) and does not get to wear
+    // his host's fire, only his own, which his advert says he has or has not
+    // (setAuraPreview). No preview of either kind keeps it off the outfit
+    // picker, where it would be in the way of the costume being chosen.
+    const bool aura = s_auraOverride >= 0
+                        ? s_auraOverride > 0
+                        : (hasAura() && Settings::auraShown() && s_outfitOverride < 0);
     // With it on, his outline is the blue of the fire's inner edge, so the
     // fire grows out of a rim rather than standing behind a dark line.
     const uint16_t keyCol = aura ? auraKey(now, m)

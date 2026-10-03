@@ -138,6 +138,7 @@ size_t buildSelf(uint8_t* out) {
     me.nick   = Squachy::nicknameIndex();
     me.outfit = Squachy::outfitIndex();
     me.shade  = Squachy::shadesIndex();
+    me.aura   = Squachy::hasAura() && Settings::auraShown();
     const char* cn = Squachy::customName();
     me.custom = (cn && cn[0]);
     me.name[0] = '\0';

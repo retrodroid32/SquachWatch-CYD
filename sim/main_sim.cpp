@@ -481,6 +481,8 @@ int main(int argc, char** argv) {
     if (peerOutfit >= 0) {
         guest.nick = 4; guest.outfit = (uint8_t)peerOutfit; guest.shade = 1;
         guest.custom = !peerName.empty();
+        // SQUACHSIM_PEERAURA=1: the visitor is a Legend with his aura lit.
+        guest.aura = getenv("SQUACHSIM_PEERAURA") != nullptr;
         snprintf(guest.name, sizeof(guest.name), "%s", peerName.c_str());
         uiClearSetGuest(&guest);
     }
@@ -531,6 +533,7 @@ int main(int argc, char** argv) {
             SquachMesh::Peer p{};
             p.nick = (uint8_t)(3 + k * 2); p.outfit = (uint8_t)((k * 5 + 1) % Squachy::outfitCount()); p.shade = (uint8_t)(k % 4);
             if (NAMES[k]) { p.custom = true; snprintf(p.name, sizeof p.name, "%s", NAMES[k]); }
+            p.aura = k == 0 && getenv("SQUACHSIM_PEERAURA") != nullptr;   // the first of them, the Legend
             uint8_t ad[SquachMesh::LEN_MAX + 2] = { (uint8_t)(SquachMesh::COMPANY_ID & 0xFF), (uint8_t)(SquachMesh::COMPANY_ID >> 8) };
             const size_t an = SquachMesh::encode(p, ad + 2);
             Mesh::onManufacturerData(ad, an + 2, mac, millis());

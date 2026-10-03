@@ -90,7 +90,9 @@ void rosterSave() {
     for (uint8_t i = 0; i < s_rosterN; i++) {
         const Member& m = s_roster[i];
         memcpy(b + n, m.mac, 6); n += 6;
-        b[n++] = m.look.nick; b[n++] = m.look.outfit; b[n++] = m.look.shade; b[n++] = m.look.custom ? 1 : 0;
+        // The fourth byte was the custom flag alone; the aura took its bit 1.
+        b[n++] = m.look.nick; b[n++] = m.look.outfit; b[n++] = m.look.shade;
+        b[n++] = (uint8_t)((m.look.custom ? 1 : 0) | (m.look.aura ? 2 : 0));
         memcpy(b + n, m.look.name, 13); n += 13;
         b[n++] = (uint8_t)(m.met & 0xFF); b[n++] = (uint8_t)(m.met >> 8);
     }
@@ -105,7 +107,8 @@ void rosterLoad() {
     for (size_t n = 0; n + MEMBER_BYTES <= got && s_rosterN < ROSTER_N; n += MEMBER_BYTES) {
         Member& m = s_roster[s_rosterN++];
         memcpy(m.mac, b + n, 6);
-        m.look.nick = b[n + 6]; m.look.outfit = b[n + 7]; m.look.shade = b[n + 8]; m.look.custom = b[n + 9] != 0;
+        m.look.nick = b[n + 6]; m.look.outfit = b[n + 7]; m.look.shade = b[n + 8];
+        m.look.custom = (b[n + 9] & 1) != 0; m.look.aura = (b[n + 9] & 2) != 0;
         memcpy(m.look.name, b + n + 10, 13); m.look.name[12] = 0;
         m.met = (uint16_t)(b[n + 23] | (b[n + 24] << 8));
     }

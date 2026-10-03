@@ -210,6 +210,28 @@ int main() {
         ck("outfit 15 sets no fifth bit", decode(buf, n, p) && p.outfit == 15 && !(buf[5] & 0x10));
     }
 
+    suite("The aura goes visiting, and boards from before it");
+    {
+        Peer a = mk(3, 16, 1, nullptr);
+        a.aura = true;
+        size_t n = encode(a, buf);
+        ck("a lit aura survives the trip", decode(buf, n, p) && p.aura);
+        ck("it is a spare bit, not a new byte", n == LEN_INDEXED);
+        ck("and the flags byte is still zero, which older boards insist on", buf[7] == 0);
+        // What a board from before reads: every field it knows, unchanged.
+        const uint16_t w = (uint16_t)(buf[5] | ((uint16_t)buf[6] << 8));
+        ck("an older board reads the same nickname, outfit and shades",
+           ((w >> 12) & 0x0F) == 3 && ((w >> 8) & 0x0F) == 0 && (w & 0x10) && ((w >> 6) & 0x03) == 1);
+        ck("and no custom name", !(w & 0x20));
+        n = encode(mk(3, 16, 1, nullptr), buf);
+        ck("no aura sets no bit", decode(buf, n, p) && !p.aura && !(buf[5] & 0x08));
+        Peer c = mk(5, 7, 2, "ZERO COOL");
+        c.aura = true;
+        n = encode(c, buf);
+        ck("it rides with a typed name too",
+           decode(buf, n, p) && p.aura && p.custom && strcmp(p.name, "ZERO COOL") == 0);
+    }
+
     suite("A rejected payload leaves the output alone");
     {
         Peer keep = mk(5, 5, 1, nullptr);

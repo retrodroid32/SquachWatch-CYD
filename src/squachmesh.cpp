@@ -40,6 +40,7 @@ size_t encode(const Peer& p, uint8_t* out) {
     if (p.outfit & (1u << OUTFIT_BITS)) word |= OUTFIT_HI_BIT;
     word |= (uint16_t)((p.shade  & maskOf(SHADE_BITS))  << SHADE_SHIFT);
     if (custom) word |= CUSTOM_BIT;
+    if (p.aura) word |= AURA_BIT;
 
     memcpy(out, MAGIC, sizeof(MAGIC));
     out[4] = VERSION;
@@ -87,6 +88,7 @@ bool decode(const uint8_t* in, size_t len, Peer& out) {
     if (word & OUTFIT_HI_BIT) p.outfit |= (uint8_t)(1u << OUTFIT_BITS);
     p.shade  = (uint8_t)((word >> SHADE_SHIFT)  & maskOf(SHADE_BITS));
     p.custom = custom;
+    p.aura   = (word & AURA_BIT) != 0;
     p.name[0] = '\0';
 
     if (custom) {

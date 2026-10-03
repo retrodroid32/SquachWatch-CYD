@@ -1986,6 +1986,7 @@ void uiClearDrawCrowd(TFT_eSPI& t, uint32_t now, const Mesh::SquadMember* crowd,
         const SquachMesh::Peer& p = crowd[i].peer;
         Squachy::setOutfitPreview((int8_t)p.outfit);
         Squachy::setShadesPreview((int8_t)p.shade);
+        Squachy::setAuraPreview(p.aura ? 1 : 0);
         // His name, on a sticker on his chest, so it is his and moves with
         // him. Four or fewer and everybody wears one; past that only the
         // one who was tapped, for a few seconds.
@@ -2007,6 +2008,7 @@ void uiClearDrawCrowd(TFT_eSPI& t, uint32_t now, const Mesh::SquadMember* crowd,
                             isGuest && !s_guestTurn, line != nullptr,
                             isGuest ? guestPose(now) : Squachy::VisitPose::NONE);
         Squachy::setNameTag(nullptr);
+        Squachy::setAuraPreview(-1);
         Squachy::setShadesPreview(-1);
         Squachy::setOutfitPreview(-1);
         if (s_crowdN < 8) {
@@ -2623,6 +2625,7 @@ static void drawVisit(TFT_eSPI& t, uint32_t now, const SquachMesh::Peer* guest,
     // left set they would silently redress our own Squachy everywhere.
     Squachy::setOutfitPreview((int8_t)guest->outfit);
     Squachy::setShadesPreview((int8_t)guest->shade);
+    Squachy::setAuraPreview(guest->aura ? 1 : 0);
     // The scale tick() actually used, not SMALL_PCT again: tick
     // derives its scale from the height it was given, so the two
     // numbers are different units and passing 0.7 here drew a
@@ -2672,6 +2675,7 @@ static void drawVisit(TFT_eSPI& t, uint32_t now, const SquachMesh::Peer* guest,
                         true,
                         guestPose(now));
     Squachy::setNameTag(nullptr);
+    Squachy::setAuraPreview(-1);
     Squachy::setShadesPreview(-1);
     Squachy::setOutfitPreview(-1);
 

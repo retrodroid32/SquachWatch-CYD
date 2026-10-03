@@ -158,7 +158,9 @@ void uiSquadTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool adv
         const Mesh::SquadMember& m = s_members[s_sel];
         Squachy::setOutfitPreview((int8_t)m.peer.outfit);
         Squachy::setShadesPreview((int8_t)m.peer.shade);
+        Squachy::setAuraPreview(m.peer.aura ? 1 : 0);
         Squachy::drawWaving(t, cx, baseY, now, SCALE, nullptr, false, 0, true);
+        Squachy::setAuraPreview(-1);
         Squachy::setShadesPreview(-1);
         Squachy::setOutfitPreview(-1);
 

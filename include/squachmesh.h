@@ -61,7 +61,8 @@ static const size_t LEN_MAX     = LEN_NAMED;
 //   bits  6..7   shades index     (2)  --  4 in use
 //   bit      5   custom-name flag
 //   bit      4   outfit index, bit 4: OVER 9000 made seventeen
-//   bits  0..3   spare            (4)
+//   bit      3   the Legend's aura is lit
+//   bits  0..2   spare            (3)
 //
 // SIZE is deliberately NOT here. Both Squachys are drawn at SMALL while
 // they are meeting -- that is what makes two of them fit -- so the peer's
@@ -84,6 +85,10 @@ static const uint16_t CUSTOM_BIT   = 1u << 5;
 // spare bits, so it reads outfit 16 as 0 and draws a visitor in OVER 9000 as
 // plain Squachy: the wrong hat, which is the failure this format chose.
 static const uint16_t OUTFIT_HI_BIT = 1u << 4;
+// The Legend's aura, lit: he earned it, so he gets to walk into somebody
+// else's screen wearing it. Another spare bit, and a board from before it
+// draws him without the fire, which is what it did anyway.
+static const uint16_t AURA_BIT = 1u << 3;
 
 struct Peer {
     uint8_t nick;              // index into the shared NICKNAMES table
@@ -91,6 +96,8 @@ struct Peer {
     uint8_t shade;             // index into the shared SHADE_NAMES table
     bool    custom;            // true when `name` was typed, not indexed
     char    name[NAME_LEN + 1];// NUL-terminated; empty unless custom
+    bool    aura;              // the Legend's aura is lit (last, so the
+                               // five-field initialisers leave it off)
 };
 
 // Builds the advertised payload. Returns the number of bytes written, which

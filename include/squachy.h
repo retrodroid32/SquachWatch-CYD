@@ -277,6 +277,11 @@ namespace Squachy {
     // as a reflection rather than as somebody else. -1 clears it.
     void setShadesPreview(int8_t idx);
 
+    // And for the Legend's aura: a visitor who has it lit arrives in it, and
+    // one who does not never borrows the host's. 1 on, 0 off, -1 clears it
+    // (and our own Squachy goes back to his own rule).
+    void setAuraPreview(int8_t on);
+
     // A name sticker on the next body drawn, centred on the torso, moving
     // with him. Set it, draw, clear it with nullptr -- the same contract as
     // the two previews above. Nobody but a cameo wears one; our own

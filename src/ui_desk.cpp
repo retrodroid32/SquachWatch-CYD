@@ -313,7 +313,9 @@ static void drawPolaroid(TFT_eSPI& t, int top, float p, uint32_t now) {
         const bool known = Mesh::peerLook(m.mac, look);
         Squachy::setOutfitPreview(known ? (int8_t)look.outfit : 0);
         Squachy::setShadesPreview(known ? (int8_t)look.shade  : 0);
+        Squachy::setAuraPreview(known && look.aura ? 1 : 0);
         Squachy::drawWaving(t, px + pw / 2, py + ph - 2, now, 0.5f, nullptr, false, 0, true, 34);
+        Squachy::setAuraPreview(-1);
         Squachy::setShadesPreview(-1);
         Squachy::setOutfitPreview(-1);
     }
