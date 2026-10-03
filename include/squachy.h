@@ -251,6 +251,10 @@ namespace Squachy {
     // times in a row XYZZY has been tapped on the TERMINAL background. One
     // and two get "nothing happens"; three unlocks the outfit.
     void magicWord(uint8_t said);
+    // SHAMBLER: main.cpp calls this when the owl on the FIRE background is
+    // tapped while it asks WHAT REEKS?! -- see Theme::consumeOwlReek(). Not a
+    // no-op once earned: he answers the owl either way.
+    void unlockShambler();
 
     // Unlock announcements. Any outfit that becomes available -- by
     // crossing its lifetime-detection threshold, or by the werewolf

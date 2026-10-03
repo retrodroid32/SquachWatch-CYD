@@ -1055,7 +1055,10 @@ int main(int argc, char** argv) {
     // Anything else is the background's.
     auto tapAt = [&](int x, int y, uint32_t when) {
         if (Squachy::hitTest(x, y)) { Squachy::noteTapAt(x, y); Squachy::trigger(Squachy::Event::PETTED); }
-        else Theme::backgroundTap(x, y, when);
+        else {
+            Theme::backgroundTap(x, y, when);
+            if (Theme::consumeOwlReek()) Squachy::unlockShambler();
+        }
     };
     auto xyzzyStep = [&]() {
         if (!xyzzy) return;

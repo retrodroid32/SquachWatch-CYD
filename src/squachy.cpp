@@ -644,6 +644,7 @@ static bool     s_voidEyeUnlocked    = false;  // earned by catching two Starfie
 static bool     s_parkaUnlocked      = false;  // earned by knocking five times on the Snowfall lodge
 static bool     s_yzzerdUnlocked     = false;  // earned by tapping XYZZY three times on the TERMINAL background
 static bool     s_over9000Unlocked   = false;  // earned by tapping his shades while the aura is lit
+static bool     s_shamblerUnlocked   = false;  // earned by tapping the owl while it asks WHAT REEKS?!
 static bool     s_sharkUnlocked      = false;  // earned by catching the Aquarium shark on his return pass
 static bool     s_petUnlocked        = false;  // earned by tapping the lil guy on the toasters
 // Whether the card has been shown for him. Kept separately from the unlock
@@ -1036,6 +1037,7 @@ enum class OutfitId : uint8_t {
     SHARK,
     YZZERD,
     OVER9000,
+    SHAMBLER,
     COUNT
 };
 
@@ -1080,6 +1082,9 @@ static const OutfitDef OUTFITS[] = {
     { "YZZERD",         OUTFIT_BY_EVENT },
     // Earned by a scouter: tap his shades while the Legend's aura is lit.
     { "OVER 9000",      OUTFIT_BY_EVENT },
+    // Earned by tapping the FIRE background's owl while it asks WHAT
+    // REEKS?! -- see Theme::consumeOwlReek().
+    { "SHAMBLER",       OUTFIT_BY_EVENT },
 };
 static const uint8_t OUTFITS_N = sizeof(OUTFITS) / sizeof(OUTFITS[0]);
 static_assert(OUTFITS_N == (uint8_t)OutfitId::COUNT, "OUTFITS must match OutfitId");
@@ -1111,6 +1116,7 @@ static bool outfitUnlocked(uint8_t i) {
             case OutfitId::SHARK:      return s_sharkUnlocked;
             case OutfitId::YZZERD:     return s_yzzerdUnlocked;
             case OutfitId::OVER9000:   return s_over9000Unlocked;
+            case OutfitId::SHAMBLER:   return s_shamblerUnlocked;
             default:                   return false;
         }
     }
@@ -1300,7 +1306,7 @@ static_assert(sizeof(BG_LINES) / sizeof(BG_LINES[0]) == Settings::BACKGROUND_COU
 // brings one up it is a nudge, the second is clearer, and from then on he just
 // tells you what to do. Counted in RAM, so a reboot starts the nudges over,
 // which is right for somebody who has not been paying attention.
-enum Egg : uint8_t { EGG_WOLF, EGG_CHROME, EGG_PET, EGG_EYE, EGG_PARKA, EGG_YZZERD, EGG_O9K, EGG_N };
+enum Egg : uint8_t { EGG_WOLF, EGG_CHROME, EGG_PET, EGG_EYE, EGG_PARKA, EGG_YZZERD, EGG_O9K, EGG_REEK, EGG_N };
 static const char* const HINTS[EGG_N][3] = {
     /* FIRE: five taps on the moon */
     { "That moon's got a werewolf look to it.",
@@ -1330,6 +1336,10 @@ static const char* const HINTS[EGG_N][3] = {
     { "These shades read more than light.",
       "My shades can read a power level.",
       "Tap my shades while I'm glowing!" },
+    /* FIRE: tap the owl while it asks WHAT REEKS?! */
+    { "That owl's got a nose on him.",
+      "The owl smells something. Ask him.",
+      "When the owl says WHAT REEKS, tap him!" },
 };
 static uint8_t s_hintSaid[EGG_N] = {};
 
@@ -1345,6 +1355,7 @@ static bool eggLocked(uint8_t e) {
         case EGG_PARKA:  return !outfitUnlocked((uint8_t)OutfitId::PARKA);
         case EGG_YZZERD: return !outfitUnlocked((uint8_t)OutfitId::YZZERD);
         case EGG_O9K:    return !outfitUnlocked((uint8_t)OutfitId::OVER9000);
+        case EGG_REEK:   return !outfitUnlocked((uint8_t)OutfitId::SHAMBLER);
         default:         return false;
     }
 }
@@ -1354,7 +1365,7 @@ static uint8_t eggsHere(uint8_t out[2]) {
     uint8_t n = 0;
     auto add = [&](uint8_t e) { if (n < 2 && eggLocked(e)) out[n++] = e; };
     switch (Settings::background()) {
-        case Settings::Background::FIRE:      add(EGG_WOLF); break;
+        case Settings::Background::FIRE:      add(EGG_WOLF); add(EGG_REEK); break;
         case Settings::Background::TOASTERS:  add(EGG_CHROME); add(EGG_PET); break;
         case Settings::Background::STARFIELD: add(EGG_EYE); break;
         case Settings::Background::SNOWFALL:  add(EGG_PARKA); break;
@@ -1423,6 +1434,7 @@ static void ensurePrefsLoaded() {
     s_sharkUnlocked      = s_petPrefs.getBool("shark", false);
     s_yzzerdUnlocked     = s_petPrefs.getBool("yzzerd", false);
     s_over9000Unlocked   = s_petPrefs.getBool("over9000", false);
+    s_shamblerUnlocked   = s_petPrefs.getBool("shambler", false);
     s_outfitAnnounced    = s_petPrefs.getUInt("outfitSeen", 0xFFFFFFFFu);
     s_petPrefsLoaded  = true;
 }
@@ -2490,6 +2502,22 @@ void togglePet() {
 }
 
 bool isHeld() { return s_grabbed || s_dangle; }
+
+// The owl on the FIRE background asked WHAT REEKS?! and got tapped for it.
+// Like the shark, not silent the second time: the owl is always right.
+void unlockShambler() {
+    ensurePrefsLoaded();
+    mood      = Mood::BOUNCE;
+    moodUntil = millis() + tempo(2000);
+    if (s_shamblerUnlocked) {
+        say("...okay, it's me. it's always me.", 3600);
+        return;
+    }
+    s_shamblerUnlocked = true;
+    s_petPrefs.putBool("shambler", true);
+    refreshOutfitUnlocks();
+    say("hey! I showered last month!", 4000);
+}
 
 void unlockParka() {
     ensurePrefsLoaded();
@@ -4167,6 +4195,8 @@ static void scouterTick(uint32_t now) {
     say("IT'S OVER 9000!", 4000);
 }
 
+#include "shambler.inc"
+
 static void drawOutfit(TFT_eSPI& t, int cx2, int hy, uint32_t now, Mood m, float scale, OutfitId outfit) {
     if (outfit == OutfitId::NONE) return;
     auto S = [scale](int v) { return (int)(v * scale); };
@@ -5169,6 +5199,7 @@ static void drawOutfit(TFT_eSPI& t, int cx2, int hy, uint32_t now, Mood m, float
         }
         case OutfitId::YZZERD: yzFront(t, cx2, hy, now, m, scale); break;
         case OutfitId::OVER9000: o9Front(t, cx2, hy, now, m, scale); break;
+        case OutfitId::SHAMBLER: shFront(t, cx2, hy, now, m, scale); break;
         default: break;
     }
 }
@@ -5248,6 +5279,7 @@ static int outfitReach(OutfitId o) {
         case OutfitId::WOLFPELT: return 26;
         case OutfitId::YZZERD:   return 26;   // the hat; its star goes past
         case OutfitId::OVER9000: return 31;   // the hair; its tallest tip goes past
+        case OutfitId::SHAMBLER: return 13;   // the flies, at the top of their loop
         case OutfitId::UNICORN:  return 24;
         case OutfitId::TINFOIL:  return 18;   // the antenna bead
         case OutfitId::CAPTAIN:  return 16;
@@ -5602,6 +5634,10 @@ static void drawBody(TFT_eSPI& t, int cx, int hy, int headTopY, uint32_t now, Mo
         // The gi: body and legs orange; the arms stay his own fur.
         s_o9Fur = furLight0;
         furMain = O9_GI;
+    } else if (outfitNow == OutfitId::SHAMBLER) {
+        // Grey-green all over, head and hands too: the costume is him.
+        furMain  = SH_FUR;
+        furLight = SH_FURLT;
     } else if (outfitNow == OutfitId::UNICORN) {
         // Baby-blue/baby-pink two-tone -- furMain (body fill) and
         // furLight (highlights/outlines) already alternate across
@@ -6163,6 +6199,8 @@ static void drawBody(TFT_eSPI& t, int cx, int hy, int headTopY, uint32_t now, Mo
         yzRobe(t, cx2, hy, scale);
     } else if (outfitNow == OutfitId::OVER9000) {
         o9Gi(t, cx2, hy, hy + S(55) - crouch, now, scale);
+    } else if (outfitNow == OutfitId::SHAMBLER) {
+        shBody(t, cx2, hy, scale);
     } else if (outfitNow == OutfitId::TANOOKI) {
         t.fillEllipse(cx2, hy + S(34), S(11), S(8), t.color565(238, 222, 190));
     } else if (outfitNow == OutfitId::PARKA) {
@@ -6577,7 +6615,8 @@ static void drawBody(TFT_eSPI& t, int cx, int hy, int headTopY, uint32_t now, Mo
     // Head — broader jaw than before, brow ridge over the eyes.
     t.fillRoundRect(cx2 - S(15), hh, S(30), S(24), S(7), furLight);
     t.fillRoundRect(cx2 - S(12), hh + S(2), S(24), S(19), S(5), furMain);
-    t.fillRoundRect(cx2 - S(9),  hh + S(7), S(18), S(11), S(4), SKIN_TAN);
+    t.fillRoundRect(cx2 - S(9),  hh + S(7), S(18), S(11), S(4),
+                    outfitNow == OutfitId::SHAMBLER ? SH_SKIN : SKIN_TAN);
 
     // A cowlick, plus a couple of smaller shaggy fringe tufts either side.
     //
@@ -6641,9 +6680,11 @@ static void drawBody(TFT_eSPI& t, int cx, int hy, int headTopY, uint32_t now, Mo
     t.fillCircle(cx2 - S(15), hh + S(13), S(1), SKIN_DARK);
     t.fillCircle(cx2 + S(15), hh + S(13), S(1), SKIN_DARK);
 
-    // Blush
-    t.fillCircle(cx2 - S(8), hh + S(15), S(2), VAPOR_PINK);
-    t.fillCircle(cx2 + S(8), hh + S(15), S(2), VAPOR_PINK);
+    // Blush. Not on SHAMBLER: nothing about him is rosy.
+    if (outfitNow != OutfitId::SHAMBLER) {
+        t.fillCircle(cx2 - S(8), hh + S(15), S(2), VAPOR_PINK);
+        t.fillCircle(cx2 + S(8), hh + S(15), S(2), VAPOR_PINK);
+    }
 
     // Where the shades are, for the scouter's tap. Our own Squachy only.
     if (s_outfitOverride < 0) {
@@ -6786,6 +6827,10 @@ static void drawBody(TFT_eSPI& t, int cx, int hy, int headTopY, uint32_t now, Mo
         }
         t.fillRoundRect(cx2 - S(11), hh + S(7) + sd, S(8), S(5), 1, lensL);
         t.fillRoundRect(cx2 + S(3),  hh + S(7) + sd, S(8), S(5), 1, lensR);
+        // SHAMBLER's right lens is cracked. Here rather than in shFront() so
+        // it only exists while the shades do: a startled or yawning face
+        // has no lens to crack, and drawn later it landed on his bare eye.
+        if (outfitNow == OutfitId::SHAMBLER && lensR != BLACK) shCrack(t, cx2, hh + sd, scale);
         if (sd > 0) {
             // Two eyes peering over the frames -- without these the
             // dropped shades just read as badly-placed shades.

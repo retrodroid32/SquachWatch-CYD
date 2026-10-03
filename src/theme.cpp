@@ -4615,6 +4615,12 @@ static uint32_t s_lodgeAt = 0;
 static uint8_t  s_lodgeKnocks = 0;
 static uint32_t s_lodgeKnockAt = 0;
 static bool     s_lodgePending = false;
+// The FIRE owl while he asks WHAT REEKS?!: where he and his bubble were the
+// last frame he asked it, and when. backgroundTap() only believes a frame
+// from the last quarter second, the same freshness rule as the eye.
+static int      s_owlX = 0, s_owlY = 0, s_owlBubX = 0, s_owlBubY = 0, s_owlBubW = 0, s_owlBubH = 0;
+static uint32_t s_owlReekAt = 0;
+static bool     s_owlReekPending = false;
 
 // Where the toasters cameo is RIGHT NOW, so a tap can find him. Same shape
 // as the lodge and the starfield eye: the drawing code publishes a box each
@@ -4642,6 +4648,12 @@ static void publishLodge(int cx, int ridgeY, uint32_t now) {
 // cycle. snowLodge() reads this so each knock lights another one: the tell
 // the Starfield eye taught us a multi-step trigger cannot do without.
 uint8_t lodgeKnocks() { return s_lodgeKnocks; }
+
+bool consumeOwlReek() {
+    if (!s_owlReekPending) return false;
+    s_owlReekPending = false;
+    return true;
+}
 
 bool consumeLodgeKnock() {
     if (!s_lodgePending) return false;
@@ -4687,6 +4699,21 @@ bool backgroundTap(int x, int y, uint32_t now) {
             } else {
                 setEyeStreak(run);
             }
+            return true;
+        }
+    }
+
+    // The FIRE owl, while he is asking WHAT REEKS?!. On him -- a generous box,
+    // he is about twenty pixels of bird -- or on his bubble, which is where a
+    // finger goes when the question is the thing that caught the eye.
+    if (s_owlReekAt && (now - s_owlReekAt) <= 250) {
+        const int odx = x - s_owlX, ody = y - s_owlY;
+        const bool onOwl = odx >= -14 && odx <= 14 && ody >= -14 && ody <= 18;
+        const bool onBub = x >= s_owlBubX - 2 && x <= s_owlBubX + s_owlBubW + 2 &&
+                           y >= s_owlBubY - 2 && y <= s_owlBubY + s_owlBubH + 4;
+        if (onOwl || onBub) {
+            s_owlReekAt = 0;                      // one answer a question
+            s_owlReekPending = true;
             return true;
         }
     }
@@ -5551,9 +5578,18 @@ void drawFire(TFT_eSPI& t, uint32_t now, int yStart, int yEnd) {
             // it a few times. Check this stays coprime if the list
             // length changes -- a stride sharing a factor with the count
             // silently hides some of the lines forever.
+            //
+            // Every third slot is his own line instead, WHAT REEKS?!, and a
+            // tap on him while he is asking it is the SHAMBLER unlock (see
+            // backgroundTap()). Every third, not one in ten like a quip:
+            // once a minute and a half is findable; once in five minutes,
+            // at three and a half seconds a time, is not.
+            const uint32_t slot = now / CYCLE;
+            const bool reek = !wolfOut && (slot % 3) == 1;
             const char* q = wolfOut
                 ? SCARED[((now - s_wolfAt) / 1400) % (sizeof(SCARED) / sizeof(SCARED[0]))]
-                : QUIPS[((now / CYCLE) * 5 + 2) % NQUIP];
+                : reek ? "WHAT REEKS?!"
+                : QUIPS[(slot * 5 + 2) % NQUIP];
             t.setTextSize(1);
             const int bw = t.textWidth(q) + 8;
             // Derived, not the hard-coded 11 this used to be. Squachy's
@@ -5600,6 +5636,12 @@ void drawFire(TFT_eSPI& t, uint32_t now, int yStart, int yEnd) {
             t.setTextColor(ink, paper);
             t.setCursor(bx + 4, by + 3);
             t.print(q);
+            if (reek) {
+                // Where he is and where his bubble is, for the tap.
+                s_owlX = owlX; s_owlY = owlY;
+                s_owlBubX = bx; s_owlBubY = by; s_owlBubW = bw; s_owlBubH = bh;
+                s_owlReekAt = now ? now : 1;
+            }
         }
     }
 
