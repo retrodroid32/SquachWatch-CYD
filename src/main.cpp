@@ -1993,7 +1993,7 @@ static void performWipe(WipeBoot after) {
     MeshTalk::forget();
 #endif
     engine.clearLog();
-    engine.clearWatch();
+    engine.clearWatches();
     engine.clearHunts();
     if (after == WipeBoot::LOCKED) Security::lock();
     enterClear();
@@ -4264,10 +4264,11 @@ void loop() {
                 enterMeshCompose();
             } else if (touchJustDown && (now - lastTouch) > TOUCH_DEBOUNCE_MS &&
                        uiClearWatchPillHit(tp.x, tp.y)) {
-                // WATCH is passive status: open the watched-target screen,
-                // including its RSSI history and UNWATCH action.
+                // WATCH pill opens the selected-target roster, not an alert
+                // for whichever target happened to be active most recently.
                 lastTouch = now;
                 sqActive  = false;
+                engine.deactivateWatch();
                 enterWatchAlert();
             } else if (touchJustDown && (now - lastTouch) > TOUCH_DEBOUNCE_MS &&
                        uiClearHuntPillHit(tp.x, tp.y)) {
@@ -4588,11 +4589,6 @@ void loop() {
         case AppState::WATCH_ALERT: {
 #if defined(CYD35)
             if (frameBufferOk) {
-                // Same two-pass half-height `frame` trick CLEAR/BOOT/
-                // ALERT use -- unlike plain uiAlertTick(), this one
-                // does draw Squachy, so advance has to gate his state
-                // mutation to exactly one of the two passes, same as
-                // uiClearTick()/uiBootTick().
                 int halfH = tft.height() / 2;
                 frame.setViewport(0, 0, tft.width(), tft.height(), true);
                 uiWatchAlertTick(frame, now, engine, true);
@@ -4607,16 +4603,28 @@ void loop() {
 #else
             uiWatchAlertTick(*canvas, now, engine, true);
 #endif
-            if (tp.valid && (now - lastTouch) > TOUCH_DEBOUNCE_MS) {
+            if (engine.watchKind() == DetectionEngine::WatchKind::NONE) {
+                // Manual WATCH pill roster: no auto-dismiss, drag scrolls and
+                // the single BACK button returns home.
+                static bool wlGesture=false, wlMoved=false;
+                static int wlStartX=0, wlStartY=0, wlLastY=-1;
+                if(touchJustDown){ wlGesture=true; wlMoved=false; wlStartX=tp.x; wlStartY=tp.y; wlLastY=tp.y; }
+                if(tp.valid&&wlGesture){ const int dy=tp.y-wlLastY; if(abs(dy)>10){ wlMoved=true; uiWatchAlertListScroll(dy>0?-1:1); wlLastY=tp.y; } }
+                if(touchJustUp&&wlGesture){
+                    if(!wlMoved && uiWatchAlertListHitBack(wlStartX,wlStartY,tft.width(),tft.height())){ lastTouch=now; enterClear(); }
+                    wlGesture=false;
+                }
+            } else if (tp.valid && (now - lastTouch) > TOUCH_DEBOUNCE_MS) {
                 lastTouch = now;
-                // The button ends the watch; anywhere else just dismisses the
-                // alert and leaves it running. Both land back on CLEAR.
                 if (uiWatchAlertHitRemove(*canvas, tp.x, tp.y)) {
-                    engine.clearWatch();
-                    Theme::showToast("UNWATCHED", nullptr, Theme::CYAN);
+                    engine.clearWatch(); // only the device whose alert is open
+                    Theme::showToast("REMOVED FROM WATCH", nullptr, Theme::CYAN);
+                } else {
+                    engine.deactivateWatch();
                 }
                 enterClear();
             } else if ((now - watchAlertStart) > ALERT_AUTO_DISMISS_MS) {
+                engine.deactivateWatch();
                 enterClear();
             }
             break;
@@ -4683,16 +4691,15 @@ void loop() {
                     if (ctap == LogConfirmTap::WATCH) {
                         lastTouch = now;
                         s_confirmPending = false;
-                        // Toggling like IGNORE beside it -- the only way to
-                        // end a watch that isn't a reboot or the wipe.
-                        if (engine.isWatched(s_confirmMac, s_confirmIsBle)) {
-                            engine.clearWatch();
-                            Theme::showToast("UNWATCHED", nullptr, Theme::CYAN);
-                        } else if (s_confirmIsBle) {
-                            engine.watchBle(s_confirmMac, s_confirmLabel);
-                        } else {
-                            engine.watchWifi(s_confirmMac, s_confirmLabel);
-                        }
+                        const DetectionEngine::WatchToggle r = s_confirmIsBle
+                            ? engine.toggleWatchBle(s_confirmMac, s_confirmLabel)
+                            : engine.toggleWatchWifi(s_confirmMac, s_confirmLabel);
+                        if (r == DetectionEngine::WatchToggle::ADDED)
+                            Theme::showToast("ADDED TO WATCH", s_confirmLabel, Theme::CYAN);
+                        else if (r == DetectionEngine::WatchToggle::REMOVED)
+                            Theme::showToast("REMOVED FROM WATCH", s_confirmLabel, Theme::CYAN);
+                        else
+                            Theme::showToast("WATCH LIST FULL", "Maximum 8 targets", Theme::AMBER);
                     } else if (ctap == LogConfirmTap::IGNORE) {
                         lastTouch = now;
                         s_confirmPending = false;
@@ -4874,19 +4881,15 @@ void loop() {
                     if (ctap == RawScanConfirmTap::WATCH) {
                         lastTouch = now;
                         s_confirmPending = false;
-                        // See the LOG screen's copy: same toggle. Unwatching
-                        // stays on this screen -- the reason to leave was to
-                        // go watch the thing, and there is nothing to go to.
-                        if (engine.isWatched(s_confirmMac, s_rawScanIsBle)) {
-                            engine.clearWatch();
-                            Theme::showToast("UNWATCHED", nullptr, Theme::CYAN);
-                        } else {
-                            if (s_rawScanIsBle) engine.watchBle(s_confirmMac, s_confirmLabel);
-                            else                engine.watchWifi(s_confirmMac, s_confirmLabel);
-                            Theme::showToast("WATCHING", s_confirmLabel, Theme::CYAN);
-                            // Stay on the scan that launched the target menu.
-                            // The user decides when to leave it.
-                        }
+                        const DetectionEngine::WatchToggle r = s_rawScanIsBle
+                            ? engine.toggleWatchBle(s_confirmMac, s_confirmLabel)
+                            : engine.toggleWatchWifi(s_confirmMac, s_confirmLabel);
+                        if (r == DetectionEngine::WatchToggle::ADDED)
+                            Theme::showToast("ADDED TO WATCH", s_confirmLabel, Theme::CYAN);
+                        else if (r == DetectionEngine::WatchToggle::REMOVED)
+                            Theme::showToast("REMOVED FROM WATCH", s_confirmLabel, Theme::CYAN);
+                        else
+                            Theme::showToast("WATCH LIST FULL", "Maximum 8 targets", Theme::AMBER);
                     } else if (ctap == RawScanConfirmTap::IGNORE) {
                         lastTouch = now;
                         s_confirmPending = false;
@@ -5137,8 +5140,8 @@ void loop() {
                         // CLEAR are the only two ways to end a watch short of a
                         // reboot; before either existed there were none.
                         case SettingsRow::WATCH_TARGET:
-                            engine.clearWatch();
-                            Theme::showToast("WATCH STOPPED", nullptr, Theme::CYAN);
+                            engine.clearWatches();
+                            Theme::showToast("WATCH LIST CLEARED", nullptr, Theme::CYAN);
                             break;
                         case SettingsRow::HUNT_TARGET:
                             engine.clearHunts();
@@ -6437,7 +6440,10 @@ void loop() {
     // real screen -- pushing `frame` here would just paint stale data
     // from the sprite we stopped using back over the top of it.
     if (frameBufferOk && renderedThisLoop) {
-        if (now - transitionStart < TRANSITION_MS) {
+        const bool targetRoster =
+            (state == AppState::HUNT && engine.huntKind() == DetectionEngine::WatchKind::NONE) ||
+            (state == AppState::WATCH_ALERT && engine.watchKind() == DetectionEngine::WatchKind::NONE);
+        if (!targetRoster && now - transitionStart < TRANSITION_MS) {
             Theme::drawTransitionGlitch(frame, now - transitionStart, TRANSITION_MS);
         }
         FrameProf::lap(FrameProf::POST);

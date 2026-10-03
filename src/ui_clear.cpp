@@ -1763,10 +1763,12 @@ static void drawTargetPill(TFT_eSPI& t, int x, int y, const char* txt, uint16_t 
 // screen edges and the counter block rather than to a fixed rotation, so a
 // rotate simply recomputes their coordinates on the next frame.
 static void drawTargetPills(TFT_eSPI& t, int screenW, int counterTextTop,
-                            bool watching, uint8_t huntCount) {
+                            uint8_t watchCount, uint8_t huntCount) {
     t.setTextSize(1);
+    const bool watching = watchCount > 0;
     const bool hunting = huntCount > 0;
-    char huntText[12];
+    char watchText[12], huntText[12];
+    snprintf(watchText, sizeof watchText, "WATCH %u", (unsigned)watchCount);
     snprintf(huntText, sizeof huntText, "HUNT %u", (unsigned)huntCount);
 
     const int edge = 6;
@@ -1775,7 +1777,7 @@ static void drawTargetPills(TFT_eSPI& t, int screenW, int counterTextTop,
     const int y = counterTextTop - bh - 4;
 
     if (watching) {
-        drawTargetPill(t, edge, y, "WATCH", Theme::CYAN, false,
+        drawTargetPill(t, edge, y, watchText, Theme::CYAN, false,
                        s_wpX, s_wpY, s_wpW, s_wpH, s_watchPillOn);
     }
     if (hunting) {
@@ -3147,7 +3149,7 @@ void uiClearTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool adv
     // outside Squachy's speech/name area. WATCH is always the left-hand target
     // and HUNT is always the right-hand target, regardless of rotation.
     {
-        const bool watching = eng.watchKind() != DetectionEngine::WatchKind::NONE;
+        const uint8_t watching = eng.watchTargetCount();
         const uint8_t hunting = eng.huntTargetCount();
         s_watchPillOn = false;
         s_huntPillOn  = false;

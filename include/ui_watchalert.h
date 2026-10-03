@@ -20,3 +20,8 @@ void uiWatchAlertTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, boo
 // is the one place the target is ever named on screen, so it is the one place
 // you can act on it without finding it in a scan again.
 bool uiWatchAlertHitRemove(TFT_eSPI& t, int x, int y);
+
+// WATCH pill roster helpers. The roster is deliberately read-only: selection
+// and removal remain on LOG/raw scan, while actual sightings open the alert.
+bool uiWatchAlertListHitBack(int x, int y, int screenW, int screenH);
+void uiWatchAlertListScroll(int delta);
