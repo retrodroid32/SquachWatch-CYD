@@ -32,6 +32,21 @@ CYAN  = (0, 214, 214)
 # ---- the clips ----
 
 CLIPS = {
+    # v1.29.0 "What Reeks": the FIRE owl's new line and the tap that answers
+    # it (the clock is millis from boot, so ~910 frames in is his third quip
+    # slot, the one he asks in), the SHAMBLER it earns, a Legend visiting in
+    # his own aura, SQUAD's SEND, NEARBY keeping quiet about your own things,
+    # and the C5's faster screen.
+    "what-reeks": [
+        ("clear", 915, 30, ["--noseed", "--bg", "6"], {}, 1600, "THE OWL ON THE CAMPFIRE HAS A QUESTION"),
+        ("clear", 945, 60, ["--noseed", "--bg", "6", "--tap", "935:33:68"], {}, 1800, "TAP HIM WHILE HE ASKS"),
+        ("clear", 260, 40, ["--noseed", "--bg", "6", "--outfit", "17"], {}, 1600, "MEET THE SHAMBLER"),
+        ("clear", 260, 40, ["--noseed", "--bg", "1", "--outfit", "17"], {"SQUACHSIM_LEGEND": "1"}, 1500, "FLIES INCLUDED. AURA OPTIONAL."),
+        ("clear", 400, 36, ["--noseed", "--bg", "2", "--peer", "16", "--peername", "NESSIE"], {"SQUACHSIM_PEERAURA": "1"}, 1600, "LEGENDS VISIT IN THEIR AURA NOW"),
+        ("squad", 30, 12, ["--pose", "1"], {}, 1500, "SQUAD GOT A SEND BUTTON"),
+        ("clear", 120, 24, ["--bg", "2"], {"SQUACHSIM_SNOOZEALL": "1"}, 1700, "YOUR OWN STUFF STOPS SHOUTING NEARBY"),
+        ("clear", 200, 30, ["--noseed", "--bg", "3"], {}, 1600, "AND THE C5 DRAWS TWICE AS FAST"),
+    ],
     # v1.28.0 "Over 9000": the scouter unlock (a tap on his shades with the
     # aura lit, which --tap lands on him), the outfit it earns, and the tank
     # redrawn in whole numbers. The C5 is a chip, not a screen, so it gets a
