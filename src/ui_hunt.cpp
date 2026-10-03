@@ -278,16 +278,12 @@ void uiHuntListScroll(int delta) {
     s_listScroll = (uint8_t)n;
 }
 
-void uiHuntTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng,
-                bool advance, bool rosterView) {
-    int w = t.width(), h = t.height();
+void uiHuntListTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng) {
+    drawHuntList(t, now, eng);
+}
 
-    // Roster/detail selection is owned by main.cpp. Engine target state may
-    // update while this screen is open, but that must never switch renderers.
-    if (rosterView) {
-        drawHuntList(t, now, eng);
-        return;
-    }
+void uiHuntTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool advance) {
+    int w = t.width(), h = t.height();
 
     if (!s_gaugeStarted) {
         s_gaugeStarted = true;

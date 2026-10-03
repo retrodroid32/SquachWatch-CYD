@@ -505,11 +505,6 @@ AppState            state     = AppState::BOOT;
 uint32_t            bootStart = 0;
 uint32_t            alertStart= 0;
 uint32_t            watchAlertStart = 0;
-// Roster/detail mode belongs to the UI. Do not infer it from DetectionEngine's
-// active target: radio callbacks and alert bookkeeping are allowed to change
-// engine state without changing which screen the user asked to view.
-bool                watchRosterView = false;
-bool                huntRosterView  = false;
 uint32_t            lastTouch = 0;
 bool                prevTouchValid = false; // last frame's tp.valid, for true press/release edge detection (see loop())
 DetectionType       lastAlertType = DetectionType::UNKNOWN;
@@ -1389,8 +1384,7 @@ static void enterAlert(const Detection& d) {
 #endif
 }
 
-static void enterWatchAlert(bool roster = false) {
-    watchRosterView = roster;
+static void enterWatchAlert() {
     state = AppState::WATCH_ALERT;
 #if defined(TWATCH_S3)
     twatchBuzz(Buzz::WATCH);
@@ -1722,12 +1716,25 @@ static void enterWifiAdd() {
     uiWifiAddInit(*canvas);
 }
 
-static void enterHunt(HuntReturn returnTo = HuntReturn::HOME, bool roster = false) {
+static void enterHunt(HuntReturn returnTo = HuntReturn::HOME) {
     s_huntReturn = returnTo;
-    huntRosterView = roster;
     state = AppState::HUNT;
     transitionStart = millis();
     uiHuntInit(*canvas);
+}
+
+static void enterHuntList() {
+    engine.deactivateHunt();
+    state = AppState::HUNT_LIST;
+    transitionStart = millis();
+    uiHuntInit(*canvas);
+}
+
+static void enterWatchList() {
+    engine.deactivateWatch();
+    state = AppState::WATCH_LIST;
+    transitionStart = millis();
+    uiWatchAlertInit(*canvas);
 }
 
 // true when reached via the first-boot flow (DONE -> CLEAR, straight
@@ -3459,6 +3466,8 @@ static const char* timedScreenName(AppState s) {
         case AppState::HUNT:        return "HUNT";
         case AppState::ALERT:       return "ALERT";
         case AppState::WATCH_ALERT: return "WATCH";
+        case AppState::WATCH_LIST:  return "WATCH LIST";
+        case AppState::HUNT_LIST:   return "HUNT LIST";
         default:                    return nullptr;
     }
 }
@@ -4275,16 +4284,15 @@ void loop() {
                 // for whichever target happened to be active most recently.
                 lastTouch = now;
                 sqActive  = false;
-                engine.deactivateWatch();
-                enterWatchAlert(true);
+                enterWatchList();
             } else if (touchJustDown && (now - lastTouch) > TOUCH_DEBOUNCE_MS &&
                        uiClearHuntPillHit(tp.x, tp.y)) {
                 // The HUNT pill is the selected-target roster. Clear only
                 // the active gauge selection; every queued target stays.
                 lastTouch = now;
                 sqActive  = false;
-                engine.deactivateHunt();
-                enterHunt(HuntReturn::HOME, true);
+                s_huntReturn = HuntReturn::HOME;
+                enterHuntList();
             } else if (touchJustDown && (now - lastTouch) > TOUCH_DEBOUNCE_MS &&
                        uiClearSquadHit(tp.x, tp.y)) {
                 // The squad badge, ahead of the scene gestures for the same
@@ -4598,30 +4606,19 @@ void loop() {
             if (frameBufferOk) {
                 int halfH = tft.height() / 2;
                 frame.setViewport(0, 0, tft.width(), tft.height(), true);
-                uiWatchAlertTick(frame, now, engine, true, watchRosterView);
+                uiWatchAlertTick(frame, now, engine, true);
                 pushFrame(0, 0);
                 frame.setViewport(0, -halfH, tft.width(), tft.height(), true);
-                uiWatchAlertTick(frame, now, engine, false, watchRosterView);
+                uiWatchAlertTick(frame, now, engine, false);
                 pushFrame(0, halfH);
                 frame.resetViewport();
             } else {
-                uiWatchAlertTick(tft, now, engine, true, watchRosterView);
+                uiWatchAlertTick(tft, now, engine, true);
             }
 #else
-            uiWatchAlertTick(*canvas, now, engine, true, watchRosterView);
+            uiWatchAlertTick(*canvas, now, engine, true);
 #endif
-            if (watchRosterView) {
-                // Manual WATCH pill roster: no auto-dismiss, drag scrolls and
-                // the single BACK button returns home.
-                static bool wlGesture=false, wlMoved=false;
-                static int wlStartX=0, wlStartY=0, wlLastY=-1;
-                if(touchJustDown){ wlGesture=true; wlMoved=false; wlStartX=tp.x; wlStartY=tp.y; wlLastY=tp.y; }
-                if(tp.valid&&wlGesture){ const int dy=tp.y-wlLastY; if(abs(dy)>10){ wlMoved=true; uiWatchAlertListScroll(dy>0?-1:1); wlLastY=tp.y; } }
-                if(touchJustUp&&wlGesture){
-                    if(!wlMoved && uiWatchAlertListHitBack(wlStartX,wlStartY,tft.width(),tft.height())){ lastTouch=now; enterClear(); }
-                    wlGesture=false;
-                }
-            } else if (tp.valid && (now - lastTouch) > TOUCH_DEBOUNCE_MS) {
+            if (tp.valid && (now - lastTouch) > TOUCH_DEBOUNCE_MS) {
                 lastTouch = now;
                 if (uiWatchAlertHitRemove(*canvas, tp.x, tp.y)) {
                     engine.clearWatch(); // only the device whose alert is open
@@ -4633,6 +4630,34 @@ void loop() {
             } else if ((now - watchAlertStart) > ALERT_AUTO_DISMISS_MS) {
                 engine.deactivateWatch();
                 enterClear();
+            }
+            break;
+        }
+        case AppState::WATCH_LIST: {
+            drawTwoBand([&](TFT_eSPI& t, bool) {
+                uiWatchListTick(t, now, engine);
+            });
+
+            static bool wlGesture=false, wlMoved=false;
+            static int wlStartX=0, wlStartY=0, wlLastY=-1;
+            if(touchJustDown){
+                wlGesture=true; wlMoved=false;
+                wlStartX=tp.x; wlStartY=tp.y; wlLastY=tp.y;
+            }
+            if(tp.valid&&wlGesture){
+                const int dy=tp.y-wlLastY;
+                if(abs(dy)>10){
+                    wlMoved=true;
+                    uiWatchAlertListScroll(dy>0?-1:1);
+                    wlLastY=tp.y;
+                }
+            }
+            if(touchJustUp&&wlGesture){
+                if(!wlMoved && uiWatchAlertListHitBack(wlStartX,wlStartY,tft.width(),tft.height())){
+                    lastTouch=now;
+                    enterClear();
+                }
+                wlGesture=false;
             }
             break;
         }
@@ -6321,66 +6346,61 @@ void loop() {
         }
         case AppState::HUNT: {
             drawTwoBand([&](TFT_eSPI& t, bool advance) {
-                uiHuntTick(t, now, engine, advance, huntRosterView);
+                uiHuntTick(t, now, engine, advance);
                 Theme::drawToast(t, now);
             });
 
-            if (huntRosterView) {
-                // The ranked target list: tap opens the gauge; drag scrolls.
-                static bool listGesture = false, listMoved = false;
-                static int listStartX = 0, listStartY = 0, listLastY = -1;
-                static int listTarget = -1;
-                if (touchJustDown) {
-                    listGesture = true;
-                    listMoved = false;
-                    listStartX = tp.x;
-                    listStartY = tp.y;
-                    listLastY = tp.y;
-                    // Freeze the target under the finger at touch-down. RSSI
-                    // sorting can legitimately reorder rows while the finger
-                    // is held; release must still open the row the user
-                    // actually pressed, not whichever target moved there.
-                    listTarget = uiHuntListHitTarget(*canvas, tp.x, tp.y,
-                                                     tft.width(), tft.height());
-                }
-                if (tp.valid && listGesture) {
-                    const int dy = tp.y - listLastY;
-                    if (abs(dy) > 10) {
-                        listMoved = true;
-                        uiHuntListScroll(dy > 0 ? -1 : 1);
-                        listLastY = tp.y;
-                    }
-                }
-                if (touchJustUp && listGesture) {
-                    if (!listMoved) {
-                        lastTouch = now;
-                        if (listTarget >= 0 && engine.activateHuntTarget((uint8_t)listTarget)) {
-                            huntRosterView = false;
-                            uiHuntInit(*canvas);
-                        } else if (uiHuntListHitBack(listStartX, listStartY,
-                                                     tft.width(), tft.height())) {
-                            returnFromHunt();
-                        }
-                    }
-                    listGesture = false;
-                }
-            } else if (tp.valid && (now - lastTouch) > TOUCH_DEBOUNCE_MS) {
+            if (tp.valid && (now - lastTouch) > TOUCH_DEBOUNCE_MS) {
                 if (uiHuntHitStop(tp.x, tp.y, tft.width(), tft.height())) {
                     lastTouch = now;
-                    engine.clearHunt();  // removes only this target from the selected list
+                    engine.clearHunt();
                     Theme::showToast("REMOVED FROM HUNT", nullptr, Theme::CYAN);
-                    if (engine.huntTargetCount()) {
-                        huntRosterView = true;
-                        uiHuntInit(*canvas);
-                    } else returnFromHunt();
+                    if (engine.huntTargetCount()) enterHuntList();
+                    else returnFromHunt();
                 } else if (uiHuntHitBack(tp.x, tp.y, tft.width(), tft.height())) {
                     lastTouch = now;
-                    // BACK leaves the target selected and returns to the HUNT
-                    // roster; the roster's BACK leaves HUNT entirely.
                     engine.deactivateHunt();
-                    huntRosterView = true;
-                    uiHuntInit(*canvas);
+                    enterHuntList();
                 }
+            }
+            break;
+        }
+        case AppState::HUNT_LIST: {
+            drawTwoBand([&](TFT_eSPI& t, bool) {
+                uiHuntListTick(t, now, engine);
+            });
+
+            static bool listGesture = false, listMoved = false;
+            static int listStartX = 0, listStartY = 0, listLastY = -1;
+            static int listTarget = -1;
+            if (touchJustDown) {
+                listGesture = true;
+                listMoved = false;
+                listStartX = tp.x;
+                listStartY = tp.y;
+                listLastY = tp.y;
+                listTarget = uiHuntListHitTarget(*canvas, tp.x, tp.y,
+                                                 tft.width(), tft.height());
+            }
+            if (tp.valid && listGesture) {
+                const int dy = tp.y - listLastY;
+                if (abs(dy) > 10) {
+                    listMoved = true;
+                    uiHuntListScroll(dy > 0 ? -1 : 1);
+                    listLastY = tp.y;
+                }
+            }
+            if (touchJustUp && listGesture) {
+                if (!listMoved) {
+                    lastTouch = now;
+                    if (listTarget >= 0 && engine.activateHuntTarget((uint8_t)listTarget)) {
+                        enterHunt(s_huntReturn);
+                    } else if (uiHuntListHitBack(listStartX, listStartY,
+                                                 tft.width(), tft.height())) {
+                        returnFromHunt();
+                    }
+                }
+                listGesture = false;
             }
             break;
         }
@@ -6452,8 +6472,7 @@ void loop() {
     // from the sprite we stopped using back over the top of it.
     if (frameBufferOk && renderedThisLoop) {
         const bool targetRoster =
-            (state == AppState::HUNT && huntRosterView) ||
-            (state == AppState::WATCH_ALERT && watchRosterView);
+            state == AppState::HUNT_LIST || state == AppState::WATCH_LIST;
         if (!targetRoster && now - transitionStart < TRANSITION_MS) {
             Theme::drawTransitionGlitch(frame, now - transitionStart, TRANSITION_MS);
         }

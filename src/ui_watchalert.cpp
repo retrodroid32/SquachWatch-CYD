@@ -129,15 +129,13 @@ void uiWatchAlertListScroll(int delta){
     int n=(int)s_watchScroll+delta; if(n<0)n=0; if(n>=s_watchCount)n=s_watchCount?s_watchCount-1:0; s_watchScroll=(uint8_t)n;
 }
 
-void uiWatchAlertTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng,
-                      bool advance, bool rosterView) {
+void uiWatchListTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng) {
+    drawWatchList(t, now, eng);
+}
+
+void uiWatchAlertTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool advance) {
     int w = t.width();
     int h = t.height();
-
-    if (rosterView) {
-        drawWatchList(t, now, eng);
-        return;
-    }
     if (!s_alertReactionFired) {
         s_alertReactionFired = true;
         Squachy::watchAlertReaction();

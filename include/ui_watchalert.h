@@ -12,8 +12,8 @@ void uiWatchAlertInit(TFT_eSPI& t);
 // mutation for boards that render in multiple physical bands per
 // logical frame. Defaults to true (unchanged behavior for single-pass
 // boards).
-void uiWatchAlertTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng,
-                      bool advance = true, bool rosterView = false);
+void uiWatchAlertTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool advance = true);
+void uiWatchListTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng);
 
 // True when (x,y) falls on the REMOVE FROM WATCH LIST button along the bottom
 // of this screen. Until this existed a watch could only be ended by a reboot
