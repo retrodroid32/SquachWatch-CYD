@@ -561,6 +561,9 @@ bool                frameBufferOk = true;
 // The frame the push task is reading while the loop draws into `frame`'s
 // own; the two trade places every pushFrame(). See FramePush::asyncSubmit().
 static uint8_t*     s_frameB = nullptr;
+// The screen the last pushed frame belonged to. A new one is carried across
+// into the other buffer once (see pushFrame()).
+static int          s_pushedState = -1;
 // The touch sample pushFrame() takes while the bus is free, for pollTouch().
 static bool         s_tsValid = false, s_tsDown = false;
 static int16_t      s_tsA = 0, s_tsB = 0;
@@ -803,25 +806,33 @@ static bool fitFromTftEspiBlobs(TouchFit::Fit& out) {
 
 static bool readTouchRaw(int16_t& a, int16_t& b);
 
+// The raw touch reading for anything in the loop: pollTouch() and the
+// DIAGNOSTICS screen's raw line. On the C5 touch shares the SPI bus with the
+// panel and the push runs in a task of its own, so a read from the loop
+// either waited for the frame in flight (the push went serial again, pre
+// 15 ms, measured) or -- unlocked, as DIAGNOSTICS had it -- talked over it.
+// So the sample is taken in pushFrame(), in the moment between one push
+// finishing and the next starting, when the bus is free, and this only
+// consumes it. Everywhere else it is the plain read.
+static bool sampleTouchRaw(int16_t& a, int16_t& b) {
+#if defined(NM_CYD_C5)
+    if (s_tsValid) { a = s_tsA; b = s_tsB; return s_tsDown; }
+    FramePush::busLock();
+    const bool down = readTouchRaw(a, b);
+    FramePush::busUnlock();
+    return down;
+#else
+    return readTouchRaw(a, b);
+#endif
+}
+
 // Raw touch -> screen, the same way on every board: the Fit gives a point
 // in the panel's native (rotation 0) frame, and the rotation step turns it
 // into this rotation's coordinates. No board has its own maths any more.
 static TouchPoint pollTouch() {
     TouchPoint tp = { false, 0, 0 };
     int16_t a, b;
-#if defined(NM_CYD_C5)
-    // Touch shares the SPI bus with the panel, and on the C5 the push runs in
-    // a task of its own. Read here, at the top of the loop, it waited for the
-    // frame in flight every time and the push was serial again (pre 15 ms,
-    // measured). So the sample is taken in pushFrame(), in the moment between
-    // one push finishing and the next starting, when the bus is free, and
-    // this only consumes it.
-    bool gotTouch;
-    if (s_tsValid) { gotTouch = s_tsDown; a = s_tsA; b = s_tsB; }
-    else { FramePush::busLock(); gotTouch = readTouchRaw(a, b); FramePush::busUnlock(); }
-#else
-    const bool gotTouch = readTouchRaw(a, b);
-#endif
+    const bool gotTouch = sampleTouchRaw(a, b);
     if (!gotTouch) return tp;
     const int w = tft.width(), h = tft.height();
     float sx, sy;
@@ -3657,6 +3668,18 @@ static inline void pushFrame(int x, int y) {
         FramePush::busUnlock();
         if (FramePush::asyncSubmit(frame.buf(), frame.bufW(), frame.bufH(), x, y)) {
             s_frameB = frame.swapBuf(s_frameB);
+            // The first frame of a new screen is copied into the buffer the
+            // next one is drawn in. Most screens clear the whole panel once,
+            // in their Init, and then repaint only their body each frame --
+            // so the clear reached one buffer and the other still held the
+            // screen before, and the strips the body never touches flipped
+            // between the two every frame (DIAGNOSTICS' button bar, found on
+            // the board 2026-10-03). Once per screen change: the copy is the
+            // 13 ms that was too dear every frame.
+            if ((int)state != s_pushedState) {
+                s_pushedState = (int)state;
+                memcpy(frame.buf(), s_frameB, (size_t)frame.bufW() * (size_t)frame.bufH());
+            }
             s_pushAccumUs += micros() - t0;
             return;
         }
@@ -7115,7 +7138,7 @@ void loop() {
             {
                 int16_t a = 0, b = 0;
                 info.hasRaw = true;
-                info.rawTouching = readTouchRaw(a, b);
+                info.rawTouching = sampleTouchRaw(a, b);
                 info.rawA = a;
                 info.rawB = b;
                 info.usingSavedCal = s_calSource == CalSource::SAVED;
