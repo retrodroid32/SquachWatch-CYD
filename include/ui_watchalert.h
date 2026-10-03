@@ -13,6 +13,7 @@ void uiWatchAlertInit(TFT_eSPI& t);
 // logical frame. Defaults to true (unchanged behavior for single-pass
 // boards).
 void uiWatchAlertTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool advance = true);
+void uiWatchListTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng);
 
 // True when (x,y) falls on the REMOVE FROM WATCH LIST button along the bottom
 // of this screen. Until this existed a watch could only be ended by a reboot
@@ -20,3 +21,8 @@ void uiWatchAlertTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, boo
 // is the one place the target is ever named on screen, so it is the one place
 // you can act on it without finding it in a scan again.
 bool uiWatchAlertHitRemove(TFT_eSPI& t, int x, int y);
+
+// WATCH pill roster helpers. The roster is deliberately read-only: selection
+// and removal remain on LOG/raw scan, while actual sightings open the alert.
+bool uiWatchAlertListHitBack(int x, int y, int screenW, int screenH);
+void uiWatchAlertListScroll(int delta);

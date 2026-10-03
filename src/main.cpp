@@ -1723,6 +1723,20 @@ static void enterHunt(HuntReturn returnTo = HuntReturn::HOME) {
     uiHuntInit(*canvas);
 }
 
+static void enterHuntList() {
+    engine.deactivateHunt();
+    state = AppState::HUNT_LIST;
+    transitionStart = millis();
+    uiHuntInit(*canvas);
+}
+
+static void enterWatchList() {
+    engine.deactivateWatch();
+    state = AppState::WATCH_LIST;
+    transitionStart = millis();
+    uiWatchAlertInit(*canvas);
+}
+
 // true when reached via the first-boot flow (DONE -> CLEAR, straight
 // into the normal onboarding overlay if this is also a first boot),
 // false when reached later via Settings' "CHECK COLORS" row
@@ -1993,8 +2007,8 @@ static void performWipe(WipeBoot after) {
     MeshTalk::forget();
 #endif
     engine.clearLog();
-    engine.clearWatch();
-    engine.clearHunt();
+    engine.clearWatches();
+    engine.clearHunts();
     if (after == WipeBoot::LOCKED) Security::lock();
     enterClear();
 #endif
@@ -3372,22 +3386,36 @@ static bool clearShouldRender(uint32_t now, const DetectionEngine& eng,
 static uint32_t s_bandUs[2] = {0, 0};      // measurement: the 3.5"'s two draw passes
 #endif
 
+// Physical-write diagnostics for the two target rosters.
+static uint8_t  s_rosterPushesThisLoop = 0;
+static uint32_t s_rosterPushDiagAt = 0;
+
 static inline void pushFrame(int x, int y) {
 #if defined(TWATCH_S3)
     if (s_panelAsleep) return;   // nothing to show it to; see applyBrightness()
 #endif
     uint32_t t0 = micros();
-    // The overlapped push converts the next 64 bytes while the previous 64
-    // are on the wire, instead of spinning -- see frame_push.h. It declines
-    // rather than half-draws, and the ordinary push is what it declines to;
-    // both leave the frame fully on the panel before the clock below stops,
-    // so DIAGNOSTICS and the [frame] line measure the same thing either way.
-    // The buffer and its REAL size: with a viewport set the sprite reports the
-    // viewport's size, not the buffer's, and cyd35 pushes through one.
-    if (frame.getColorDepth() != 8 ||
-        !FramePush::push(tft, frame.buf(), frame.bufW(), frame.bufH(), x, y)) {
+    const bool roster =
+        state == AppState::WATCH_LIST || state == AppState::HUNT_LIST;
+
+    if (roster) {
+        // Isolation path: no changed-row hashing, no multiple address-window
+        // spans and no periodic FramePush full refresh. The complete sprite is
+        // transferred in one ordinary TFT_eSPI operation.
+        s_rosterPushesThisLoop++;
         frame.pushSprite(x, y);
-        FramePush::invalidate();   // the panel now holds something push() did not record
+        FramePush::invalidate();
+
+        if (s_rosterPushesThisLoop > 1 &&
+            millis() - s_rosterPushDiagAt >= 1000) {
+            s_rosterPushDiagAt = millis();
+            Serial.printf("[roster-push] WARNING state=%u pushes=%u x=%d y=%d\n",
+                          (unsigned)state, (unsigned)s_rosterPushesThisLoop, x, y);
+        }
+    } else if (frame.getColorDepth() != 8 ||
+               !FramePush::push(tft, frame.buf(), frame.bufW(), frame.bufH(), x, y)) {
+        frame.pushSprite(x, y);
+        FramePush::invalidate();
     }
     s_pushAccumUs += micros() - t0;
 }
@@ -3452,6 +3480,8 @@ static const char* timedScreenName(AppState s) {
         case AppState::HUNT:        return "HUNT";
         case AppState::ALERT:       return "ALERT";
         case AppState::WATCH_ALERT: return "WATCH";
+        case AppState::WATCH_LIST:  return "WATCH LIST";
+        case AppState::HUNT_LIST:   return "HUNT LIST";
         default:                    return nullptr;
     }
 }
@@ -3467,6 +3497,7 @@ void loop() {
     s_loopsSinceSay++;   // the real loop rate, pacing delays included; on the [frame] line
     FrameProf::begin();
     s_pushAccumUs = 0;
+    s_rosterPushesThisLoop = 0;
     FramePush::newFrame();
     bool renderedThisLoop = true;
     uint32_t now = millis();
@@ -3802,11 +3833,11 @@ void loop() {
                       state == AppState::SECURITY || state == AppState::STATUS_LIGHT ||
                       state == AppState::DESK) &&
         Theme::settingsButtonHit(tp.x, tp.y) &&
-        // ...but not where the watch/hunt pill is sitting. The gear's tap box
+        // ...but not where either target pill is sitting. The gear's tap box
         // is 55x50, much larger than its 28px glyph, so it reaches into the
-        // title bar's middle where the pill lives. The pill is only ever drawn
-        // while a target is set, so this gives up nothing the rest of the time.
-        !(state == AppState::CLEAR && uiClearWatchPillHit(tp.x, tp.y)) &&
+        // title bar's middle. The pills only exist while their targets are set.
+        !(state == AppState::CLEAR &&
+          (uiClearWatchPillHit(tp.x, tp.y) || uiClearHuntPillHit(tp.x, tp.y))) &&
         (now - lastTouch) > TOUCH_DEBOUNCE_MS) {
         lastTouch = now;
         if (state == AppState::STATUS_LIGHT) {
@@ -4264,13 +4295,19 @@ void loop() {
                 enterMeshCompose();
             } else if (touchJustDown && (now - lastTouch) > TOUCH_DEBOUNCE_MS &&
                        uiClearWatchPillHit(tp.x, tp.y)) {
-                // The watch/hunt pill. Opens the alert screen, which names the
-                // target and carries REMOVE FROM WATCH LIST -- the same screen
-                // a real sighting would have opened, just asked for rather
-                // than waited for.
+                // WATCH pill opens the selected-target roster, not an alert
+                // for whichever target happened to be active most recently.
                 lastTouch = now;
                 sqActive  = false;
-                enterWatchAlert();
+                enterWatchList();
+            } else if (touchJustDown && (now - lastTouch) > TOUCH_DEBOUNCE_MS &&
+                       uiClearHuntPillHit(tp.x, tp.y)) {
+                // The HUNT pill is the selected-target roster. Clear only
+                // the active gauge selection; every queued target stays.
+                lastTouch = now;
+                sqActive  = false;
+                s_huntReturn = HuntReturn::HOME;
+                enterHuntList();
             } else if (touchJustDown && (now - lastTouch) > TOUCH_DEBOUNCE_MS &&
                        uiClearSquadHit(tp.x, tp.y)) {
                 // The squad badge, ahead of the scene gestures for the same
@@ -4582,11 +4619,6 @@ void loop() {
         case AppState::WATCH_ALERT: {
 #if defined(CYD35)
             if (frameBufferOk) {
-                // Same two-pass half-height `frame` trick CLEAR/BOOT/
-                // ALERT use -- unlike plain uiAlertTick(), this one
-                // does draw Squachy, so advance has to gate his state
-                // mutation to exactly one of the two passes, same as
-                // uiClearTick()/uiBootTick().
                 int halfH = tft.height() / 2;
                 frame.setViewport(0, 0, tft.width(), tft.height(), true);
                 uiWatchAlertTick(frame, now, engine, true);
@@ -4603,15 +4635,58 @@ void loop() {
 #endif
             if (tp.valid && (now - lastTouch) > TOUCH_DEBOUNCE_MS) {
                 lastTouch = now;
-                // The button ends the watch; anywhere else just dismisses the
-                // alert and leaves it running. Both land back on CLEAR.
                 if (uiWatchAlertHitRemove(*canvas, tp.x, tp.y)) {
-                    engine.clearWatch();
-                    Theme::showToast("UNWATCHED", nullptr, Theme::CYAN);
+                    engine.clearWatch(); // only the device whose alert is open
+                    Theme::showToast("REMOVED FROM WATCH", nullptr, Theme::CYAN);
+                } else {
+                    engine.deactivateWatch();
                 }
                 enterClear();
             } else if ((now - watchAlertStart) > ALERT_AUTO_DISMISS_MS) {
+                engine.deactivateWatch();
                 enterClear();
+            }
+            break;
+        }
+        case AppState::WATCH_LIST: {
+            // Retained roster: the underlying WATCH RSSI history samples at
+            // ~2 s, so repainting/pushing this static list every main-loop
+            // pass only creates unnecessary panel traffic. Draw immediately
+            // on entry/touch, then at the same 2 s cadence as the data.
+            static uint32_t wlLastDrawAt = 0, wlEntryAt = 0;
+            const bool wlNewEntry = wlEntryAt != transitionStart;
+            const bool wlNeedsDraw = wlNewEntry || touchJustDown || touchJustUp ||
+                                     tp.valid || (now - wlLastDrawAt >= 2000);
+            if (wlNeedsDraw) {
+                wlEntryAt = transitionStart;
+                wlLastDrawAt = now;
+                drawTwoBand([&](TFT_eSPI& t, bool) {
+                    uiWatchListTick(t, now, engine);
+                });
+            } else {
+                renderedThisLoop = false;
+            }
+
+            static bool wlGesture=false, wlMoved=false;
+            static int wlStartX=0, wlStartY=0, wlLastY=-1;
+            if(touchJustDown){
+                wlGesture=true; wlMoved=false;
+                wlStartX=tp.x; wlStartY=tp.y; wlLastY=tp.y;
+            }
+            if(tp.valid&&wlGesture){
+                const int dy=tp.y-wlLastY;
+                if(abs(dy)>10){
+                    wlMoved=true;
+                    uiWatchAlertListScroll(dy>0?-1:1);
+                    wlLastY=tp.y;
+                }
+            }
+            if(touchJustUp&&wlGesture){
+                if(!wlMoved && uiWatchAlertListHitBack(wlStartX,wlStartY,tft.width(),tft.height())){
+                    lastTouch=now;
+                    enterClear();
+                }
+                wlGesture=false;
             }
             break;
         }
@@ -4677,16 +4752,15 @@ void loop() {
                     if (ctap == LogConfirmTap::WATCH) {
                         lastTouch = now;
                         s_confirmPending = false;
-                        // Toggling like IGNORE beside it -- the only way to
-                        // end a watch that isn't a reboot or the wipe.
-                        if (engine.isWatched(s_confirmMac, s_confirmIsBle)) {
-                            engine.clearWatch();
-                            Theme::showToast("UNWATCHED", nullptr, Theme::CYAN);
-                        } else if (s_confirmIsBle) {
-                            engine.watchBle(s_confirmMac, s_confirmLabel);
-                        } else {
-                            engine.watchWifi(s_confirmMac, s_confirmLabel);
-                        }
+                        const DetectionEngine::WatchToggle r = s_confirmIsBle
+                            ? engine.toggleWatchBle(s_confirmMac, s_confirmLabel)
+                            : engine.toggleWatchWifi(s_confirmMac, s_confirmLabel);
+                        if (r == DetectionEngine::WatchToggle::ADDED)
+                            Theme::showToast("ADDED TO WATCH", s_confirmLabel, Theme::CYAN);
+                        else if (r == DetectionEngine::WatchToggle::REMOVED)
+                            Theme::showToast("REMOVED FROM WATCH", s_confirmLabel, Theme::CYAN);
+                        else
+                            Theme::showToast("WATCH LIST FULL", "Maximum 8 targets", Theme::AMBER);
                     } else if (ctap == LogConfirmTap::IGNORE) {
                         lastTouch = now;
                         s_confirmPending = false;
@@ -4702,17 +4776,15 @@ void loop() {
                     } else if (ctap == LogConfirmTap::HUNT) {
                         lastTouch = now;
                         s_confirmPending = false;
-                        // Toggles, same as WATCH above it. Stopping a hunt
-                        // stays here: HUNT MODE is somewhere to GO, and there
-                        // is nowhere to go once the target is gone.
-                        if (engine.isHunted(s_confirmMac, s_confirmIsBle)) {
-                            engine.clearHunt();
-                            Theme::showToast("HUNT STOPPED", nullptr, Theme::CYAN);
-                        } else {
-                            if (s_confirmIsBle) engine.huntBle(s_confirmMac, s_confirmLabel);
-                            else                engine.huntWifi(s_confirmMac, s_confirmLabel);
-                            enterHunt(HuntReturn::LOG);
-                        }
+                        const DetectionEngine::HuntToggle r = s_confirmIsBle
+                            ? engine.toggleHuntBle(s_confirmMac, s_confirmLabel)
+                            : engine.toggleHuntWifi(s_confirmMac, s_confirmLabel);
+                        if (r == DetectionEngine::HuntToggle::ADDED)
+                            Theme::showToast("ADDED TO HUNT", s_confirmLabel, Theme::AMBER);
+                        else if (r == DetectionEngine::HuntToggle::REMOVED)
+                            Theme::showToast("REMOVED FROM HUNT", s_confirmLabel, Theme::CYAN);
+                        else
+                            Theme::showToast("HUNT LIST FULL", "Maximum 8 targets", Theme::AMBER);
                     } else if (ctap == LogConfirmTap::INFO) {
                         lastTouch = now;
                         s_confirmPending = false;
@@ -4870,19 +4942,15 @@ void loop() {
                     if (ctap == RawScanConfirmTap::WATCH) {
                         lastTouch = now;
                         s_confirmPending = false;
-                        // See the LOG screen's copy: same toggle. Unwatching
-                        // stays on this screen -- the reason to leave was to
-                        // go watch the thing, and there is nothing to go to.
-                        if (engine.isWatched(s_confirmMac, s_rawScanIsBle)) {
-                            engine.clearWatch();
-                            Theme::showToast("UNWATCHED", nullptr, Theme::CYAN);
-                        } else {
-                            if (s_rawScanIsBle) engine.watchBle(s_confirmMac, s_confirmLabel);
-                            else                engine.watchWifi(s_confirmMac, s_confirmLabel);
-                            Theme::showToast("WATCHING", s_confirmLabel, Theme::CYAN);
-                            // Stay on the scan that launched the target menu.
-                            // The user decides when to leave it.
-                        }
+                        const DetectionEngine::WatchToggle r = s_rawScanIsBle
+                            ? engine.toggleWatchBle(s_confirmMac, s_confirmLabel)
+                            : engine.toggleWatchWifi(s_confirmMac, s_confirmLabel);
+                        if (r == DetectionEngine::WatchToggle::ADDED)
+                            Theme::showToast("ADDED TO WATCH", s_confirmLabel, Theme::CYAN);
+                        else if (r == DetectionEngine::WatchToggle::REMOVED)
+                            Theme::showToast("REMOVED FROM WATCH", s_confirmLabel, Theme::CYAN);
+                        else
+                            Theme::showToast("WATCH LIST FULL", "Maximum 8 targets", Theme::AMBER);
                     } else if (ctap == RawScanConfirmTap::IGNORE) {
                         lastTouch = now;
                         s_confirmPending = false;
@@ -4896,20 +4964,15 @@ void loop() {
                     } else if (ctap == RawScanConfirmTap::HUNT) {
                         lastTouch = now;
                         s_confirmPending = false;
-                        // See the LOG screen's copy: same toggle. Stopping
-                        // leaves the scan running, because the list you were
-                        // looking at is still the thing you came here for.
-                        if (engine.isHunted(s_confirmMac, s_rawScanIsBle)) {
-                            engine.clearHunt();
-                            Theme::showToast("HUNT STOPPED", nullptr, Theme::CYAN);
-                        } else {
-                            if (s_rawScanIsBle) engine.huntBle(s_confirmMac, s_confirmLabel);
-                            else                engine.huntWifi(s_confirmMac, s_confirmLabel);
-                            const HuntReturn backTo = s_rawScanIsBle
-                                ? HuntReturn::RAWSCAN_BLE : HuntReturn::RAWSCAN_WIFI;
-                            engine.stopRawScan();
-                            enterHunt(backTo);
-                        }
+                        const DetectionEngine::HuntToggle r = s_rawScanIsBle
+                            ? engine.toggleHuntBle(s_confirmMac, s_confirmLabel)
+                            : engine.toggleHuntWifi(s_confirmMac, s_confirmLabel);
+                        if (r == DetectionEngine::HuntToggle::ADDED)
+                            Theme::showToast("ADDED TO HUNT", s_confirmLabel, Theme::AMBER);
+                        else if (r == DetectionEngine::HuntToggle::REMOVED)
+                            Theme::showToast("REMOVED FROM HUNT", s_confirmLabel, Theme::CYAN);
+                        else
+                            Theme::showToast("HUNT LIST FULL", "Maximum 8 targets", Theme::AMBER);
                     } else if (ctap == RawScanConfirmTap::CANCEL) {
                         lastTouch = now;
                         s_confirmPending = false;
@@ -5138,12 +5201,12 @@ void loop() {
                         // CLEAR are the only two ways to end a watch short of a
                         // reboot; before either existed there were none.
                         case SettingsRow::WATCH_TARGET:
-                            engine.clearWatch();
-                            Theme::showToast("WATCH STOPPED", nullptr, Theme::CYAN);
+                            engine.clearWatches();
+                            Theme::showToast("WATCH LIST CLEARED", nullptr, Theme::CYAN);
                             break;
                         case SettingsRow::HUNT_TARGET:
-                            engine.clearHunt();
-                            Theme::showToast("HUNT STOPPED", nullptr, Theme::CYAN);
+                            engine.clearHunts();
+                            Theme::showToast("HUNT LIST CLEARED", nullptr, Theme::CYAN);
                             break;
                         case SettingsRow::THEME:      Settings::cyclePalette(); break;
                         case SettingsRow::BACKGROUND: Settings::cycleBackground(); break;
@@ -5664,8 +5727,8 @@ void loop() {
                     case SquadHit::HUNT: {
                         const uint8_t* mac = uiSquadSelectedMac();
                         if (!mac) break;
-                        if (!engine.isHunted(mac, true)) engine.huntBle(mac, uiSquadSelectedName());
-                        enterHunt();
+                        if (engine.huntBle(mac, uiSquadSelectedName())) enterHunt();
+                        else Theme::showToast("HUNT LIST FULL", "Maximum 8 targets", Theme::AMBER);
                         break;
                     }
                     case SquadHit::ADD: {
@@ -6311,17 +6374,75 @@ void loop() {
             break;
         }
         case AppState::HUNT: {
-            drawTwoBand([&](TFT_eSPI& t, bool advance) { uiHuntTick(t, now, engine, advance); });
+            drawTwoBand([&](TFT_eSPI& t, bool advance) {
+                uiHuntTick(t, now, engine, advance);
+                Theme::drawToast(t, now);
+            });
+
             if (tp.valid && (now - lastTouch) > TOUCH_DEBOUNCE_MS) {
                 if (uiHuntHitStop(tp.x, tp.y, tft.width(), tft.height())) {
                     lastTouch = now;
                     engine.clearHunt();
-                    Theme::showToast("HUNT STOPPED", nullptr, Theme::CYAN);
-                    returnFromHunt();
+                    Theme::showToast("REMOVED FROM HUNT", nullptr, Theme::CYAN);
+                    if (engine.huntTargetCount()) enterHuntList();
+                    else returnFromHunt();
                 } else if (uiHuntHitBack(tp.x, tp.y, tft.width(), tft.height())) {
                     lastTouch = now;
-                    returnFromHunt();
+                    engine.deactivateHunt();
+                    enterHuntList();
                 }
+            }
+            break;
+        }
+        case AppState::HUNT_LIST: {
+            // Same retained-screen rule as WATCH_LIST. The selected targets'
+            // signal histories only advance at ~2 s intervals, so the panel
+            // stays completely untouched between meaningful roster updates.
+            static uint32_t hlLastDrawAt = 0, hlEntryAt = 0;
+            const bool hlNewEntry = hlEntryAt != transitionStart;
+            const bool hlNeedsDraw = hlNewEntry || touchJustDown || touchJustUp ||
+                                     tp.valid || (now - hlLastDrawAt >= 2000);
+            if (hlNeedsDraw) {
+                hlEntryAt = transitionStart;
+                hlLastDrawAt = now;
+                drawTwoBand([&](TFT_eSPI& t, bool) {
+                    uiHuntListTick(t, now, engine);
+                });
+            } else {
+                renderedThisLoop = false;
+            }
+
+            static bool listGesture = false, listMoved = false;
+            static int listStartX = 0, listStartY = 0, listLastY = -1;
+            static int listTarget = -1;
+            if (touchJustDown) {
+                listGesture = true;
+                listMoved = false;
+                listStartX = tp.x;
+                listStartY = tp.y;
+                listLastY = tp.y;
+                listTarget = uiHuntListHitTarget(*canvas, tp.x, tp.y,
+                                                 tft.width(), tft.height());
+            }
+            if (tp.valid && listGesture) {
+                const int dy = tp.y - listLastY;
+                if (abs(dy) > 10) {
+                    listMoved = true;
+                    uiHuntListScroll(dy > 0 ? -1 : 1);
+                    listLastY = tp.y;
+                }
+            }
+            if (touchJustUp && listGesture) {
+                if (!listMoved) {
+                    lastTouch = now;
+                    if (listTarget >= 0 && engine.activateHuntTarget((uint8_t)listTarget)) {
+                        enterHunt(s_huntReturn);
+                    } else if (uiHuntListHitBack(listStartX, listStartY,
+                                                 tft.width(), tft.height())) {
+                        returnFromHunt();
+                    }
+                }
+                listGesture = false;
             }
             break;
         }
@@ -6392,7 +6513,9 @@ void loop() {
     // real screen -- pushing `frame` here would just paint stale data
     // from the sprite we stopped using back over the top of it.
     if (frameBufferOk && renderedThisLoop) {
-        if (now - transitionStart < TRANSITION_MS) {
+        const bool targetRoster =
+            state == AppState::HUNT_LIST || state == AppState::WATCH_LIST;
+        if (!targetRoster && now - transitionStart < TRANSITION_MS) {
             Theme::drawTransitionGlitch(frame, now - transitionStart, TRANSITION_MS);
         }
         FrameProf::lap(FrameProf::POST);
@@ -6400,6 +6523,14 @@ void loop() {
         FrameProf::lap(FrameProf::PUSH);
     }
 #endif
+
+    if ((state == AppState::WATCH_LIST || state == AppState::HUNT_LIST) &&
+        now - s_rosterPushDiagAt >= 1000) {
+        s_rosterPushDiagAt = now;
+        Serial.printf("[roster-push] state=%u physical-pushes=%u framebuffer=%s\n",
+                      (unsigned)state, (unsigned)s_rosterPushesThisLoop,
+                      frameBufferOk ? "yes" : "no");
+    }
 
     const uint32_t frameUs = micros() - frameStartUs;
     if (renderedThisLoop) {

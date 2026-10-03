@@ -2,12 +2,17 @@
 #include "ui_watchalert.h"
 #include "theme.h"
 #include "squachy.h"
+#include "ui_fit.h"
 #include <Arduino.h>
 
 // Shared by the drawing and the hit test so the two cannot drift -- the rule
 // every other panel here follows. Full width minus a margin: it is the only
 // control on the screen, so there is nothing for it to crowd.
 static const int REMOVE_H = 26;
+static bool s_alertReactionFired = false;
+static uint8_t s_watchOrder[DetectionEngine::WATCH_TARGET_CAP] = {0};
+static uint8_t s_watchCount = 0;
+static uint8_t s_watchScroll = 0;
 static void removeRect(TFT_eSPI& t, int& x, int& y, int& w, int& h) {
     const int margin = 10;
     w = t.width() - 2 * margin;
@@ -34,12 +39,107 @@ static const char* removeLabel(TFT_eSPI& t, int w) {
 
 void uiWatchAlertInit(TFT_eSPI& t) {
     t.fillRect(0, 0, t.width(), t.height(), Theme::BLACK);
-    Squachy::watchAlertReaction();
+    s_alertReactionFired = false;
+    s_watchScroll = 0;
+}
+
+static void watchListGeom(TFT_eSPI& t, int w, int h, int& top, int& bottom, int& rowH, int& visible) {
+    Theme::ButtonBarGeom bar = Theme::computeButtonBar(w, h);
+    top = 24;
+    bottom = bar.y - 4;
+    t.setTextSize(2); const int nameH = t.fontHeight();
+    t.setTextSize(1); const int detailH = t.fontHeight();
+    rowH = nameH + detailH + 5;
+    visible = (bottom - top) / rowH;
+    if (visible < 1) visible = 1;
+}
+
+static int watchScore(const DetectionEngine::WatchTargetInfo& info, uint32_t now) {
+    if (!info.seen || now - info.lastSeenMs > 10000) return -200;
+    return (int)info.rssi;
+}
+
+static void buildWatchOrder(const DetectionEngine& eng, uint32_t now) {
+    s_watchCount = eng.watchTargetCount();
+    for (uint8_t i=0;i<s_watchCount;i++) s_watchOrder[i]=i;
+    for (uint8_t i=1;i<s_watchCount;i++) {
+        const uint8_t key=s_watchOrder[i];
+        DetectionEngine::WatchTargetInfo ki; eng.watchTargetInfo(key,ki);
+        const int ks=watchScore(ki,now);
+        uint8_t j=i;
+        while(j>0){
+            DetectionEngine::WatchTargetInfo pi; eng.watchTargetInfo(s_watchOrder[j-1],pi);
+            if(watchScore(pi,now)>=ks) break;
+            s_watchOrder[j]=s_watchOrder[j-1]; j--;
+        }
+        s_watchOrder[j]=key;
+    }
+}
+
+static void drawWatchTrend(TFT_eSPI& t,int x,int y,const DetectionEngine::WatchTargetInfo& info){
+    RssiTrend tr=info.trend;
+    if(tr==RssiTrend::UNKNOWN && info.samples>=2){
+        const int d=(int)info.rssi-(int)info.previousRssi;
+        if(d>=4) tr=RssiTrend::APPROACHING; else if(d<=-4) tr=RssiTrend::MOVING_AWAY;
+    }
+    if(tr==RssiTrend::APPROACHING) t.fillTriangle(x,y+7,x+8,y+7,x+4,y,Theme::GREEN);
+    else if(tr==RssiTrend::MOVING_AWAY) t.fillTriangle(x,y,x+8,y,x+4,y+7,Theme::RED);
+    else if(tr==RssiTrend::STEADY) t.drawFastHLine(x,y+4,8,Theme::CYAN);
+}
+
+static void drawWatchList(TFT_eSPI& t,uint32_t now,const DetectionEngine& eng){
+    const int w=t.width(),h=t.height();
+
+    // Same full-frame ownership rule as the HUNT roster. The title helper
+    // assumes its caller has already painted the background, and the old
+    // body-only clear left stale CLEAR/alert pixels in the uncovered bands.
+    t.fillRect(0,0,w,h,Theme::BG);
+    Theme::drawTitleBar(t,">> WATCH TARGETS <<");
+    int top,bottom,rowH,visible; watchListGeom(t,w,h,top,bottom,rowH,visible);
+    buildWatchOrder(eng,now);
+    const int maxScroll=s_watchCount>visible?s_watchCount-visible:0;
+    if(s_watchScroll>maxScroll)s_watchScroll=(uint8_t)maxScroll;
+
+    for(uint8_t row=0;row<(uint8_t)visible;row++){
+        const uint8_t pos=(uint8_t)(s_watchScroll+row); if(pos>=s_watchCount)break;
+        DetectionEngine::WatchTargetInfo info; if(!eng.watchTargetInfo(s_watchOrder[pos],info))continue;
+        const int y=top+row*rowH; const bool fresh=info.seen && now-info.lastSeenMs<=10000;
+        t.drawFastHLine(6,y+rowH-1,w-12,Theme::PURPLE);
+        char fitted[28]; t.setTextSize(2);
+        UiFit::fitMid(fitted,sizeof fitted,info.label,UiFit::chars(w-104,2));
+        t.setTextColor(Theme::WHITE,Theme::BG); t.setCursor(8,y+1); t.print(fitted);
+        char rbuf[16]; if(fresh)snprintf(rbuf,sizeof rbuf,"%d dBm",(int)info.rssi); else if(info.seen)snprintf(rbuf,sizeof rbuf,"OUT"); else snprintf(rbuf,sizeof rbuf,"WAIT");
+        const int rw=t.textWidth(rbuf); t.setTextColor(fresh?Theme::CYAN:Theme::AMBER,Theme::BG); t.setCursor(w-rw-24,y+1); t.print(rbuf);
+        if(fresh)drawWatchTrend(t,w-17,y+5,info);
+        t.setTextSize(1); t.setTextColor(Theme::VAPOR_PURPLE,Theme::BG); t.setCursor(8,y+18);
+        t.print(info.kind==DetectionEngine::WatchKind::BLE?"BLE":"WIFI");
+        if(info.seen){ const uint32_t age=(now-info.lastSeenMs)/1000; t.printf("   seen %lus ago",(unsigned long)age); }
+        else t.print("   waiting for signal");
+    }
+    Theme::ButtonBarGeom bar=Theme::computeButtonBar(w,h);
+    const int bw=120,bx=(w-bw)/2; Theme::drawButton(t,bx,bar.y,bw,bar.h,"[ BACK ]",false);
+}
+
+bool uiWatchAlertListHitBack(int x,int y,int screenW,int screenH){
+    Theme::ButtonBarGeom bar=Theme::computeButtonBar(screenW,screenH);
+    const int bw=120,bx=(screenW-bw)/2;
+    return x>=bx&&x<=bx+bw&&y>=bar.y&&y<screenH;
+}
+void uiWatchAlertListScroll(int delta){
+    int n=(int)s_watchScroll+delta; if(n<0)n=0; if(n>=s_watchCount)n=s_watchCount?s_watchCount-1:0; s_watchScroll=(uint8_t)n;
+}
+
+void uiWatchListTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng) {
+    drawWatchList(t, now, eng);
 }
 
 void uiWatchAlertTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool advance) {
     int w = t.width();
     int h = t.height();
+    if (!s_alertReactionFired) {
+        s_alertReactionFired = true;
+        Squachy::watchAlertReaction();
+    }
 
     // Urgent pulsing wash -- deliberately different from CLEAR's
     // vaporwave background and from the normal ALERT screen's

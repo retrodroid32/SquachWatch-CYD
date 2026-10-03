@@ -2043,133 +2043,371 @@ void DetectionEngine::wakeRadios() {
 
 bool DetectionEngine::radiosResting() { return g_rawMode == RawScanMode::REST; }
 
-void DetectionEngine::watchBle(const uint8_t* mac, const char* name) {
-    _watchKind = WatchKind::BLE;
-    memcpy(_watchMac, mac, 6);
-    strncpy(_watchLabel, (name && name[0]) ? name : "Unnamed device", sizeof(_watchLabel) - 1);
-    _watchLabel[sizeof(_watchLabel) - 1] = 0;
-    _watchLastHitMs = 0;
-    _watchHitFlag   = false;
-    _watchRssiHead = _watchRssiCount = 0;
-    _watchRssiLastMs = 0;
+int8_t DetectionEngine::findWatchTarget(const uint8_t* mac, WatchKind kind) const {
+    if (!mac || kind == WatchKind::NONE) return -1;
+    for (uint8_t i = 0; i < _watchTargetCount; i++) {
+        if (_watchTargets[i].kind == kind && memcmp(_watchTargets[i].mac, mac, 6) == 0)
+            return (int8_t)i;
+    }
+    return -1;
 }
 
-void DetectionEngine::watchWifi(const uint8_t* bssid, const char* ssid) {
-    _watchKind = WatchKind::WIFI;
-    memcpy(_watchMac, bssid, 6);
-    strncpy(_watchLabel, (ssid && ssid[0]) ? ssid : "(hidden)", sizeof(_watchLabel) - 1);
+int8_t DetectionEngine::watchEntryRssiAt(const WatchEntry& e, uint8_t idx) const {
+    if (idx >= e.rssiCount) return 0;
+    const uint8_t start = (e.rssiCount < WATCH_RSSI_CAP) ? 0 : e.rssiHead;
+    return e.rssiHist[(uint8_t)((start + idx) % WATCH_RSSI_CAP)];
+}
+
+DetectionEngine::WatchToggle DetectionEngine::toggleWatch(const uint8_t* mac,
+                                                           const char* label,
+                                                           WatchKind kind) {
+    const int8_t found = findWatchTarget(mac, kind);
+    if (found >= 0) {
+        const bool wasActive = (_watchKind == kind && memcmp(_watchMac, mac, 6) == 0);
+        for (uint8_t i = (uint8_t)found; i + 1 < _watchTargetCount; i++)
+            _watchTargets[i] = _watchTargets[i + 1];
+        if (_watchTargetCount) {
+            _watchTargetCount--;
+            _watchTargets[_watchTargetCount] = WatchEntry();
+        }
+        if (wasActive) deactivateWatch();
+        return WatchToggle::REMOVED;
+    }
+
+    if (_watchTargetCount >= WATCH_TARGET_CAP) return WatchToggle::FULL;
+    WatchEntry& e = _watchTargets[_watchTargetCount++];
+    e = WatchEntry();
+    e.kind = kind;
+    memcpy(e.mac, mac, 6);
+    const char* fallback = (kind == WatchKind::BLE) ? "Unnamed device" : "(hidden)";
+    strncpy(e.label, (label && label[0]) ? label : fallback, sizeof(e.label) - 1);
+    e.label[sizeof(e.label) - 1] = 0;
+    return WatchToggle::ADDED;
+}
+
+DetectionEngine::WatchToggle DetectionEngine::toggleWatchBle(const uint8_t* mac, const char* name) {
+    return toggleWatch(mac, name, WatchKind::BLE);
+}
+
+DetectionEngine::WatchToggle DetectionEngine::toggleWatchWifi(const uint8_t* bssid, const char* ssid) {
+    return toggleWatch(bssid, ssid, WatchKind::WIFI);
+}
+
+bool DetectionEngine::isWatched(const uint8_t* mac, bool ble) const {
+    return findWatchTarget(mac, ble ? WatchKind::BLE : WatchKind::WIFI) >= 0;
+}
+
+bool DetectionEngine::watchTargetInfo(uint8_t idx, WatchTargetInfo& out) const {
+    if (idx >= _watchTargetCount) return false;
+    const WatchEntry& e = _watchTargets[idx];
+    out = WatchTargetInfo();
+    out.kind = e.kind;
+    memcpy(out.mac, e.mac, 6);
+    strncpy(out.label, e.label, sizeof(out.label) - 1);
+    out.label[sizeof(out.label) - 1] = 0;
+    out.samples = e.rssiCount;
+    out.lastSeenMs = e.lastSeenMs;
+    out.seen = e.rssiCount > 0;
+    if (e.rssiCount) {
+        out.rssi = watchEntryRssiAt(e, (uint8_t)(e.rssiCount - 1));
+        out.previousRssi = e.rssiCount >= 2
+            ? watchEntryRssiAt(e, (uint8_t)(e.rssiCount - 2))
+            : out.rssi;
+        out.trend = classifyRssiTrend((int)watchEntryRssiAt(e, 0),
+                                     (int)out.rssi, e.rssiCount);
+    }
+    return true;
+}
+
+bool DetectionEngine::activateWatchTarget(uint8_t idx) {
+    if (idx >= _watchTargetCount) return false;
+    const WatchEntry& e = _watchTargets[idx];
+    _watchKind = e.kind;
+    memcpy(_watchMac, e.mac, 6);
+    strncpy(_watchLabel, e.label, sizeof(_watchLabel) - 1);
     _watchLabel[sizeof(_watchLabel) - 1] = 0;
-    _watchLastHitMs = 0;
-    _watchHitFlag   = false;
-    _watchRssiHead = _watchRssiCount = 0;
-    _watchRssiLastMs = 0;
+    return true;
+}
+
+void DetectionEngine::deactivateWatch() {
+    _watchKind = WatchKind::NONE;
+    memset(_watchMac, 0, sizeof _watchMac);
+    _watchLabel[0] = 0;
 }
 
 void DetectionEngine::clearWatch() {
-    _watchKind    = WatchKind::NONE;
-    _watchHitFlag = false;
-    _watchRssiHead = _watchRssiCount = 0;
+    if (_watchKind == WatchKind::NONE) return;
+    const int8_t found = findWatchTarget(_watchMac, _watchKind);
+    if (found >= 0) {
+        for (uint8_t i = (uint8_t)found; i + 1 < _watchTargetCount; i++)
+            _watchTargets[i] = _watchTargets[i + 1];
+        _watchTargetCount--;
+        _watchTargets[_watchTargetCount] = WatchEntry();
+    }
+    deactivateWatch();
 }
 
-bool DetectionEngine::watchHitPending() {
-    if (_watchHitFlag) {
-        _watchHitFlag = false;
-        return true;
+void DetectionEngine::clearWatches() {
+    for (uint8_t i = 0; i < WATCH_TARGET_CAP; i++) _watchTargets[i] = WatchEntry();
+    _watchTargetCount = 0;
+    deactivateWatch();
+}
+
+void DetectionEngine::watchBle(const uint8_t* mac, const char* name) {
+    int8_t idx = findWatchTarget(mac, WatchKind::BLE);
+    if (idx < 0) {
+        if (toggleWatch(mac, name, WatchKind::BLE) != WatchToggle::ADDED) return;
+        idx = findWatchTarget(mac, WatchKind::BLE);
     }
-    return false;
+    if (idx >= 0) activateWatchTarget((uint8_t)idx);
+}
+
+void DetectionEngine::watchWifi(const uint8_t* bssid, const char* ssid) {
+    int8_t idx = findWatchTarget(bssid, WatchKind::WIFI);
+    if (idx < 0) {
+        if (toggleWatch(bssid, ssid, WatchKind::WIFI) != WatchToggle::ADDED) return;
+        idx = findWatchTarget(bssid, WatchKind::WIFI);
+    }
+    if (idx >= 0) activateWatchTarget((uint8_t)idx);
+}
+
+void DetectionEngine::noteWatchRssi(WatchEntry& e, int8_t rssi) {
+    const uint32_t now = millis();
+    e.lastSeenMs = now;
+    if (e.rssiCount && now - e.rssiLastMs < WATCH_RSSI_SAMPLE_MS) return;
+    e.rssiLastMs = now;
+    e.rssiHist[e.rssiHead] = rssi;
+    e.rssiHead = (uint8_t)((e.rssiHead + 1) % WATCH_RSSI_CAP);
+    if (e.rssiCount < WATCH_RSSI_CAP) e.rssiCount++;
 }
 
 void DetectionEngine::checkWatchBle(const uint8_t* mac, int8_t rssi) {
-    if (_watchKind != WatchKind::BLE) return;
-    if (memcmp(mac, _watchMac, 6) != 0) return;
-    recordWatchRssi(rssi);
-    uint32_t now = millis();
-    if (now - _watchLastHitMs < WATCH_COOLDOWN_MS) return;
-    _watchLastHitMs = now;
-    _watchHitFlag   = true;
+    const uint32_t now = millis();
+    for (uint8_t i = 0; i < _watchTargetCount; i++) {
+        WatchEntry& e = _watchTargets[i];
+        if (e.kind != WatchKind::BLE || memcmp(e.mac, mac, 6) != 0) continue;
+        noteWatchRssi(e, rssi);
+        if (e.lastHitMs && now - e.lastHitMs < WATCH_COOLDOWN_MS) return;
+        e.lastHitMs = now;
+        e.pending = true;
+        return;
+    }
 }
 
 void DetectionEngine::checkWatchWifi(const uint8_t* mac, int8_t rssi) {
-    if (_watchKind != WatchKind::WIFI) return;
-    if (memcmp(mac, _watchMac, 6) != 0) return;
-    recordWatchRssi(rssi);
-    uint32_t now = millis();
-    if (now - _watchLastHitMs < WATCH_COOLDOWN_MS) return;
-    _watchLastHitMs = now;
-    _watchHitFlag   = true;
+    const uint32_t now = millis();
+    for (uint8_t i = 0; i < _watchTargetCount; i++) {
+        WatchEntry& e = _watchTargets[i];
+        if (e.kind != WatchKind::WIFI || memcmp(e.mac, mac, 6) != 0) continue;
+        noteWatchRssi(e, rssi);
+        if (e.lastHitMs && now - e.lastHitMs < WATCH_COOLDOWN_MS) return;
+        e.lastHitMs = now;
+        e.pending = true;
+        return;
+    }
 }
 
-// Throttled independently of WATCH_COOLDOWN_MS above -- that gate is
-// about not re-popping the full-screen alert every advertisement,
-// this is about building up a dense-enough trend to actually plot.
-void DetectionEngine::recordWatchRssi(int8_t rssi) {
-    uint32_t now = millis();
-    if (now - _watchRssiLastMs < WATCH_RSSI_SAMPLE_MS && _watchRssiCount > 0) return;
-    _watchRssiLastMs = now;
-    _watchRssiHist[_watchRssiHead] = rssi;
-    _watchRssiHead = (_watchRssiHead + 1) % WATCH_RSSI_CAP;
-    if (_watchRssiCount < WATCH_RSSI_CAP) _watchRssiCount++;
+bool DetectionEngine::watchHitPending() {
+    int8_t best = -1;
+    uint32_t newest = 0;
+    for (uint8_t i = 0; i < _watchTargetCount; i++) {
+        const WatchEntry& e = _watchTargets[i];
+        if (!e.pending) continue;
+        if (best < 0 || (int32_t)(e.lastSeenMs - newest) > 0) {
+            best = (int8_t)i;
+            newest = e.lastSeenMs;
+        }
+    }
+    if (best < 0) return false;
+    _watchTargets[(uint8_t)best].pending = false;
+    return activateWatchTarget((uint8_t)best);
+}
+
+uint8_t DetectionEngine::watchRssiCount() const {
+    const int8_t found = findWatchTarget(_watchMac, _watchKind);
+    return found >= 0 ? _watchTargets[(uint8_t)found].rssiCount : 0;
 }
 
 int8_t DetectionEngine::watchRssiAt(uint8_t idx) const {
-    if (idx >= _watchRssiCount) return 0;
-    // Oldest-first: when the buffer hasn't wrapped yet, oldest is slot
-    // 0; once it has, oldest is whatever _watchRssiHead is about to
-    // overwrite next.
-    uint8_t start = (_watchRssiCount < WATCH_RSSI_CAP) ? 0 : _watchRssiHead;
-    uint8_t slot = (start + idx) % WATCH_RSSI_CAP;
-    return _watchRssiHist[slot];
+    const int8_t found = findWatchTarget(_watchMac, _watchKind);
+    return found >= 0 ? watchEntryRssiAt(_watchTargets[(uint8_t)found], idx) : 0;
 }
 
-void DetectionEngine::huntBle(const uint8_t* mac, const char* name) {
-    _huntKind = WatchKind::BLE;
-    memcpy(_huntMac, mac, 6);
-    strncpy(_huntLabel, (name && name[0]) ? name : "Unnamed device", sizeof(_huntLabel) - 1);
-    _huntLabel[sizeof(_huntLabel) - 1] = 0;
-    _huntRssiHead = _huntRssiCount = 0;
-    _huntRssiLastMs = 0;
+int8_t DetectionEngine::findHuntTarget(const uint8_t* mac, WatchKind kind) const {
+    if (!mac || kind == WatchKind::NONE) return -1;
+    for (uint8_t i = 0; i < _huntTargetCount; i++) {
+        if (_huntTargets[i].kind == kind && memcmp(_huntTargets[i].mac, mac, 6) == 0)
+            return (int8_t)i;
+    }
+    return -1;
 }
 
-void DetectionEngine::huntWifi(const uint8_t* bssid, const char* ssid) {
-    _huntKind = WatchKind::WIFI;
-    memcpy(_huntMac, bssid, 6);
-    strncpy(_huntLabel, (ssid && ssid[0]) ? ssid : "(hidden)", sizeof(_huntLabel) - 1);
+int8_t DetectionEngine::huntEntryRssiAt(const HuntEntry& e, uint8_t idx) const {
+    if (idx >= e.rssiCount) return 0;
+    const uint8_t start = (e.rssiCount < HUNT_RSSI_CAP) ? 0 : e.rssiHead;
+    return e.rssiHist[(uint8_t)((start + idx) % HUNT_RSSI_CAP)];
+}
+
+DetectionEngine::HuntToggle DetectionEngine::toggleHunt(const uint8_t* mac,
+                                                         const char* label,
+                                                         WatchKind kind) {
+    const int8_t found = findHuntTarget(mac, kind);
+    if (found >= 0) {
+        const bool wasActive = (_huntKind == kind && memcmp(_huntMac, mac, 6) == 0);
+        for (uint8_t i = (uint8_t)found; i + 1 < _huntTargetCount; i++)
+            _huntTargets[i] = _huntTargets[i + 1];
+        if (_huntTargetCount) {
+            _huntTargetCount--;
+            memset(&_huntTargets[_huntTargetCount], 0, sizeof(_huntTargets[0]));
+        }
+        if (wasActive) deactivateHunt();
+        return HuntToggle::REMOVED;
+    }
+
+    if (_huntTargetCount >= HUNT_TARGET_CAP) return HuntToggle::FULL;
+
+    HuntEntry& e = _huntTargets[_huntTargetCount++];
+    e = HuntEntry();
+    e.kind = kind;
+    memcpy(e.mac, mac, 6);
+    const char* fallback = (kind == WatchKind::BLE) ? "Unnamed device" : "(hidden)";
+    strncpy(e.label, (label && label[0]) ? label : fallback, sizeof(e.label) - 1);
+    e.label[sizeof(e.label) - 1] = 0;
+    return HuntToggle::ADDED;
+}
+
+DetectionEngine::HuntToggle DetectionEngine::toggleHuntBle(const uint8_t* mac, const char* name) {
+    return toggleHunt(mac, name, WatchKind::BLE);
+}
+
+DetectionEngine::HuntToggle DetectionEngine::toggleHuntWifi(const uint8_t* bssid, const char* ssid) {
+    return toggleHunt(bssid, ssid, WatchKind::WIFI);
+}
+
+bool DetectionEngine::isHunted(const uint8_t* mac, bool ble) const {
+    return findHuntTarget(mac, ble ? WatchKind::BLE : WatchKind::WIFI) >= 0;
+}
+
+bool DetectionEngine::huntTargetInfo(uint8_t idx, HuntTargetInfo& out) const {
+    if (idx >= _huntTargetCount) return false;
+    const HuntEntry& e = _huntTargets[idx];
+    out = HuntTargetInfo();
+    out.kind = e.kind;
+    memcpy(out.mac, e.mac, 6);
+    strncpy(out.label, e.label, sizeof(out.label) - 1);
+    out.label[sizeof(out.label) - 1] = 0;
+    out.samples = e.rssiCount;
+    out.lastSeenMs = e.lastSeenMs;
+    out.seen = e.rssiCount > 0;
+    if (e.rssiCount) {
+        out.rssi = huntEntryRssiAt(e, (uint8_t)(e.rssiCount - 1));
+        out.previousRssi = (e.rssiCount >= 2)
+            ? huntEntryRssiAt(e, (uint8_t)(e.rssiCount - 2))
+            : out.rssi;
+        out.trend = classifyRssiTrend((int)huntEntryRssiAt(e, 0),
+                                     (int)out.rssi, e.rssiCount);
+    }
+    return true;
+}
+
+bool DetectionEngine::activateHuntTarget(uint8_t idx) {
+    if (idx >= _huntTargetCount) return false;
+    const HuntEntry& e = _huntTargets[idx];
+    _huntKind = e.kind;
+    memcpy(_huntMac, e.mac, 6);
+    strncpy(_huntLabel, e.label, sizeof(_huntLabel) - 1);
     _huntLabel[sizeof(_huntLabel) - 1] = 0;
-    _huntRssiHead = _huntRssiCount = 0;
-    _huntRssiLastMs = 0;
+    return true;
+}
+
+void DetectionEngine::deactivateHunt() {
+    _huntKind = WatchKind::NONE;
+    memset(_huntMac, 0, sizeof _huntMac);
+    _huntLabel[0] = 0;
 }
 
 void DetectionEngine::clearHunt() {
-    _huntKind = WatchKind::NONE;
-    _huntRssiHead = _huntRssiCount = 0;
+    if (_huntKind == WatchKind::NONE) return;
+    const int8_t found = findHuntTarget(_huntMac, _huntKind);
+    if (found >= 0) {
+        for (uint8_t i = (uint8_t)found; i + 1 < _huntTargetCount; i++)
+            _huntTargets[i] = _huntTargets[i + 1];
+        _huntTargetCount--;
+        memset(&_huntTargets[_huntTargetCount], 0, sizeof(_huntTargets[0]));
+    }
+    deactivateHunt();
+}
+
+void DetectionEngine::clearHunts() {
+    memset(_huntTargets, 0, sizeof _huntTargets);
+    _huntTargetCount = 0;
+    deactivateHunt();
+}
+
+bool DetectionEngine::huntBle(const uint8_t* mac, const char* name) {
+    int8_t idx = findHuntTarget(mac, WatchKind::BLE);
+    if (idx < 0) {
+        if (toggleHunt(mac, name, WatchKind::BLE) != HuntToggle::ADDED) return false;
+        idx = findHuntTarget(mac, WatchKind::BLE);
+    } else if (name && name[0]) {
+        strncpy(_huntTargets[(uint8_t)idx].label, name,
+                sizeof(_huntTargets[(uint8_t)idx].label) - 1);
+        _huntTargets[(uint8_t)idx].label[sizeof(_huntTargets[(uint8_t)idx].label) - 1] = 0;
+    }
+    return idx >= 0 && activateHuntTarget((uint8_t)idx);
+}
+
+bool DetectionEngine::huntWifi(const uint8_t* bssid, const char* ssid) {
+    int8_t idx = findHuntTarget(bssid, WatchKind::WIFI);
+    if (idx < 0) {
+        if (toggleHunt(bssid, ssid, WatchKind::WIFI) != HuntToggle::ADDED) return false;
+        idx = findHuntTarget(bssid, WatchKind::WIFI);
+    } else if (ssid && ssid[0]) {
+        strncpy(_huntTargets[(uint8_t)idx].label, ssid,
+                sizeof(_huntTargets[(uint8_t)idx].label) - 1);
+        _huntTargets[(uint8_t)idx].label[sizeof(_huntTargets[(uint8_t)idx].label) - 1] = 0;
+    }
+    return idx >= 0 && activateHuntTarget((uint8_t)idx);
+}
+
+void DetectionEngine::noteHuntRssi(HuntEntry& e, int8_t rssi) {
+    const uint32_t now = millis();
+    e.lastSeenMs = now;
+    if (e.rssiCount && now - e.rssiLastMs < WATCH_RSSI_SAMPLE_MS) return;
+    e.rssiLastMs = now;
+    e.rssiHist[e.rssiHead] = rssi;
+    e.rssiHead = (uint8_t)((e.rssiHead + 1) % HUNT_RSSI_CAP);
+    if (e.rssiCount < HUNT_RSSI_CAP) e.rssiCount++;
 }
 
 void DetectionEngine::checkHuntBle(const uint8_t* mac, int8_t rssi) {
-    if (_huntKind != WatchKind::BLE) return;
-    if (memcmp(mac, _huntMac, 6) != 0) return;
-    recordHuntRssi(rssi);
+    for (uint8_t i = 0; i < _huntTargetCount; i++) {
+        HuntEntry& e = _huntTargets[i];
+        if (e.kind == WatchKind::BLE && memcmp(e.mac, mac, 6) == 0) {
+            noteHuntRssi(e, rssi);
+            return;
+        }
+    }
 }
 
 void DetectionEngine::checkHuntWifi(const uint8_t* mac, int8_t rssi) {
-    if (_huntKind != WatchKind::WIFI) return;
-    if (memcmp(mac, _huntMac, 6) != 0) return;
-    recordHuntRssi(rssi);
+    for (uint8_t i = 0; i < _huntTargetCount; i++) {
+        HuntEntry& e = _huntTargets[i];
+        if (e.kind == WatchKind::WIFI && memcmp(e.mac, mac, 6) == 0) {
+            noteHuntRssi(e, rssi);
+            return;
+        }
+    }
 }
 
-void DetectionEngine::recordHuntRssi(int8_t rssi) {
-    uint32_t now = millis();
-    if (now - _huntRssiLastMs < WATCH_RSSI_SAMPLE_MS && _huntRssiCount > 0) return;
-    _huntRssiLastMs = now;
-    _huntRssiHist[_huntRssiHead] = rssi;
-    _huntRssiHead = (_huntRssiHead + 1) % WATCH_RSSI_CAP;
-    if (_huntRssiCount < WATCH_RSSI_CAP) _huntRssiCount++;
+uint8_t DetectionEngine::huntRssiCount() const {
+    const int8_t found = findHuntTarget(_huntMac, _huntKind);
+    return found >= 0 ? _huntTargets[(uint8_t)found].rssiCount : 0;
 }
 
 int8_t DetectionEngine::huntRssiAt(uint8_t idx) const {
-    if (idx >= _huntRssiCount) return 0;
-    uint8_t start = (_huntRssiCount < WATCH_RSSI_CAP) ? 0 : _huntRssiHead;
-    uint8_t slot = (start + idx) % WATCH_RSSI_CAP;
-    return _huntRssiHist[slot];
+    const int8_t found = findHuntTarget(_huntMac, _huntKind);
+    return found >= 0 ? huntEntryRssiAt(_huntTargets[(uint8_t)found], idx) : 0;
 }
 
 // Same vendor, ignoring the locally-administered bit. Multi-SSID and

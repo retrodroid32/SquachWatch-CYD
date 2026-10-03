@@ -1009,11 +1009,23 @@ void uiSettingsTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng) {
     // buildDisplayList() has no engine of its own and is called by the hit test
     // too, so the answer is cached here once a frame. Same pattern ui_clear.cpp
     // uses for the crowd's tap targets.
-    s_hasWatch = eng.watchKind() != DetectionEngine::WatchKind::NONE;
-    s_hasHunt  = eng.huntKind()  != DetectionEngine::WatchKind::NONE;
+    s_hasWatch = eng.watchTargetCount() > 0;
+    s_hasHunt  = eng.huntTargetCount() > 0;
     s_dexCaught = uiDexCaught(eng);
-    if (s_hasWatch) { strncpy(s_watchLabel, eng.watchLabel(), sizeof(s_watchLabel) - 1); s_watchLabel[sizeof(s_watchLabel) - 1] = 0; }
-    if (s_hasHunt)  { strncpy(s_huntLabel,  eng.huntLabel(),  sizeof(s_huntLabel)  - 1); s_huntLabel[sizeof(s_huntLabel)  - 1] = 0; }
+    if (s_hasWatch) {
+        DetectionEngine::WatchTargetInfo info;
+        if (eng.watchTargetCount() == 1 && eng.watchTargetInfo(0, info))
+            snprintf(s_watchLabel, sizeof s_watchLabel, "%s", info.label);
+        else
+            snprintf(s_watchLabel, sizeof s_watchLabel, "%u TARGETS", (unsigned)eng.watchTargetCount());
+    }
+    if (s_hasHunt) {
+        DetectionEngine::HuntTargetInfo info;
+        if (eng.huntTargetCount() == 1 && eng.huntTargetInfo(0, info))
+            snprintf(s_huntLabel, sizeof s_huntLabel, "%s", info.label);
+        else
+            snprintf(s_huntLabel, sizeof s_huntLabel, "%u TARGETS", (unsigned)eng.huntTargetCount());
+    }
 
     int top, bodyBottom, rowH, headerH, tallH;
     computeGeom(t, h, top, bodyBottom, rowH, headerH, tallH);
