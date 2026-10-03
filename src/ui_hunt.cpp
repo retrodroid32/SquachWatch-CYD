@@ -185,11 +185,17 @@ static void drawHuntTrend(TFT_eSPI& t, int x, int y,
 
 static void drawHuntList(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng) {
     const int w = t.width(), h = t.height();
+
+    // This roster owns the whole screen. drawTitleBar() deliberately does not
+    // erase its band because normal screens paint their background first.
+    // Clearing only the list body left the previous CLEAR/gauge frame visible
+    // around the title and bottom button area, which looked like another
+    // screen was painting over this one as RSSI rows refreshed.
+    t.fillRect(0, 0, w, h, Theme::BG);
     Theme::drawTitleBar(t, ">> HUNT TARGETS <<");
 
     int top, bottom, rowH, visible;
     huntListGeom(t, w, h, top, bottom, rowH, visible);
-    t.fillRect(0, 20, w, bottom - 20, Theme::BG);
 
     buildHuntOrder(eng, now);
     const int maxScroll = s_listCount > visible ? s_listCount - visible : 0;

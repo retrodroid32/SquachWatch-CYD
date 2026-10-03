@@ -89,9 +89,13 @@ static void drawWatchTrend(TFT_eSPI& t,int x,int y,const DetectionEngine::WatchT
 
 static void drawWatchList(TFT_eSPI& t,uint32_t now,const DetectionEngine& eng){
     const int w=t.width(),h=t.height();
+
+    // Same full-frame ownership rule as the HUNT roster. The title helper
+    // assumes its caller has already painted the background, and the old
+    // body-only clear left stale CLEAR/alert pixels in the uncovered bands.
+    t.fillRect(0,0,w,h,Theme::BG);
     Theme::drawTitleBar(t,">> WATCH TARGETS <<");
     int top,bottom,rowH,visible; watchListGeom(t,w,h,top,bottom,rowH,visible);
-    t.fillRect(0,20,w,bottom-20,Theme::BG);
     buildWatchOrder(eng,now);
     const int maxScroll=s_watchCount>visible?s_watchCount-visible:0;
     if(s_watchScroll>maxScroll)s_watchScroll=(uint8_t)maxScroll;
