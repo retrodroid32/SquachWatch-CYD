@@ -50,6 +50,13 @@ static const uint32_t PX_PER_BURST = 32;
 // trade to make on five boards for one percent on the sixth.
 static const int32_t MAX_ROWS = 480;   // the 3.5" in portrait, the tallest there is
 static uint32_t s_rowHash[MAX_ROWS];
+#if defined(NM_CYD_C5)
+// The frame before last's hashes too, for the C5's two-buffer push: a row
+// whose hash goes A, B, A is a screen drawing on top of the frame before
+// instead of its own, which the two buffers would turn into a flicker.
+static uint32_t s_rowHash2[MAX_ROWS];
+static uint32_t s_flipRows = 0, s_flipFrames = 0;
+#endif
 static bool     s_valid   = false;
 static int32_t  s_validW  = 0, s_validH = 0;
 static uint32_t s_frameNo = 0;
@@ -272,47 +279,39 @@ static bool c5Dma(TFT_eSPI& tft, int32_t w) {
 // is, to tell "the transfer never starts" from "the interrupt never comes".
 static void pushRowsDma(TFT_eSPI& tft, const uint8_t* p, int32_t w, int32_t rows) {
     (void)tft;
-    static bool first = true;
-    static uint32_t convUs = 0, txUs = 0, chunks = 0;
+    // Queued, interrupt-driven, and pipelined: this chunk converts into one
+    // bounce buffer while the one before is on the wire from the other, and
+    // the wait for each is a block, not a spin -- the task sleeping here is
+    // what gives the drawing the core.
+    static spi_transaction_t tr[2];
     int k = 0;
+    bool inFlight = false;
     while (rows > 0) {
         const int32_t n  = rows < CHUNK_ROWS ? rows : CHUNK_ROWS;
         const uint32_t px = (uint32_t)n * (uint32_t)w;
-        uint16_t* b = s_bounce[k++ & 1];
-        const uint32_t t0 = micros();
+        uint16_t* b = s_bounce[k & 1];
         for (uint32_t i = 0; i < px; i++) b[i] = s_lut[p[i]];
-        const uint32_t t1 = micros();
-        spi_transaction_t t;
+        if (inFlight) {
+            spi_transaction_t* done = nullptr;
+            spi_device_get_trans_result(dmaHAL, &done, portMAX_DELAY);
+        }
+        spi_transaction_t& t = tr[k & 1];
         memset(&t, 0, sizeof t);
         t.tx_buffer = b;
         t.length    = px * 16;
-        if (first) { Serial.printf("[push] DMA first chunk: %u px, polling transmit...\n", (unsigned)px); Serial.flush(); }
-        static uint32_t startUs = 0;
-        // Interrupt mode: queue it, then block until the driver's interrupt
-        // says it is done. Blocking is the point -- in step two this runs in
-        // a task of its own and the drawing gets the CPU while the wire works.
-        esp_err_t r = spi_device_queue_trans(dmaHAL, &t, portMAX_DELAY);
-        const uint32_t t2 = micros();
-        if (r == ESP_OK) { spi_transaction_t* done = nullptr; r = spi_device_get_trans_result(dmaHAL, &done, portMAX_DELAY); }
-        convUs += t1 - t0; startUs += t2 - t1; txUs += micros() - t2;
-        if (++chunks == 500) {
-            Serial.printf("[push] DMA per chunk: convert %lu us, start %lu us, wait %lu us (%d rows, %u px)\n",
-                          (unsigned long)(convUs / chunks), (unsigned long)(startUs / chunks), (unsigned long)(txUs / chunks), (int)CHUNK_ROWS, (unsigned)px);
-            convUs = txUs = startUs = chunks = 0;
+        const esp_err_t r = spi_device_queue_trans(dmaHAL, &t, portMAX_DELAY);
+        if (r != ESP_OK) {
+            Serial.printf("[push] DMA queue failed: %d; the register push takes over\n", (int)r);
+            s_dmaState = -1;
+            inFlight = false;
+            break;
         }
-        if (first) {
-            Serial.printf("[push] DMA first chunk done: %d  SPI_DMA_CONF=0x%08X SPI_USER=0x%08X SPI_CLOCK=0x%08X PCR_CLKM=0x%08X\n", (int)r,
-                          (unsigned)READ_PERI_REG(SPI_DMA_CONF_REG(SPI_PORT)), (unsigned)READ_PERI_REG(SPI_USER_REG(SPI_PORT)),
-                          (unsigned)READ_PERI_REG(SPI_CLOCK_REG(SPI_PORT)), (unsigned)READ_PERI_REG(PCR_SPI2_CLKM_CONF_REG));
-            int freq = 0;
-            spi_device_get_actual_freq(dmaHAL, &freq);
-            Serial.printf("[push] DMA device clock: %d kHz\n", freq);
-            Serial.flush(); first = false;
-        }
-        if (r != ESP_OK) { Serial.printf("[push] DMA transmit failed: %d; the register push takes over\n", (int)r); s_dmaState = -1; return; }
+        inFlight = true;
         p += px;
         rows -= n;
+        k++;
     }
+    if (inFlight) { spi_transaction_t* done = nullptr; spi_device_get_trans_result(dmaHAL, &done, portMAX_DELAY); }
     // Back to CPU mode before the library writes a register again. The
     // driver leaves the engine's DMA enables set, and a register-fed
     // transfer with DMA_TX_ENA on waits for descriptors that never come:
@@ -366,7 +365,7 @@ static inline void sqwC5SpiClockRestore(uint32_t pcr) {
 
 static uint32_t gcd32(uint32_t a, uint32_t b) { while (b) { uint32_t t = a % b; a = b; b = t; } return a; }
 
-bool push(TFT_eSPI& tft, const uint8_t* src, int32_t w, int32_t h, int32_t x, int32_t y) {
+static bool pushNow(TFT_eSPI& tft, const uint8_t* src, int32_t w, int32_t h, int32_t x, int32_t y) {
     if (!s_ready || !s_enabled) return false;
     // Null when the sprite was never created, or was lost to a failed
     // re-create after a rotate. The caller's fallback handles it -- and
@@ -391,9 +390,20 @@ bool push(TFT_eSPI& tft, const uint8_t* src, int32_t w, int32_t h, int32_t x, in
     for (int32_t r = 0; r < h; r++) {
         const uint32_t hv = rowHash(src + (size_t)r * (size_t)w, w);
         changed[r] = full || hv != s_rowHash[y + r];
+#if defined(NM_CYD_C5)
+        if (s_valid && hv != s_rowHash[y + r] && hv == s_rowHash2[y + r]) s_flipRows++;
+        s_rowHash2[y + r] = s_rowHash[y + r];
+#endif
         s_rowHash[y + r] = hv;
         if (changed[r]) nChanged++;
     }
+#if defined(NM_CYD_C5)
+    if (++s_flipFrames == 300) {
+        Serial.printf("[push] rows that went A,B,A in 300 frames: %lu%s\n", (unsigned long)s_flipRows,
+                      s_flipRows ? "  <-- a screen may be drawing on the frame before" : "");
+        s_flipRows = 0; s_flipFrames = 0;
+    }
+#endif
     SQW_PUSH_CHARGE(s_hashUs, tHash);
     if (nChanged) {
         SQW_PUSH_CLOCK(tWire);
@@ -473,6 +483,82 @@ bool push(TFT_eSPI& tft, const uint8_t* src, int32_t w, int32_t h, int32_t x, in
     return true;
 }
 
+bool push(TFT_eSPI& tft, const uint8_t* src, int32_t w, int32_t h, int32_t x, int32_t y) {
+    return pushNow(tft, src, w, h, x, y);
+}
+
+#if defined(NM_CYD_C5) && SQW_C5_DMA
+// ---- step two: the push in a task of its own ----------------------------
+// The loop hands over a finished frame (asyncSubmit) and goes on drawing
+// the next into another buffer; this task hashes, converts and pushes it,
+// sleeping on the DMA between chunks, which is when the drawing runs. Three
+// semaphores: `go` (a frame is waiting), `done` (the panel has it), and the
+// bus mutex that everything else on the SPI bus takes first.
+static TaskHandle_t      s_task  = nullptr;
+static SemaphoreHandle_t s_go    = nullptr;
+static SemaphoreHandle_t s_done  = nullptr;
+static SemaphoreHandle_t s_bus   = nullptr;
+static TFT_eSPI*         s_tft   = nullptr;
+static const uint8_t*    s_jobSrc = nullptr;
+static int32_t           s_jobW = 0, s_jobH = 0, s_jobX = 0, s_jobY = 0;
+
+static void pusherTask(void*) {
+    for (;;) {
+        xSemaphoreTake(s_go, portMAX_DELAY);
+        xSemaphoreTake(s_bus, portMAX_DELAY);
+        if (!pushNow(*s_tft, s_jobSrc, s_jobW, s_jobH, s_jobX, s_jobY)) {
+            // A shape it does not know, or the switch is off: the library's
+            // own 8-bit image push, from here, so the frame still arrives.
+            s_tft->pushImage(s_jobX, s_jobY, s_jobW, s_jobH, (uint8_t*)s_jobSrc, true, nullptr);
+            s_valid = false;
+        }
+        xSemaphoreGive(s_bus);
+        xSemaphoreGive(s_done);
+    }
+}
+
+bool asyncBegin(TFT_eSPI& tft) {
+    if (s_task) return true;
+    s_tft  = &tft;
+    s_go   = xSemaphoreCreateBinary();
+    s_done = xSemaphoreCreateBinary();
+    s_bus  = xSemaphoreCreateMutex();
+    if (!s_go || !s_done || !s_bus) return false;
+    xSemaphoreGive(s_done);                  // nothing in flight yet
+    // Above the loop task (1), below the radios: it wakes for a fifth of a
+    // millisecond per chunk and sleeps the rest.
+    if (xTaskCreate(pusherTask, "framePush", 4096, nullptr, 3, &s_task) != pdPASS) { s_task = nullptr; return false; }
+    Serial.println("[push] C5: the push runs in its own task; the loop draws while the wire works");
+    return true;
+}
+
+bool asyncOn() { return s_task != nullptr; }
+
+bool asyncSubmit(const uint8_t* src, int32_t w, int32_t h, int32_t x, int32_t y) {
+    if (!s_task || !s_ready || !s_enabled) return false;
+    xSemaphoreTake(s_done, portMAX_DELAY);   // the frame before is on the panel; its buffer is free
+    s_jobSrc = src; s_jobW = w; s_jobH = h; s_jobX = x; s_jobY = y;
+    xSemaphoreGive(s_go);
+    return true;
+}
+
+void asyncWait() {
+    if (!s_task) return;
+    xSemaphoreTake(s_done, portMAX_DELAY);
+    xSemaphoreGive(s_done);
+}
+
+void busLock()   { if (s_bus) xSemaphoreTake(s_bus, portMAX_DELAY); }
+void busUnlock() { if (s_bus) xSemaphoreGive(s_bus); }
+#else
+bool asyncBegin(TFT_eSPI&) { return false; }
+bool asyncOn() { return false; }
+bool asyncSubmit(const uint8_t*, int32_t, int32_t, int32_t, int32_t) { return false; }
+void asyncWait() {}
+void busLock() {}
+void busUnlock() {}
+#endif
+
 #else  // every other board, and the emulator: built out, not switched off
 
 bool begin() { return false; }
@@ -485,6 +571,12 @@ int32_t lastRows() { return 0; }
 uint32_t hashUs() { return 0; }
 uint32_t wireUs() { return 0; }
 bool push(TFT_eSPI&, const uint8_t*, int32_t, int32_t, int32_t, int32_t) { return false; }
+bool asyncBegin(TFT_eSPI&) { return false; }
+bool asyncOn() { return false; }
+bool asyncSubmit(const uint8_t*, int32_t, int32_t, int32_t, int32_t) { return false; }
+void asyncWait() {}
+void busLock() {}
+void busUnlock() {}
 
 #endif
 

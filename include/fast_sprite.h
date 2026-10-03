@@ -88,6 +88,9 @@ public:
     int32_t  bufW() const { return _dwidth; }
     int32_t  bufH() const { return _dheight; }
     uint8_t* buf()  const { return _img8; }
+    // Swap the 8-bit buffer for another of the same size and return the old
+    // one: the C5's push task reads one while the loop draws into the other.
+    uint8_t* swapBuf(uint8_t* nb) { uint8_t* o = _img8; _img8 = nb; return o; }
 #else
     // The emulator's sprite is a different class and keeps none of those, but
     // it has no fast push to feed either -- these exist so the one call site

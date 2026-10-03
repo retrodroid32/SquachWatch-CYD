@@ -557,6 +557,15 @@ bool                usingCapTouch = false;
 // banded render to direct-to-tft; the other board's `canvas` pointer
 // gets reseated to &tft directly at the point of failure instead.
 bool                frameBufferOk = true;
+#if defined(NM_CYD_C5)
+// The frame the push task is reading while the loop draws into `frame`'s
+// own; the two trade places every pushFrame(). See FramePush::asyncSubmit().
+static uint8_t*     s_frameB = nullptr;
+// The touch sample pushFrame() takes while the bus is free, for pollTouch().
+static bool         s_tsValid = false, s_tsDown = false;
+static int16_t      s_tsA = 0, s_tsB = 0;
+static bool readTouchRaw(int16_t& a, int16_t& b);
+#endif
 DetectionEngine     engine;
 AppState            state     = AppState::BOOT;
 uint32_t            bootStart = 0;
@@ -800,7 +809,20 @@ static bool readTouchRaw(int16_t& a, int16_t& b);
 static TouchPoint pollTouch() {
     TouchPoint tp = { false, 0, 0 };
     int16_t a, b;
-    if (!readTouchRaw(a, b)) return tp;
+#if defined(NM_CYD_C5)
+    // Touch shares the SPI bus with the panel, and on the C5 the push runs in
+    // a task of its own. Read here, at the top of the loop, it waited for the
+    // frame in flight every time and the push was serial again (pre 15 ms,
+    // measured). So the sample is taken in pushFrame(), in the moment between
+    // one push finishing and the next starting, when the bus is free, and
+    // this only consumes it.
+    bool gotTouch;
+    if (s_tsValid) { gotTouch = s_tsDown; a = s_tsA; b = s_tsB; }
+    else { FramePush::busLock(); gotTouch = readTouchRaw(a, b); FramePush::busUnlock(); }
+#else
+    const bool gotTouch = readTouchRaw(a, b);
+#endif
+    if (!gotTouch) return tp;
     const int w = tft.width(), h = tft.height();
     float sx, sy;
     TouchFit::toScreen(s_touchFit, a, b, screenRotation, sx, sy);
@@ -1700,6 +1722,7 @@ static void autoUpdateTick(uint32_t now) {
 static void releaseFrameBuffer(const char* who) {
 #if !defined(CYD35)
     if (!frameBufferOk) return;
+    FramePush::asyncWait();                   // the push task may still be reading it
     frame.deleteSprite();
     frameBufferOk = false;
     canvas = &tft;
@@ -3194,6 +3217,16 @@ void setup() {
                       ext ? "PSRAM" : "internal");
     }
 #endif
+#if defined(NM_CYD_C5)
+    // A second frame for the push task to read while the loop draws the
+    // next (see pushFrame()). PSRAM, like the first; 75 KB of 8 MB.
+    if (frameOk) {
+        s_frameB = (uint8_t*)heap_caps_malloc((size_t)frame.bufW() * (size_t)frame.bufH(), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+        if (s_frameB) memcpy(s_frameB, frame.buf(), (size_t)frame.bufW() * (size_t)frame.bufH());
+        const bool async = s_frameB && FramePush::asyncBegin(tft);
+        Serial.printf("[boot] second frame %s; push task %s\n", s_frameB ? "in PSRAM" : "NOT allocated", async ? "on" : "off");
+    }
+#endif
     if (!frameOk) {
         Serial.println("ERROR: frame buffer allocation failed (low memory)");
 #if HAVE_NVS_ERASE
@@ -3606,6 +3639,31 @@ static inline void pushFrame(int x, int y) {
     // never came up, in which case there is nowhere to put the frame at all.
     CrowBlit::push(frame.buf(), frame.bufW(), frame.bufH(), x, y);
 #else
+#if defined(NM_CYD_C5)
+    // The push task takes this frame and the loop draws the next into the
+    // other buffer, which holds the frame before last. Nothing is copied
+    // across: copying the 75 KB through PSRAM cost 13 ms a frame (measured),
+    // more than the wait it was meant to save, and every screen draws its
+    // whole picture every frame. The push task keeps a count of rows that
+    // ever flip-flop between the two buffers (see FramePush), which is what
+    // a screen relying on the frame before would show up as. The wait inside
+    // asyncSubmit() is what "push" measures now.
+    if (s_frameB && frame.getColorDepth() == 8 && FramePush::asyncOn()) {
+        // Between the last push finishing and this one starting the bus is
+        // free: the one place touch can be read without waiting on a frame.
+        FramePush::asyncWait();
+        FramePush::busLock();
+        s_tsDown  = readTouchRaw(s_tsA, s_tsB);
+        s_tsValid = true;
+        FramePush::busUnlock();
+        if (FramePush::asyncSubmit(frame.buf(), frame.bufW(), frame.bufH(), x, y)) {
+            s_frameB = frame.swapBuf(s_frameB);
+            s_pushAccumUs += micros() - t0;
+            return;
+        }
+    }
+    FramePush::asyncWait();                   // the ordinary push below needs the panel free
+#endif
     if (frame.getColorDepth() != 8 ||
         !FramePush::push(tft, frame.buf(), frame.bufW(), frame.bufH(), x, y)) {
         frame.pushSprite(x, y);
@@ -4054,6 +4112,7 @@ static void chargeBacklight(uint8_t duty) {
 
 static void chargeDraw(uint32_t now) {
     s_chargeDrawnAt = now;
+    FramePush::busLock();                     // straight to the panel: not while a push is in flight
     const int w = tft.width(), h = tft.height();
     tft.fillScreen(TFT_BLACK);
     const uint32_t mins = (now - s_chargeAt) / 60000UL;
@@ -4074,6 +4133,7 @@ static void chargeDraw(uint32_t now) {
     tft.setTextSize(2);
     tft.drawString("TAP TO WAKE UP", w / 2, h / 2 + 64);
     tft.setTextDatum(TL_DATUM);
+    FramePush::busUnlock();
 }
 
 static void enterChargeMode() {
@@ -4546,7 +4606,10 @@ void loop() {
         Squachy::trigger(Squachy::Event::ROTATED);
         screenRotation = (screenRotation + 1) % 4;
         Settings::saveRotation(screenRotation);
+        FramePush::asyncWait();
+        FramePush::busLock();
         tft.setRotation(screenRotation);
+        FramePush::busUnlock();
         FramePush::invalidate();   // the panel was re-initialised; send every row next
         // The MX/MY/MV bits applyColorOrder() writes are rotation-
         // dependent, so it has to be reissued alongside every

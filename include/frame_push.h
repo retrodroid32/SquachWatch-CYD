@@ -139,4 +139,24 @@ uint32_t wireUs();
 // partially draws: it either does the whole thing or touches nothing.
 bool push(TFT_eSPI& tft, const uint8_t* src, int32_t w, int32_t h, int32_t x, int32_t y);
 
+// ---- the push in a task of its own (the ESP32-C5) --------------------------
+// On the C5 the wire is 20 ms of every frame and the one core spent it
+// waiting. With DMA on the wire the waiting can go to the drawing instead:
+// the loop hands a finished frame to a pusher task and draws the next one
+// into a second buffer while the first goes out. asyncBegin() is false on
+// every other board and whenever the pieces are not there, and then the
+// caller pushes the ordinary way.
+//
+// Everything else on the SPI bus -- touch, the SD card, a direct draw --
+// takes busLock() first, which waits for a push in flight to finish and keeps
+// the next one from starting. Short holds only, and never across a submit.
+bool asyncBegin(TFT_eSPI& tft);
+// Waits for the frame before, then takes this one. The buffer is the task's
+// until the next asyncSubmit() or asyncWait() returns. False: push it yourself.
+bool asyncSubmit(const uint8_t* src, int32_t w, int32_t h, int32_t x, int32_t y);
+void asyncWait();                 // until the panel holds the last frame handed over
+bool asyncOn();
+void busLock();
+void busUnlock();
+
 }  // namespace FramePush

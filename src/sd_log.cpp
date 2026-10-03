@@ -1,5 +1,6 @@
 // SquachWatch-CYD — SD log implementation
 #include "sd_log.h"
+#include "frame_push.h"   // busLock(): the card shares the panel's bus
 #include <SD.h>
 #if defined(FREENOVE_S3)
 // The Freenove S3's slot is wired for SDMMC, not SPI: every card call in this
@@ -163,16 +164,23 @@ void SdLog::openDaily() {
     // answers; it does not prove a single row ever reached it, and until this
     // line existed the only way to tell the two apart was to pull the card.
     // Board-gated for the same reason as the branch in logEvent() below.
+    FramePush::busLock();
     File f = CARD.open(_filename, FILE_READ);
     if (f) { Serial.printf("[sd] %s: %lu bytes already\n", _filename, (unsigned long)f.size()); f.close(); }
     else   { Serial.printf("[sd] %s: new file\n", _filename); }
+    FramePush::busUnlock();
 #endif
 }
 
 void SdLog::logEvent(const Detection& d) {
     if (!_ready) return;
+    // The card shares the panel's SPI bus on the boards that have it there;
+    // on the C5 the push runs in a task, so the write waits for a frame in
+    // flight (a no-op everywhere else).
+    FramePush::busLock();
     File f = CARD.open(_filename, FILE_APPEND);
     if (!f) {
+        FramePush::busUnlock();
 #if defined(NM_CYD_C5)
         // Once, not once per detection: a card that mounts but cannot be
         // opened for append reads exactly like a card that was logging, and
@@ -214,15 +222,17 @@ void SdLog::logEvent(const Detection& d) {
              nameSafe);
     f.print(line);
     f.close();
+    FramePush::busUnlock();
 }
 
 void SdLog::wipe() {
     if (!_ready) return;
+    FramePush::busLock();
     // Walk the root and remove every file this firmware writes. Names are
     // /squachwatch-YYYYMMDD.log; matching on the prefix takes them all rather
     // than only today's, which is the whole point of a wipe.
     File dir = CARD.open("/");
-    if (!dir) return;
+    if (!dir) { FramePush::busUnlock(); return; }
     // Collect first, then remove: deleting while iterating openNextFile() is
     // not something the FAT driver promises to survive.
     char victims[16][32];
@@ -241,6 +251,7 @@ void SdLog::wipe() {
     }
     dir.close();
     for (int i = 0; i < n; i++) CARD.remove(victims[i]);
+    FramePush::busUnlock();
     _filename[0] = '\0';       // force a fresh openDaily() on the next event
 }
 
