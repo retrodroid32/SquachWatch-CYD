@@ -229,12 +229,12 @@ jobs:
           pio run -e rlphantom
 
       - name: Fetch the NM-CYD-C5 build
-        # Only if its runner managed one (see build-c5). The C5 is download-
-        # only for now: the bootloader sits at 0x2000 on this chip, there is a
-        # boot_app0 at 0xe000, the flash is 16 MB, and the browser flasher's
-        # library has not been shown to handle a C5 -- so it joins the
-        # Release as files for esptool (docs/NM-CYD-C5.md) and stays off the
-        # web page and the Pages site.
+        # Only if its runner managed one (see build-c5). The C5 shares no
+        # file with the other boards: the bootloader sits at 0x2000 on this
+        # chip, there is a boot_app0 at 0xe000, and the flash is 16 MB. It is
+        # on the flasher page as a BETA -- the browser library lists the C5
+        # but nobody here has watched it flash one, and a BETA is how this
+        # project finds that out.
         if: needs.build-c5.result == 'success'
         uses: actions/download-artifact@v4
         with:
@@ -430,7 +430,8 @@ jobs:
                     "web-flasher/manifest-cyd35-fast.json",
                     "web-flasher/manifest-twatch-s3.json",
                     "web-flasher/manifest-freenove-s3.json",
-                    "web-flasher/manifest-crowpanel7.json"):
+                    "web-flasher/manifest-crowpanel7.json",
+                    "web-flasher/manifest-nm-cyd-c5.json"):
               m = json.load(open(p))
               m["version"] = "${{ steps.ver.outputs.version }}"
               if name: m["release_name"] = name
@@ -518,6 +519,7 @@ jobs:
             manifest-cyd-ili9341-fast.json \
             manifest-cyd35-fast.json \
             $(ls nm-cyd-c5-*.bin esp32c5-*.bin 2>/dev/null) \
+            $([ -f nm-cyd-c5-firmware.bin ] && cp web-flasher/manifest-nm-cyd-c5.json manifest-nm-cyd-c5.json && echo manifest-nm-cyd-c5.json) \
             $(ls *-firmware.sig 2>/dev/null)
 
       - name: Build the browser emulator
@@ -581,6 +583,7 @@ jobs:
           cp web-flasher/manifest-twatch-s3.json _site/manifest-twatch-s3.json
           cp web-flasher/manifest-freenove-s3.json _site/manifest-freenove-s3.json
           cp web-flasher/manifest-crowpanel7.json _site/manifest-crowpanel7.json
+          cp web-flasher/manifest-nm-cyd-c5.json _site/manifest-nm-cyd-c5.json
           # A LAB RUN MUST NOT CHANGE WHAT THE PUBLIC PAGE SERVES.
           #
           # A Pages deploy is wholesale -- there is no partial update -- so a
@@ -649,7 +652,11 @@ jobs:
           import json, shutil, os
           label = "${{ steps.ver.outputs.label }}"
           ver   = "${{ steps.ver.outputs.version }}"
-          for board in ("cyd", "cyd-ili9341", "cyd-fast", "cyd-ili9341-fast", "cyd35-fast", "rlphantom-r", "freenove32", "cyd32c", "twatch-s3", "freenove-s3", "crowpanel7"):
+          for board in ("cyd", "cyd-ili9341", "cyd-fast", "cyd-ili9341-fast", "cyd35-fast", "rlphantom-r", "freenove32", "cyd32c", "twatch-s3", "freenove-s3", "crowpanel7", "nm-cyd-c5"):
+              # The C5 comes from its own runner and may not have come at all.
+              if not os.path.exists(board + "-firmware.bin"):
+                  print("::warning::no %s build this run; not in the lab list" % board)
+                  continue
               shutil.copy(board + "-firmware.bin", "_site/lab-" + board + "-firmware.bin")
               if os.path.exists(board + "-firmware.sig"):
                   shutil.copy(board + "-firmware.sig", "_site/lab-" + board + "-firmware.sig")
@@ -695,6 +702,23 @@ jobs:
               # side by side from the site root.
               if [ -f "$board-firmware.sig" ]; then cp "$board-firmware.sig" "_site/$board-firmware.sig"; fi
             done
+            # The NM-CYD-C5 (ESP32-C5) when its own runner built it (see
+            # build-c5): its own bootloader, table and boot_app0 beside its
+            # firmware, nothing shared with the boards above. Without a build
+            # its manifest and its <option> come off THIS release's page,
+            # rather than sit in the picker and 404 when chosen.
+            if [ -f nm-cyd-c5-firmware.bin ]; then
+              cp nm-cyd-c5-firmware.bin nm-cyd-c5-partitions.bin esp32c5-bootloader.bin esp32c5-boot_app0.bin _site/
+            else
+              rm -f _site/manifest-nm-cyd-c5.json
+              python3 - <<'PY'
+          import re
+          p = open("_site/index.html", encoding="utf-8").read()
+          p, n = re.subn(r'[ \t]*<option value="\./manifest-nm-cyd-c5\.json"[^\n]*</option>\n', "", p)
+          open("_site/index.html", "w", encoding="utf-8").write(p)
+          print("::warning::no NM-CYD-C5 build this run: its option is off the page (%d removed)" % n)
+          PY
+            fi
           fi
           mkdir -p _site/update
           cp web-flasher/update/index.html _site/update/index.html
@@ -780,7 +804,7 @@ jobs:
             # rewriting at all.
             gh release download "$tag" -D "_site/$tag" \
               -p '*-bootloader.bin' -p '*-partitions.bin' \
-              -p '*-firmware.bin' -p 'manifest-*.json' \
+              -p '*-firmware.bin' -p 'manifest-*.json' -p 'esp32c5-boot_app0.bin' \
               || echo "::warning::could not fetch $tag; skipping it"
             # Releases from before Bluetooth updates have no otadata part in
             # their manifests. Rolling back to one over USB must still take

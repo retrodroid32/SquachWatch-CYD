@@ -84,10 +84,9 @@ Other boards have builds of their own -- `platformio.ini` has one
 `[env:...]` each, with what is and is not confirmed on it. The newest is the
 **RockBase NM-CYD-C5** (`[env:nm-cyd-c5]`): the classic 2.8" CYD's glass on
 an **ESP32-C5**, the first RISC-V chip here, with dual-band Wi-Fi 6, 16 MB of
-flash and 8 MB of PSRAM. It runs the whole firmware but is download-only for
-now: flash it with esptool from the release files, as
-[docs/NM-CYD-C5.md](docs/NM-CYD-C5.md) explains, because the browser flasher's
-library has not been shown to handle a C5. Before it, the **Freenove ESP32-S3
+flash and 8 MB of PSRAM. It runs the whole firmware and is on the web flasher
+as a BETA; [docs/NM-CYD-C5.md](docs/NM-CYD-C5.md) has the esptool route and
+every pin. Before it, the **Freenove ESP32-S3
 Display 2.8"** (FNK0104B, `[env:freenove-s3]`): an S3 with capacitive touch, an
 SDMMC card slot, a WS2812 status light and a battery connector. Pins in
 [docs/PINOUT.md](docs/PINOUT.md).
@@ -101,7 +100,8 @@ from your browser:
 
 Works in Firefox, Chrome, Edge, or Brave on desktop. Pick your board (2.8" CYD,
 AWOK 2.4", RL Phantom 2.4", Freenove 3.2", or in beta the 3.5", the LilyGo
-T-Watch S3, the Freenove ESP32-S3 2.8" and the Elecrow CrowPanel 7"), plug in,
+T-Watch S3, the Freenove ESP32-S3 2.8", the Elecrow CrowPanel 7" and the
+RockBase NM-CYD-C5), plug in,
 click Connect & Install, done. A T-Watch has its clock set for it once the install
 finishes.
 
