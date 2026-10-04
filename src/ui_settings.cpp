@@ -3,6 +3,7 @@
 #include "ota_core.h"
 #include "ota_wifi.h"
 #include "theme.h"
+#include "privacy.h"
 #include "settings.h"
 #include "security.h"
 #include "ignore_list.h"
@@ -120,6 +121,7 @@ static const uint8_t WATCH_ROWS_N = sizeof(WATCH_ROWS) / sizeof(WATCH_ROWS[0]);
 
 // The SYSTEM page: the rarely-needed machinery, off the main list.
 static const SettingsRow SYSTEM_ROWS[] = {
+    SettingsRow::PRIVACY,
     SettingsRow::CALIBRATE, SettingsRow::CHECK_COLORS,
     SettingsRow::DIAGNOSTICS, SettingsRow::UPDATE_FIRMWARE, SettingsRow::UPDATE_CHECK, SettingsRow::WIFI_NETWORKS,
     SettingsRow::RESET_STATS,
@@ -871,6 +873,9 @@ static void rowContent(SettingsRow r, const DetectionEngine& eng, char* valBuf, 
             label = "CLOCK CHECK"; twatchXtalLine(valBuf, valBufN); value = valBuf;
             break;
 #endif
+        case SettingsRow::PRIVACY:
+            label = "PRIVACY MODE"; value = Settings::privacyMode() ? "ON" : "OFF";
+            break;
         case SettingsRow::POWER_SAVER:
             label = "POWER SAVER"; value = Settings::powerSaver() ? "ON" : "OFF";
             break;
