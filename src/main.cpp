@@ -841,6 +841,11 @@ static bool sampleTouchRaw(int16_t& a, int16_t& b) {
 #endif
 }
 
+// Read by the small boards' cursor stops below; defined here, ahead of them. See their use in
+// the LOG and ALERT screens for what they mean.
+static bool s_confirmPending = false;   // the WATCH/HUNT panel is up
+static bool s_infoPending    = false;   // MORE INFO is up
+
 #if defined(CARDPUTER_ADV)
 // ---- EXT SCREEN: a second panel on the Cardputer's EXT header -----------------
 // A 2.8" ILI9341 (320x240) wired the way its owner's radar project has it:
@@ -949,7 +954,12 @@ static void extPush() {
 static bool           s_stickKey2Was = false, s_stickKey2Long = false, s_stickKey1Was = false;
 static uint32_t       s_stickKey2At = 0;
 static const uint32_t STICK_HOLD_MS = 700, STICK_SHOW_MS = 5000;
-struct StickPt { int16_t x, y; uint8_t kind; };   // kind 0 presses; 1 scrolls the list down, 2 up
+// kind 0 presses; 1 scrolls the list down, 2 up; 3 presses and holds
+// for a long press (a LOG row's WATCH/HUNT panel opens on a hold).
+struct StickPt { int16_t x, y; uint8_t kind; };
+static uint32_t      s_stickHoldUntil = 0;   // a kind-3 press, held for the screen
+static StickPt       s_stickHoldPt;
+
 static const int      STICK_KEY1 = 11, STICK_KEY2 = 12;
 // What a board's keys ask of the cursor this frame. `press` is a level --
 // held is held -- and the rest happen once.
@@ -1051,6 +1061,14 @@ static int stickListId(int x, int y) {
             const SecurityRow r = uiSecurityHitTest(*canvas, x, y, w, h);
             return r == SecurityRow::NONE ? -1 : (int)r;
         }
+        case AppState::LOG: {
+            if (s_confirmPending) {
+                const LogConfirmTap c = uiLogHitConfirm(x, y, w, h);
+                return c == LogConfirmTap::NONE ? -1 : 2000 + (int)c;
+            }
+            const int r = uiLogRowAt(*canvas, x, y, w, h);
+            return (r >= 0 && r < (int)uiLogRowCount(engine)) ? r : -1;
+        }
         case AppState::DETECTION_FILTER: {
             const DetectionType r = uiDetFilterHitTest(*canvas, x, y, w, h);
             return r == DetectionType::COUNT ? -1 : (int)r;
@@ -1067,13 +1085,17 @@ static int stickListId(int x, int y) {
 static bool stickIsList() {
     return state == AppState::SETTINGS || state == AppState::POWER_SAVER ||
            state == AppState::SECURITY || state == AppState::DETECTION_FILTER ||
-           state == AppState::MESH_MENU;
+           state == AppState::MESH_MENU || state == AppState::LOG;
 }
 
 static uint8_t stickStopsBuild(StickPt* out, uint8_t cap) {
     const int16_t w = (int16_t)tft.width(), h = (int16_t)tft.height();
     uint8_t n = 0;
     auto add = [&](int x, int y, uint8_t kind = 0) { if (n < cap) out[n++] = { (int16_t)x, (int16_t)y, kind }; };
+    if (s_infoPending && (state == AppState::LOG || state == AppState::ALERT)) {
+        add(w / 2, h - 17);             // MORE / GOT IT
+        return n;
+    }
     if (state == AppState::CLEAR) {
         add(w / 2, h * 2 / 5);          // Squachy, and whatever card is over him
         add(w / 2, h * 13 / 20);        // a card's own button
@@ -1105,9 +1127,16 @@ static uint8_t stickStopsBuild(StickPt* out, uint8_t cap) {
                 if (a == an) { if (an == 12) continue; acc[an++] = { id, 0, 0, 0 }; }
                 acc[a].sx += x; acc[a].sy += y; acc[a].c++;
             }
-        for (uint8_t a = 0; a < an; a++) add(acc[a].sx / acc[a].c, acc[a].sy / acc[a].c);
-        const bool panel = state == AppState::SETTINGS && uiSettingsConfirmRow() != SettingsRow::NONE;
-        if (!panel) {
+        const bool logRows = state == AppState::LOG && !s_confirmPending;
+        for (uint8_t a = 0; a < an; a++) add(acc[a].sx / acc[a].c, acc[a].sy / acc[a].c, logRows ? 3 : 0);
+        const bool panel = (state == AppState::SETTINGS && uiSettingsConfirmRow() != SettingsRow::NONE) ||
+                           (state == AppState::LOG && s_confirmPending);
+        if (logRows) {
+            const Theme::ButtonBarGeom bar = Theme::computeButtonBar(w, h);
+            add(w - 9, bar.y - 12, 1);
+            add(w - 9, Theme::LIST_TOP + 9, 2);
+            for (int b = 0; b < 3; b++) add(bar.x[b] + bar.w[b] / 2, bar.y + bar.h / 2);   // SCAN, LOG, CLR
+        } else if (!panel) {
             const int backH = Theme::pinnedBackH(w);
             add(w - 9, h - backH - 9, 1);                                   // more, below
             add(w - 9, Theme::LIST_TOP + Theme::LIST_HEADING_H + 7, 2);     // and above
@@ -1171,7 +1200,24 @@ static TouchPoint stickPoll() {
         Serial.printf("[keys] stop %u of %u at %d,%d (screen %u)\n", (unsigned)s_stickStop + 1, (unsigned)n,
                       (int)pts[s_stickStop].x, (int)pts[s_stickStop].y, (unsigned)state);
     }
-    if (k1 && pts[s_stickStop].kind) {
+    if (s_stickHoldUntil) {
+        if ((int32_t)(now - s_stickHoldUntil) < 0) {
+            tp.valid = true; tp.x = s_stickHoldPt.x; tp.y = s_stickHoldPt.y;
+            s_stickKey1Was = k1;
+            return tp;
+        }
+        s_stickHoldUntil = 0;
+        s_stickPtsAt = 0;
+    }
+    if (k1 && !s_stickKey1Was && pts[s_stickStop].kind == 3) {
+        s_stickHoldPt = pts[s_stickStop];
+        s_stickHoldUntil = now + 650;
+        s_stickShownAt = now ? now : 1;
+        s_stickKey1Was = k1;
+        tp.valid = true; tp.x = s_stickHoldPt.x; tp.y = s_stickHoldPt.y;
+        return tp;
+    }
+    if (k1 && (pts[s_stickStop].kind == 1 || pts[s_stickStop].kind == 2)) {
         if (!s_stickKey1Was) {
             lastTouch = now;
 #if SQUACH_MESH
@@ -1203,7 +1249,7 @@ static void stickDrawCursor(TFT_eSPI& t, uint32_t now) {
     const uint8_t n = stickStops(pts);
     if (s_stickStop >= n) return;
     const int x = pts[s_stickStop].x, y = pts[s_stickStop].y, r = 9, a = 5;
-    if (pts[s_stickStop].kind) {
+    if (pts[s_stickStop].kind == 1 || pts[s_stickStop].kind == 2) {
         const bool down = pts[s_stickStop].kind == 1;
         t.fillRect(x - 8, y - 7, 17, 15, Theme::BG);
         t.drawRect(x - 8, y - 7, 17, 15, Theme::AMBER);
@@ -1546,7 +1592,6 @@ static void clearSharedFrameBuffer() {
 // modules needing to know about DetectionEngine's tracking API at all,
 // just how to draw/hit-test the panel they're given. Shared by both
 // screens since only one can ever be showing at a time.
-static bool    s_confirmPending = false;
 static uint8_t s_confirmMac[6];
 // Which DEVICE the MORE INFO page is about, not just which type: the label
 // and name off the log entry, which is what device_info.cpp matches on. The
@@ -1678,7 +1723,6 @@ static DetectionType s_confirmType = DetectionType::UNKNOWN;
 // which of the (at most) two pages is up: the one-time RSSI/confidence
 // primer first if it's never been shown (see Settings::infoPrimerShown()),
 // then s_confirmType's own explanation either way.
-static bool          s_infoPending       = false;
 static bool          s_infoShowingPrimer = false;
 // Same "ignore the touch that opened this" gate s_confirmArmed uses,
 // applied to the info panel's own GOT IT button.

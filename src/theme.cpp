@@ -9626,7 +9626,23 @@ static void infoRects(int screenW, int screenH,
     btnY = py + ph - btnH - 8;
 }
 
+// On a compact screen the text is shown a page at a time, and GOT IT reads
+// MORE until the last one. The page goes back to the first whenever the
+// panel has not been drawn for a moment, which is how a new one opens.
+static uint8_t  s_infoPage = 0, s_infoPages = 1;
+static uint32_t s_infoDrawnAt = 0;
 bool infoPanelHitDismiss(int x, int y, int screenW, int screenH) {
+    if (s_compact) {
+        const int bw = screenW - 28, bh = 18, bx = 14, by = screenH - 4 - 4 - bh;
+        if (!(x >= bx && x <= bx + bw && y >= by && y <= by + bh)) return false;
+        static uint32_t last = 0;
+        const uint32_t now = millis();
+        if (now - last < 250) return false;     // one press, one page
+        last = now;
+        if (s_infoPage + 1 < s_infoPages) { s_infoPage++; return false; }
+        s_infoPage = 0;
+        return true;
+    }
     int px, py, pw, ph, headingY, squachyCx, squachyBaseY, squachyWander, textTop, textMaxW, btnX, btnY, btnW, btnH;
     float squachyScale;
     infoRects(screenW, screenH, px, py, pw, ph, headingY, squachyCx, squachyBaseY, squachyScale, squachyWander,
@@ -9636,6 +9652,42 @@ bool infoPanelHitDismiss(int x, int y, int screenW, int screenH) {
 
 void drawInfoPanel(TFT_eSPI& t, int w, int h, uint32_t now,
                    const char* typeName, const char* text) {
+    if (s_compact) {
+        if (now - s_infoDrawnAt > 400) s_infoPage = 0;
+        s_infoDrawnAt = now;
+        const int px = 4, py = 4, pw = w - 8, ph = h - 8;
+        t.fillRoundRect(px, py, pw, ph, 5, BG);
+        t.drawRoundRect(px, py, pw, ph, 5, PURPLE);
+        t.setTextWrap(false);
+        int ly = py + 5;
+        if (typeName) {
+            t.setTextSize(1);
+            t.setTextColor(VAPOR_PINK, BG);
+            t.setCursor(px + (pw - t.textWidth(typeName)) / 2, ly);
+            t.print(typeName);
+            ly += 12;
+        }
+        const int btnH = 18, btnY = py + ph - btnH - 4;
+        const int per = (btnY - 3 - ly) / 10;
+        static const uint8_t MAXL = 24;
+        static char lines[MAXL][48];
+        t.setTextSize(1);
+        const uint8_t n = wrapText(t, text, pw - 10, lines, MAXL);
+        s_infoPages = (uint8_t)(per > 0 ? (n + per - 1) / per : 1);
+        if (!s_infoPages) s_infoPages = 1;
+        if (s_infoPage >= s_infoPages) s_infoPage = 0;
+        t.setTextColor(WHITE, BG);
+        for (int i = s_infoPage * per; i < n && i < (s_infoPage + 1) * per; i++) {
+            t.setCursor(px + 5, ly);
+            t.print(lines[i]);
+            ly += 10;
+        }
+        char lbl[24];
+        if (s_infoPage + 1 < s_infoPages) snprintf(lbl, sizeof lbl, "[ MORE %u/%u ]", s_infoPage + 1, s_infoPages);
+        else                              snprintf(lbl, sizeof lbl, "[ GOT IT ]");
+        drawButton(t, px + 10, btnY, pw - 20, btnH, lbl, false, 1);
+        return;
+    }
     int px, py, pw, ph, headingY, squachyCx, squachyBaseY, squachyWander, textTop, textMaxW, btnX, btnY, btnW, btnH;
     float squachyScale;
     infoRects(w, h, px, py, pw, ph, headingY, squachyCx, squachyBaseY, squachyScale, squachyWander,
