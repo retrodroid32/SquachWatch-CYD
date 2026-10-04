@@ -229,6 +229,10 @@ jobs:
           # built and signed every run, offered under ?lab=1, never attached
           # to a release or listed on the public page.
           pio run -e sticks3
+          # cardputer-adv is the M5Stack Cardputer ADV: the StickS3's screen
+          # and layouts with a keyboard, 8 MB and no PSRAM. LAB ONLY, the same
+          # way, with its own bootloader and table.
+          pio run -e cardputer-adv
           # The Phantom's capacitive version has never run on a real board, so
           # it is compiled to keep its code honest but NOT published anywhere.
           pio run -e rlphantom
@@ -365,6 +369,8 @@ jobs:
           # the two-slot 4 MB table.
           cp .pio/build/sticks3/bootloader.bin sticks3-bootloader.bin
           cp .pio/build/sticks3/partitions.bin sticks3-partitions.bin
+          cp .pio/build/cardputer-adv/bootloader.bin cardputer-adv-bootloader.bin
+          cp .pio/build/cardputer-adv/partitions.bin cardputer-adv-partitions.bin
           # The other two S3 boards share both: the same flash mode, size and
           # speed, and partition tables with the same rows. Checked, not
           # assumed, for the same reason as the ESP32 pair above.
@@ -385,7 +391,7 @@ jobs:
           # merged image for those on purpose: the merged blob is a
           # manual-recovery artifact, and recovery should land you on the
           # spec-compliant build rather than the overclocked one.
-          for v in cyd cyd-ili9341 awok rlphantom-r freenove32 cyd32c cyd-fast cyd-ili9341-fast cyd35-fast cyd35c-fast twatch-s3 freenove-s3 crowpanel7 sticks3; do
+          for v in cyd cyd-ili9341 awok rlphantom-r freenove32 cyd32c cyd-fast cyd-ili9341-fast cyd35-fast cyd35c-fast twatch-s3 freenove-s3 crowpanel7 sticks3 cardputer-adv; do
             cp ".pio/build/$v/firmware.bin" "$v-firmware.bin"
           done
 
@@ -403,7 +409,7 @@ jobs:
           fi
           umask 077
           printf '%s\n' "$OTA_SIGNING_KEY" > "$RUNNER_TEMP/ota_key.pem"
-          for v in cyd cyd-ili9341 awok rlphantom-r freenove32 cyd32c cyd-fast cyd-ili9341-fast cyd35-fast cyd35c-fast twatch-s3 freenove-s3 crowpanel7 sticks3; do
+          for v in cyd cyd-ili9341 awok rlphantom-r freenove32 cyd32c cyd-fast cyd-ili9341-fast cyd35-fast cyd35c-fast twatch-s3 freenove-s3 crowpanel7 sticks3 cardputer-adv; do
             python tools/sign_firmware.py --key "$RUNNER_TEMP/ota_key.pem" \
               --env "$v" --bin "$v-firmware.bin" --out "$v-firmware.sig"
           done
@@ -669,7 +675,7 @@ jobs:
           import json, shutil, os
           label = "${{ steps.ver.outputs.label }}"
           ver   = "${{ steps.ver.outputs.version }}"
-          for board in ("cyd", "cyd-ili9341", "cyd-fast", "cyd-ili9341-fast", "cyd35-fast", "cyd35c-fast", "rlphantom-r", "freenove32", "cyd32c", "twatch-s3", "freenove-s3", "crowpanel7", "nm-cyd-c5", "sticks3"):
+          for board in ("cyd", "cyd-ili9341", "cyd-fast", "cyd-ili9341-fast", "cyd35-fast", "cyd35c-fast", "rlphantom-r", "freenove32", "cyd32c", "twatch-s3", "freenove-s3", "crowpanel7", "nm-cyd-c5", "sticks3", "cardputer-adv"):
               # The C5 comes from its own runner and may not have come at all.
               if not os.path.exists(board + "-firmware.bin"):
                   print("::warning::no %s build this run; not in the lab list" % board)
