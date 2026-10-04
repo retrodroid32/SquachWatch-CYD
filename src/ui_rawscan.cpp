@@ -238,7 +238,7 @@ void uiRawScanTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool i
     // Only the BACKGROUND moves. Everything else on this screen still
     // begins where it did, so no content shifts.
     const int bgTop = 0;
-switch (Settings::background()) {
+if (!Theme::stillBackdrop(t)) switch (Settings::background()) {
         case Settings::Background::STARFIELD: Theme::drawStarfield(t, now, bgTop, bodyBottom); break;
         case Settings::Background::TOASTERS:   Theme::drawFlyingToasters(t, now, bgTop, bodyBottom); break;
         case Settings::Background::AQUARIUM:   Theme::drawAquarium(t, now, bgTop, bodyBottom); break;

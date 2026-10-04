@@ -115,7 +115,7 @@ void uiSecurityTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng) {
 
     Theme::Palette saved = Theme::dimPaletteForOverlay(179);
     const int bgTop = 0;
-    switch (Settings::background()) {
+    if (!Theme::stillBackdrop(t)) switch (Settings::background()) {
         case Settings::Background::STARFIELD: Theme::drawStarfield(t, now, bgTop, bodyBottom); break;
         case Settings::Background::TOASTERS:  Theme::drawFlyingToasters(t, now, bgTop, bodyBottom); break;
         case Settings::Background::AQUARIUM:  Theme::drawAquarium(t, now, bgTop, bodyBottom); break;

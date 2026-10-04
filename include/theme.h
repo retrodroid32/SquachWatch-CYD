@@ -148,6 +148,13 @@ namespace Theme {
     // letters and give up the air round them -- a thinner BACK strip and
     // tighter rows, so four fit where two did. Set by uiMenuTextSize() from
     // the sprite it is handed, or outright by a board that knows.
+    // The Cardputer's EXT SCREEN: with the moving background on the big
+    // panel, a compact screen's backdrop is one still picture instead -- a
+    // menu that never changes is a menu that is never re-sent.
+    void setStillBackdrop(bool on);
+    // Draws it and says so, when it is on and `t` is a compact screen; the
+    // caller skips its own moving background then.
+    bool stillBackdrop(TFT_eSPI& t);
     void setCompact(bool on);
     bool compact();
     int  listRowPad();          // added to the font height for a list row

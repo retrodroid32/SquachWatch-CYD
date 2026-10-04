@@ -4518,8 +4518,36 @@ static void releaseFire() {
     if (s_fireHeat) { free(s_fireHeat); s_fireHeat = nullptr; s_fireInited = false; }
 }
 
+static bool s_stillBackdrop = false;
+void setStillBackdrop(bool on) { s_stillBackdrop = on; }
+// A sun going down behind a grid, in the theme's own colours, and nothing
+// in it that depends on the clock.
+static void drawStillBackdrop(TFT_eSPI& t) {
+    const int w = t.width(), h = t.height(), horizon = h * 3 / 5;
+    t.fillRect(0, 0, w, h, BG);
+    const int cx = w / 2, r = h / 3;
+    for (int dy = -r; dy <= 0; dy++) {
+        // Bands cut out of the lower half of the sun, wider toward the horizon.
+        const int row = dy + r;
+        if (row > r / 2 && (row % 6) < (row - r / 2) / 6 + 1) continue;
+        int half = 0;
+        while ((half + 1) * (half + 1) + dy * dy <= r * r) half++;
+        t.drawFastHLine(cx - half, horizon + dy, 2 * half + 1, row < r / 2 ? AMBER : VAPOR_PINK);
+    }
+    t.drawFastHLine(0, horizon, w, VAPOR_PINK);
+    for (int y = horizon + 4, step = 4; y < h; y += step, step += 3) t.drawFastHLine(0, y, w, PURPLE);
+    for (int x = cx % 24; x < w; x += 24) t.drawFastVLine(x, horizon, h - horizon, PURPLE);
+}
+
+bool stillBackdrop(TFT_eSPI& t) {
+    if (!s_stillBackdrop || t.height() >= 200) return false;
+    drawStillBackdrop(t);
+    return true;
+}
+
 void drawActiveBackground(TFT_eSPI& t, uint32_t now, int yStart, int yEnd,
                           const DetectionEngine& eng, bool advance) {
+    if (stillBackdrop(t)) return;
     const uint32_t bgT0 = micros();
     // The frame's worth of motion for every per-call stepper -- see s_animK.
     // Zero on a non-advancing call (cyd35's second band), which is also

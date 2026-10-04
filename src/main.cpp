@@ -5326,6 +5326,7 @@ void loop() {
         static bool tried = false;
         if (Settings::extScreen() && !s_extOk && !tried) { tried = true; extBegin(); }
         s_extOn = Settings::extScreen() && s_extOk;
+        Theme::setStillBackdrop(s_extOn);
     }
     const bool extFrame = s_extOn && state != AppState::BOOT;
     // With him on the big screen the built-in one has no main screen to
