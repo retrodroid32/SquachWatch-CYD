@@ -1036,7 +1036,7 @@ static uint32_t       s_stickShownAt = 0;       // the cursor shows for a while 
 static bool           s_stickHome = false;      // KEY2 held: loop() goes home
 static int8_t         s_stickDrag = 0;          // a scripted drag under way: +1 down the list, -1 up
 static uint8_t        s_stickDragStep = 0;
-static const uint8_t  STICK_STOPS_MAX = 16;
+static const uint8_t  STICK_STOPS_MAX = 24;
 
 // What is under a point on a list screen, as that screen's own hit test
 // sees it, or -1. The stops are found by sweeping this over the screen, so
@@ -1148,6 +1148,23 @@ static uint8_t stickStopsBuild(StickPt* out, uint8_t cap) {
             add(w - 9, Theme::LIST_TOP + Theme::LIST_HEADING_H + 7, 2);     // and above
             add(w / 2, h - backH / 2);                                      // BACK
         }
+        return n;
+    }
+    if (state == AppState::DESK || state == AppState::DEX) {
+        int16_t xs[20], ys[20];
+        const uint8_t k = state == AppState::DESK ? uiDeskStops(w, h, millis(), xs, ys, 20)
+                                                  : uiDexStops(w, h, xs, ys, 20);
+        for (uint8_t i = 0; i < k; i++) add(xs[i], ys[i]);
+        return n;
+    }
+    if (state == AppState::DIARY) {
+        add(w / 2, h / 2);              // anywhere goes back
+        return n;
+    }
+    if (state == AppState::OUTFIT) {
+        add(w - 17, h - 22);            // the next outfit
+        add(17, h - 22);                // the one before
+        add(w / 2, h / 2);              // anywhere else goes back
         return n;
     }
     if (state == AppState::DIAGNOSTICS) {

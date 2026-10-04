@@ -53,6 +53,7 @@
 #include "ui_colorcheck.h"
 #include "ui_diagnostics.h"
 #include "ui_desk.h"
+#include "ui_outfit.h"
 #include "ui_zone.h"
 #include "clock.h"
 #include "ui_boot.h"
@@ -649,6 +650,7 @@ int main(int argc, char** argv) {
         else if (screen == "phone")    uiPhoneTick(frame, t, engine);
         else if (screen == "bingo")    uiBingoTick(frame, t, engine);
         else if (screen == "dex")      uiDexTick(frame, t, engine);
+        else if (screen == "outfit")   uiOutfitTick(frame, t, engine);
         else if (screen == "meshmenu") uiMeshMenuTick(frame, t, engine);
         else if (screen == "roster" || screen == "squad") uiSquadTick(frame, t, engine);
         else if (screen == "meshwarn") uiMeshWarnTick(frame, t, engine);

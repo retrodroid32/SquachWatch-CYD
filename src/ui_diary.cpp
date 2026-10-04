@@ -50,7 +50,9 @@ void uiDiaryTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng) {
     const int top  = 16;
     // 22 rather than 24: nine rows plus the hint is 226px, which fits a
     // 240px panel. At 24 the ninth row pushed the hint off the bottom.
-    const int rowH = 22;
+    // Thirteen rows a stat on a compact screen (240x135): all nine fit, with
+    // no room for the hint, which the cursor makes unneeded there.
+    const int rowH = Theme::compact() ? 13 : 22;
     char buf[24];
 
     snprintf(buf, sizeof(buf), "%lu", (unsigned long)eng.lifetimeTotal());
@@ -100,6 +102,7 @@ void uiDiaryTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng) {
     // Hint, pulsing gently so it doesn't just look like inert label text.
     // Between 65% and 100% of CYAN: the old 10-70% of VAPOR_BLUE rounded to
     // nearly nothing in the frame buffer, in every theme.
+    if (Theme::compact()) return;
     float pulse = 0.825f + 0.175f * sinf((float)(now % 1600) / 1600.0f * 6.2831853f);
     uint16_t col = Theme::blend(Theme::BG, Theme::CYAN, (uint16_t)(pulse * 255.0f));
     t.setTextSize(1);
