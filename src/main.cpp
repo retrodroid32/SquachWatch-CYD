@@ -2714,13 +2714,20 @@ static void sticksPowerUp() {
     ok = pm1Bit(0x10, 1 << 2, true)  && ok;   // an output
     ok = pm1Bit(0x13, 1 << 2, false) && ok;   // push-pull
     ok = pm1Bit(0x11, 1 << 2, true)  && ok;   // high: panel rail on
+    // GPIO3 enables the speaker's amplifier. Left as it powers up, the amp
+    // runs with nothing playing and hisses the board's own noise out of the
+    // speaker; M5's library drives it low at boot, and so does this.
+    ok = pm1Bit(0x16, 1 << 3, false) && ok;   // GPIO3: plain GPIO
+    ok = pm1Bit(0x10, 1 << 3, true)  && ok;   // an output
+    ok = pm1Bit(0x13, 1 << 3, false) && ok;   // push-pull
+    ok = pm1Bit(0x11, 1 << 3, false) && ok;   // low: amplifier off
     // No I2C idle sleep: the chip stays powered through a shutdown, and one
     // left asleep stops answering.
     Wire.beginTransmission(0x6E);
     Wire.write(0x09); Wire.write(0x00);
     ok = Wire.endTransmission() == 0 && ok;
     delay(100);
-    Serial.printf("[pmu] M5PM1 %s: panel rail on\n", ok ? "answered" : "DID NOT ANSWER");
+    Serial.printf("[pmu] M5PM1 %s: panel rail on, speaker amp off\n", ok ? "answered" : "DID NOT ANSWER");
 }
 #endif
 
