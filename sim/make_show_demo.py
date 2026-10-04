@@ -32,6 +32,22 @@ CYAN  = (0, 214, 214)
 # ---- the clips ----
 
 CLIPS = {
+    # v1.30.0 "No Spoon": the red glyph that falls in the DIGITAL rain now and
+    # then (picked ~1100 steps in, column 5, so the tap lands on it ~25 steps
+    # later), the TH3 0N3 it earns, his red lenses with something serious
+    # seeded nearby, bullet time and the duck (the second bullet, ~19 s in,
+    # clear of --outfit's six-second party shimmer), a pill, the spoon, and
+    # the payphone answering for him.
+    "no-spoon": [
+        ("clear", 1095, 22, ["--noseed", "--bg", "0"], {}, 1500, "ONE GLYPH IN THE RAIN FALLS RED..."),
+        ("clear", 1117, 40, ["--noseed", "--bg", "0", "--tap", "1125:29:93"], {}, 1800, "TAP IT"),
+        ("clear", 260, 40, ["--noseed", "--bg", "0", "--outfit", "18"], {}, 1500, "TH3 0N3"),
+        ("clear", 260, 30, ["--bg", "0", "--outfit", "18"], {}, 1600, "SOMETHING SERIOUS NEARBY? THE CODE RUNS RED"),
+        ("clear", 572, 52, ["--noseed", "--bg", "0", "--outfit", "18", "--tap", "586:160:110"], {}, 1500, "BULLET TIME. TAP HIM AND HE DUCKS"),
+        ("clear", 260, 40, ["--noseed", "--bg", "0", "--outfit", "18", "--tap", "268:144:66"], {}, 1500, "TAP A LENS. RED OR BLUE?"),
+        ("clear", 260, 40, ["--noseed", "--bg", "0", "--outfit", "18"], {"SQUACHSIM_GRAB": "160:70"}, 1500, "PICK HIM UP. THERE IS NO SPOON."),
+        ("phone", 0, 50, ["--outfit", "18"], {}, 1600, "AND THE PAYPHONE RINGS FOR HIM"),
+    ],
     # v1.29.0 "What Reeks": the FIRE owl's new line and the tap that answers
     # it (the clock is millis from boot, so ~910 frames in is his third quip
     # slot, the one he asks in), the SHAMBLER it earns, a Legend visiting in
