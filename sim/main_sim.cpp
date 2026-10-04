@@ -306,6 +306,8 @@ static void usage() {
         "                    what the GUI consumes, no encode/decode on either side\n");
 }
 
+namespace Squachy { extern uint32_t t3DejaEvery; }
+
 int main(int argc, char** argv) {
     if (argc < 2) { usage(); return 2; }
     std::string screen  = argv[1];
@@ -552,6 +554,8 @@ int main(int argc, char** argv) {
     if (getenv("SQUACHSIM_FULLVISIT") && !Settings::deskFullVisit()) Settings::toggleDeskFullVisit();
     // SQUACHSIM_LEGEND=1: the Legend look, aura and all, without the catches.
     if (getenv("SQUACHSIM_LEGEND")) Squachy::previewLegend(true);
+    // SQUACHSIM_DEJA=ms brings TH3 0N3's deja vu cat round that often.
+    if (const char* dj = getenv("SQUACHSIM_DEJA")) Squachy::t3DejaEvery = (uint32_t)atoi(dj);
     // SQUACHSIM_PRIVACY=1: PRIVACY MODE on, for shots of the masked screens.
     if (getenv("SQUACHSIM_PRIVACY") && !Settings::privacyMode()) Settings::togglePrivacyMode();
     // SQUACHSIM_LTBRIGHT=N: the STATUS LIGHT's BRIGHTNESS step, 1..7.
@@ -621,7 +625,7 @@ int main(int argc, char** argv) {
 
     auto tick = [&](uint32_t t) {
         SimClock::nowMs = t;
-        if      (screen == "clear")    { uiClearEmoteTick(t); uiClearTick(frame, t, engine, true, false); }
+        if      (screen == "clear")    { Theme::setRedGlyph(!Squachy::th3Unlocked()); uiClearEmoteTick(t); uiClearTick(frame, t, engine, true, false); }
         else if (screen == "log") {
             const bool info = (infoType >= 0);
             const DetectionType it = info ? (DetectionType)infoType : DetectionType::UNKNOWN;
@@ -1073,17 +1077,30 @@ int main(int argc, char** argv) {
         else {
             Theme::backgroundTap(x, y, when);
             if (Theme::consumeOwlReek()) Squachy::unlockShambler();
+            if (Theme::consumeRedGlyph()) Squachy::unlockTh3();
         }
         Theme::setOwlAsks(!Squachy::shamblerUnlocked());
+        Theme::setRedGlyph(!Squachy::th3Unlocked());
     };
     Theme::setOwlAsks(!Squachy::shamblerUnlocked());
+    Theme::setRedGlyph(!Squachy::th3Unlocked());
     auto xyzzyStep = [&]() {
         if (!xyzzy) return;
         Theme::summonXyzzy();
         if (const uint8_t said = Theme::consumeXyzzy()) Squachy::magicWord(said);
     };
+    // SQUACHSIM_GRAB=x:y -- a finger holding him up there, from frame 20.
+    int grabX = -1, grabY = -1;
+    if (const char* g = getenv("SQUACHSIM_GRAB")) sscanf(g, "%d:%d", &grabX, &grabY);
+    bool grabbed = false;
+    auto grabStep = [&]() {
+        if (grabX < 0) return;
+        if (!grabbed) { grabbed = true; Squachy::trigger(Squachy::Event::HELD); }
+        Squachy::grabTo(grabX, grabY);
+    };
     for (int i = 0; i < frames; i++) {
         const uint32_t tNow = now + (uint32_t)i * STEP_MS;
+        if (i > 20) grabStep();
         if (!tick(tNow)) { usage(); return 2; }
         // After the frame, so the tap lands on something just drawn:
         // backgroundTap() hit-tests published positions and ignores anything
@@ -1105,6 +1122,7 @@ int main(int argc, char** argv) {
 
     for (int s = 0; s < sequence; s++) {
         const uint32_t sNow = now + (uint32_t)(frames + s) * STEP_MS;
+        grabStep();
         tick(sNow);
         // --tap frame numbers run straight on through the capture, so a tap
         // can land on a frame you can actually look at afterwards.

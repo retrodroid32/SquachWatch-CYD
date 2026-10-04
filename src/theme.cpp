@@ -835,6 +835,23 @@ static void releaseRain() {
     if (s_rainBuf) { free(s_rainBuf); s_rainBuf = nullptr; s_rainInited = false; }
 }
 
+// TH3 0N3's door. Every half a minute to a minute, one glyph in one slow
+// column falls red -- drawn big, so it is a target and not a speck -- and a
+// tap on it earns the coat. Where it was the last frame it was drawn, and
+// when; backgroundTap() believes only the last quarter second, the same
+// freshness rule as the owl and the eye.
+//
+// The main screen says every frame whether to send it (off once the coat
+// is earned). The rain falls behind LOG, SETTINGS and the rest too, where
+// a tap goes to the screen and not the rain -- so it only falls red while
+// that word is fresh, which is to say on the main screen.
+static bool     s_redGlyphOn = false;
+static uint32_t s_redGlyphSaid = 0;
+static int      s_redX = 0, s_redY = 0;
+static uint32_t s_redAt = 0;
+static bool     s_redPending = false;
+void setRedGlyph(bool on) { s_redGlyphOn = on; s_redGlyphSaid = millis(); }
+
 void drawDigitalRain(TFT_eSPI& t, uint32_t now, int yStart, int yEnd, bool advance) {
     // Dense columns with long, smoothly-decaying trails. Glyphs are plain
     // ASCII (the default GLCD font can't render UTF-8 katakana correctly)
@@ -998,6 +1015,35 @@ void drawDigitalRain(TFT_eSPI& t, uint32_t now, int yStart, int yEnd, bool advan
     int sqCx = 0, sqHalf = 0, sqTop = 0, sqBot = 0;
     const bool sqHere = Squachy::lastFootprint(sqCx, sqHalf, sqTop, sqBot);
 
+    // The red glyph: which column carries it, when it started, when the next.
+    // Picked from the columns whose heads have just come in at the top, the
+    // slowest of them, and never one falling behind him.
+    static int      redCol = -1;
+    static uint32_t redFrom = 0, redNext = 0;
+    const bool redHere = s_redGlyphOn && s_redGlyphSaid && (uint32_t)(millis() - s_redGlyphSaid) < 500u;
+    if (!redHere) redCol = -1;
+    if (advance && redHere) {
+        if (redCol >= 0 && (redCol >= cols ||
+                            yPos[redCol] - 16 >= yEnd || now - redFrom > 12000u)) redCol = -1;
+        if (redCol < 0) {
+            if (!redNext) redNext = now + 20000u + (uint32_t)random(0, 20000);
+            else if (now >= redNext) {
+                int best = -1;
+                for (int i = 0; i < cols; i++) {
+                    if (yPos[i] < yStart + 16 || yPos[i] > yStart + 70) continue;
+                    const int d = 3 + i * SPACING - sqCx;
+                    if (sqHere && (d < 0 ? -d : d) < sqHalf + 18) continue;
+                    if (best < 0 || ySpeed[i] > ySpeed[best]) best = i;
+                }
+                if (best >= 0) {
+                    redCol = best; redFrom = now;
+                    redNext = now + 30000u + (uint32_t)random(0, 30000);
+                }
+            }
+        }
+    }
+    int redX = -1, redY = 0;
+
     // Full-band clear every frame, same as every other background style.
     // Without it a column that just wrapped skips its narrow vertical strip
     // for several frames, and nothing else ever repaints that strip -- so
@@ -1149,7 +1195,20 @@ void drawDigitalRain(TFT_eSPI& t, uint32_t now, int yStart, int yEnd, bool advan
             t.setTextColor(fg, bg);
             t.setCursor(x, ry);
             t.print(buf);
+            if (i == redCol && j == 2) { redX = x; redY = ry; }
         }
+    }
+    // Over the column, twice the size, in red with a dark red glow. The
+    // glyph itself is whatever that cell is showing.
+    if (redX >= 0) {
+        const char rb[2] = { GLYPHS[charBuf[redCol][2]], 0 };
+        const int gx = redX - 3, gy = redY - 4;
+        t.setTextSize(2);
+        t.setTextColor(t.color565(255, 40, 40), t.color565(90, 0, 0));
+        t.setCursor(gx, gy);
+        t.print(rb);
+        t.setTextSize(1);
+        s_redX = gx + 6; s_redY = gy + 8; s_redAt = now ? now : 1;
     }
 
     // Grow-and-fade glyphs. Size steps 1 -> 2 -> 3 over the life while the
@@ -4654,6 +4713,12 @@ static void publishLodge(int cx, int ridgeY, uint32_t now) {
 // the Starfield eye taught us a multi-step trigger cannot do without.
 uint8_t lodgeKnocks() { return s_lodgeKnocks; }
 
+bool consumeRedGlyph() {
+    if (!s_redPending) return false;
+    s_redPending = false;
+    return true;
+}
+
 bool consumeOwlReek() {
     if (!s_owlReekPending) return false;
     s_owlReekPending = false;
@@ -4719,6 +4784,17 @@ bool backgroundTap(int x, int y, uint32_t now) {
         if (onOwl || onBub) {
             s_owlReekAt = 0;                      // one answer a question
             s_owlReekPending = true;
+            return true;
+        }
+    }
+
+    // The red glyph, while it falls. Generous: it is twelve pixels of a
+    // moving letter.
+    if (s_redAt && (now - s_redAt) <= 250) {
+        const int rdx = x - s_redX, rdy = y - s_redY;
+        if (rdx >= -16 && rdx <= 16 && rdy >= -18 && rdy <= 18) {
+            s_redAt = 0;
+            s_redPending = true;
             return true;
         }
     }

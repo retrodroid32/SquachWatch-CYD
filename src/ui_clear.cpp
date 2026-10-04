@@ -3034,18 +3034,34 @@ void uiClearTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool adv
     // deauth flood is an attack with no device of its own to ignore, so it
     // always counts. Looked up four times a second, not every frame: the log
     // is 64 rows, the ignore list 64 MACs and the snoozes 32.
+    // The same pass says whether any of it is the serious kind -- trackers,
+    // police kit, skimmers, attack tools -- which TH3 0N3's lenses run red
+    // for. Doorbells and glasses are news, not Agents.
+    static bool s_serious = false;
     if (anyActive) {
         static uint32_t s_unAt = 0;
         static bool     s_un   = true;
         if (!s_unAt || now - s_unAt >= 250) {
             s_unAt = now ? now : 1;
             s_un = eng.countByType(DetectionType::DEAUTH) > 0;
-            for (uint8_t i = 0; !s_un && i < eng.logCount(); i++) {
+            s_serious = s_un;
+            for (uint8_t i = 0; !s_serious && i < eng.logCount(); i++) {
                 const Detection* d = eng.logAt(i);
-                if (d && d->active && !IgnoreList::silenced(d->mac)) s_un = true;
+                if (!d || !d->active || IgnoreList::silenced(d->mac)) continue;
+                s_un = true;
+                switch (d->type) {
+                    case DetectionType::FLOCK:  case DetectionType::AXON:   case DetectionType::SKIMMER:
+                    case DetectionType::RAVEN:  case DetectionType::ALPR:   case DetectionType::AIRTAG:
+                    case DetectionType::SAMSUNG_TAG: case DetectionType::GOOGLE_TAG: case DetectionType::TILE:
+                    case DetectionType::EVILTWIN:    case DetectionType::HACKER:
+                        s_serious = true; break;
+                    default: break;
+                }
             }
         }
         anyActive = s_un;
+    } else {
+        s_serious = false;
     }
     s_nearbyOn = false;           // set again below only if it is drawn
     // Its ARRIVAL is the event, so the glitch fires on the edge rather than
@@ -3060,6 +3076,7 @@ void uiClearTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool adv
     static bool s_wasActive = false;
     if (anyActive && !s_wasActive) Theme::triggerGlitchBurst(3);
     s_wasActive = anyActive;
+    Squachy::setNearbyLit(anyActive && s_serious);
 
     // Nothing on the row while nothing is happening. ALL CLEAR is gone and
     // the headline does not replace it: a permanent label asserting anything

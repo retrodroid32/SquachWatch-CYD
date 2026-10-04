@@ -180,7 +180,12 @@ inline void steel(TFT_eSPI& t, int x, int y, int w, int h, bool sunk = false) {
     Theme::drawSteelPanel(t, x, y, w, h, sunk);
 }
 
+// TH3 0N3: in the coat, the payphone rings as it opens and the readout says
+// who is on the line. 0 = not rung yet this opening.
+static uint32_t s_ringFrom = 0;
+
 void start(const char* text) {
+    s_ringFrom = 0;
     s_len = 0;
     s_buf[0] = '\0';
     if (text) {
@@ -575,6 +580,23 @@ void uiPhoneTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool adv
     t.setTextSize(2);
     t.setTextWrap(false);
     t.setTextColor(Theme::GREEN);
+    if (!s_ringFrom) s_ringFrom = now ? now : 1;
+    const uint32_t ring = now - s_ringFrom;
+    if (Squachy::th3Wearing() && ring < 2800u) {
+        // RING RING, then OPERATOR. -- the case's bells shaking while it
+        // rings. Then the board is yours as usual; a tap meanwhile still
+        // types, it just is not shown until the call is over.
+        const bool on = ring < 1800u && ((ring / 300u) % 2u) == 0;
+        const char* say = ring < 1800u ? (on ? "RING RING" : "") : "OPERATOR.";
+        t.setCursor(dX + (dW - t.textWidth(say)) / 2, dY + (dH - 14) / 2);
+        t.print(say);
+        if (on) {
+            for (int k = 0; k < 2; k++) {
+                t.drawCircle(ux + 8, uy + 8, 6 + k * 4, Theme::VAPOR_YELLOW);
+                t.drawCircle(ux + uw - 9, uy + 8, 6 + k * 4, Theme::VAPOR_YELLOW);
+            }
+        }
+    } else {
     // Right-aligned once it outgrows the window, so the END of the text --
     // the part being typed -- is always the part you can see.
     // An empty name board shows the curated name he has now, dimmed: that
@@ -594,6 +616,7 @@ void uiPhoneTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool adv
         t.setTextColor(s_liveKey >= 0 ? Theme::VAPOR_YELLOW : Theme::GREEN);
         t.print("_");
     }
+    }   // end of the readout (TH3 0N3's call takes it first)
     // A message has a limit worth seeing coming; a name's twelve is its own
     // readout.
     char rem[8];

@@ -258,6 +258,17 @@ namespace Squachy {
     // Whether the SHAMBLER is wearable (earned, or the master unlock). The
     // owl stops asking WHAT REEKS?! once it is -- see Theme::setOwlAsks().
     bool shamblerUnlocked();
+    // TH3 0N3: main.cpp calls this when the one red glyph in the DIGITAL rain
+    // is tapped -- see Theme::consumeRedGlyph().
+    void unlockTh3();
+    // Whether TH3 0N3 is wearable. The rain stops sending its red glyph once
+    // it is -- see Theme::setRedGlyph().
+    bool th3Unlocked();
+    // Whether he is wearing it right now (the payphone rings for him).
+    bool th3Wearing();
+    // The main screen, every frame: whether something serious is nearby. His
+    // lenses run red while it is, when he is wearing TH3 0N3.
+    void setNearbyLit(bool on);
 
     // Unlock announcements. Any outfit that becomes available -- by
     // crossing its lifetime-detection threshold, or by the werewolf

@@ -516,6 +516,11 @@ namespace Theme {
     // Whether the owl still asks WHAT REEKS?! at all: main.cpp passes false
     // once the SHAMBLER is unlocked, and that slot becomes an ordinary quip.
     void setOwlAsks(bool on);
+    // TH3 0N3: now and then one glyph in the DIGITAL rain falls red, and a
+    // tap on it sets this once. setRedGlyph(false) stops sending it, once
+    // the coat is earned.
+    bool consumeRedGlyph();
+    void setRedGlyph(bool on);
     // XYZZY, on the TERMINAL background: the terminal types the word now and
     // then, and each tap on it is reported here once -- 1, 2, then 3, which is
     // the YZZERD unlock, then round again. 0 when nothing new was tapped.
