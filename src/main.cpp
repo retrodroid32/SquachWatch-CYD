@@ -854,7 +854,7 @@ static SPIClass    s_extSpi(HSPI);
 static TFT_eSprite frameExt = TFT_eSprite(&tft);
 static bool        s_extOk = false;        // the panel was set up and its frame allocated
 static bool        s_extOn = false;        // and it is being drawn
-static uint8_t     s_extMad = 0xA8;        // MADCTL: landscape, as the radar project's rotation 7
+static uint8_t     s_extMad = 0xE8;        // MADCTL: landscape, the right way up on its owner's bench
 static uint16_t    s_extLut[256];          // 8-bit colour -> 16-bit, bytes already in wire order
 volatile int8_t    g_consoleExt = -1;      // EXT ON / EXT OFF / EXT ROT, for the bench
 
@@ -4098,6 +4098,25 @@ static inline void pushFrame(int x, int y) {
 #if defined(TWATCH_S3)
     if (s_panelAsleep) return;   // nothing to show it to; see applyBrightness()
 #endif
+#if defined(CARDPUTER_ADV)
+    // With the EXT panel taking a push of its own, the built-in screen is
+    // only sent when it has changed: a menu sits still, and 17 ms a frame
+    // spent re-sending it is the big screen's frame rate.
+    if (s_extOn && frame.getColorDepth() == 8) {
+        static uint32_t last = 0;
+        const uint32_t* p = (const uint32_t*)frame.buf();
+        const size_t n = (size_t)frame.bufW() * (size_t)frame.bufH() / 4;
+        uint32_t h = 2166136261u;
+        for (size_t i = 0; i < n; i++) h = (h ^ p[i]) * 16777619u;
+        if (h == last) return;
+        // A list's dimmed backdrop still drifts, which is not worth a push a
+        // frame: four a second while nobody is pressing anything, every
+        // frame for a moment after a key.
+        static uint8_t idle = 0;
+        if (millis() - lastTouch > 1500 && (++idle & 3)) return;
+        last = h;
+    }
+#endif
     uint32_t t0 = micros();
     // The overlapped push converts the next 64 bytes while the previous 64
     // are on the wire, instead of spinning -- see frame_push.h. It declines
@@ -5027,10 +5046,8 @@ void loop() {
             s_extMad = MADS[++at % 4];
             extMadctl();
             Serial.printf("[ext] MADCTL 0x%02X\n", s_extMad);
-        } else if (c == 1) {
-            s_extOn = extBegin();
-        } else if (c == 0) {
-            s_extOn = false;
+        } else if ((c == 1) != Settings::extScreen()) {
+            Settings::toggleExtScreen();
         }
         Serial.printf("[ext] %s\n", s_extOn ? "on" : "off");
     }
@@ -5303,7 +5320,29 @@ void loop() {
     // The main scene on the EXT panel, whatever the built-in screen is
     // showing. This call is the one that advances him; the built-in screen's
     // own copy, when it is on the main screen too, is the same frame again.
-    const bool extFrame = s_extOn && s_extOk && state != AppState::BOOT;
+    // On by the setting. One try at the panel's frame: a board that cannot
+    // find 77 KB for it says so once and carries on with the one screen.
+    {
+        static bool tried = false;
+        if (Settings::extScreen() && !s_extOk && !tried) { tried = true; extBegin(); }
+        s_extOn = Settings::extScreen() && s_extOk;
+    }
+    const bool extFrame = s_extOn && state != AppState::BOOT;
+    // With him on the big screen the built-in one has no main screen to
+    // show -- two moving pictures is more than this chip pushes -- so its
+    // home is the settings list, which sits still. A catch still takes it
+    // over: the same gate the main screen uses, asked from here because
+    // nothing is ever on the main screen to ask it.
+    if (extFrame && state == AppState::CLEAR && !Security::locked()) enterSettings();
+    if (extFrame && state == AppState::SETTINGS) {
+        const Detection* latest = engine.latest();
+        if (latest && (now - latest->firstSeen) < 200 &&
+            latest->conf >= Settings::minConfidence() && !IgnoreList::silenced(latest->mac) &&
+            alertMayInterrupt(*latest)) {
+            uiAlertSetRedacted(false);
+            enterAlert(*latest);
+        }
+    }
     if (extFrame) {
         uiClearTick(frameExt, now, engine, true, false);
         static bool odd = false;
@@ -6614,6 +6653,11 @@ void loop() {
 #endif
                         case SettingsRow::DETECTION_FILTER: enterDetFilter(); break;
                         case SettingsRow::POWER_SAVER: enterPower(); break;
+                        case SettingsRow::EXT_SCREEN:
+                            Settings::toggleExtScreen();
+                            Theme::showToast(Settings::extScreen() ? "EXT SCREEN ON" : "EXT SCREEN OFF",
+                                             Settings::extScreen() ? "Squachy is on the big one" : nullptr, Theme::CYAN);
+                            break;
                         case SettingsRow::PRIVACY:
                             Settings::togglePrivacyMode();
                             Theme::showToast(Settings::privacyMode() ? "PRIVACY MODE ON" : "PRIVACY MODE OFF",

@@ -236,6 +236,10 @@ namespace Settings {
     // address and all but three characters of every device and network
     // name. See include/privacy.h. Off by default.
     bool       privacyMode();
+    // EXT SCREEN (the Cardputer ADV): a second panel on the EXT header shows
+    // the main scene, and the built-in screen is left for the menus.
+    bool       extScreen();
+    void       toggleExtScreen();
     void       togglePrivacyMode();
     bool       quietTrackers();
     void       toggleQuietTrackers();

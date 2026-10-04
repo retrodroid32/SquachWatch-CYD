@@ -82,6 +82,9 @@ static const SettingsRow ALL_ROWS[] = {
 #endif
     SettingsRow::DETECTION_FILTER,
     SettingsRow::IGNORED_DEVICES,
+#if defined(CARDPUTER_ADV)
+    SettingsRow::EXT_SCREEN,
+#endif
     // APPEARANCE opens the display page -- see APPEARANCE_ROWS. It sat at the
     // very top of this list, which put it under the first thumb that opened
     // the screen and got pressed by accident. Down here with SQUACHMESH it is
@@ -945,6 +948,9 @@ static void rowContent(SettingsRow r, const DetectionEngine& eng, char* valBuf, 
         }
 #endif
 #endif
+        case SettingsRow::EXT_SCREEN:
+            label = "EXT SCREEN"; value = Settings::extScreen() ? "ON" : "OFF";
+            break;
         case SettingsRow::PRIVACY:
             label = "PRIVACY MODE"; value = Settings::privacyMode() ? "ON" : "OFF";
             break;

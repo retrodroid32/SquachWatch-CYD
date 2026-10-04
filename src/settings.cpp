@@ -141,6 +141,7 @@ static uint8_t  s_idleCpuIx    = IDLE_CPU_DEFAULT;
 static bool     s_wakeOnAlert  = true;
 static bool     s_quietTrack   = true;
 static bool     s_privacy      = false;
+static bool     s_extScreen    = false;
 struct __attribute__((packed)) RunEntry { uint16_t boot, minutes; };
 static const uint8_t RUNS_N = 8;
 static RunEntry  s_runs[RUNS_N] = {};
@@ -241,6 +242,7 @@ uint16_t cpuMhz()           { return s_powerSaver ? CPU_MHZ[s_cpuIx] : 240; }
 bool     wakeOnAlert()      { return s_wakeOnAlert; }
 bool     quietTrackers()    { return s_quietTrack; }
 bool     privacyMode()      { return s_privacy; }
+bool     extScreen()        { return s_extScreen; }
 bool     watchPlus()        { return s_watchPlus; }
 bool     buzz()             { return s_buzzMode != 0; }
 // Only while POWER SAVER is on. Either RADIO DUTY row (the Power screen,
@@ -327,6 +329,10 @@ uint8_t runHistory(uint16_t* boots, uint16_t* minutes, uint8_t cap) {
         boots[n] = s_runs[i].boot; minutes[n] = s_runs[i].minutes; n++;
     }
     return n;
+}
+void toggleExtScreen() {
+    s_extScreen = !s_extScreen;
+    s_prefs.putBool("extscr", s_extScreen);
 }
 void togglePrivacyMode() {
     s_privacy = !s_privacy;
@@ -525,6 +531,7 @@ void load() {
     s_wakeOnAlert  = s_prefs.getBool("pwrWake", true);
     s_quietTrack   = s_prefs.getBool("qTrack", true);
     s_privacy      = s_prefs.getBool("privacy", false);
+    s_extScreen    = s_prefs.getBool("extscr", false);
     if (s_prefs.getBytesLength("runs") == sizeof s_runs) s_prefs.getBytes("runs", s_runs, sizeof s_runs);
     s_watchPlus    = s_prefs.getBool("wPlus", false);
     // The old on/off switch carries over: a watch that had BUZZ off stays off.

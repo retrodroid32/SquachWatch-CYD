@@ -75,6 +75,7 @@ enum class SettingsRow : uint8_t {
     CHARGE_MODE,     // the CYD boards: radios and screen off so a battery charges faster
     LAST_RUN,        // the CYD boards: how long the previous boot ran, on the SYSTEM page
     PRIVACY,         // PRIVACY MODE: addresses and names masked on screen, on the SYSTEM page
+    EXT_SCREEN,      // the Cardputer ADV only: a second panel on the EXT header
     BACK,
     COUNT,
     NONE = 255
