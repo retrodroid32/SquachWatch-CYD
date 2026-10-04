@@ -1011,14 +1011,16 @@ void uiSettingsTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng) {
     if (s_hasWatch) {
         DetectionEngine::WatchTargetInfo info;
         if (eng.watchTargetCount() == 1 && eng.watchTargetInfo(0, info))
-            snprintf(s_watchLabel, sizeof s_watchLabel, "%s", info.label);
+            char pv[40];
+            snprintf(s_watchLabel, sizeof s_watchLabel, "%s", Privacy::name(info.label, pv, sizeof pv));
         else
             snprintf(s_watchLabel, sizeof s_watchLabel, "%u TARGETS", (unsigned)eng.watchTargetCount());
     }
     if (s_hasHunt) {
         DetectionEngine::HuntTargetInfo info;
         if (eng.huntTargetCount() == 1 && eng.huntTargetInfo(0, info))
-            snprintf(s_huntLabel, sizeof s_huntLabel, "%s", info.label);
+            char pv[40];
+            snprintf(s_huntLabel, sizeof s_huntLabel, "%s", Privacy::name(info.label, pv, sizeof pv));
         else
             snprintf(s_huntLabel, sizeof s_huntLabel, "%u TARGETS", (unsigned)eng.huntTargetCount());
     }
