@@ -60,6 +60,9 @@ extern volatile bool g_consoleAdc;
 extern volatile bool g_consoleXyzzy;
 extern volatile bool g_consoleLegend;
 extern volatile uint8_t g_consoleHeadsUp;
+#if defined(CARDPUTER_ADV)
+extern volatile int8_t g_consoleExt;
+#endif
 extern volatile bool g_consoleOutfitSet;
 extern volatile bool g_consoleAura;
 extern volatile int8_t g_consoleOutfit;
@@ -552,6 +555,11 @@ void pollSerial() {
         if (strcasecmp(line, "ADC") == 0)    { g_consoleAdc = true; continue; }
         if (strcasecmp(line, "XYZZY") == 0)  { g_consoleXyzzy = true; continue; }
         if (strcasecmp(line, "LEGEND") == 0) { g_consoleLegend = true; continue; }
+#if defined(CARDPUTER_ADV)
+        if (strcasecmp(line, "EXT ON") == 0)  { g_consoleExt = 1; continue; }
+        if (strcasecmp(line, "EXT OFF") == 0) { g_consoleExt = 0; continue; }
+        if (strcasecmp(line, "EXT ROT") == 0) { g_consoleExt = 2; continue; }
+#endif
         if (strncasecmp(line, "HEADSUP ", 8) == 0) { g_consoleHeadsUp = (uint8_t)atoi(line + 8); continue; }
         if (strcasecmp(line, "AURA") == 0)   { g_consoleAura = true; continue; }
         if (strncasecmp(line, "OUTFIT ", 7) == 0) { g_consoleOutfit = (int8_t)atoi(line + 7); g_consoleOutfitSet = true; continue; }

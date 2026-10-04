@@ -841,6 +841,103 @@ static bool sampleTouchRaw(int16_t& a, int16_t& b) {
 #endif
 }
 
+#if defined(CARDPUTER_ADV)
+// ---- EXT SCREEN: a second panel on the Cardputer's EXT header -----------------
+// A 2.8" ILI9341 (320x240) wired the way its owner's radar project has it:
+// CS 5, RST 3, DC 6, MOSI 14, SCK 40, backlight on 5 V. TFT_eSPI drives one
+// panel a build, and that is the built-in one, so this is a small driver of
+// its own on the other SPI host: the main scene is drawn into an 8-bit sprite
+// and sent as 16-bit rows. With it on, Squachy lives on the big screen and
+// the built-in one is left for the menus.
+static const int   EXT_CS = 5, EXT_RST = 3, EXT_DC = 6, EXT_MOSI = 14, EXT_SCK = 40;
+static SPIClass    s_extSpi(HSPI);
+static TFT_eSprite frameExt = TFT_eSprite(&tft);
+static bool        s_extOk = false;        // the panel was set up and its frame allocated
+static bool        s_extOn = false;        // and it is being drawn
+static uint8_t     s_extMad = 0xA8;        // MADCTL: landscape, as the radar project's rotation 7
+static uint16_t    s_extLut[256];          // 8-bit colour -> 16-bit, bytes already in wire order
+volatile int8_t    g_consoleExt = -1;      // EXT ON / EXT OFF / EXT ROT, for the bench
+
+static void extCmd(uint8_t c, const uint8_t* d = nullptr, size_t n = 0) {
+    digitalWrite(EXT_DC, LOW);
+    digitalWrite(EXT_CS, LOW);
+    s_extSpi.write(c);
+    digitalWrite(EXT_DC, HIGH);
+    if (n) s_extSpi.writeBytes(d, n);
+    digitalWrite(EXT_CS, HIGH);
+}
+static void extMadctl() {
+    s_extSpi.beginTransaction(SPISettings(27000000, MSBFIRST, SPI_MODE0));
+    extCmd(0x36, &s_extMad, 1);
+    s_extSpi.endTransaction();
+}
+static bool extBegin() {
+    if (s_extOk) return true;
+    pinMode(EXT_CS, OUTPUT);  digitalWrite(EXT_CS, HIGH);
+    pinMode(EXT_DC, OUTPUT);  digitalWrite(EXT_DC, HIGH);
+    pinMode(EXT_RST, OUTPUT);
+    digitalWrite(EXT_RST, HIGH); delay(5);
+    digitalWrite(EXT_RST, LOW);  delay(20);
+    digitalWrite(EXT_RST, HIGH); delay(150);
+    s_extSpi.begin(EXT_SCK, -1, EXT_MOSI, -1);
+    // The init list its owner's project sends, command then data.
+    static const uint8_t INIT[] = {
+        0xEF, 3, 0x03, 0x80, 0x02,
+        0xCF, 3, 0x00, 0xC1, 0x30,
+        0xED, 4, 0x64, 0x03, 0x12, 0x81,
+        0xE8, 3, 0x85, 0x00, 0x78,
+        0xCB, 5, 0x39, 0x2C, 0x00, 0x34, 0x02,
+        0xF7, 1, 0x20,
+        0xEA, 2, 0x00, 0x00,
+        0xC0, 1, 0x23,
+        0xC1, 1, 0x10,
+        0xC5, 2, 0x3E, 0x28,
+        0xC7, 1, 0x86,
+        0x3A, 1, 0x55,                  // 16 bits a pixel
+        0xB1, 2, 0x00, 0x18,
+        0xB6, 3, 0x08, 0x82, 0x27,
+        0xF2, 1, 0x00,
+        0x26, 1, 0x01,
+        0xE0, 15, 0x0F,0x31,0x2B,0x0C,0x0E,0x08,0x4E,0xF1,0x37,0x07,0x10,0x03,0x0E,0x09,0x00,
+        0xE1, 15, 0x00,0x0E,0x14,0x03,0x11,0x07,0x31,0xC1,0x48,0x08,0x0F,0x0C,0x31,0x36,0x0F,
+    };
+    s_extSpi.beginTransaction(SPISettings(27000000, MSBFIRST, SPI_MODE0));
+    for (size_t i = 0; i < sizeof INIT; i += 2 + INIT[i + 1]) extCmd(INIT[i], INIT + i + 2, INIT[i + 1]);
+    extCmd(0x36, &s_extMad, 1);
+    extCmd(0x11); delay(120);
+    extCmd(0x29); delay(20);
+    s_extSpi.endTransaction();
+    for (int i = 0; i < 256; i++) {
+        const uint16_t c = tft.color8to16((uint8_t)i);
+        s_extLut[i] = (uint16_t)((c >> 8) | (c << 8));
+    }
+    frameExt.setColorDepth(8);
+    s_extOk = frameExt.createSprite(320, 240) != nullptr;
+    Serial.printf("[ext] ILI9341 on the EXT header: %s (heap %lu, largest %lu)\n", s_extOk ? "frame allocated" : "NO MEMORY for its frame",
+                  (unsigned long)ESP.getFreeHeap(), (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
+    return s_extOk;
+}
+static void extPush() {
+    static uint16_t rows[320 * 8];
+    const uint8_t* src = (const uint8_t*)frameExt.getPointer();
+    if (!src) return;
+    static const uint8_t CA[4] = { 0, 0, (319 >> 8), (319 & 0xFF) }, PA[4] = { 0, 0, 0, 239 };
+    s_extSpi.beginTransaction(SPISettings(27000000, MSBFIRST, SPI_MODE0));
+    extCmd(0x2A, CA, 4);
+    extCmd(0x2B, PA, 4);
+    digitalWrite(EXT_DC, LOW); digitalWrite(EXT_CS, LOW);
+    s_extSpi.write(0x2C);
+    digitalWrite(EXT_DC, HIGH);
+    for (int y = 0; y < 240; y += 8) {
+        const uint8_t* p = src + (size_t)y * 320;
+        for (int i = 0; i < 320 * 8; i++) rows[i] = s_extLut[p[i]];
+        s_extSpi.writeBytes((const uint8_t*)rows, sizeof rows);
+    }
+    digitalWrite(EXT_CS, HIGH);
+    s_extSpi.endTransaction();
+}
+#endif
+
 #if defined(SQW_SMALL)
 // ---- the StickS3's two buttons, standing in for a finger -------------------
 // No touch panel, so the buttons drive the same tap handling every screen
@@ -4920,6 +5017,24 @@ void loop() {
     }
     gpsTick();
 #endif
+#if defined(CARDPUTER_ADV)
+    if (g_consoleExt >= 0) {
+        const int8_t c = g_consoleExt;
+        g_consoleExt = -1;
+        if (c == 2 && s_extOk) {
+            static const uint8_t MADS[4] = { 0xA8, 0x68, 0x28, 0xE8 };
+            static uint8_t at = 0;
+            s_extMad = MADS[++at % 4];
+            extMadctl();
+            Serial.printf("[ext] MADCTL 0x%02X\n", s_extMad);
+        } else if (c == 1) {
+            s_extOn = extBegin();
+        } else if (c == 0) {
+            s_extOn = false;
+        }
+        Serial.printf("[ext] %s\n", s_extOn ? "on" : "off");
+    }
+#endif
 #if defined(ESP32) && !defined(SQW_S3) && !defined(CROWPANEL7)   // hardware only: the emulators build this too
     // ADC: every input-only analog pin the CYDs leave free, in millivolts,
     // averaged over 16 reads. A battery divider shows up as about half the
@@ -5184,6 +5299,18 @@ void loop() {
     }
 
     FrameProf::lap(FrameProf::PRE);
+#if defined(CARDPUTER_ADV)
+    // The main scene on the EXT panel, whatever the built-in screen is
+    // showing. This call is the one that advances him; the built-in screen's
+    // own copy, when it is on the main screen too, is the same frame again.
+    const bool extFrame = s_extOn && s_extOk && state != AppState::BOOT;
+    if (extFrame) {
+        uiClearTick(frameExt, now, engine, true, false);
+        static bool odd = false;
+        odd = !odd;
+        if (odd) extPush();             // 46 ms a push: every other frame
+    }
+#endif
     switch (state) {
         case AppState::BOOT: {
 #if defined(CYD35)
@@ -5345,6 +5472,8 @@ void loop() {
                 // path this board already uses for every other screen.
                 uiClearTick(tft, now, engine, true, s_scanPickerOpen);
             }
+#elif defined(CARDPUTER_ADV)
+            uiClearTick(*canvas, now, engine, !extFrame, s_scanPickerOpen);
 #else
             uiClearTick(*canvas, now, engine, true, s_scanPickerOpen);
 #endif
