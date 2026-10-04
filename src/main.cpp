@@ -1105,6 +1105,12 @@ static uint8_t stickStopsBuild(StickPt* out, uint8_t cap) {
         add(13, 11);                    // the menu
         return n;
     }
+    if (state == AppState::SYS_PROPS) {
+        int16_t xs[6], ys[6];
+        const uint8_t k = uiSysPropsStops(*canvas, xs, ys, 6);
+        for (uint8_t i = 0; i < k; i++) add(xs[i], ys[i]);
+        return n;
+    }
     if (state == AppState::ALERT) {
         add(w / 3, h / 2);              // the plate: anywhere dismisses
         add(w / 2, h - 15);             // SNOOZE
@@ -1144,7 +1150,23 @@ static uint8_t stickStopsBuild(StickPt* out, uint8_t cap) {
         }
         return n;
     }
-    if (state == AppState::WATCH_ALERT) add(w / 2, h / 2);   // anywhere dismisses
+    if (state == AppState::DIAGNOSTICS) {
+        const Theme::ButtonBarGeom bar = Theme::computeButtonBar(w, h);
+        add(w / 2, h / 2 - 10);               // the next page
+        add(w / 2, bar.y + bar.h / 2);        // BACK
+        return n;
+    }
+    if (state == AppState::HUNT) {
+        const Theme::ButtonBarGeom bar = Theme::computeButtonBar(w, h);
+        add(w / 2 - 60, bar.y + bar.h / 2);   // BACK
+        add(w / 2 + 60, bar.y + bar.h / 2);   // STOP
+        return n;
+    }
+    if (state == AppState::WATCH_ALERT) {
+        add(w / 2, h / 3);              // anywhere dismisses
+        add(w / 2, h - 14);             // REMOVE FROM WATCH LIST
+        return n;
+    }
     add(w / 2, h - 12);                 // BACK, pinned to the bottom edge
     for (int r = 0; r < 3; r++)
         for (int c = 0; c < 4; c++) add(w * (2 * c + 1) / 8, h * (2 * r + 1) / 6);
@@ -7821,6 +7843,10 @@ void loop() {
             info.boardName = "CrowPanel 7";
 #elif defined(TOUCH_ON_DISPLAY_BUS)
             info.boardName = "AWOK";
+#elif defined(STICKS3)
+            info.boardName = "StickS3 LAB";
+#elif defined(CARDPUTER_ADV)
+            info.boardName = "Cardputer ADV LAB";
 #elif defined(CYD35C)
             info.boardName = "cyd35c BETA";
 #elif defined(CYD35)
@@ -7854,6 +7880,9 @@ void loop() {
                 uiDiagnosticsHitBack(tp.x, tp.y, tft.width(), tft.height())) {
                 lastTouch = now;
                 enterSettings();
+            } else if (touchJustDown && Theme::compact()) {
+                lastTouch = now;
+                uiDiagnosticsNextPage();
             }
             break;
         }
