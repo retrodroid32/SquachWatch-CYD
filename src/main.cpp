@@ -423,8 +423,8 @@ static void drawCrashCard(TFT_eSPI& t) {
 #define BL_PIN_ORIG 21
 #define BL_PIN_CAP  27
 #define BL_PIN_AWOK 32
-#if defined(STICKS3)
-#define BL_PIN_S3   38   // the StickS3's
+#if defined(SQW_SMALL)
+#define BL_PIN_S3   38   // the StickS3's and the Cardputer ADV's
 #else
 #define BL_PIN_S3   45   // the T-Watch S3's and the Freenove S3's, both
 #endif
@@ -449,8 +449,9 @@ static void drawCrashCard(TFT_eSPI& t) {
 // Confirmed on the watch 2026-09-22: the ST7789 wants inversion on (as
 // LilyGo's own setup says); false showed every colour inverted.
 constexpr bool PANEL_NEEDS_INVERSION = true;
-#elif defined(STICKS3)
-// M5GFX sets invert for the StickS3's ST7789P3. UNCONFIRMED until looked at.
+#elif defined(SQW_SMALL)
+// M5GFX sets invert for the StickS3's ST7789P3 and the Cardputer's ST7789V2.
+// Confirmed on the stick 2026-10-04.
 constexpr bool PANEL_NEEDS_INVERSION = true;
 #elif defined(FREENOVE_S3)
 // Freenove's own setup for the S3 2.8" (FNK0104AB) turns inversion on, and
@@ -840,7 +841,7 @@ static bool sampleTouchRaw(int16_t& a, int16_t& b) {
 #endif
 }
 
-#if defined(STICKS3)
+#if defined(SQW_SMALL)
 // ---- the StickS3's two buttons, standing in for a finger -------------------
 // No touch panel, so the buttons drive the same tap handling every screen
 // already has: KEY2 (the side) steps a cursor through the screen's stops,
@@ -848,17 +849,86 @@ static bool sampleTouchRaw(int16_t& a, int16_t& b) {
 // a long press is still a long press. KEY2 held is the way home from anywhere.
 // A screen with no stops of its own gets BACK and a grid, which reaches
 // everything, slowly.
+static bool           s_stickKey2Was = false, s_stickKey2Long = false, s_stickKey1Was = false;
+static uint32_t       s_stickKey2At = 0;
+static const uint32_t STICK_HOLD_MS = 700, STICK_SHOW_MS = 5000;
 struct StickPt { int16_t x, y; uint8_t kind; };   // kind 0 presses; 1 scrolls the list down, 2 up
 static const int      STICK_KEY1 = 11, STICK_KEY2 = 12;
+// What a board's keys ask of the cursor this frame. `press` is a level --
+// held is held -- and the rest happen once.
+struct SmallKeys { bool press, next, prev, home; };
+#if defined(CARDPUTER_ADV)
+// The Cardputer ADV's keyboard: a TCA8418 at 0x34 on SDA 8 / SCL 9, scanning
+// a 7x8 matrix that M5 lays out as four rows of fourteen (their own remap,
+// from M5Cardputer's TCA8418 reader). Polled, not interrupt-driven: the
+// chip keeps a ten-event FIFO and the loop comes round far faster than that.
+static bool s_cardKeysOk = false, s_cardEnter = false;
+static bool cardReg(uint8_t reg, uint8_t v) {
+    Wire.beginTransmission(0x34);
+    Wire.write(reg); Wire.write(v);
+    return Wire.endTransmission() == 0;
+}
+static int cardRead(uint8_t reg) {
+    Wire.beginTransmission(0x34);
+    Wire.write(reg);
+    if (Wire.endTransmission(false) != 0 || Wire.requestFrom(0x34, 1) != 1) return -1;
+    return Wire.read();
+}
+static bool cardKeysBegin() {
+    Wire.begin(8, 9, 400000);
+    bool ok = cardReg(0x1D, 0x7F);      // rows 0-6 are keypad rows
+    ok = cardReg(0x1E, 0xFF) && ok;     // columns 0-7
+    ok = cardReg(0x1F, 0x00) && ok;
+    ok = cardReg(0x01, 0x01) && ok;     // key events into the FIFO
+    for (int i = 0; i < 12 && (cardRead(0x03) & 0x0F) > 0; i++) cardRead(0x04);   // whatever was held at boot
+    cardReg(0x02, 0x0F);
+    s_cardKeysOk = ok;
+    return ok;
+}
+static SmallKeys smallKeysRead() {
+    SmallKeys k = { false, false, false, false };
+    if (!s_cardKeysOk) return k;
+    for (int i = 0; i < 10; i++) {
+        const int cnt = cardRead(0x03);
+        if (cnt < 0 || (cnt & 0x0F) == 0) break;
+        const int ev = cardRead(0x04);
+        if (ev <= 0) break;
+        const bool down = (ev & 0x80) != 0;
+        const int  code = (ev & 0x7F) - 1;
+        const int  row = (code % 10) % 4, col = (code / 10) * 2 + ((code % 10) > 3 ? 1 : 0);
+        const bool enter = (row == 2 && col == 13) || (row == 3 && col == 13);     // ENTER, or the space bar
+        if (enter) { s_cardEnter = down; continue; }
+        if (!down) continue;
+        if ((row == 3 && (col == 11 || col == 12)) || (row == 1 && col == 0)) k.next = true;   // down, right, TAB
+        else if ((row == 2 && col == 11) || (row == 3 && col == 10))          k.prev = true;   // up, left
+        else if ((row == 0 && col == 0) || (row == 0 && col == 13))           k.home = true;   // ESC, or DEL
+        Serial.printf("[keys] key %d,%d\n", row, col);
+    }
+    cardReg(0x02, 0x0F);
+    k.press = s_cardEnter;
+    return k;
+}
+#else
+// The StickS3: KEY1 presses, KEY2 steps on a short press and goes home on a
+// held one. Nothing steps backwards; there are two buttons.
+static SmallKeys smallKeysRead() {
+    SmallKeys k = { false, false, false, false };
+    const uint32_t now = millis();
+    const bool k2 = digitalRead(STICK_KEY2) == LOW;
+    if (k2 && !s_stickKey2Was) { s_stickKey2At = now; s_stickKey2Long = false; }
+    if (k2 && !s_stickKey2Long && now - s_stickKey2At > STICK_HOLD_MS) { s_stickKey2Long = true; k.home = true; }
+    if (!k2 && s_stickKey2Was && !s_stickKey2Long && now - s_stickKey2At > 25) k.next = true;
+    s_stickKey2Was = k2;
+    k.press = digitalRead(STICK_KEY1) == LOW;
+    return k;
+}
+#endif
 static uint8_t        s_stickStop = 0;
 static AppState       s_stickStopState = AppState::BOOT;
 static uint32_t       s_stickShownAt = 0;       // the cursor shows for a while after a press
 static bool           s_stickHome = false;      // KEY2 held: loop() goes home
-static bool           s_stickKey2Was = false, s_stickKey2Long = false, s_stickKey1Was = false;
-static uint32_t       s_stickKey2At = 0;
 static int8_t         s_stickDrag = 0;          // a scripted drag under way: +1 down the list, -1 up
 static uint8_t        s_stickDragStep = 0;
-static const uint32_t STICK_HOLD_MS = 700, STICK_SHOW_MS = 5000;
 static const uint8_t  STICK_STOPS_MAX = 16;
 
 // What is under a point on a list screen, as that screen's own hit test
@@ -989,22 +1059,21 @@ static TouchPoint stickPoll() {
     StickPt pts[STICK_STOPS_MAX];
     const uint8_t n = stickStops(pts);
     if (s_stickStop >= n) s_stickStop = 0;
-    const bool k1 = digitalRead(STICK_KEY1) == LOW, k2 = digitalRead(STICK_KEY2) == LOW;
-    if (k2 && !s_stickKey2Was) { s_stickKey2At = now; s_stickKey2Long = false; }
-    if (k2 && !s_stickKey2Long && now - s_stickKey2At > STICK_HOLD_MS) {
-        s_stickKey2Long = true;
+    const SmallKeys keys = smallKeysRead();
+    const bool k1 = keys.press;
+    if (keys.home) {
         s_stickHome = true;
-        Serial.println("[keys] KEY2 held: home");
+        Serial.println("[keys] home");
     }
-    if (!k2 && s_stickKey2Was && !s_stickKey2Long && now - s_stickKey2At > 25) {
+    if (keys.next || keys.prev) {
         // The first press only shows where the cursor is; the next ones move it.
-        if (now - s_stickShownAt < STICK_SHOW_MS) s_stickStop = (uint8_t)((s_stickStop + 1) % n);
+        if (now - s_stickShownAt < STICK_SHOW_MS)
+            s_stickStop = (uint8_t)((s_stickStop + (keys.next ? 1 : n - 1)) % n);
         s_stickShownAt = now ? now : 1;
         lastTouch = now;
         Serial.printf("[keys] stop %u of %u at %d,%d (screen %u)\n", (unsigned)s_stickStop + 1, (unsigned)n,
                       (int)pts[s_stickStop].x, (int)pts[s_stickStop].y, (unsigned)state);
     }
-    s_stickKey2Was = k2;
     if (k1 && pts[s_stickStop].kind) {
         if (!s_stickKey1Was) {
             lastTouch = now;
@@ -1063,7 +1132,7 @@ static void stickDrawCursor(TFT_eSPI& t, uint32_t now) {
 // in the panel's native (rotation 0) frame, and the rotation step turns it
 // into this rotation's coordinates. No board has its own maths any more.
 static TouchPoint pollTouch() {
-#if defined(STICKS3)
+#if defined(SQW_SMALL)
     return stickPoll();
 #endif
     TouchPoint tp = { false, 0, 0 };
@@ -1158,7 +1227,7 @@ static bool rawReadFiltered(int16_t& a, int16_t& b) {
 // The one reader pollTouch(), the calibration and the diagnostics screen all
 // use, so what the calibration measures is exactly what touch then reads.
 static bool readTouchRaw(int16_t& a, int16_t& b) {
-#if defined(STICKS3)
+#if defined(SQW_SMALL)
     (void)a; (void)b;
     return false;   // no touch panel at all: the buttons drive it
 #elif defined(CROWPANEL7) || defined(CYD32C) || defined(CYD35C)
@@ -3327,7 +3396,7 @@ void setup() {
     // Which version lives in this slot, and whether this boot is a fresh
     // update on probation or the aftermath of one that was rolled back.
     OtaCore::boot();
-#if !defined(AWOK) && !defined(STICKS3)   // the StickS3 is landscape only, by its owner's choice
+#if !defined(AWOK) && !defined(SQW_SMALL)   // the StickS3 is landscape only, by its owner's choice
     // AWOK has no rotate button and stays fixed at its one physical
     // orientation (see screenRotation's own comment above) -- only
     // boards that can actually rotate restore a saved orientation.
@@ -3338,11 +3407,13 @@ void setup() {
     // ST7796U and will lock up an ST7789 panel; do not re-add it unless
     // we confirm the panel is actually ST7796.
     tft.setRotation(screenRotation);
-#if defined(STICKS3)
+#if defined(SQW_SMALL)
     Theme::setRotateIconVisible(false);
     Theme::setCompact(true);
+#if defined(STICKS3)
     pinMode(STICK_KEY1, INPUT_PULLUP);
     pinMode(STICK_KEY2, INPUT_PULLUP);
+#endif
     // Its colours were looked at on the bench, and the check's own buttons
     // sit below the bottom of a 135-row screen.
     if (!Settings::colorChecked()) Settings::markColorChecked();
@@ -3596,9 +3667,13 @@ void setup() {
     usingCapTouch = CapTouch::probe();
     Serial.println(usingCapTouch ? "T-Watch S3 -- FT6336 capacitive touch answered."
                                  : "T-Watch S3 -- FT6336 did not answer; no touch.");
-#elif defined(STICKS3)
+#elif defined(SQW_SMALL)
     usingCapTouch = false;
+#if defined(CARDPUTER_ADV)
+    Serial.printf("Cardputer ADV -- no touch panel; keyboard %s.\n", cardKeysBegin() ? "answered" : "DID NOT ANSWER");
+#else
     Serial.println("StickS3 -- no touch panel; buttons on GPIO11 and GPIO12.");
+#endif
 #elif defined(FREENOVE_S3)
     // The Freenove S3 2.8"'s FT6336, on I2C SDA 16 / SCL 15 at 0x38, reset on
     // GPIO18 (active low). The ES8311 codec shares the bus at 0x18. FNK0104A
@@ -3654,7 +3729,7 @@ void setup() {
         uint32_t windowStart = millis();
         while (millis() - windowStart < 1200) {
             int16_t a, b;
-#if defined(CROWPANEL7) || defined(CYD32C) || defined(CYD35C) || defined(STICKS3)
+#if defined(CROWPANEL7) || defined(CYD32C) || defined(CYD35C) || defined(SQW_SMALL)
             // The GT911 is neither of the two below; the two-way dispatch
             // polled a capacitive controller that is not on this bus.
             bool down = readTouchRaw(a, b);
@@ -3703,7 +3778,7 @@ void setup() {
     // injected against the compiled-in ranges -- a calibration screen would
     // just sit there waiting for a finger.
     initTouchFit();
-#if defined(ESP32) && !defined(CROWPANEL7) && !defined(STICKS3)   // nothing to calibrate on a stick with no touch
+#if defined(ESP32) && !defined(CROWPANEL7) && !defined(SQW_SMALL)   // nothing to calibrate on a stick with no touch
     if (s_calSource != CalSource::SAVED) {
         Serial.println("Touch: no five-target calibration yet -- running it now.");
         runTouchCalibration();
@@ -4632,7 +4707,7 @@ void loop() {
     }
 
     TouchPoint tp = pollTouch();
-#if defined(STICKS3)
+#if defined(SQW_SMALL)
     if (s_stickHome) {
         s_stickHome = false;
         if (state != AppState::CLEAR && state != AppState::BOOT) goHome();
@@ -4953,7 +5028,7 @@ void loop() {
                           (int)pick->rssi, pick->restored ? ", from before this boot" : "");
         }
     }
-#if defined(STICKS3)
+#if defined(SQW_SMALL)
     g_consoleRotate = false;
     if (false && (tp.valid && !Settings::rotationLocked() && !Squachy::isHeld() &&
 #else
@@ -6471,7 +6546,7 @@ void loop() {
                             // directly -- re-consenting on every visit trains
                             // people to dismiss the thing without reading it,
                             // which is worse than not asking.
-#if defined(STICKS3)
+#if defined(SQW_SMALL)
                             // No warning screen on the StickS3: three paragraphs do
                             // not fit 135 rows, and its owner asked for it gone.
                             // TRANSMIT still ships off and is still a row to turn on.
@@ -6572,7 +6647,7 @@ void loop() {
                 // carrying whatever is typed so far.
                 if (hit == ComposeHit::TYPE) { enterPhoneMessage(uiMeshComposeTyped()); break; }
                 // "?" replays the tutorial, which runs on the main screen.
-#if !defined(STICKS3)   // no walkthrough on the StickS3
+#if !defined(SQW_SMALL)   // no walkthrough on the StickS3
                 if (hit == ComposeHit::HELP) MeshTutor::start();
 #endif
                 if (hit != ComposeHit::NONE) enterClear();
@@ -6613,7 +6688,7 @@ void loop() {
                         // marked seen as it STARTS, so skipping it counts; the
                         // "?" on the message screen replays it. Not in boring
                         // mode, which has no Squachy to visit.
-#if defined(STICKS3)
+#if defined(SQW_SMALL)
                         // Nor the walkthrough: its cards and arrows are laid
                         // out for a screen with room for them.
                         if (!Settings::meshTutorSeen()) Settings::setMeshTutorSeen();
@@ -7649,7 +7724,7 @@ void loop() {
         if (now - transitionStart < TRANSITION_MS) {
             Theme::drawTransitionGlitch(frame, now - transitionStart, TRANSITION_MS);
         }
-#if defined(STICKS3)
+#if defined(SQW_SMALL)
         stickDrawCursor(frame, now);
 #endif
         FrameProf::lap(FrameProf::POST);
