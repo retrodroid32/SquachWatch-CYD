@@ -3,6 +3,7 @@
 #include "ui_fit.h"
 #include "clock.h"
 #include "theme.h"
+#include "privacy.h"
 #include "squachy.h"
 #include <Arduino.h>
 #include <stdio.h>
@@ -370,7 +371,8 @@ static void drawAlertCard(TFT_eSPI& t, int barY, uint32_t now, bool compact, int
     printRight(ty, y + 4, c);
     // The device's own name where it has one, else the vendor; what fits.
     char who[13];
-    UiFit::fitHead(who, sizeof who, d.name[0] ? d.name : vendorText(d), glyphs);
+    char pv[40];
+    UiFit::fitHead(who, sizeof who, d.name[0] ? Privacy::name(d.name, pv, sizeof pv) : vendorText(d), glyphs);
     printRight(who, y + 15, Theme::WHITE);
     char sig[16];
     snprintf(sig, sizeof sig, "%d dBm", d.rssi);
