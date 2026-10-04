@@ -144,6 +144,13 @@ namespace Theme {
     // Takes a width rather than a display because two of its callers are hit
     // tests that are handed a screen size and nothing else.
     int pinnedBackH(int panelW);
+    // A screen under 200 rows (the StickS3's 240x135): lists keep their
+    // letters and give up the air round them -- a thinner BACK strip and
+    // tighter rows, so four fit where two did. Set by uiMenuTextSize() from
+    // the sprite it is handed, or outright by a board that knows.
+    void setCompact(bool on);
+    bool compact();
+    int  listRowPad();          // added to the font height for a list row
     void drawListHeading(TFT_eSPI& t, const char* text, uint16_t color);
 
     // The face speech bubbles are set in. Chosen at compile time by

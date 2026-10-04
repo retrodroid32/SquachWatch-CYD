@@ -423,7 +423,11 @@ static void drawCrashCard(TFT_eSPI& t) {
 #define BL_PIN_ORIG 21
 #define BL_PIN_CAP  27
 #define BL_PIN_AWOK 32
+#if defined(STICKS3)
+#define BL_PIN_S3   38   // the StickS3's
+#else
 #define BL_PIN_S3   45   // the T-Watch S3's and the Freenove S3's, both
+#endif
 #define BL_CH_ORIG  0
 #define BL_CH_CAP   1
 #define BL_CH_AWOK  2
@@ -444,6 +448,9 @@ static void drawCrashCard(TFT_eSPI& t) {
 #if defined(TWATCH_S3)
 // Confirmed on the watch 2026-09-22: the ST7789 wants inversion on (as
 // LilyGo's own setup says); false showed every colour inverted.
+constexpr bool PANEL_NEEDS_INVERSION = true;
+#elif defined(STICKS3)
+// M5GFX sets invert for the StickS3's ST7789P3. UNCONFIRMED until looked at.
 constexpr bool PANEL_NEEDS_INVERSION = true;
 #elif defined(FREENOVE_S3)
 // Freenove's own setup for the S3 2.8" (FNK0104AB) turns inversion on, and
@@ -833,10 +840,232 @@ static bool sampleTouchRaw(int16_t& a, int16_t& b) {
 #endif
 }
 
+#if defined(STICKS3)
+// ---- the StickS3's two buttons, standing in for a finger -------------------
+// No touch panel, so the buttons drive the same tap handling every screen
+// already has: KEY2 (the side) steps a cursor through the screen's stops,
+// KEY1 (the front) presses where the cursor is, for as long as it is held, so
+// a long press is still a long press. KEY2 held is the way home from anywhere.
+// A screen with no stops of its own gets BACK and a grid, which reaches
+// everything, slowly.
+struct StickPt { int16_t x, y; uint8_t kind; };   // kind 0 presses; 1 scrolls the list down, 2 up
+static const int      STICK_KEY1 = 11, STICK_KEY2 = 12;
+static uint8_t        s_stickStop = 0;
+static AppState       s_stickStopState = AppState::BOOT;
+static uint32_t       s_stickShownAt = 0;       // the cursor shows for a while after a press
+static bool           s_stickHome = false;      // KEY2 held: loop() goes home
+static bool           s_stickKey2Was = false, s_stickKey2Long = false, s_stickKey1Was = false;
+static uint32_t       s_stickKey2At = 0;
+static int8_t         s_stickDrag = 0;          // a scripted drag under way: +1 down the list, -1 up
+static uint8_t        s_stickDragStep = 0;
+static const uint32_t STICK_HOLD_MS = 700, STICK_SHOW_MS = 5000;
+static const uint8_t  STICK_STOPS_MAX = 16;
+
+// What is under a point on a list screen, as that screen's own hit test
+// sees it, or -1. The stops are found by sweeping this over the screen, so
+// they are wherever the rows really are -- headers, tall rows, scrolled or
+// not -- and a screen that changes its layout takes its stops with it.
+static int stickListId(int x, int y) {
+    const int w = tft.width(), h = tft.height();
+    switch (state) {
+        case AppState::SETTINGS: {
+            if (uiSettingsConfirmRow() != SettingsRow::NONE) {
+                const SettingsConfirmTap c = uiSettingsHitConfirm(x, y, w, h);
+                return c == SettingsConfirmTap::NONE ? -1 : 1000 + (int)c;
+            }
+            const SettingsRow r = uiSettingsHitTest(*canvas, x, y, w, h);
+            return r == SettingsRow::NONE ? -1 : (int)r;
+        }
+        case AppState::POWER_SAVER: {
+            const PowerRow r = uiPowerHitTest(*canvas, x, y, w, h);
+            return r == PowerRow::NONE ? -1 : (int)r;
+        }
+        case AppState::SECURITY: {
+            const SecurityRow r = uiSecurityHitTest(*canvas, x, y, w, h);
+            return r == SecurityRow::NONE ? -1 : (int)r;
+        }
+        case AppState::DETECTION_FILTER: {
+            const DetectionType r = uiDetFilterHitTest(*canvas, x, y, w, h);
+            return r == DetectionType::COUNT ? -1 : (int)r;
+        }
+#if SQUACH_MESH
+        case AppState::MESH_MENU: {
+            const MeshMenuRow r = uiMeshMenuHitTest(*canvas, x, y, w, h);
+            return r == MeshMenuRow::NONE ? -1 : (int)r;
+        }
+#endif
+        default: return -1;
+    }
+}
+static bool stickIsList() {
+    return state == AppState::SETTINGS || state == AppState::POWER_SAVER ||
+           state == AppState::SECURITY || state == AppState::DETECTION_FILTER ||
+           state == AppState::MESH_MENU;
+}
+
+static uint8_t stickStopsBuild(StickPt* out, uint8_t cap) {
+    const int16_t w = (int16_t)tft.width(), h = (int16_t)tft.height();
+    uint8_t n = 0;
+    auto add = [&](int x, int y, uint8_t kind = 0) { if (n < cap) out[n++] = { (int16_t)x, (int16_t)y, kind }; };
+    if (state == AppState::CLEAR) {
+        add(w / 2, h * 2 / 5);          // Squachy, and whatever card is over him
+        add(w / 2, h * 13 / 20);        // a card's own button
+        add(w / 2, h - 16);             // LOG
+        add(w * 5 / 6 - 4, h - 16);     // DESK
+        add(w / 6 + 2, h - 16);         // SCAN
+        add(13, 11);                    // the menu
+        return n;
+    }
+    if (state == AppState::ALERT) {
+        add(w / 3, h / 2);              // the plate: anywhere dismisses
+        add(w / 2, h - 15);             // SNOOZE
+        add(37, h - 15);                // HUNT
+        add(w - 37, h - 15);            // INFO
+        add(w - 35, 14);                // IGNORE
+        return n;
+    }
+    if (stickIsList()) {
+        // Each thing the hit test names gets one stop, at the middle of
+        // everywhere it answered. In reading order, which for rows is down.
+        struct Acc { int id; int32_t sx, sy; uint16_t c; } acc[12];
+        uint8_t an = 0;
+        for (int y = 2; y < h; y += 4)
+            for (int x = 6; x < w; x += 12) {
+                const int id = stickListId(x, y);
+                if (id < 0) continue;
+                uint8_t a = 0;
+                while (a < an && acc[a].id != id) a++;
+                if (a == an) { if (an == 12) continue; acc[an++] = { id, 0, 0, 0 }; }
+                acc[a].sx += x; acc[a].sy += y; acc[a].c++;
+            }
+        for (uint8_t a = 0; a < an; a++) add(acc[a].sx / acc[a].c, acc[a].sy / acc[a].c);
+        const bool panel = state == AppState::SETTINGS && uiSettingsConfirmRow() != SettingsRow::NONE;
+        if (!panel) {
+            const int backH = Theme::pinnedBackH(w);
+            add(w - 9, h - backH - 9, 1);                                   // more, below
+            add(w - 9, Theme::LIST_TOP + Theme::LIST_HEADING_H + 7, 2);     // and above
+            add(w / 2, h - backH / 2);                                      // BACK
+        }
+        return n;
+    }
+    if (state == AppState::WATCH_ALERT) add(w / 2, h / 2);   // anywhere dismisses
+    add(w / 2, h - 12);                 // BACK, pinned to the bottom edge
+    for (int r = 0; r < 3; r++)
+        for (int c = 0; c < 4; c++) add(w * (2 * c + 1) / 8, h * (2 * r + 1) / 6);
+    return n;
+}
+// The sweep is a few hundred hit tests, so it is not run twice a frame: the
+// answer is kept for a moment, and thrown away when the screen or a key moves.
+static StickPt  s_stickPts[STICK_STOPS_MAX];
+static uint8_t  s_stickPtsN = 0;
+static uint32_t s_stickPtsAt = 0;
+static AppState s_stickPtsState = AppState::BOOT;
+static uint8_t stickStops(StickPt* out, bool fresh = false) {
+    const uint32_t now = millis();
+    if (fresh || !s_stickPtsAt || state != s_stickPtsState || now - s_stickPtsAt > 200) {
+        s_stickPtsN = stickStopsBuild(s_stickPts, STICK_STOPS_MAX);
+        s_stickPtsAt = now ? now : 1;
+        s_stickPtsState = state;
+    }
+    memcpy(out, s_stickPts, sizeof(StickPt) * s_stickPtsN);
+    return s_stickPtsN;
+}
+
+static TouchPoint stickPoll() {
+    TouchPoint tp = { false, 0, 0 };
+    const uint32_t now = millis();
+    const int w = tft.width(), h = tft.height();
+    // A scripted drag: down in the middle, then a row's worth a frame, then
+    // up. Three steps is three rows, which is a page less one on this screen.
+    if (s_stickDrag) {
+        if (s_stickDragStep > 3) { s_stickDrag = 0; s_stickPtsAt = 0; return tp; }
+        tp.valid = true;
+        tp.x = w / 2;
+        tp.y = h / 2 - s_stickDrag * 12 * s_stickDragStep;
+        s_stickDragStep++;
+        return tp;
+    }
+    if (state != s_stickStopState) { s_stickStopState = state; s_stickStop = 0; }
+    StickPt pts[STICK_STOPS_MAX];
+    const uint8_t n = stickStops(pts);
+    if (s_stickStop >= n) s_stickStop = 0;
+    const bool k1 = digitalRead(STICK_KEY1) == LOW, k2 = digitalRead(STICK_KEY2) == LOW;
+    if (k2 && !s_stickKey2Was) { s_stickKey2At = now; s_stickKey2Long = false; }
+    if (k2 && !s_stickKey2Long && now - s_stickKey2At > STICK_HOLD_MS) {
+        s_stickKey2Long = true;
+        s_stickHome = true;
+        Serial.println("[keys] KEY2 held: home");
+    }
+    if (!k2 && s_stickKey2Was && !s_stickKey2Long && now - s_stickKey2At > 25) {
+        // The first press only shows where the cursor is; the next ones move it.
+        if (now - s_stickShownAt < STICK_SHOW_MS) s_stickStop = (uint8_t)((s_stickStop + 1) % n);
+        s_stickShownAt = now ? now : 1;
+        lastTouch = now;
+        Serial.printf("[keys] stop %u of %u at %d,%d (screen %u)\n", (unsigned)s_stickStop + 1, (unsigned)n,
+                      (int)pts[s_stickStop].x, (int)pts[s_stickStop].y, (unsigned)state);
+    }
+    s_stickKey2Was = k2;
+    if (k1 && pts[s_stickStop].kind) {
+        if (!s_stickKey1Was) {
+            lastTouch = now;
+#if SQUACH_MESH
+            // This one has no drag of its own to script: it never scrolled
+            // before there was a screen too short for it.
+            if (state == AppState::MESH_MENU) { uiMeshMenuScroll(pts[s_stickStop].kind == 1 ? 3 : -3); s_stickPtsAt = 0; }
+            else
+#endif
+            {
+                s_stickDrag = pts[s_stickStop].kind == 1 ? 1 : -1;
+                s_stickDragStep = 0;
+            }
+        }
+    } else if (k1) {
+        tp.valid = true;
+        tp.x = pts[s_stickStop].x;
+        tp.y = pts[s_stickStop].y;
+    }
+    if (k1) s_stickShownAt = now ? now : 1;
+    s_stickKey1Was = k1;
+    return tp;
+}
+
+// The cursor: amber brackets round the stop, or an arrow on the two that
+// scroll, drawn last, over the frame.
+static void stickDrawCursor(TFT_eSPI& t, uint32_t now) {
+    if (!s_stickShownAt || now - s_stickShownAt > STICK_SHOW_MS) return;
+    StickPt pts[STICK_STOPS_MAX];
+    const uint8_t n = stickStops(pts);
+    if (s_stickStop >= n) return;
+    const int x = pts[s_stickStop].x, y = pts[s_stickStop].y, r = 9, a = 5;
+    if (pts[s_stickStop].kind) {
+        const bool down = pts[s_stickStop].kind == 1;
+        t.fillRect(x - 8, y - 7, 17, 15, Theme::BG);
+        t.drawRect(x - 8, y - 7, 17, 15, Theme::AMBER);
+        for (int i = 0; i < 6; i++) {
+            const int half = down ? 5 - i : i;
+            t.drawFastHLine(x - half, y - 3 + i, 2 * half + 1, Theme::AMBER);
+        }
+        return;
+    }
+    for (int k = 0; k < 2; k++) {
+        const int q = r - k;
+        const uint16_t c = k ? Theme::BG : Theme::AMBER;
+        t.drawFastHLine(x - q, y - q, a, c); t.drawFastVLine(x - q, y - q, a, c);
+        t.drawFastHLine(x + q - a + 1, y - q, a, c); t.drawFastVLine(x + q, y - q, a, c);
+        t.drawFastHLine(x - q, y + q, a, c); t.drawFastVLine(x - q, y + q - a + 1, a, c);
+        t.drawFastHLine(x + q - a + 1, y + q, a, c); t.drawFastVLine(x + q, y + q - a + 1, a, c);
+    }
+    t.fillRect(x - 1, y - 1, 3, 3, Theme::AMBER);
+}
+#endif
+
 // Raw touch -> screen, the same way on every board: the Fit gives a point
 // in the panel's native (rotation 0) frame, and the rotation step turns it
 // into this rotation's coordinates. No board has its own maths any more.
 static TouchPoint pollTouch() {
+#if defined(STICKS3)
+    return stickPoll();
+#endif
     TouchPoint tp = { false, 0, 0 };
     int16_t a, b;
     const bool gotTouch = sampleTouchRaw(a, b);
@@ -929,7 +1158,10 @@ static bool rawReadFiltered(int16_t& a, int16_t& b) {
 // The one reader pollTouch(), the calibration and the diagnostics screen all
 // use, so what the calibration measures is exactly what touch then reads.
 static bool readTouchRaw(int16_t& a, int16_t& b) {
-#if defined(CROWPANEL7) || defined(CYD32C) || defined(CYD35C)
+#if defined(STICKS3)
+    (void)a; (void)b;
+    return false;   // no touch panel at all: the buttons drive it
+#elif defined(CROWPANEL7) || defined(CYD32C) || defined(CYD35C)
     // The GT911 already reports panel pixels; TouchFit divides by the scale,
     // so nothing else differs.
     uint16_t x, y;
@@ -2230,6 +2462,36 @@ static void twatchPowerUp() {
 }
 #endif
 
+#if defined(STICKS3)
+// The StickS3's M5PM1 power chip, on I2C SDA 47 / SCL 48 at 0x6E. Its GPIO2
+// switches the rail the panel runs from ("L3B"), and it is off until asked
+// for -- the same writes M5GFX makes before it touches the screen.
+static bool pm1Bit(uint8_t reg, uint8_t mask, bool on) {
+    Wire.beginTransmission(0x6E);
+    Wire.write(reg);
+    if (Wire.endTransmission(false) != 0 || Wire.requestFrom(0x6E, 1) != 1) return false;
+    uint8_t v = Wire.read();
+    v = on ? (uint8_t)(v | mask) : (uint8_t)(v & ~mask);
+    Wire.beginTransmission(0x6E);
+    Wire.write(reg); Wire.write(v);
+    return Wire.endTransmission() == 0;
+}
+static void sticksPowerUp() {
+    Wire.begin(47, 48, 100000);
+    bool ok = pm1Bit(0x16, 1 << 2, false);    // GPIO2: plain GPIO
+    ok = pm1Bit(0x10, 1 << 2, true)  && ok;   // an output
+    ok = pm1Bit(0x13, 1 << 2, false) && ok;   // push-pull
+    ok = pm1Bit(0x11, 1 << 2, true)  && ok;   // high: panel rail on
+    // No I2C idle sleep: the chip stays powered through a shutdown, and one
+    // left asleep stops answering.
+    Wire.beginTransmission(0x6E);
+    Wire.write(0x09); Wire.write(0x00);
+    ok = Wire.endTransmission() == 0 && ok;
+    delay(100);
+    Serial.printf("[pmu] M5PM1 %s: panel rail on\n", ok ? "answered" : "DID NOT ANSWER");
+}
+#endif
+
 #if defined(FREENOVE_S3)
 // The Freenove S3's battery: a 1-cell LiPo on its JST, a TP4054 charging it
 // from USB, and a 200K/200K divider from the cell to GPIO9 (ADC1, so WiFi does
@@ -2961,6 +3223,9 @@ void setup() {
 #if defined(TWATCH_S3)
     twatchPowerUp();
 #endif
+#if defined(STICKS3)
+    sticksPowerUp();
+#endif
 #if defined(CYD35) || defined(NM_CYD_C5)
     // On the NM-CYD-C5 this answers a specific open question rather than a
     // general one. Its bootloader prints
@@ -3062,7 +3327,7 @@ void setup() {
     // Which version lives in this slot, and whether this boot is a fresh
     // update on probation or the aftermath of one that was rolled back.
     OtaCore::boot();
-#if !defined(AWOK)
+#if !defined(AWOK) && !defined(STICKS3)   // the StickS3 is landscape only, by its owner's choice
     // AWOK has no rotate button and stays fixed at its one physical
     // orientation (see screenRotation's own comment above) -- only
     // boards that can actually rotate restore a saved orientation.
@@ -3073,6 +3338,15 @@ void setup() {
     // ST7796U and will lock up an ST7789 panel; do not re-add it unless
     // we confirm the panel is actually ST7796.
     tft.setRotation(screenRotation);
+#if defined(STICKS3)
+    Theme::setRotateIconVisible(false);
+    Theme::setCompact(true);
+    pinMode(STICK_KEY1, INPUT_PULLUP);
+    pinMode(STICK_KEY2, INPUT_PULLUP);
+    // Its colours were looked at on the bench, and the check's own buttons
+    // sit below the bottom of a 135-row screen.
+    if (!Settings::colorChecked()) Settings::markColorChecked();
+#endif
 #if defined(AWOK)
     // No rotate button on this board (see the rotate handler in
     // loop(), not even compiled in on AWOK) -- hide the icon too so
@@ -3322,6 +3596,9 @@ void setup() {
     usingCapTouch = CapTouch::probe();
     Serial.println(usingCapTouch ? "T-Watch S3 -- FT6336 capacitive touch answered."
                                  : "T-Watch S3 -- FT6336 did not answer; no touch.");
+#elif defined(STICKS3)
+    usingCapTouch = false;
+    Serial.println("StickS3 -- no touch panel; buttons on GPIO11 and GPIO12.");
 #elif defined(FREENOVE_S3)
     // The Freenove S3 2.8"'s FT6336, on I2C SDA 16 / SCL 15 at 0x38, reset on
     // GPIO18 (active low). The ES8311 codec shares the bus at 0x18. FNK0104A
@@ -3377,7 +3654,7 @@ void setup() {
         uint32_t windowStart = millis();
         while (millis() - windowStart < 1200) {
             int16_t a, b;
-#if defined(CROWPANEL7) || defined(CYD32C) || defined(CYD35C)
+#if defined(CROWPANEL7) || defined(CYD32C) || defined(CYD35C) || defined(STICKS3)
             // The GT911 is neither of the two below; the two-way dispatch
             // polled a capacitive controller that is not on this bus.
             bool down = readTouchRaw(a, b);
@@ -3426,7 +3703,7 @@ void setup() {
     // injected against the compiled-in ranges -- a calibration screen would
     // just sit there waiting for a finger.
     initTouchFit();
-#if defined(ESP32) && !defined(CROWPANEL7)
+#if defined(ESP32) && !defined(CROWPANEL7) && !defined(STICKS3)   // nothing to calibrate on a stick with no touch
     if (s_calSource != CalSource::SAVED) {
         Serial.println("Touch: no five-target calibration yet -- running it now.");
         runTouchCalibration();
@@ -4355,6 +4632,12 @@ void loop() {
     }
 
     TouchPoint tp = pollTouch();
+#if defined(STICKS3)
+    if (s_stickHome) {
+        s_stickHome = false;
+        if (state != AppState::CLEAR && state != AppState::BOOT) goHome();
+    }
+#endif
     // True only on the exact frame a touch begins/ends -- unlike
     // TOUCH_DEBOUNCE_MS below (a cooldown timer that still re-fires on a
     // long-held finger once the cooldown elapses), these compare this
@@ -4670,7 +4953,12 @@ void loop() {
                           (int)pick->rssi, pick->restored ? ", from before this boot" : "");
         }
     }
+#if defined(STICKS3)
+    g_consoleRotate = false;
+    if (false && (tp.valid && !Settings::rotationLocked() && !Squachy::isHeld() &&
+#else
     if (g_consoleRotate || (tp.valid && !Settings::rotationLocked() && !Squachy::isHeld() &&
+#endif
         (state == AppState::CLEAR || state == AppState::LOG ||
                       state == AppState::SETTINGS || state == AppState::OUTFIT ||
                       state == AppState::RAWSCAN || state == AppState::DETECTION_FILTER ||
@@ -6183,8 +6471,16 @@ void loop() {
                             // directly -- re-consenting on every visit trains
                             // people to dismiss the thing without reading it,
                             // which is worse than not asking.
+#if defined(STICKS3)
+                            // No warning screen on the StickS3: three paragraphs do
+                            // not fit 135 rows, and its owner asked for it gone.
+                            // TRANSMIT still ships off and is still a row to turn on.
+                            if (!Settings::meshConsent()) Settings::setMeshConsent(true);
+                            enterMeshMenu();
+#else
                             if (Settings::meshConsent()) enterMeshMenu();
                             else                        enterMeshWarn();
+#endif
                             break;
 #endif
                         // These ask first -- see the confirm panel over in
@@ -6276,7 +6572,9 @@ void loop() {
                 // carrying whatever is typed so far.
                 if (hit == ComposeHit::TYPE) { enterPhoneMessage(uiMeshComposeTyped()); break; }
                 // "?" replays the tutorial, which runs on the main screen.
+#if !defined(STICKS3)   // no walkthrough on the StickS3
                 if (hit == ComposeHit::HELP) MeshTutor::start();
+#endif
                 if (hit != ComposeHit::NONE) enterClear();
             }
             break;
@@ -6315,12 +6613,18 @@ void loop() {
                         // marked seen as it STARTS, so skipping it counts; the
                         // "?" on the message screen replays it. Not in boring
                         // mode, which has no Squachy to visit.
+#if defined(STICKS3)
+                        // Nor the walkthrough: its cards and arrows are laid
+                        // out for a screen with room for them.
+                        if (!Settings::meshTutorSeen()) Settings::setMeshTutorSeen();
+#else
                         if (Settings::messagesOn() && !Settings::meshTutorSeen() &&
                             !Settings::boringMode()) {
                             Settings::setMeshTutorSeen();
                             MeshTutor::start();
                             enterClear();
                         }
+#endif
                         break;
                     case MeshMenuRow::HEADSUP:  Settings::toggleMeshHeadsUp(); break;
                     case MeshMenuRow::CROWD:    Settings::cycleMeshCrowd();    break;
@@ -7345,6 +7649,9 @@ void loop() {
         if (now - transitionStart < TRANSITION_MS) {
             Theme::drawTransitionGlitch(frame, now - transitionStart, TRANSITION_MS);
         }
+#if defined(STICKS3)
+        stickDrawCursor(frame, now);
+#endif
         FrameProf::lap(FrameProf::POST);
         pushFrame(0, 0);
         FrameProf::lap(FrameProf::PUSH);

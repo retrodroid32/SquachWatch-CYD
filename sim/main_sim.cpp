@@ -414,7 +414,7 @@ int main(int argc, char** argv) {
     int H = portrait ? 320 : 240;
     if (!sizeArg.empty()) {
         int sw = 0, sh = 0;
-        if (sscanf(sizeArg.c_str(), "%dx%d", &sw, &sh) == 2 && sw > 63 && sh > 63) { W = sw; H = sh; }
+        if (sscanf(sizeArg.c_str(), "%dx%d", &sw, &sh) == 2 && sw > 63 && sh > 63) { W = sw; H = sh; Theme::setCompact(H < 200); }
         else { fprintf(stderr, "--size wants WxH, e.g. 480x320" "\n"); return 2; }
     }
 

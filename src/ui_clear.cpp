@@ -3092,7 +3092,10 @@ void uiClearTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool adv
     //
     // Nothing needs erasing: the background repaints this whole band every
     // frame, so a headline that stops being drawn is simply gone next frame.
-    if (anyActive) {
+    //
+    // Not at all on a screen as short as the StickS3's 135 rows: the word
+    // covered him and most of the sky, and the counters under it say it.
+    if (anyActive && t.height() >= 200) {
         // The rainbow ALL CLEAR used to own. It was the good part and it was
         // wasted on the state you see least; now it runs on the state that
         // actually matters. Same hue-wash as Squachy's party-mode confetti.
@@ -3203,7 +3206,16 @@ void uiClearTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool adv
     // similarly-sized rows does, and this still never exceeds the
     // per-orientation cap on any row.
     DetectionType counterTypes[MAX_COUNTER_TYPES];
-    const uint8_t counterN = activeCounterTypes(counterTypes);
+    uint8_t counterN = activeCounterTypes(counterTypes);
+    // On a screen as small as the StickS3's there is no room for a row of
+    // zeroes: only the types with something in range are shown, and none
+    // at all when it is quiet.
+    if (t.height() < 200) {
+        uint8_t kept = 0;
+        for (uint8_t i = 0; i < counterN; i++)
+            if (counterCount(eng, counterTypes[i]) > 0) counterTypes[kept++] = counterTypes[i];
+        counterN = kept;
+    }
     uint8_t base      = counterN / counterRows;
     uint8_t remainder = counterN % counterRows;
     uint8_t start = 0;

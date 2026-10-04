@@ -1,0 +1,29 @@
+{
+  "name": "SquachWatch-CYD (M5Stack StickS3)",
+  "version": "0.0.0",
+  "funding_url": "https://talkingsasquach.com",
+  "new_install_prompt_erase": true,
+  "builds": [
+    {
+      "chipFamily": "ESP32-S3",
+      "parts": [
+        {
+          "path": "sticks3-bootloader.bin",
+          "offset": 0
+        },
+        {
+          "path": "sticks3-partitions.bin",
+          "offset": 32768
+        },
+        {
+          "path": "esp32-otadata.bin",
+          "offset": 57344
+        },
+        {
+          "path": "sticks3-firmware.bin",
+          "offset": 65536
+        }
+      ]
+    }
+  ]
+}

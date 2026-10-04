@@ -23,15 +23,25 @@ const uint8_t ROW_N = 8;     // BACK is pinned to the bottom edge now, not a row
 void geom(TFT_eSPI& t, int& top, int& rowH) {
     top = TOP_MARGIN;
     t.setTextSize(Theme::uiMenuTextSize(t));
-    rowH = t.fontHeight() + 10;
+    rowH = t.fontHeight() + Theme::listRowPad();
     // Eight rows at that height run under BACK on a landscape panel, so there
     // they share what room there is instead.
     const int room = t.height() - Theme::pinnedBackH(t.width()) - 2 - top;
-    if (ROW_N * rowH > room) rowH = room / ROW_N;
+    if (ROW_N * rowH > room && !Theme::compact()) rowH = room / ROW_N;
+}
+
+// On a compact screen the rows keep their height and the list scrolls
+// instead: g_scroll is the first row shown.
+int g_scroll = 0;
+int visibleRows(TFT_eSPI& t, int top, int rowH) {
+    const int room = t.height() - Theme::pinnedBackH(t.width()) - 2 - top;
+    const int v = room / rowH;
+    return v > (int)ROW_N ? (int)ROW_N : (v < 1 ? 1 : v);
 }
 
 void row(TFT_eSPI& t, int w, int y, int hgt, const char* label,
          const char* value, uint16_t valueCol) {
+    if (y < 0) return;      // scrolled out of sight
     // A solid panel under the row, as the settings screen has. Without it
     // the labels sat straight on the dimmed backdrop, and the synthwave sun
     // came through the gaps in every word.
@@ -49,6 +59,8 @@ void row(TFT_eSPI& t, int w, int y, int hgt, const char* label,
 }
 
 } // namespace
+
+void uiMeshMenuScroll(int delta) { g_scroll += delta; if (g_scroll < 0) g_scroll = 0; }
 
 void uiMeshMenuInit(TFT_eSPI& t) {
     t.fillRect(0, 0, t.width(), t.height(), Theme::BG);
@@ -68,6 +80,10 @@ void uiMeshMenuTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool 
 
     int top, rowH;
     geom(t, top, rowH);
+    const int vis = visibleRows(t, top, rowH);
+    if (g_scroll > (int)ROW_N - vis) g_scroll = (int)ROW_N - vis;
+    if (g_scroll < 0) g_scroll = 0;
+    auto rowY = [&](int k) { return (k < g_scroll || k >= g_scroll + vis) ? -1 : top + (k - g_scroll) * rowH; };
 
     const char* nm = Squachy::customName();
     if (!nm) nm = Squachy::nickname();
@@ -76,15 +92,15 @@ void uiMeshMenuTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool 
     // the row with a consequence: green reads as "you are visible to anybody
     // scanning", which is worth being able to see at a glance rather than
     // read.
-    row(t, w, top + 0 * rowH, rowH, "DETECT",   Settings::meshDetectLabel(),
+    row(t, w, rowY(0), rowH, "DETECT",   Settings::meshDetectLabel(),
         Settings::meshDetect() ? Theme::GREEN : Theme::W95_SHADOW);
-    row(t, w, top + 1 * rowH, rowH, "TRANSMIT", Settings::meshTransmitLabel(),
+    row(t, w, rowY(1), rowH, "TRANSMIT", Settings::meshTransmitLabel(),
         Settings::meshTransmit() ? Theme::AMBER : Theme::W95_SHADOW);
     // MESSAGES says ERR rather than OFF when the crypto self-test failed at
     // boot: a switch that cannot be turned on should not look like one that
     // merely isn't.
     const bool st = MeshTalk::selfTestOk();
-    row(t, w, top + 2 * rowH, rowH, "MESSAGES",
+    row(t, w, rowY(2), rowH, "MESSAGES",
         !st ? "ERR" : (Settings::messagesOn() ? "ON" : "OFF"),
         !st ? Theme::RED : (Settings::messagesOn() ? Theme::GREEN : Theme::W95_SHADOW));
     // How many of them may be on the main screen at once. A tap steps it
@@ -92,21 +108,21 @@ void uiMeshMenuTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool 
     // lives on the DESK MODE page.
     // Serious catches shared with the squad. Grey when it is on but cannot
     // do anything: no messages, or no phrase to seal them with.
-    row(t, w, top + 3 * rowH, rowH, "HEADS-UP", Settings::meshHeadsUp() ? "ON" : "OFF",
+    row(t, w, rowY(3), rowH, "HEADS-UP", Settings::meshHeadsUp() ? "ON" : "OFF",
         Settings::meshHeadsUp() && MeshTalk::ready() ? Theme::GREEN : Theme::W95_SHADOW);
-    row(t, w, top + 4 * rowH, rowH, "CROWD", Settings::meshCrowdLabel(),
+    row(t, w, rowY(4), rowH, "CROWD", Settings::meshCrowdLabel(),
         Settings::meshCrowd() > 1 ? Theme::GREEN : Theme::W95_SHADOW);
     // Everybody who has ever held the phrase, here or not.
     char sq[12];
     const uint8_t members = MeshTalk::rosterCount();
     if (members) snprintf(sq, sizeof sq, "%u >", (unsigned)members);
     else         snprintf(sq, sizeof sq, "NONE >");
-    row(t, w, top + 5 * rowH, rowH, "SQUAD", sq, members ? Theme::GREEN : Theme::W95_SHADOW);
+    row(t, w, rowY(5), rowH, "SQUAD", sq, members ? Theme::GREEN : Theme::W95_SHADOW);
     // Never the phrase itself. This screen is looked at over shoulders.
-    row(t, w, top + 6 * rowH, rowH, "PHRASE",
+    row(t, w, rowY(6), rowH, "PHRASE",
         MeshTalk::havePhrase() ? "SET >" : "NONE >",
         MeshTalk::havePhrase() ? Theme::VAPOR_YELLOW : Theme::W95_SHADOW);
-    row(t, w, top + 7 * rowH, rowH, "NAME",     nm, Theme::VAPOR_YELLOW);
+    row(t, w, rowY(7), rowH, "NAME",     nm, Theme::VAPOR_YELLOW);
 
     // One line saying what the two switches actually mean together, because
     // "DETECT off, TRANSMIT on" is not self-evidently "they can see you but
@@ -121,9 +137,9 @@ void uiMeshMenuTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool 
     // Seven rows leave no room under them in landscape, so there the one
     // line that matters most sits beside the heading instead: a warning
     // about messages if there is one, else what the two switches mean.
-    const bool below = top + ROW_N * rowH + 6 + 2 * t.fontHeight() + 3 <= h - Theme::pinnedBackH(t.width()) - 2;
+    const bool below = top + vis * rowH + 6 + 2 * t.fontHeight() + 3 <= h - Theme::pinnedBackH(t.width()) - 2;
     if (below) {
-        t.setCursor(8, top + ROW_N * rowH + 6);
+        t.setCursor(8, top + vis * rowH + 6);
         t.print(note);
     }
 
@@ -137,7 +153,7 @@ void uiMeshMenuTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool 
       : !Settings::meshTransmit()    ? "Messages: you can read, not reply."
                                      : "Messages: reading and replying.";
     if (below && mnote) {
-        t.setCursor(8, top + ROW_N * rowH + 6 + t.fontHeight() + 3);
+        t.setCursor(8, top + vis * rowH + 6 + t.fontHeight() + 3);
         t.print(mnote);
     }
     if (!below) {
@@ -155,7 +171,9 @@ MeshMenuRow uiMeshMenuHitTest(TFT_eSPI& t, int x, int y, int screenW, int screen
     int top, rowH;
     geom(t, top, rowH);
     if (x < 0 || y < top) return MeshMenuRow::NONE;
-    const int idx = (y - top) / rowH;
+    const int vis = visibleRows(t, top, rowH);
+    if ((y - top) / rowH >= vis) return MeshMenuRow::NONE;
+    const int idx = (y - top) / rowH + g_scroll;
     if (idx < 0 || idx >= (int)ROW_N) return MeshMenuRow::NONE;
     return (MeshMenuRow)idx;
 }

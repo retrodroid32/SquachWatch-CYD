@@ -381,7 +381,11 @@ void drawListRowPanel(TFT_eSPI& t, int w, int y, int hgt) {
     t.drawRect(x0, y + 1, ww, hh, PURPLE);
 }
 
-int pinnedBackH(int panelW) { return panelW >= 400 ? 36 : PINNED_BACK_H; }
+static bool s_compact = false;
+void setCompact(bool on) { s_compact = on; }
+bool compact()           { return s_compact; }
+int  listRowPad()        { return s_compact ? 5 : 10; }
+int pinnedBackH(int panelW) { return s_compact ? 18 : (panelW >= 400 ? 36 : PINNED_BACK_H); }
 
 void drawPinnedBack(TFT_eSPI& t, const char* label) {
     const int w = t.width(), h = pinnedBackH(w), y = t.height() - h;
@@ -393,7 +397,7 @@ void drawPinnedBack(TFT_eSPI& t, const char* label) {
     // second band it lands outside the buffer and draws nothing at all. A
     // strip with no label on it. Shared helpers say what they want.
     t.setTextFont(1);
-    t.setTextSize(uiMenuTextSize(t));
+    t.setTextSize(s_compact ? 1 : uiMenuTextSize(t));
     t.setTextColor(CYAN, BG);
     t.setCursor((w - t.textWidth(label)) / 2, y + (h - t.fontHeight()) / 2);
     t.print(label);
@@ -439,6 +443,7 @@ uint8_t uiTextSize(TFT_eSPI& t, uint8_t base) {
 }
 
 uint8_t uiMenuTextSize(TFT_eSPI& t) {
+    if (t.height() < 200) s_compact = true;
     return t.width() >= 400 ? 3 : 2;
 }
 

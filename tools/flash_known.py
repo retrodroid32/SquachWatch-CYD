@@ -41,6 +41,10 @@ BOARDS = {
     # an eight-byte MAC first for this chip; the six-byte one is "BASE MAC",
     # which read_mac() prefers. 2026-10-02.
     "3c:dc:75:9d:5d:20": ("nm-cyd-c5",  "RockBase NM-CYD-C5, 2.8in on an ESP32-C5, native USB"),
+    # M5Stack StickS3: ESP32-S3-PICO-1-N8R8, 135x240, no touch, native USB with
+    # its MAC as the serial number. Bring-up began 2026-10-04; the factory image
+    # was read off first.
+    "70:04:1d:da:7b:04": ("sticks3",    "M5Stack StickS3, 1.14in 135x240, no touch, native USB"),
     # 88:57:21:2e:e6:e0 runs SquachEmit, not this firmware. It is the only
     # CAPACITIVE 2.8in; to test capacitive touch, list it here as cyd-fast
     # for the test and comment it out again after (done 2026-09-21).

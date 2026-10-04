@@ -20,7 +20,7 @@ static_assert(sizeof(BlackBox::BattRecord) == 64, "BattRecord must be one 64-byt
 namespace BlackBox {
 namespace {
 
-#if defined(SQW_S3) || defined(CROWPANEL7)
+#if (defined(SQW_S3) && !defined(STICKS3)) || defined(CROWPANEL7)   // the StickS3 has 8 MB: the CYDs' table and address
 const uint32_t BASE    = 0x810000;   // the gap after app1; partitions_twatch.csv (both SQW_S3 boards) and partitions_crowpanel7.csv, the same 16 MB shape
 #else
 const uint32_t BASE    = 0x3D0000;   // the gap after app1; see partitions_ota.csv
