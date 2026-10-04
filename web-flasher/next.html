@@ -757,6 +757,10 @@
       <optgroup label="ESP32-C5 BOARDS">
       <option value="./manifest-nm-cyd-c5.json" data-ocnote="The C5 runs its panel at its own full speed; there is no slower build.">RockBase NM-CYD-C5 2.8&quot; &mdash; ESP32-C5, RISC-V (BETA)</option>
       </optgroup>
+      <optgroup label="M5STACK">
+      <option value="./manifest-sticks3.json" data-ocnote="The StickS3 runs its screen at its own full speed; there is no slower build.">M5Stack StickS3 &mdash; 1.14&quot; landscape, two buttons (BETA)</option>
+      <option value="./manifest-cardputer-adv.json" data-ocnote="The Cardputer runs its screen at its own full speed; there is no slower build.">M5Stack Cardputer ADV &mdash; keyboard; not the original Cardputer (BETA)</option>
+      </optgroup>
       <optgroup label="WATCHES">
       <option value="./manifest-twatch-s3.json">LilyGo T-Watch S3 / S3 Plus (BETA)</option>
       </optgroup>
@@ -1681,7 +1685,10 @@
       { re: /AWOK|MARAUDER/,        v: './manifest-awok.json',        say: 'That’s the AWOK 2.4". Selected below.' },
       { re: /FNK0?104/,             v: './manifest-freenove-s3.json', say: 'That’s the Freenove ESP32-S3 2.8" (BETA). Selected below.' },
       { re: /CROWPANEL|CROW/,       v: './manifest-crowpanel7.json',  say: 'That’s the CrowPanel 7" (BETA). Selected below.' },
-      { re: /T-?WATCH/,             v: './manifest-twatch-s3.json',   say: 'That’s a T-Watch S3 (BETA). Selected below.' }
+      { re: /T-?WATCH/,             v: './manifest-twatch-s3.json',   say: 'That’s a T-Watch S3 (BETA). Selected below.' },
+      { re: /STICK-?S3|K150/,       v: './manifest-sticks3.json',     say: 'That’s the M5Stack StickS3 (BETA). Selected below.' },
+      { re: /CARDPUTER.*ADV/,       v: './manifest-cardputer-adv.json', say: 'That’s the Cardputer ADV (BETA). Selected below.' },
+      { re: /CARDPUTER/,            v: null,                          say: 'Only the Cardputer ADV is on the flasher. The original Cardputer has a different keyboard and is not supported yet.' }
     ];
     if (codeIn && codeOut) codeIn.addEventListener('input', function () {
       var v = codeIn.value.toUpperCase().replace(/\s+/g, '');

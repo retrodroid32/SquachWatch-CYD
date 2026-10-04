@@ -317,6 +317,17 @@ jobs:
               0xe000  "$HOME/.platformio/packages/framework-arduinoespressif32/tools/partitions/boot_app0.bin" \
               0x10000 ".pio/build/$v/firmware.bin"
           done
+          # The two M5Stack boards: 8 MB, each with its own bootloader and the
+          # CYDs' two-slot table.
+          for v in sticks3 cardputer-adv; do
+            python -m esptool --chip esp32s3 merge_bin \
+              -o "firmware-$v-merged.bin" \
+              --flash_mode dio --flash_freq 80m --flash_size 8MB \
+              0x0     ".pio/build/$v/bootloader.bin" \
+              0x8000  ".pio/build/$v/partitions.bin" \
+              0xe000  "$HOME/.platformio/packages/framework-arduinoespressif32/tools/partitions/boot_app0.bin" \
+              0x10000 ".pio/build/$v/firmware.bin"
+          done
           # Every board's raw PlatformIO artifacts share the same basenames
           # (bootloader.bin/partitions.bin/firmware.bin), and release assets
           # need unique names -- the very first two-board release failed
@@ -447,6 +458,8 @@ jobs:
                     "web-flasher/manifest-twatch-s3.json",
                     "web-flasher/manifest-freenove-s3.json",
                     "web-flasher/manifest-crowpanel7.json",
+                    "web-flasher/manifest-sticks3.json",
+                    "web-flasher/manifest-cardputer-adv.json",
                     "web-flasher/manifest-nm-cyd-c5.json"):
               m = json.load(open(p))
               m["version"] = "${{ steps.ver.outputs.version }}"
@@ -477,6 +490,8 @@ jobs:
           cp web-flasher/manifest-twatch-s3.json manifest-twatch-s3.json
           cp web-flasher/manifest-freenove-s3.json manifest-freenove-s3.json
           cp web-flasher/manifest-crowpanel7.json manifest-crowpanel7.json
+          cp web-flasher/manifest-sticks3.json manifest-sticks3.json
+          cp web-flasher/manifest-cardputer-adv.json manifest-cardputer-adv.json
 
       - name: Create GitHub Release with build artifacts
         # A lab tag publishes a flashable build and nothing else. Creating a
@@ -521,6 +536,16 @@ jobs:
             crowpanel7-firmware.bin \
             firmware-crowpanel7-merged.bin \
             manifest-crowpanel7.json \
+            sticks3-bootloader.bin \
+            sticks3-partitions.bin \
+            sticks3-firmware.bin \
+            firmware-sticks3-merged.bin \
+            manifest-sticks3.json \
+            cardputer-adv-bootloader.bin \
+            cardputer-adv-partitions.bin \
+            cardputer-adv-firmware.bin \
+            firmware-cardputer-adv-merged.bin \
+            manifest-cardputer-adv.json \
             firmware-cyd-merged.bin \
             firmware-cyd-ili9341-merged.bin \
             firmware-awok-merged.bin \
@@ -606,6 +631,8 @@ jobs:
           cp web-flasher/manifest-twatch-s3.json _site/manifest-twatch-s3.json
           cp web-flasher/manifest-freenove-s3.json _site/manifest-freenove-s3.json
           cp web-flasher/manifest-crowpanel7.json _site/manifest-crowpanel7.json
+          cp web-flasher/manifest-sticks3.json _site/manifest-sticks3.json
+          cp web-flasher/manifest-cardputer-adv.json _site/manifest-cardputer-adv.json
           cp web-flasher/manifest-nm-cyd-c5.json _site/manifest-nm-cyd-c5.json
           # A LAB RUN MUST NOT CHANGE WHAT THE PUBLIC PAGE SERVES.
           #
@@ -636,7 +663,7 @@ jobs:
             # the check below instead of deploying a C5 install with two 404s.
             gh release download "$LATEST" -D _site --clobber \
               -p '*-firmware.bin' -p 'manifest-*.json' -p 'esp32-*.bin' -p 'esp32s3-*.bin' -p 'esp32c5-*.bin' \
-              -p '*-partitions.bin' -p '*-firmware.sig' || true
+              -p '*-partitions.bin' -p '*-bootloader.bin' -p '*-firmware.sig' || true
             # Every file a restored public manifest names must be here, or the
             # public page 404s on it. Fail the run rather than deploy that.
             python - <<'PY'
@@ -723,11 +750,12 @@ jobs:
             cp esp32-otadata.bin    _site/esp32-otadata.bin
             cp esp32s3-bootloader.bin  _site/esp32s3-bootloader.bin
             cp twatch-s3-partitions.bin _site/twatch-s3-partitions.bin
+            cp sticks3-bootloader.bin sticks3-partitions.bin cardputer-adv-bootloader.bin cardputer-adv-partitions.bin _site/
             # Every board in the picker needs BOTH its manifest above and its
             # firmware here: v1.16.0 shipped cyd35-fast to the release and into
             # index.html's <option> list but neither into _site, so the 3.5"
             # appeared in the picker and 404'd when chosen.
-            for board in cyd cyd-ili9341 awok rlphantom-r freenove32 cyd32c cyd-fast cyd-ili9341-fast cyd35-fast cyd35c-fast twatch-s3 freenove-s3 crowpanel7; do
+            for board in cyd cyd-ili9341 awok rlphantom-r freenove32 cyd32c cyd-fast cyd-ili9341-fast cyd35-fast cyd35c-fast twatch-s3 freenove-s3 crowpanel7 sticks3 cardputer-adv; do
               cp "$board-firmware.bin" "_site/$board-firmware.bin"
               # The Bluetooth update page fetches the image and its signature
               # side by side from the site root.
