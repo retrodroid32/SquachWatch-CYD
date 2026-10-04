@@ -144,11 +144,11 @@ void uiSquadUpdateTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng) {
         t.print(v);
         t.setTextSize(1);
         y = g.shareY + g.shareH + 4;
-        if (can)
+        if (can) {
             char pv[40];
             snprintf(buf, sizeof buf, "%s, used once and forgotten.",
                      Privacy::name(OtaWifi::savedSsidAt((uint8_t)s_shareIdx), pv, sizeof pv));
-        else if (!s_scanDone)
+        } else if (!s_scanDone)
             snprintf(buf, sizeof buf, "Looking for a network to share...");
         else if (!OtaWifi::hasSaved())
             snprintf(buf, sizeof buf, "No network saved here to share.");
