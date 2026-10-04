@@ -510,6 +510,11 @@ namespace Settings {
     // sits behind the same consent gate.
     bool        messagesOn();
     void        toggleMessages();
+    // HEADS-UP: telling the squad about a serious catch, and showing theirs.
+    // On by default, and silent anyway without MESSAGES and a phrase; the
+    // sending half needs TRANSMIT like everything else.
+    bool        meshHeadsUp();
+    void        toggleMeshHeadsUp();
     // Whether the messages tutorial has run. Set when it STARTS, so a
     // skipped tutorial counts as seen; "?" on the message screen replays it.
     bool        meshTutorSeen();

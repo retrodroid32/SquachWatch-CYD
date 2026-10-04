@@ -474,6 +474,21 @@ Open openRead(const Crypto& c, const uint8_t mac[6], const uint8_t* in, size_t l
     return r;
 }
 
+size_t sealHeadsUp(const Crypto& c, const uint8_t mac[6], uint32_t counter,
+                   uint8_t type, int8_t rssi, const uint8_t tail[3], uint8_t* out, size_t cap) {
+    const uint8_t pt[5] = { type, (uint8_t)rssi, tail[0], tail[1], tail[2] };
+    return sealBytes(c, mac, counter, KIND_HEADSUP, pt, sizeof pt, out, cap);
+}
+
+Open openHeadsUp(const Crypto& c, const uint8_t mac[6], const uint8_t* in, size_t len,
+                 uint32_t& counter, uint8_t& type, int8_t& rssi, uint8_t tail[3]) {
+    uint8_t pt[5] = { 0, 0, 0, 0, 0 };
+    const Open r = openBytes(c, mac, in, len, KIND_HEADSUP, sizeof pt, counter, pt);
+    type = pt[0]; rssi = (int8_t)pt[1];
+    tail[0] = pt[2]; tail[1] = pt[3]; tail[2] = pt[4];
+    return r;
+}
+
 Open openHello(const Crypto& c, const uint8_t mac[6], const uint8_t* in, size_t len, uint32_t& counter, uint8_t ver[3]) {
     uint32_t epoch = 0; uint8_t zone = 0;
     return openHello(c, mac, in, len, counter, ver, epoch, zone);

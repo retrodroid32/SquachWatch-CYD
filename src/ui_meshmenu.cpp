@@ -15,7 +15,7 @@
 namespace {
 
 const int TOP_MARGIN = Theme::LIST_TOP + Theme::LIST_HEADING_H;   // under the heading
-const uint8_t ROW_N = 7;     // BACK is pinned to the bottom edge now, not a row
+const uint8_t ROW_N = 8;     // BACK is pinned to the bottom edge now, not a row
 
 // Row height from live font metrics, shared by drawing and hit-testing so
 // the two cannot drift -- the same reason every other row list in this
@@ -24,6 +24,10 @@ void geom(TFT_eSPI& t, int& top, int& rowH) {
     top = TOP_MARGIN;
     t.setTextSize(Theme::uiMenuTextSize(t));
     rowH = t.fontHeight() + 10;
+    // Eight rows at that height run under BACK on a landscape panel, so there
+    // they share what room there is instead.
+    const int room = t.height() - Theme::pinnedBackH(t.width()) - 2 - top;
+    if (ROW_N * rowH > room) rowH = room / ROW_N;
 }
 
 void row(TFT_eSPI& t, int w, int y, int hgt, const char* label,
@@ -86,19 +90,23 @@ void uiMeshMenuTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool 
     // How many of them may be on the main screen at once. A tap steps it
     // here: it had a page of its own holding only this, and the desk's count
     // lives on the DESK MODE page.
-    row(t, w, top + 3 * rowH, rowH, "CROWD", Settings::meshCrowdLabel(),
+    // Serious catches shared with the squad. Grey when it is on but cannot
+    // do anything: no messages, or no phrase to seal them with.
+    row(t, w, top + 3 * rowH, rowH, "HEADS-UP", Settings::meshHeadsUp() ? "ON" : "OFF",
+        Settings::meshHeadsUp() && MeshTalk::ready() ? Theme::GREEN : Theme::W95_SHADOW);
+    row(t, w, top + 4 * rowH, rowH, "CROWD", Settings::meshCrowdLabel(),
         Settings::meshCrowd() > 1 ? Theme::GREEN : Theme::W95_SHADOW);
     // Everybody who has ever held the phrase, here or not.
     char sq[12];
     const uint8_t members = MeshTalk::rosterCount();
     if (members) snprintf(sq, sizeof sq, "%u >", (unsigned)members);
     else         snprintf(sq, sizeof sq, "NONE >");
-    row(t, w, top + 4 * rowH, rowH, "SQUAD", sq, members ? Theme::GREEN : Theme::W95_SHADOW);
+    row(t, w, top + 5 * rowH, rowH, "SQUAD", sq, members ? Theme::GREEN : Theme::W95_SHADOW);
     // Never the phrase itself. This screen is looked at over shoulders.
-    row(t, w, top + 5 * rowH, rowH, "PHRASE",
+    row(t, w, top + 6 * rowH, rowH, "PHRASE",
         MeshTalk::havePhrase() ? "SET >" : "NONE >",
         MeshTalk::havePhrase() ? Theme::VAPOR_YELLOW : Theme::W95_SHADOW);
-    row(t, w, top + 6 * rowH, rowH, "NAME",     nm, Theme::VAPOR_YELLOW);
+    row(t, w, top + 7 * rowH, rowH, "NAME",     nm, Theme::VAPOR_YELLOW);
 
     // One line saying what the two switches actually mean together, because
     // "DETECT off, TRANSMIT on" is not self-evidently "they can see you but

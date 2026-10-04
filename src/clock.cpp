@@ -59,6 +59,7 @@ extern volatile bool g_consoleInvert;
 extern volatile bool g_consoleAdc;
 extern volatile bool g_consoleXyzzy;
 extern volatile bool g_consoleLegend;
+extern volatile uint8_t g_consoleHeadsUp;
 extern volatile bool g_consoleOutfitSet;
 extern volatile bool g_consoleAura;
 extern volatile int8_t g_consoleOutfit;
@@ -551,6 +552,7 @@ void pollSerial() {
         if (strcasecmp(line, "ADC") == 0)    { g_consoleAdc = true; continue; }
         if (strcasecmp(line, "XYZZY") == 0)  { g_consoleXyzzy = true; continue; }
         if (strcasecmp(line, "LEGEND") == 0) { g_consoleLegend = true; continue; }
+        if (strncasecmp(line, "HEADSUP ", 8) == 0) { g_consoleHeadsUp = (uint8_t)atoi(line + 8); continue; }
         if (strcasecmp(line, "AURA") == 0)   { g_consoleAura = true; continue; }
         if (strncasecmp(line, "OUTFIT ", 7) == 0) { g_consoleOutfit = (int8_t)atoi(line + 7); g_consoleOutfitSet = true; continue; }
         if (strcasecmp(line, "PINS") == 0)   { g_consolePins = true; continue; }

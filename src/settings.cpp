@@ -23,6 +23,7 @@ static bool        s_meshTransmit = false;
 static bool        s_meshConsent  = false;
 static bool        s_phoneQwerty  = false;
 static bool        s_messagesOn   = false;
+static bool        s_meshHeadsUp  = true;
 static bool        s_msgTutor     = false;
 #endif
 static bool        s_infoPrimerShown = false;
@@ -459,6 +460,7 @@ void load() {
     s_meshConsent  = s_prefs.getBool("meshok", false);
     s_phoneQwerty  = s_prefs.getBool("qwerty", false);
     s_messagesOn   = s_prefs.getBool("msgon", false);
+    s_meshHeadsUp  = s_prefs.getBool("headsup", true);
     s_msgTutor     = s_prefs.getBool("msgtut", false);
 #endif
     s_infoPrimerShown = s_prefs.getBool("infoprimer", false);
@@ -971,6 +973,11 @@ bool messagesOn() { return s_messagesOn; }
 void toggleMessages() {
     s_messagesOn = !s_messagesOn;
     s_prefs.putBool("msgon", s_messagesOn);
+}
+bool meshHeadsUp() { return s_meshHeadsUp; }
+void toggleMeshHeadsUp() {
+    s_meshHeadsUp = !s_meshHeadsUp;
+    s_prefs.putBool("headsup", s_meshHeadsUp);
 }
 bool meshTutorSeen()    { return s_msgTutor; }
 void setMeshTutorSeen() { s_msgTutor = true; s_prefs.putBool("msgtut", true); }

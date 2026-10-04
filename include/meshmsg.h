@@ -245,6 +245,14 @@ constexpr uint8_t KIND_HELLO      = 9;
 // READ: "I opened your message", carrying the message's counter. Sealed;
 // not replay-recorded, like HELLO -- nothing acts on it but a tick mark.
 constexpr uint8_t KIND_READ       = 10;
+// HEADSUP: "I just caught one of these", for the squad: the detection's type,
+// its signal, and the last three bytes of its address -- enough for a board
+// that has caught the same device itself to say nothing. Sealed, and
+// replay-recorded like a message: a banner is something acted on. Builds
+// before it do not read kind 11 and drop it without a word.
+constexpr uint8_t KIND_HEADSUP    = 11;
+constexpr size_t  HEADSUP_FRAME_LEN = HDR_LEN + 5 + TAG_LEN;                  // 19
+static_assert(HEADSUP_FRAME_LEN <= FRAME_MAX, "a heads-up fits where a message does");
 constexpr uint8_t INVITE_PART_BYTES = 12;
 constexpr uint8_t INVITE_PARTS      = 4;
 constexpr size_t  INVITE_BLOB       = INVITE_PART_BYTES * INVITE_PARTS;   // 48
@@ -295,6 +303,8 @@ size_t sealHello(const Crypto& c, const uint8_t mac[6], uint32_t counter, const 
 size_t sealHello(const Crypto& c, const uint8_t mac[6], uint32_t counter, const uint8_t ver[3],
                  uint32_t epoch, uint8_t zonePlusOne, uint8_t* out, size_t cap);
 size_t sealRead(const Crypto& c, const uint8_t mac[6], uint32_t counter, uint32_t msgCounter, uint8_t* out, size_t cap);
+size_t sealHeadsUp(const Crypto& c, const uint8_t mac[6], uint32_t counter,
+                   uint8_t type, int8_t rssi, const uint8_t tail[3], uint8_t* out, size_t cap);
 // The setup byte, per emote. RPS: the sender's throw times three, plus the
 // receiver's -- each 0 rock, 1 paper, 2 scissors. The rest are described with
 // the scripts (EmoteScript::roll); an emote with nothing to agree on sends 0.
@@ -335,6 +345,8 @@ Open openHello(const Crypto& c, const uint8_t mac[6], const uint8_t* in, size_t 
 Open openHello(const Crypto& c, const uint8_t mac[6], const uint8_t* in, size_t len, uint32_t& counter, uint8_t ver[3],
                uint32_t& epoch, uint8_t& zonePlusOne);
 Open   openRead(const Crypto& c, const uint8_t mac[6], const uint8_t* in, size_t len, uint32_t& counter, uint32_t& msgCounter);
+Open   openHeadsUp(const Crypto& c, const uint8_t mac[6], const uint8_t* in, size_t len,
+                   uint32_t& counter, uint8_t& type, int8_t& rssi, uint8_t tail[3]);
 Open openNudge(const Crypto& c, const uint8_t mac[6], const uint8_t* in, size_t len,
                uint32_t& counter, uint8_t ver[3], uint8_t& wifiParts);
 Open openWifiPart(const Crypto& c, const uint8_t mac[6], const uint8_t* in, size_t len,

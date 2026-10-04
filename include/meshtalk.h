@@ -123,6 +123,27 @@ struct UpdatedIn {
 };
 bool takeUpdated(UpdatedIn& out);
 
+// ---- the squad heads-up ---------------------------------------------------
+// See meshmsg.h. A board that catches something serious tells the squad
+// once; the boards that hear it show a banner, not an alert card -- it is
+// somebody else's catch. Trackers are left out: a squad member's own keys
+// would set it off all day.
+struct HeadsUpIn {
+    uint8_t  type;          // DetectionType
+    int8_t   rssi;          // as the sender heard it
+    uint8_t  tail[3];       // the device's last three address bytes
+    char     from[13];
+    uint8_t  mac[6];
+    uint32_t at;
+};
+// Which types travel.
+bool headsUpType(uint8_t type);
+// This board just announced a catch. Queued, not sent: it goes out on the
+// next tick with the air free, at most one a minute, never the same device
+// twice in ten, and not at all with HEADS-UP or TRANSMIT off.
+void noteCatch(uint8_t type, int8_t rssi, const uint8_t mac[6], uint32_t now);
+bool takeHeadsUp(HeadsUpIn& out);
+
 // Whether that board has shown, within the last few minutes, that it holds
 // our phrase: a HELLO, a message, an emote, or any other sealed frame this
 // board could open. The SQUAD screen uses it to tell members from strangers.

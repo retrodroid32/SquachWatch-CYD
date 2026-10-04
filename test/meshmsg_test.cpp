@@ -540,6 +540,25 @@ int main() {
            openEmote(TOY, me, g, sizeof g, c, e, s) == Open::UNKNOWN_LINE);
     }
 
+    suite("The squad heads-up");
+    {
+        uint8_t f[HEADSUP_FRAME_LEN];
+        const uint8_t tail[3] = { 0x12, 0x34, 0x56 };
+        ck("a heads-up is nineteen bytes", HEADSUP_FRAME_LEN == 19);
+        ck("it seals", sealHeadsUp(TOY, me, 120, 1, -67, tail, f, sizeof f) == HEADSUP_FRAME_LEN);
+        uint32_t c = 0;
+        uint8_t ty = 0, tl[3] = { 0, 0, 0 }, e = 0, s = 0;
+        int8_t rs = 0;
+        ck("it opens", openHeadsUp(TOY, me, f, sizeof f, c, ty, rs, tl) == Open::OK);
+        ck("to the same type, signal, device and counter",
+           ty == 1 && rs == -67 && memcmp(tl, tail, 3) == 0 && c == 120);
+        ck("from any other address it does not authenticate",
+           openHeadsUp(TOY, you, f, sizeof f, c, ty, rs, tl) == Open::BAD_TAG);
+        ck("an emote reader refuses it", openEmote(TOY, me, f, sizeof f, c, e, s) == Open::BAD_FORMAT);
+        ck("nor does it seal into too small a buffer",
+           sealHeadsUp(TOY, me, 121, 1, -67, tail, f, HEADSUP_FRAME_LEN - 1) == 0);
+    }
+
     suite("The replay table survives a reboot");
     {
         Replay r;

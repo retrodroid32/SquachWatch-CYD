@@ -391,6 +391,21 @@ bool command(const char* line) {
         while (i && t[i - 1] == ' ') t[--i] = '\0';
         return sayText(t, now);
     }
+    if (!strcmp(verb, "headsup")) {
+        // headsup TYPE [RSSI]: the visitor caught one, and says so.
+        if (!present) { fprintf(stderr, "[meshsim] nobody is here to say so\n"); return false; }
+        char* end = nullptr;
+        const long ty = strtol(arg, &end, 10);
+        if (end == arg) { fprintf(stderr, "[meshsim] headsup TYPE [RSSI]\n"); return false; }
+        const long rs = (end && *end) ? strtol(end, nullptr, 10) : -60;
+        const uint8_t tail[3] = { 0xAB, 0xCD, (uint8_t)ty };
+        const uint32_t c = ++ctr;
+        frameLen[0] = MeshMsg::sealHeadsUp(MeshCrypto::impl(), PEER_MAC, c, (uint8_t)ty, (int8_t)rs, tail,
+                                           frames[0], sizeof frames[0]);
+        snprintf(said, sizeof said, "(heads-up, type %ld)", ty);
+        broadcast(frameLen[0] ? 1 : 0, now);
+        return true;
+    }
     if (!strcmp(verb, "emote")) {
         if (!present) { fprintf(stderr, "[meshsim] nobody is here to do it\n"); return false; }
         char* end = nullptr;
@@ -429,7 +444,7 @@ bool command(const char* line) {
     if (!strcmp(verb, "status")) { fprintf(stderr, "[meshsim] %s\n", status()); return true; }
     if (!strcmp(verb, "help") || !verb[0]) {
         fprintf(stderr, "[meshsim] on|off, outfit N, shade N, nick N, aura on|off, name TEXT, phrase same|other, "
-                        "reply on|off, say N, text MESSAGE, emote N [SETUP], squad N, setup, status\n");
+                        "reply on|off, say N, text MESSAGE, emote N [SETUP], headsup TYPE [RSSI], squad N, setup, status\n");
         return true;
     }
     fprintf(stderr, "[meshsim] unknown: %s (try help)\n", verb);

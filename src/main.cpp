@@ -1248,6 +1248,12 @@ static bool alertMayInterrupt(const Detection& d) {
         !s_screenDimmed && !Clock::night())
         CrowBuzzer::chirp(BUZZ_CHIRP_MS);
 #endif
+#if SQUACH_MESH
+    // And the squad, for the serious kinds: the same gate, so what this board
+    // would not announce to its own owner it does not announce to theirs.
+    if (&d == engine.latest() && engine.latestIsNew())
+        MeshTalk::noteCatch((uint8_t)d.type, d.rssi, d.mac, millis());
+#endif
     return true;
 }
 
@@ -1639,6 +1645,7 @@ static void enterInvite() {
 volatile bool g_consoleInvert = false;
 volatile bool g_consoleAdc = false;     // ADC: the spare analog inputs, for finding a battery sense line
 volatile bool g_consoleXyzzy = false;   // XYZZY: the TERMINAL background types the magic word now
+volatile uint8_t g_consoleHeadsUp = 0;   // HEADSUP n: tell the squad about a made-up catch of type n, for the bench
 volatile bool g_consoleLegend = false;  // LEGEND: wear the Legend look (and its aura) until the next boot, or take it off
 volatile bool g_consoleOutfitSet = false;  // OUTFIT n: wear costume n until the next boot, for timing it; -1 takes it off
 volatile int8_t g_consoleOutfit = -1;
@@ -4418,6 +4425,32 @@ void loop() {
         }
     }
     {
+        MeshTalk::HeadsUpIn hu;
+        if (MeshTalk::takeHeadsUp(hu)) {
+            // Said nothing about a device this board has on its own list:
+            // its owner has had the card already.
+            bool mine = false;
+            for (uint8_t i = 0; !mine && i < engine.logCount(); i++) {
+                const Detection* d = engine.logAt(i);
+                mine = d && d->active && memcmp(d->mac + 3, hu.tail, 3) == 0;
+            }
+            const char* what = detectionTypeName((DetectionType)hu.type);
+            if (mine) Serial.printf("[headsup] %s's %s is already on this board\n", hu.from, what);
+            else {
+                static char sub[40];
+                snprintf(sub, sizeof sub, "%s near %s", what, hu.from);
+                Theme::showToast("HEADS-UP", sub, Theme::AMBER, 8000);
+                Serial.printf("[headsup] shown: %s\n", sub);
+                static char line[40];
+                snprintf(line, sizeof line, "%s says: %s!", hu.from, what);
+                if (state == AppState::CLEAR) Squachy::announce(line);
+#if defined(TWATCH_S3)
+                twatchBuzz(Buzz::MESSAGE);
+#endif
+            }
+        }
+    }
+    {
         MeshTalk::NudgeIn n;
         if (MeshTalk::takeNudge(n)) {
             uint8_t mine[3] = { 0, 0, 0 };
@@ -4533,6 +4566,20 @@ void loop() {
     // ADC: every input-only analog pin the CYDs leave free, in millivolts,
     // averaged over 16 reads. A battery divider shows up as about half the
     // cell's voltage, and moves when the cell is unplugged.
+#if SQUACH_MESH
+    if (g_consoleHeadsUp) {
+        const uint8_t ty = g_consoleHeadsUp;
+        g_consoleHeadsUp = 0;
+        // A new made-up address each time, or the ten-minute rule eats the second.
+        static uint8_t n = 0;
+        const uint8_t mac[6] = { 0x02, 0x00, 0x00, 0xBE, 0xEF, n++ };
+        MeshTalk::noteCatch(ty, -55, mac, millis());
+        Serial.printf("[headsup] bench: type %u (%s) -- messages %s, transmit %s, heads-up %s\n", (unsigned)ty,
+                      MeshTalk::headsUpType(ty) ? "travels" : "does not travel",
+                      MeshTalk::ready() ? "ready" : "NOT READY", Settings::meshTransmit() ? "on" : "OFF",
+                      Settings::meshHeadsUp() ? "on" : "OFF");
+    }
+#endif
     if (g_consoleLegend) {
         g_consoleLegend = false;
         Squachy::previewLegend(!Squachy::legendPreview());
@@ -6275,6 +6322,7 @@ void loop() {
                             enterClear();
                         }
                         break;
+                    case MeshMenuRow::HEADSUP:  Settings::toggleMeshHeadsUp(); break;
                     case MeshMenuRow::CROWD:    Settings::cycleMeshCrowd();    break;
                     case MeshMenuRow::SQUAD:    enterSquad(true);              break;
                     case MeshMenuRow::PHRASE:   enterMeshPhrase();             break;

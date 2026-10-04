@@ -78,6 +78,22 @@ uint32_t s_sentCtr   = 0xFFFFFFFFu;   // the last message this board sent
 bool     s_readHave  = false;
 char     s_readBy[13] = "";
 
+// The heads-up. One waiting to go out -- the newest catch wins, and news
+// older than a minute and a half is not sent late -- and the last few
+// devices told, so one that drifts in and out is told once.
+constexpr uint32_t HEADSUP_GAP_MS    = 60000;
+constexpr uint32_t HEADSUP_STALE_MS  = 90000;
+constexpr uint32_t HEADSUP_REPEAT_MS = 10 * 60000;
+constexpr uint8_t  HEADSUP_TOLD_N    = 4;
+struct HeadsUpOut { uint8_t type; int8_t rssi; uint8_t tail[3]; uint32_t at; bool due; };
+struct HeadsUpTold { uint8_t tail[3]; uint32_t at; bool live; };
+HeadsUpOut  s_huOut = {};
+HeadsUpTold s_huTold[HEADSUP_TOLD_N] = {};
+uint8_t     s_huToldNext = 0;
+uint32_t    s_huSentAt = 0;
+HeadsUpIn   s_huIn = {};
+bool        s_huHave = false;
+
 // The roster (see meshtalk.h), and its shape on disk: 25 bytes a member,
 // packed by hand so a different compiler's padding cannot scramble it.
 Member  s_roster[ROSTER_N] = {};
@@ -442,6 +458,28 @@ void deliver(const Slot& s, uint32_t now) {
         s_updated.from[i] = '\0';
         s_updatedHave = true;
         Serial.printf("[meshtalk] %s reports v%u.%u.%u\n", s_updated.from, ver[0], ver[1], ver[2]);
+        return;
+    }
+
+    if (kind == MeshMsg::KIND_HEADSUP) {
+        uint8_t type = 0, tail[3] = { 0, 0, 0 };
+        int8_t  rssi = 0;
+        if (MeshMsg::openHeadsUp(MeshCrypto::impl(), s.mac, s.data, s.len, ctr, type, rssi, tail)
+                != MeshMsg::Open::OK) return;
+        // Recorded so its nine seconds of repeats are one banner, but not
+        // written to flash for it: a busy street would wear the store for
+        // news nobody replays.
+        s_replay.record(s.mac, ctr);
+        squadNote(s.mac, now);
+        if (!Settings::meshHeadsUp() || !headsUpType(type)) return;   // off, or a newer build's type
+        s_huIn.type = type;
+        s_huIn.rssi = rssi;
+        memcpy(s_huIn.tail, tail, 3);
+        memcpy(s_huIn.mac, s.mac, 6);
+        snprintf(s_huIn.from, sizeof s_huIn.from, "%s", s.name[0] ? s.name : "SOMEONE");
+        s_huIn.at = now;
+        s_huHave  = true;
+        Serial.printf("[meshtalk] heads-up from %s: type %u at %d dBm\n", s_huIn.from, (unsigned)type, (int)rssi);
         return;
     }
 
@@ -882,6 +920,36 @@ bool sending(uint32_t now) {
 
 bool sendingMessage(uint32_t now) { return sending(now) && !s_outEmote; }
 
+bool headsUpType(uint8_t type) {
+    switch ((DetectionType)type) {
+        case DetectionType::FLOCK:  case DetectionType::AXON:     case DetectionType::SKIMMER:
+        case DetectionType::RAVEN:  case DetectionType::ALPR:     case DetectionType::DEAUTH:
+        case DetectionType::EVILTWIN: case DetectionType::HACKER:
+            return true;
+        default: return false;
+    }
+}
+
+void noteCatch(uint8_t type, int8_t rssi, const uint8_t mac[6], uint32_t now) {
+    if (!Settings::meshHeadsUp() || !headsUpType(type)) return;
+    if (checks() != Send::OK) return;
+    for (uint8_t i = 0; i < HEADSUP_TOLD_N; i++)
+        if (s_huTold[i].live && memcmp(s_huTold[i].tail, mac + 3, 3) == 0 &&
+            now - s_huTold[i].at < HEADSUP_REPEAT_MS) return;
+    s_huOut.type = type;
+    s_huOut.rssi = rssi;
+    memcpy(s_huOut.tail, mac + 3, 3);
+    s_huOut.at  = now;
+    s_huOut.due = true;
+}
+
+bool takeHeadsUp(HeadsUpIn& out) {
+    if (!s_huHave) return false;
+    s_huHave = false;
+    out = s_huIn;
+    return true;
+}
+
 void forget() {
     memset(s_phrase, 0, sizeof s_phrase);
     s_havePhrase = false;
@@ -895,6 +963,8 @@ void forget() {
     s_nudgeHave  = false;
     s_updatedHave = false;
     s_wifiAsm    = MeshMsg::WifiAssembly();
+    s_huHave     = false;
+    s_huOut.due  = false;
     for (uint8_t i = 0; i < SQUAD_N; i++) s_squad[i].live = false;
     s_rosterN = 0;
     s_prefs.remove("roster");
@@ -948,6 +1018,26 @@ void tick(uint32_t now) {
         if (takeCounters(1, c)) {
             const size_t n = MeshMsg::sealRead(MeshCrypto::impl(), s_ownMac, c, s_readCtr, s_out[0], sizeof s_out[0]);
             if (n) { s_outLen[0] = (uint8_t)n; onAir(1, now, EMOTE_MS, true); }
+        }
+    }
+    // The heads-up, when one is waiting and the air is free. Ahead of the
+    // hello: it is the one of the two that is news.
+    if (s_huOut.due && now - s_huOut.at > HEADSUP_STALE_MS) s_huOut.due = false;
+    if (s_huOut.due && checks() == Send::OK && !sending(now) &&
+        (s_huSentAt == 0 || now - s_huSentAt > HEADSUP_GAP_MS)) {
+        s_huOut.due = false;
+        uint32_t c = 0;
+        if (takeCounters(1, c)) {
+            const size_t n = MeshMsg::sealHeadsUp(MeshCrypto::impl(), s_ownMac, c, s_huOut.type, s_huOut.rssi,
+                                                  s_huOut.tail, s_out[0], sizeof s_out[0]);
+            if (n) {
+                s_outLen[0] = (uint8_t)n;
+                onAir(1, now, EMOTE_MS, true);
+                s_huSentAt = now ? now : 1;
+                HeadsUpTold& t = s_huTold[s_huToldNext++ % HEADSUP_TOLD_N];
+                memcpy(t.tail, s_huOut.tail, 3); t.at = now; t.live = true;
+                Serial.printf("[meshtalk] sending #%lu: heads-up, type %u\n", (unsigned long)c, (unsigned)s_huOut.type);
+            }
         }
     }
     // The hello: a few seconds every couple of minutes, only when nothing
