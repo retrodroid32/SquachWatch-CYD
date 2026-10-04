@@ -2108,7 +2108,15 @@
       row.className = 'tile-row';
       byLabel[label].forEach(function (o) {
         var p = parts(o.textContent);
-        if (lab) { p.name = p.name.replace(/^LAB\s+/, ''); p.tag = 'TEST'; }
+        if (lab) {
+          // "LAB Small-Screens -- SquachWatch-CYD (M5Stack StickS3)  (lab-small-screens)"
+          // reads as the board, with the build's name under it.
+          var t = o.textContent.replace(/\s+/g, ' ').trim();
+          var m = t.match(/^LAB (.*?) -- SquachWatch-CYD \((.*?)\)(?: \(lab-[^)]*\))?$/);
+          if (m) { p.name = m[2]; p.code = m[1] + ' test build'; }
+          else   { p.name = t.replace(/^LAB\s+/, ''); }
+          p.tag = 'TEST';
+        }
         var b = document.createElement('button');
         b.type = 'button';
         b.className = 'tile' + (lab ? ' lab' : '');
