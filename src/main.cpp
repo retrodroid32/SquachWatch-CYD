@@ -3618,7 +3618,12 @@ void setup() {
 #elif defined(SQW_S3)
     // One backlight, GPIO45, on the first channel. The CYD pins below are
     // flash/PSRAM lines and the power chip's interrupt on an S3.
+#if defined(STICKS3)
+    // 256 Hz, as M5's own library runs it: at 5 kHz the StickS3 whined.
+    ledcSetup(BL_CH_ORIG, 256, 8);
+#else
     ledcSetup(BL_CH_ORIG, 5000, 8);
+#endif
     ledcAttachPin(BL_PIN_S3, BL_CH_ORIG);
 #elif defined(NM_CYD_C5)
     // Backlight is TFT_BL (GPIO25) on this board and nothing else is a
