@@ -76,6 +76,7 @@ enum class SettingsRow : uint8_t {
     LAST_RUN,        // the CYD boards: how long the previous boot ran, on the SYSTEM page
     PRIVACY,         // PRIVACY MODE: addresses and names masked on screen, on the SYSTEM page
     EXT_SCREEN,      // the Cardputer ADV only: a second panel on the EXT header
+    DET_STYLE,       // on the APPEARANCE page: XP or CLASSIC detection counters
     BACK,
     COUNT,
     NONE = 255

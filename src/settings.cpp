@@ -39,6 +39,7 @@ static const bool DEFAULT_ROTATION_LOCK = false;
 #endif
 static bool        s_rotationLocked = DEFAULT_ROTATION_LOCK;
 static bool        s_aura = true;
+static bool        s_detXp = true;
 // Eight is the ceiling because the radio's own squad ring holds eight (see
 // SQUAD_N in mesh.cpp). A menu that offered thirty would be offering something
 // the hardware cannot hear: the ninth board in the room evicts the first, and
@@ -474,6 +475,7 @@ void load() {
     // A new key, not the top hat's: somebody who took the hat off never said
     // anything about the aura, and should see it once before deciding.
     s_aura           = s_prefs.getBool("aura", true);
+    s_detXp          = s_prefs.getBool("detxp", true);
     s_rotation = s_prefs.getUChar("rot", DEFAULT_ROTATION);
     if (s_rotation > 3) s_rotation = DEFAULT_ROTATION;
     s_backgroundLocked = s_prefs.getBool("bglock", false);
@@ -733,6 +735,13 @@ void markInfoPrimerShown() {
 }
 
 bool auraShown() { return s_aura; }
+
+bool detXp() { return s_detXp; }
+
+void toggleDetXp() {
+    s_detXp = !s_detXp;
+    s_prefs.putBool("detxp", s_detXp);
+}
 
 void toggleAura() {
     s_aura = !s_aura;

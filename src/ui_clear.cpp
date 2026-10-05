@@ -1777,6 +1777,16 @@ static const uint8_t TILE_MAX = 12;
 static CounterTile s_tiles[TILE_MAX];
 static uint8_t     s_tileN = 0;
 
+// The NEARBY headline's last drawn rectangle, grown to a finger-sized target.
+// CLASSIC only.
+static bool    s_nearbyOn = false;
+static int16_t s_nbX = 0, s_nbY = 0, s_nbW = 0, s_nbH = 0;
+
+bool uiClearNearbyHit(int x, int y) {
+    return s_nearbyOn &&
+           x >= s_nbX && x < s_nbX + s_nbW && y >= s_nbY && y < s_nbY + s_nbH;
+}
+
 bool uiClearCounterHit(int x, int y, DetectionType& column) {
     // A few pixels past the tile each way: they are only 12 rows tall.
     for (uint8_t i = 0; i < s_tileN; i++) {
@@ -2580,6 +2590,33 @@ static void drawXpTile(TFT_eSPI& t, int x, int y, int w, int h, const char* txt,
     t.setCursor(tx + 1, ty);     t.print(txt);
 }
 
+// CLASSIC's counters: one plain line of LABEL:COUNT pairs.
+static void drawCounterLine(TFT_eSPI& t, int w, int y, const DetectionEngine& eng,
+                            const DetectionType* types, uint8_t n) {
+    // 80, not 56: worst case is 7 entries x up to "XXXXX:999  " (11
+    // chars) = 77 -- the old 56-byte buffer was already marginal for
+    // 6 entries at high counts and would silently truncate (snprintf
+    // is bounds-safe, just visually cuts off) once TILE/RING pushed a
+    // line to 7.
+    char buf[80] = "";
+    int off = 0;
+    for (uint8_t i = 0; i < n; i++) {
+        off += snprintf(buf + off, sizeof(buf) - off, "%s:%u  ",
+                        counterLabel(types[i]), counterCount(eng, types[i]));
+    }
+    // The trailing gap is spacing between entries, not part of the last one.
+    while (off > 0 && buf[off - 1] == ' ') buf[--off] = '\0';
+    int tw = t.textWidth(buf);
+    const int x = (w - tw) / 2;
+    // A dark plate a few pixels past the text, not just the character cells:
+    // tight to the glyphs, the numbers read as cut out of whatever the
+    // background is doing behind them.
+    const int PAD_X = 4, PAD_Y = 2;
+    t.fillRect(x - PAD_X, y - PAD_Y, tw + 2 * PAD_X, t.fontHeight() + 2 * PAD_Y, Theme::BG);
+    t.setCursor(x, y);
+    t.print(buf);
+}
+
 // The same folds, asked the other way round: which column a device lands in.
 bool uiClearColumnHolds(DetectionType column, DetectionType d) {
     if (d == column) return true;
@@ -2857,10 +2894,15 @@ void uiClearTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool adv
     // The counter tiles moved to a strip under the title bar, as many rows
     // tall as the most there can ever be, so Squachy's size never changes
     // as they come and go -- and he stands on the button bar's top line.
+    // CLASSIC keeps it all where it was before v1.31.0: his band from the
+    // title bar to the counters, which are at the bottom, with NEARBY over
+    // his feet.
+    const bool xp = Settings::detXp();
     const int tilesTop      = titleBottom + 2;
-    const int bandTop       = tilesTop + counterRows * lineH;
-    const int squachyBottom = bar.y - 1;
-    static const int SQ_FOOT_SINK = 6;   // measured: feet ended 6 rows above it
+    const int bandTop       = xp ? tilesTop + counterRows * lineH : titleBottom;
+    const int squachyBottom = xp ? bar.y - 1 : counterTextTop - 2;
+    // Measured: feet ended 6 rows above the bar; CLASSIC never sank them.
+    const int SQ_FOOT_SINK  = xp ? 6 : 0;
 
     // Background animation, the whole screen top to bottom -- style picked
     // from the settings menu. It used to stop just above the button bar and
@@ -2873,7 +2915,7 @@ void uiClearTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool adv
     // feet land. Cameos still stand level with him at countersTop; the
     // backgrounds that fill a bright ground band keep filling to where the
     // numbers actually begin, instead of stopping nine pixels short of them.
-    Theme::setBackgroundFloor(squachyBottom, bar.y);
+    Theme::setBackgroundFloor(squachyBottom, xp ? bar.y : counterTextTop);
     // From the very top of the screen, not from titleBottom. The title bar
     // used to own rows 0-15 and paint them every frame; with it gone they
     // belonged to nobody and kept whatever the previous frame left there.
@@ -2900,7 +2942,7 @@ void uiClearTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool adv
     const bool step = uiMascotStep(now, advance);
     // His bubble rises past the tiles to row 1, where it always sat. Undone
     // straight after he is drawn: the desk and the alert cameo want theirs.
-    Squachy::setBubbleRiseTo(1);
+    if (xp) Squachy::setBubbleRiseTo(1);
 
     // Squachy: main character, reacts to events, cracks jokes when idle.
     // His available region runs all the way to countersTop (not
@@ -2994,7 +3036,7 @@ void uiClearTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool adv
         // Everybody in range, whether or not one of them is on screen.
         {
             const uint8_t squad = Mesh::squadCount(now);
-            if (squad >= 1) drawSquadBadge(t, w - 4, squachyBottom - 1, squad);
+            if (squad >= 1) drawSquadBadge(t, w - 4, xp ? squachyBottom - 1 : counterTextTop - 2, squad);
         }
         drawMessageUi(t, now, bandTop, squachyBottom);
 #endif
@@ -3108,9 +3150,90 @@ void uiClearTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool adv
     s_wasActive = anyActive;
     Squachy::setNearbyLit(anyActive && s_serious);
 
-    // No headline. NEARBY used to cut in over his feet whenever anything was
-    // live; the counter tiles below say the same thing and say WHAT, and
-    // nothing is left painted over Squachy or the pet.
+    // XP has no headline: the counter tiles say the same thing and say WHAT,
+    // and nothing is left painted over Squachy or the pet. CLASSIC keeps the
+    // rainbow NEARBY cutting in over his feet whenever anything is live.
+    s_nearbyOn = false;           // set again below only if it is drawn
+    // LG, measured off a render: the painted band runs ty+4 to ty+32 at this
+    // size, so 33 puts its last row HEADLINE_PAD above the counter text.
+    static const Theme::BangersSize HEADLINE_SIZE = Theme::BangersSize::LG;
+    static const int HEADLINE_H   = 33;
+    static const int HEADLINE_PAD = 5;
+    const int headlineTop = counterTextTop - HEADLINE_PAD - HEADLINE_H;
+    if (!xp)
+    if (anyActive && t.height() >= 200) {
+        // The rainbow ALL CLEAR used to own. It was the good part and it was
+        // wasted on the state you see least; now it runs on the state that
+        // actually matters. Same hue-wash as Squachy's party-mode confetti.
+        static const uint16_t RAINBOW[6] = {
+            Theme::RED, Theme::AMBER, Theme::GREEN,
+            Theme::CYAN, Theme::VAPOR_PURPLE, Theme::PINK
+        };
+        const float huePos = fmodf((float)now / 900.0f, 6.0f);
+        const int i0 = (int)huePos % 6, i1 = (i0 + 1) % 6;
+        const uint16_t col =
+            Theme::blend(RAINBOW[i0], RAINBOW[i1], (uint16_t)((huePos - (int)huePos) * 255));
+        // Not a status label any more. This row now appears BECAUSE an
+        // event happened, so it reads as the event rather than describing
+        // the screen's state -- the job a label like ACTIVE DETECTIONS was
+        // doing twice, and less precisely than the counters underneath.
+        //
+        // One word because the subject was the vague half. SOMETHING'S
+        // NEARBY said nothing the counters do not say better; NEARBY is the
+        // half that carries the meaning, and dropping the other one is what
+        // buys the bigger face above.
+        const char* msg = "NEARBY";
+        // 2px black outline: draw the same text at every offset in a
+        // 5x5 grid around the real position (minus the center) in
+        // black first, then the real color on top. A full grid, not
+        // just a ring at radius 2, so there's no gap between the 1px
+        // and 2px shells. The Bangers glyph renderer only paints ink
+        // pixels (not a full opaque cell), so the offset passes land
+        // as a clean outline rather than clobbering each other.
+        static const int8_t OUTLINE_OFS[24][2] = {
+            {-2,-2},{-1,-2},{0,-2},{1,-2},{2,-2},
+            {-2,-1},{-1,-1},{0,-1},{1,-1},{2,-1},
+            {-2, 0},{-1, 0},        {1, 0},{2, 0},
+            {-2, 1},{-1, 1},{0, 1},{1, 1},{2, 1},
+            {-2, 2},{-1, 2},{0, 2},{1, 2},{2, 2},
+        };
+        int tw = Theme::bangersTextWidth(msg, HEADLINE_SIZE);
+        int ty = headlineTop;
+        if (tw <= w - 8) {
+            int tx = (w - tw) / 2;
+            // One pass, not twenty-four: this was 14.8 ms of every frame.
+            if (DrawBand::has(ty, ty + HEADLINE_H)) {
+                Theme::drawBangersOutline(t, tx, ty, msg, Theme::BLACK, HEADLINE_SIZE, 2);
+                Theme::drawBangersText(t, tx, ty, msg, col, HEADLINE_SIZE);
+            }
+            // Padded well past the ink: the word is only 33px tall and it is
+            // pressed with a thumb, over a moving Squachy.
+            s_nbX = (int16_t)(tx - 16); s_nbY = (int16_t)(ty - 10);
+            s_nbW = (int16_t)(tw + 32); s_nbH = (int16_t)(HEADLINE_H + 20);
+            s_nearbyOn = true;
+        } else {
+            // Kept as a guard, not because the current headline needs it:
+            // NEARBY measures 90px in LG against the 232 a 240px portrait
+            // screen leaves, so it clears by a factor of two and a half.
+            // Bangers has no step below MD to fall back to the way the
+            // built-in font does, so any future headline that outgrows the
+            // narrow rotation drops to the built-in face rather than clip.
+            t.setTextSize(2);
+            int sw = t.textWidth(msg);
+            int sx = (w - sw) / 2, sy = counterTextTop - HEADLINE_PAD - t.fontHeight(2);
+            t.setTextColor(Theme::BLACK, Theme::BG);
+            for (uint8_t i = 0; i < 24; i++) {
+                t.setCursor(sx + OUTLINE_OFS[i][0], sy + OUTLINE_OFS[i][1]);
+                t.print(msg);
+            }
+            t.setTextColor(col, Theme::BG);
+            t.setCursor(sx, sy);
+            t.print(msg);
+            s_nbX = (int16_t)(sx - 16); s_nbY = (int16_t)(sy - 10);
+            s_nbW = (int16_t)(sw + 32); s_nbH = (int16_t)(t.fontHeight() + 20);
+            s_nearbyOn = true;
+        }
+    }
     FrameProf::lap(FrameProf::HEADLINE);
 
     // The pet, after Squachy AND after the headline.
@@ -3150,95 +3273,120 @@ void uiClearTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool adv
     // per-orientation cap on any row.
     DetectionType counterTypes[MAX_COUNTER_TYPES];
     uint8_t counterN = activeCounterTypes(counterTypes);
-    // Only the types with something in range, and none at all when it is
-    // quiet: a row of zeroes was most of what this screen showed, and the
-    // ones that matter were lost in it.
-    {
-        uint8_t kept = 0;
-        for (uint8_t i = 0; i < counterN; i++)
-            if (counterCount(eng, counterTypes[i]) > 0) counterTypes[kept++] = counterTypes[i];
-        counterN = kept;
-    }
-    // As few rows as they fit in, sitting on the buttons; the space for the
-    // most rows is still kept, so Squachy never changes size as things come
-    // and go.
-    const uint8_t perRowCap = landscape ? MAX_COUNTER_TYPES : MAX_PER_ROW_PORTRAIT;
-    uint16_t tileW[MAX_COUNTER_TYPES];
-    char     tileTxt[MAX_COUNTER_TYPES][14];
-    for (uint8_t i = 0; i < counterN; i++) {
-        snprintf(tileTxt[i], sizeof(tileTxt[i]), "%s %u", counterLabel(counterTypes[i]),
-                 counterCount(eng, counterTypes[i]));
-        tileW[i] = (uint16_t)(t.textWidth(tileTxt[i]) + 1 + 10 + XP_ICON_W);
-    }
-    int tileGap = 4, tilePad = 5;
-    uint8_t rowsUsed = 0;
-    // Tighter tiles, once, if a crowded day will not fit the rows there are.
-    for (uint8_t pass = 0; pass < 2 && counterN && !rowsUsed; pass++) {
-    if (pass == 1) {
-        tileGap = 2; tilePad = 2;
-        for (uint8_t i = 0; i < counterN; i++) tileW[i] -= 6;
-    }
-    for (uint8_t r = 1; r <= counterRows; r++) {
-        const uint8_t bse = counterN / r, rem = counterN % r;
-        bool fits = true;
-        uint8_t st = 0;
-        for (uint8_t row = 0; row < r && fits; row++) {
-            const uint8_t n = bse + (row < rem ? 1 : 0);
-            int rw = 0;
-            for (uint8_t k = 0; k < n; k++) rw += tileW[st + k] + (k ? tileGap : 0);
-            if (n > perRowCap || rw > w - 8) fits = false;
-            st += n;
+    if (!xp) {
+        // CLASSIC: every type, zeroes and all, in balanced rows -- except on
+        // a screen as small as the StickS3's, where there is no room for a
+        // row of zeroes and only the types in range are shown.
+        s_tileN = 0;
+        if (t.height() < 200) {
+            uint8_t kept = 0;
+            for (uint8_t i = 0; i < counterN; i++)
+                if (counterCount(eng, counterTypes[i]) > 0) counterTypes[kept++] = counterTypes[i];
+            counterN = kept;
         }
-        if (fits) { rowsUsed = r; break; }
-    }
-    }
-    if (counterN && !rowsUsed) rowsUsed = counterRows;
-    // A kind that has just turned up flashes orange for a few seconds, the
-    // way an XP taskbar button asks for you.
-    static uint32_t s_tileSince[(uint8_t)DetectionType::COUNT] = {};
-    {
-        bool live[(uint8_t)DetectionType::COUNT] = {};
-        for (uint8_t i = 0; i < counterN; i++) live[(uint8_t)counterTypes[i]] = true;
-        for (uint8_t i = 0; i < (uint8_t)DetectionType::COUNT; i++) {
-            if (!live[i]) s_tileSince[i] = 0;
-            else if (!s_tileSince[i]) s_tileSince[i] = now ? now : 1;
+        uint8_t base      = counterN / counterRows;
+        uint8_t remainder = counterN % counterRows;
+        uint8_t start = 0;
+        for (uint8_t row = 0; row < counterRows; row++) {
+            uint8_t n = base + (row < remainder ? 1 : 0);
+            const int rowY = counterTextTop + row * lineH;
+            // `start` advances either way: the rows share one list of types,
+            // so a row that is not painted still hands the next one its place.
+            if (DrawBand::has(rowY, rowY + lineH))
+                drawCounterLine(t, w, rowY, eng, counterTypes + start, n);
+            start += n;
         }
-    }
-    s_tileN = 0;
-    int bX = 0, bY = 0, bW = 0, bH = 0;
-    const bool bub = !Settings::boringMode() && Squachy::ownBubble(bX, bY, bW, bH);
-    if (counterN) {
-        const uint8_t bse = counterN / rowsUsed, rem = counterN % rowsUsed;
-        uint8_t st = 0;
-        for (uint8_t row = 0; row < rowsUsed; row++) {
-            const uint8_t n = bse + (row < rem ? 1 : 0);
-            const int rowY = tilesTop + 2 + row * lineH;
-            int rw = 0;
-            for (uint8_t k = 0; k < n; k++) rw += tileW[st + k] + (k ? tileGap : 0);
-            int x = (w - rw) / 2;
-            const bool paint = DrawBand::has(rowY - 2, rowY + lineH);
-            for (uint8_t k = 0; k < n; k++) {
-                const uint8_t i = st + k;
-                const DetectionType ty = counterTypes[i];
-                bool lit = false;
-                for (uint8_t d = 0; d < (uint8_t)DetectionType::COUNT && d < 32; d++)
-                    if ((s_litMask & (1u << d)) && uiClearColumnHolds(ty, (DetectionType)d)) { lit = true; break; }
-                const int ty0 = rowY - 2, th = 12;
-                // A tile under his speech bubble waits for it to go: the
-                // bubble is the one that has something to say right now.
-                const bool underBubble = bub && x < bX + bW && x + tileW[i] > bX && ty0 < bY + bH && ty0 + th > bY;
-                if (paint && !underBubble) {
-                    // Lit is XP blue; just arrived flashes orange; only your
-                    // own ignored or snoozed things are a greyed-out slate.
-                    const uint32_t since = s_tileSince[(uint8_t)ty];
-                    const bool flash = lit && since && now - since < 3000 && ((now - since) / 500) % 2 == 0;
-                    drawXpTile(t, x, ty0, tileW[i], th, tileTxt[i], Theme::colorFor(ty),
-                               flash ? 1 : (lit ? 0 : 2), tilePad);
-                }
-                if (s_tileN < TILE_MAX) s_tiles[s_tileN++] = { (int16_t)x, (int16_t)ty0, (int16_t)tileW[i], (int16_t)th, ty };
-                x += tileW[i] + tileGap;
+    } else {
+        // Only the types with something in range, and none at all when it is
+        // quiet: a row of zeroes was most of what this screen showed, and the
+        // ones that matter were lost in it.
+        {
+            uint8_t kept = 0;
+            for (uint8_t i = 0; i < counterN; i++)
+                if (counterCount(eng, counterTypes[i]) > 0) counterTypes[kept++] = counterTypes[i];
+            counterN = kept;
+        }
+        // As few rows as they fit in, sitting on the buttons; the space for the
+        // most rows is still kept, so Squachy never changes size as things come
+        // and go.
+        const uint8_t perRowCap = landscape ? MAX_COUNTER_TYPES : MAX_PER_ROW_PORTRAIT;
+        uint16_t tileW[MAX_COUNTER_TYPES];
+        char     tileTxt[MAX_COUNTER_TYPES][14];
+        for (uint8_t i = 0; i < counterN; i++) {
+            snprintf(tileTxt[i], sizeof(tileTxt[i]), "%s %u", counterLabel(counterTypes[i]),
+                     counterCount(eng, counterTypes[i]));
+            tileW[i] = (uint16_t)(t.textWidth(tileTxt[i]) + 1 + 10 + XP_ICON_W);
+        }
+        int tileGap = 4, tilePad = 5;
+        uint8_t rowsUsed = 0;
+        // Tighter tiles, once, if a crowded day will not fit the rows there are.
+        for (uint8_t pass = 0; pass < 2 && counterN && !rowsUsed; pass++) {
+        if (pass == 1) {
+            tileGap = 2; tilePad = 2;
+            for (uint8_t i = 0; i < counterN; i++) tileW[i] -= 6;
+        }
+        for (uint8_t r = 1; r <= counterRows; r++) {
+            const uint8_t bse = counterN / r, rem = counterN % r;
+            bool fits = true;
+            uint8_t st = 0;
+            for (uint8_t row = 0; row < r && fits; row++) {
+                const uint8_t n = bse + (row < rem ? 1 : 0);
+                int rw = 0;
+                for (uint8_t k = 0; k < n; k++) rw += tileW[st + k] + (k ? tileGap : 0);
+                if (n > perRowCap || rw > w - 8) fits = false;
+                st += n;
             }
-            st += n;
+            if (fits) { rowsUsed = r; break; }
+        }
+        }
+        if (counterN && !rowsUsed) rowsUsed = counterRows;
+        // A kind that has just turned up flashes orange for a few seconds, the
+        // way an XP taskbar button asks for you.
+        static uint32_t s_tileSince[(uint8_t)DetectionType::COUNT] = {};
+        {
+            bool live[(uint8_t)DetectionType::COUNT] = {};
+            for (uint8_t i = 0; i < counterN; i++) live[(uint8_t)counterTypes[i]] = true;
+            for (uint8_t i = 0; i < (uint8_t)DetectionType::COUNT; i++) {
+                if (!live[i]) s_tileSince[i] = 0;
+                else if (!s_tileSince[i]) s_tileSince[i] = now ? now : 1;
+            }
+        }
+        s_tileN = 0;
+        int bX = 0, bY = 0, bW = 0, bH = 0;
+        const bool bub = !Settings::boringMode() && Squachy::ownBubble(bX, bY, bW, bH);
+        if (counterN) {
+            const uint8_t bse = counterN / rowsUsed, rem = counterN % rowsUsed;
+            uint8_t st = 0;
+            for (uint8_t row = 0; row < rowsUsed; row++) {
+                const uint8_t n = bse + (row < rem ? 1 : 0);
+                const int rowY = tilesTop + 2 + row * lineH;
+                int rw = 0;
+                for (uint8_t k = 0; k < n; k++) rw += tileW[st + k] + (k ? tileGap : 0);
+                int x = (w - rw) / 2;
+                const bool paint = DrawBand::has(rowY - 2, rowY + lineH);
+                for (uint8_t k = 0; k < n; k++) {
+                    const uint8_t i = st + k;
+                    const DetectionType ty = counterTypes[i];
+                    bool lit = false;
+                    for (uint8_t d = 0; d < (uint8_t)DetectionType::COUNT && d < 32; d++)
+                        if ((s_litMask & (1u << d)) && uiClearColumnHolds(ty, (DetectionType)d)) { lit = true; break; }
+                    const int ty0 = rowY - 2, th = 12;
+                    // A tile under his speech bubble waits for it to go: the
+                    // bubble is the one that has something to say right now.
+                    const bool underBubble = bub && x < bX + bW && x + tileW[i] > bX && ty0 < bY + bH && ty0 + th > bY;
+                    if (paint && !underBubble) {
+                        // Lit is XP blue; just arrived flashes orange; only your
+                        // own ignored or snoozed things are a greyed-out slate.
+                        const uint32_t since = s_tileSince[(uint8_t)ty];
+                        const bool flash = lit && since && now - since < 3000 && ((now - since) / 500) % 2 == 0;
+                        drawXpTile(t, x, ty0, tileW[i], th, tileTxt[i], Theme::colorFor(ty),
+                                   flash ? 1 : (lit ? 0 : 2), tilePad);
+                    }
+                    if (s_tileN < TILE_MAX) s_tiles[s_tileN++] = { (int16_t)x, (int16_t)ty0, (int16_t)tileW[i], (int16_t)th, ty };
+                    x += tileW[i] + tileGap;
+                }
+                st += n;
+            }
         }
     }
 

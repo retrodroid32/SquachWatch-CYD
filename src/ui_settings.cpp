@@ -125,7 +125,8 @@ static const SettingsRow APPEARANCE_ROWS[] = {
     SettingsRow::SQUACHY_SIZE, SettingsRow::OUTFIT, SettingsRow::PET,
     SettingsRow::SHADES_COLOR, SettingsRow::BANTER, SettingsRow::AURA,
     // Then how the SCREEN looks.
-    SettingsRow::THEME, SettingsRow::BACKGROUND, SettingsRow::BACKGROUND_LOCK, SettingsRow::BRIGHTNESS,
+    SettingsRow::THEME, SettingsRow::BACKGROUND, SettingsRow::BACKGROUND_LOCK, SettingsRow::DET_STYLE,
+    SettingsRow::BRIGHTNESS,
     SettingsRow::INVERT, SettingsRow::RGB_SWAP, SettingsRow::ROTATION_LOCK,
     // And the one light that is not on the screen at all.
     SettingsRow::STATUS_LIGHT,
@@ -261,6 +262,7 @@ static RowGroupId groupFor(SettingsRow r) {
         case SettingsRow::OUTFIT:
         case SettingsRow::PET:
         case SettingsRow::BANTER:
+        case SettingsRow::DET_STYLE:
             return RowGroupId::APPEARANCE;
         case SettingsRow::BORING_MODE:
         case SettingsRow::CONFIDENCE:
@@ -1049,6 +1051,10 @@ static void rowContent(SettingsRow r, const DetectionEngine& eng, char* valBuf, 
         case SettingsRow::BANTER:
             label = "BANTER";
             value = Settings::banterName();
+            break;
+        case SettingsRow::DET_STYLE:
+            label = "DETECTIONS";
+            value = Settings::detXp() ? "XP" : "CLASSIC";
             break;
         case SettingsRow::VIEW_DIARY:
             label = "SQUACHY'S DIARY";

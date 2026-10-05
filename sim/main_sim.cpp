@@ -561,6 +561,8 @@ int main(int argc, char** argv) {
     if (const char* dj = getenv("SQUACHSIM_DEJA")) Squachy::t3DejaEvery = (uint32_t)atoi(dj);
     // SQUACHSIM_PRIVACY=1: PRIVACY MODE on, for shots of the masked screens.
     if (getenv("SQUACHSIM_PRIVACY") && !Settings::privacyMode()) Settings::togglePrivacyMode();
+    // SQUACHSIM_CLASSIC=1: DETECTIONS set to CLASSIC (NEARBY and the full counter rows).
+    if (getenv("SQUACHSIM_CLASSIC") && Settings::detXp()) Settings::toggleDetXp();
     // SQUACHSIM_LTBRIGHT=N: the STATUS LIGHT's BRIGHTNESS step, 1..7.
     if (const char* lb = getenv("SQUACHSIM_LTBRIGHT"))
         for (int g = 0; g < 8 && Settings::lightBrightness() != atoi(lb); g++) Settings::cycleLightBrightness();

@@ -133,6 +133,11 @@ namespace Settings {
     // The Legend's aura: lit unless put out on the APPEARANCE page.
     bool       auraShown();
     void       toggleAura();
+    // DETECTIONS on the APPEARANCE page: XP (the counter buttons across the
+    // top, Squachy on the button bar) or CLASSIC (the NEARBY headline and
+    // the full counter rows at the bottom, as before v1.31.0).
+    bool       detXp();
+    void       toggleDetXp();
 
     // Last rotation (0..3, TFT_eSPI's setRotation() values) the rotate
     // button left the screen on -- so it comes back up the same way
