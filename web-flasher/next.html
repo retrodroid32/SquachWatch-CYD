@@ -1676,6 +1676,9 @@
     var codeOut = document.getElementById('boardCodeAnswer');
     var CODES = [
       { re: /2432S028/,             v: './manifest-cyd.json',         say: 'That’s the 2.8" CYD. If the screen goes white, pick the ILI9341 one instead.' },
+      { re: /E32R28|32E.*240X320|32E.*2\.8|2\.8.*32E/, v: './manifest-cyd-ili9341.json', say: 'That’s the ESP32-32E 2.8" (E32R28T): the 2.8" CYD’s ILI9341 build. Selected below; leave the overclock box unticked.' },
+      { re: /E32R35|32E.*320X480|32E.*3\.5|3\.5.*32E/, v: './manifest-cyd35-fast.json', say: 'That’s the ESP32-32E 3.5" (E32R35T), the 3.5" resistive (BETA). Selected below.' },
+      { re: /ESP32-?32E$/, v: null, say: 'ESP32-32E boards come in 2.8" and 3.5". Add the size or the resolution printed beside it, e.g. 32E 240x320.' },
       { re: /2432S032C/,            v: './manifest-cyd32c.json',      say: 'That’s the 3.2" capacitive. Selected below.' },
       { re: /FNK0?103|2432S032R?$/, v: './manifest-freenove32.json',  say: 'That’s the 3.2" resistive. Selected below.' },
       { re: /3248S035C/,            v: './manifest-cyd35c-fast.json', say: 'That’s the 3.5" capacitive (BETA). Selected below.' },
