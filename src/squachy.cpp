@@ -811,6 +811,27 @@ static int      s_grabX = 0, s_grabY = 0;
 static uint32_t s_dropStart = 0;
 static int      s_dropX = 0, s_dropY = 0;
 
+// ---- throw ------------------------------------------------------------
+// The finger's speed while it carries him, smoothed over the last few
+// frames, in px/ms; release() turns a fast one into a throw. From there it
+// is plain physics -- gravity, a bounce off the floor and the screen's
+// edges that loses most of its speed each time -- until he comes to rest,
+// sits a moment (longer and wobblier after a hard one) and walks back.
+enum class Throw : uint8_t { NONE, AIR, SIT, WALK };
+static Throw    s_thPhase = Throw::NONE;
+static float    s_thX = 0, s_thY = 0, s_thVX = 0, s_thVY = 0;  // body cx, head top
+static uint32_t s_thLast = 0, s_thAt = 0, s_thPhaseAt = 0;
+static uint32_t s_thSqAt = 0;            // the last floor bounce, for the squash
+static float    s_thSqK = 0, s_thHard = 0;
+static uint8_t  s_thBounces = 0;
+static float    s_gvX = 0, s_gvY = 0;    // the carrying finger's speed
+static int      s_gpX = 0, s_gpY = 0;
+static uint32_t s_gpT = 0;
+static const float    TH_G       = 0.0028f;  // px/ms^2
+static const float    TH_MIN_V   = 0.32f;    // slower than this is a drop, not a throw
+static const float    TH_MAX_V   = 1.7f;
+static const uint32_t TH_SIT_MS  = 500, TH_DAZE_MS = 1400;
+
 // ---- ducking --------------------------------------------------------
 // Set by toasterNear() when something is genuinely on a collision
 // course. The cooldown is his, not the caller's: backgrounds fire the
@@ -987,6 +1008,24 @@ static const char* const TICKLE_FEET_LINES[] = {
     "Not the feet!",
     "HEY. Feet are private.",
     "I will kick. I have kicked before.",
+};
+static const char* const THROW_LINES[] = {
+    "WHEEEEEE!",
+    "Not like THIS!",
+    "I'm a cryptid, not a frisbee!",
+    "Tell my fans I-",
+    "I CAN SEE MY CAVE FROM HERE!",
+};
+static const char* const LAND_LINES[] = {
+    "Stuck it.",
+    "Ten. From the judges? Four.",
+    "I meant to do that.",
+};
+static const char* const DIZZY_LINES[] = {
+    "Which way is the forest?",
+    "I can hear colours.",
+    "Do that again. No. Wait. Don't.",
+    "I have seen the backlight. From the inside.",
 };
 static const char* const FLICK_LINES[] = {
     "HEY!",
@@ -1765,16 +1804,66 @@ bool lastFootprint(int& cx, int& halfW, int& top, int& bot) {
 static uint32_t s_grabAt = 0;   // the last time a finger said where he is
 
 void grabTo(int x, int y) {
+    const uint32_t now = millis();
+    // How fast the finger is going, half from this frame and half from the
+    // ones before, so one jittery sample on a resistive panel cannot throw
+    // him on its own. A gap of more than a few frames starts it over.
+    if (s_grabbed && s_gpT && now - s_gpT > 0 && now - s_gpT < 150) {
+        const float dt = (float)(now - s_gpT);
+        s_gvX = 0.5f * s_gvX + 0.5f * (float)(x - s_gpX) / dt;
+        s_gvY = 0.5f * s_gvY + 0.5f * (float)(y - s_gpY) / dt;
+    } else if (!s_grabbed || now - s_gpT >= 150) {
+        s_gvX = s_gvY = 0;
+    }
+    if (now != s_gpT) { s_gpX = x; s_gpY = y; s_gpT = now; }
     s_grabbed   = true;
     s_dropStart = 0;
+    s_thPhase   = Throw::NONE;     // caught in mid-air
     s_grabX = x;
     s_grabY = y;
-    s_grabAt = millis();
+    s_grabAt = now;
     lastInteraction = s_grabAt;
+}
+
+static void launch(float vx, float vy, uint32_t now) {
+    const float lim = TH_MAX_V;
+    if (vx > lim) vx = lim;
+    if (vx < -lim) vx = -lim;
+    if (vy > lim) vy = lim;
+    if (vy < -lim) vy = -lim;
+    s_grabbed   = false;
+    s_dropStart = 0;
+    s_flickStart = 0;
+    s_thPhase = Throw::AIR;
+    s_thX = (float)s_lastCx;
+    s_thY = (float)s_lastHeadTopY;
+    s_thVX = vx; s_thVY = vy;
+    s_thAt = s_thLast = now;
+    s_thSqAt = 0; s_thHard = 0; s_thBounces = 0;
+    s_gpT = 0;
+    lastInteraction = now;
+    mood = Mood::SHOCKED;
+    moodUntil = now + 1600;
+    say(pick(THROW_LINES, 5), MIN_BUBBLE_MS);
+}
+
+bool thrown() { return s_thPhase != Throw::NONE; }
+
+void toss(int8_t dir) {
+    if (s_onboardActive || s_lastCx <= -9999) return;
+    launch(dir >= 0 ? 0.55f : -0.55f, -1.05f, millis());
 }
 
 void release() {
     if (!s_grabbed) return;
+    const uint32_t now = millis();
+    // Only a finger that was still moving when it let go: one that stopped
+    // and then lifted has a stale speed, and drops him.
+    if (now - s_gpT < 120 && s_gvX * s_gvX + s_gvY * s_gvY > TH_MIN_V * TH_MIN_V && s_lastCx > -9999) {
+        launch(s_gvX, s_gvY, now);
+        return;
+    }
+    s_gpT = 0;
     s_grabbed   = false;
     s_dropStart = millis();
     // Fall from exactly where he was let go rather than from the
@@ -8073,6 +8162,103 @@ void tick(TFT_eSPI& t, int cx, int topY, int availHeight, uint32_t now,
         if (bodyCx < halfW) bodyCx = halfW;
         if (bodyCx > t.width() - halfW) bodyCx = t.width() - halfW;
         s_dangle = true;
+    } else if (s_thPhase != Throw::NONE) {
+        // ---- thrown ----
+        const float floorY = (float)headTopY;
+        // He fills most of the height, so there is next to no air above
+        // him on screen: a throw upward is allowed out of the top, and he
+        // drops back in.
+        const float loYf   = (float)topY - 90.0f * scale;
+        const float halfWf = 24.0f * scale;
+        const float leftX  = halfWf, rightX = (float)t.width() - halfWf;
+        if (advance && s_thPhase == Throw::AIR) {
+            uint32_t dt = now - s_thLast;
+            if (dt > 60) dt = 60;
+            s_thLast = now;
+            // Small fixed steps, so a slow frame cannot carry him through
+            // the floor or a wall.
+            while (dt && s_thPhase == Throw::AIR) {
+                const float st = (float)(dt > 8 ? 8 : dt);
+                dt -= (dt > 8 ? 8 : dt);
+                s_thVY += TH_G * st;
+                s_thX  += s_thVX * st;
+                s_thY  += s_thVY * st;
+                if (s_thX < leftX && s_thVX < 0) {
+                    s_thX = leftX;
+                    if (-s_thVX > s_thHard) s_thHard = -s_thVX;
+                    s_thVX = -s_thVX * 0.55f;
+                } else if (s_thX > rightX && s_thVX > 0) {
+                    s_thX = rightX;
+                    if (s_thVX > s_thHard) s_thHard = s_thVX;
+                    s_thVX = -s_thVX * 0.55f;
+                }
+                if (s_thY < loYf && s_thVY < 0) { s_thY = loYf; s_thVY = -s_thVY * 0.4f; }
+                if (s_thY >= floorY && s_thVY > 0) {
+                    s_thY = floorY;
+                    s_thSqAt = now;
+                    s_thSqK  = s_thVY > 0.9f ? 1.0f : s_thVY / 0.9f;
+                    if (s_thVY > s_thHard) s_thHard = s_thVY;
+                    if (s_thVY > 0.22f && s_thBounces < 4) {
+                        s_thVY = -s_thVY * 0.42f;
+                        s_thVX *= 0.7f;
+                        s_thBounces++;
+                    } else {
+                        s_thVY = 0;
+                        s_thPhase = Throw::SIT;
+                        s_thPhaseAt = now;
+                        const bool hard = s_thHard > 1.0f || s_thBounces >= 2;
+                        mood = Mood::IDLE;
+                        moodUntil = 0;
+                        say(hard ? pick(DIZZY_LINES, 4) : pick(LAND_LINES, 3), MIN_BUBBLE_MS);
+                    }
+                }
+            }
+            // Something went wrong if he is still up there after five
+            // seconds; put him down.
+            if (s_thPhase == Throw::AIR && now - s_thAt > 5000) {
+                s_thY = floorY; s_thPhase = Throw::SIT; s_thPhaseAt = now;
+            }
+        }
+        const bool hard = s_thHard > 1.0f || s_thBounces >= 2;
+        const uint32_t sitMs = hard ? TH_DAZE_MS : TH_SIT_MS;
+        if (advance && s_thPhase == Throw::SIT && now - s_thPhaseAt >= sitMs) {
+            s_thPhase = Throw::WALK;
+            s_thPhaseAt = now;
+        }
+        if (s_thPhase == Throw::AIR) {
+            bodyCx = (int)lroundf(s_thX);
+            hy     = (int)lroundf(s_thY);
+            s_dangle = true;
+        } else {
+            float x = s_thX;
+            if (s_thPhase == Throw::SIT && hard) {
+                // Dazed: a wobble that dies away.
+                const float k = 1.0f - (float)(now - s_thPhaseAt) / (float)sitMs;
+                x += sinf((float)(now - s_thPhaseAt) / 45.0f) * 3.0f * scale * (k > 0 ? k : 0);
+            } else if (s_thPhase == Throw::WALK) {
+                const float dist = fabsf((float)cx - s_thX);
+                uint32_t walkMs = (uint32_t)(dist / 0.09f);
+                if (walkMs < 400) walkMs = 400;
+                const uint32_t we = now - s_thPhaseAt;
+                if (we >= walkMs) {
+                    x = (float)cx;
+                    if (advance) s_thPhase = Throw::NONE;
+                } else {
+                    float k = (float)we / (float)walkMs;
+                    k = k * k * (3.0f - 2.0f * k);
+                    x = s_thX + ((float)cx - s_thX) * k;
+                    s_headDrop += (int)(fabsf(sinf((float)we / 110.0f)) * 2.0f * scale);
+                }
+            }
+            bodyCx += (int)lroundf(x) - cx;
+            s_dangle = false;
+        }
+        // The squash off each floor bounce, on the landing's channels.
+        if (s_thSqAt && now - s_thSqAt < LAND_MS) {
+            const float k = (1.0f - (float)(now - s_thSqAt) / (float)LAND_MS) * s_thSqK;
+            s_headDrop  += (int)(7.0f * scale * k);
+            s_shadowAdj += (int)(5.0f * scale * k);
+        }
     } else if (s_dropStart != 0) {
         const uint32_t de = now - s_dropStart;
         const int restY = headTopY + (int)bob;

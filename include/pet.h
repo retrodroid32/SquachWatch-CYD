@@ -34,4 +34,10 @@ namespace Pet {
     bool clippyHit(int x, int y);
     void clippyPoke(uint32_t now);
     bool clippyCenter(int& x, int& y);
+    // Picking him up. A touch that lands on him grabs him at once; every
+    // frame it is held drags him; letting go is a poke when the finger never
+    // went anywhere, a throw when it was still moving, and a drop otherwise.
+    void clippyGrab(int x, int y, uint32_t now);
+    void clippyDrag(int x, int y, uint32_t now);
+    void clippyRelease(uint32_t now);
 }

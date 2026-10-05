@@ -1104,6 +1104,11 @@ static uint8_t stickStopsBuild(StickPt* out, uint8_t cap) {
         add(w * 5 / 6 - 4, h - 16);     // DESK
         add(w / 6 + 2, h - 16);         // SCAN
         add(13, 11);                    // the menu
+        {
+            int16_t xs[8], ys[8];        // the counter tiles
+            const uint8_t k = uiClearCounterStops(xs, ys, 8);
+            for (uint8_t i = 0; i < k; i++) add(xs[i], ys[i]);
+        }
         int px0, py0;
         if (Pet::clippyCenter(px0, py0)) add(px0, py0);   // C1iPPY, for a poke
         return n;
@@ -1841,6 +1846,8 @@ static void enterBoot() {
 // [BLE][WIFI][BACK] picker (see the CLEAR case's touch handling in
 // loop()). Reset on every enterClear() so returning here from
 // anywhere else never leaves a stale picker showing.
+// The column of the counter tile a tap just landed on.
+static DetectionType s_tileColumn = DetectionType::UNKNOWN;
 static bool s_scanPickerOpen = false;
 
 static void enterLocked();
@@ -5782,14 +5789,6 @@ void loop() {
             static uint32_t clrHoldStart  = 0;
             constexpr uint32_t CLR_UNLOCK_HOLD_MS = 4000;
 
-            // Long-press NEARBY: open the closest live device. The headline
-            // sits on top of Squachy, so the same touch is also tracked as a
-            // possible pet -- a quick tap still pets him, a stroke still
-            // strokes him, and only a still press held past the threshold
-            // becomes this instead.
-            static bool     nbActive = false;
-            static uint32_t nbStart  = 0;
-            constexpr uint32_t NEARBY_HOLD_MS = 600;
 
             // Decide up front whether a brand-new touch lands on Squachy
             // -- this only updates gesture-tracking state, it doesn't by
@@ -5799,9 +5798,19 @@ void loop() {
             // active gesture, still takes priority over the button bar
             // in the branch below -- Squachy is drawn well clear of the
             // button row, so the two never really compete in practice.)
-            // A tap on C1iPPY is his, not Squachy's or the background's.
+            // A touch on C1iPPY is his, not Squachy's or the background's:
+            // the whole gesture, from the press to the let-go, which is a
+            // poke, a drop or a throw depending on what the finger did.
+            static bool clipActive = false;
             if (touchJustDown && !boring && Pet::clippyHit(tp.x, tp.y)) {
-                Pet::clippyPoke(now);
+                clipActive = true;
+                Pet::clippyGrab(tp.x, tp.y, now);
+                lastTouch = now;
+                break;
+            }
+            if (clipActive) {
+                if (tp.valid) Pet::clippyDrag(tp.x, tp.y, now);
+                else { Pet::clippyRelease(now); clipActive = false; }
                 lastTouch = now;
                 break;
             }
@@ -5816,8 +5825,6 @@ void loop() {
                 clrHoldActive = !s_scanPickerOpen && barBtn == ButtonId::CLR;
                 clrHoldFired  = false;
                 clrHoldStart  = now;
-                nbActive = !s_scanPickerOpen && uiClearNearbyHit(tp.x, tp.y);
-                nbStart  = now;
             }
 
             // Any tap at all ends the parade, and is consumed doing it --
@@ -5893,6 +5900,29 @@ void loop() {
                 lastTouch = now;
                 sqActive  = false;
 #endif
+            } else if (touchJustDown && (now - lastTouch) > TOUCH_DEBOUNCE_MS && !s_scanPickerOpen &&
+                       uiClearCounterHit(tp.x, tp.y, s_tileColumn)) {
+                // A counter tile: the closest device of that kind, by signal.
+                // One you have not silenced if there is one, since that is the
+                // one the tile is lit for.
+                lastTouch = now;
+                sqActive  = false;
+                const Detection* best = nullptr;
+                bool bestQuiet = true;
+                for (uint8_t i = 0; i < engine.logCount(); i++) {
+                    const Detection* d = engine.logAt(i);
+                    if (!d || !d->active || !uiClearColumnHolds(s_tileColumn, d->type)) continue;
+                    const bool quiet = IgnoreList::silenced(d->mac);
+                    if (!best || (bestQuiet && !quiet) || (quiet == bestQuiet && d->rssi > best->rssi)) {
+                        best = d; bestQuiet = quiet;
+                    }
+                }
+                if (best) {
+                    uiAlertSetRedacted(false);
+                    enterAlert(*best);
+                } else {
+                    Theme::showToast("GONE", "It just left", Theme::CYAN);
+                }
             } else if (touchJustDown && (now - lastTouch) > TOUCH_DEBOUNCE_MS &&
                        Theme::backgroundTap(tp.x, tp.y, now)) {
                 // Something tappable in the background itself claimed
@@ -5917,35 +5947,6 @@ void loop() {
                 lastTouch = now;
                 if (tp.x < edgeZoneW) Settings::cyclePrevBackground();
                 else                  Settings::cycleBackground();
-            } else if (tp.valid && nbActive) {
-                const int32_t dx = tp.x - sqStartX, dy = tp.y - sqStartY;
-                // A much wider allowance than Squachy's pet stroke: a thumb
-                // held still on a resistive panel wanders several pixels a
-                // frame, and at the pet threshold every hold on a real board
-                // was cancelled as a stroke and handed to him instead.
-                constexpr int32_t NB_MOVE_PX_SQ = 24 * 24;
-                if ((dx * dx + dy * dy) > NB_MOVE_PX_SQ) {
-                    // A real stroke, not a press: Squachy gets it from here on.
-                    nbActive = false;
-                } else if ((now - nbStart) >= NEARBY_HOLD_MS) {
-                    nbActive = false;
-                    sqActive = false;
-                    lastTouch = now;
-                    // Closest means strongest signal, among devices that are
-                    // live right now. RSSI is a guess at distance, not a
-                    // measurement, which is why the card still shows the dBm.
-                    const Detection* best = nullptr;
-                    for (uint8_t i = 0; i < engine.logCount(); i++) {
-                        const Detection* d = engine.logAt(i);
-                        if (d && d->active && (!best || d->rssi > best->rssi)) best = d;
-                    }
-                    if (best) {
-                        uiAlertSetRedacted(false);
-                        enterAlert(*best);
-                    } else {
-                        Theme::showToast("NOTHING NEARBY", "It just left", Theme::CYAN);
-                    }
-                }
             } else if (!boring && tp.valid && sqActive) {
                 int32_t dx = tp.x - sqStartX;
                 int32_t dy = tp.y - sqStartY;
@@ -5997,7 +5998,12 @@ void loop() {
             // slide off him mid-stroke and still release cleanly).
             if (touchJustUp && sqActive) {
                 if (sqHeld) {
-                    Squachy::release();     // drop him wherever he ended up
+#if defined(SQW_SMALL)
+                    // No finger to throw him with: a hold, let go, tosses him.
+                    Squachy::toss(random(0, 2) ? 1 : -1);
+#else
+                    Squachy::release();     // drop him, or throw him if the finger was moving
+#endif
                 } else if (!sqPetting) {
                     Squachy::noteTapAt(sqStartX, sqStartY);
                     Squachy::trigger(Squachy::Event::PETTED);

@@ -23,6 +23,7 @@
 #include "theme.h"
 #include "settings.h"
 #include "squachy.h"
+#include "pet.h"
 #include "detection.h"
 #include "detection_info.h"
 #include "ui_clear.h"
@@ -1123,9 +1124,42 @@ int main(int argc, char** argv) {
         if (!rawOut) { fprintf(stderr, "failed to open %s\n", rawPath.c_str()); return 1; }
     }
 
+    // SQUACHSIM_THROW=who:x0:y0:x1:y1 -- a throw at the start of the
+    // capture. who is s (Squachy: held past the hold time, then flung) or c
+    // (C1iPPY: grabbed, then flung; x0 -1 starts on him, x1,y1 relative). The finger goes from x0,y0 to x1,y1 over
+    // four frames and lets go on the fifth.
+    char thWho = 0;
+    int thX0 = 0, thY0 = 0, thX1 = 0, thY1 = 0;
+    if (const char* g = getenv("SQUACHSIM_THROW"))
+        if (sscanf(g, "%c:%d:%d:%d:%d", &thWho, &thX0, &thY0, &thX1, &thY1) != 5) thWho = 0;
+    auto throwStep = [&](int s, uint32_t t) {
+        if (!thWho) return;
+        const int hold = thWho == 's' ? 20 : 0;     // Squachy wants a hold first
+        if (s > hold + 5) return;
+        SimClock::nowMs = t;
+        if (s <= hold) {
+            if (thWho == 's') { if (s == 0) Squachy::trigger(Squachy::Event::HELD); Squachy::grabTo(thX0, thY0); }
+            else if (s == 0) {
+                // A negative x0 means "wherever he is", and x1,y1 is then how
+                // far the finger goes from there.
+                int px, py;
+                if (thX0 < 0 && Pet::clippyCenter(px, py)) { thX1 += px; thY1 += py; thX0 = px; thY0 = py; }
+                Pet::clippyGrab(thX0, thY0, t);
+            }
+            return;
+        }
+        const int k = s - hold;
+        if (k <= 4) {
+            const int x = thX0 + (thX1 - thX0) * k / 4, y = thY0 + (thY1 - thY0) * k / 4;
+            if (thWho == 's') Squachy::grabTo(x, y); else Pet::clippyDrag(x, y, t);
+        } else {
+            if (thWho == 's') Squachy::release(); else Pet::clippyRelease(t);
+        }
+    };
     for (int s = 0; s < sequence; s++) {
         const uint32_t sNow = now + (uint32_t)(frames + s) * STEP_MS;
         grabStep();
+        throwStep(s, sNow);
         tick(sNow);
         // --tap frame numbers run straight on through the capture, so a tap
         // can land on a frame you can actually look at afterwards.

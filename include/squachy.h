@@ -62,8 +62,16 @@ namespace Squachy {
     void grabTo(int x, int y);
 
     // Let go. He falls back to where he was standing and lands in a
-    // squash. Safe to call when nothing was ever grabbed.
+    // squash -- or, when the finger was still moving fast as it let go, he
+    // is thrown: he flies off with its speed, bounces off the floor and the
+    // edges, sits there a moment and walks back. Safe to call when nothing
+    // was ever grabbed.
     void release();
+    // A throw with no finger to measure, for the boards with buttons: a
+    // press-and-hold on him, let go, sends him up and off to one side.
+    void toss(int8_t dir);
+    // In the air after a throw, or sitting dazed, or walking back from it.
+    bool thrown();
 
     // A background telling him something is about to hit him, in screen
     // coordinates -- the reverse of lastFootprint(), which backgrounds

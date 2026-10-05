@@ -52,9 +52,15 @@ bool uiClearSquadHit(int x, int y);
 // named and where REMOVE FROM WATCH LIST lives. Only ever true while a watch
 // or a hunt is actually set -- the pill is not drawn otherwise.
 bool uiClearWatchPillHit(int x, int y);
-// The NEARBY headline, which only exists while something is live. Long-pressing
-// it opens the closest device -- see main.cpp. False whenever it is not drawn.
-bool uiClearNearbyHit(int x, int y);
+// The counter tiles under Squachy: one per kind of thing in range right now,
+// none when it is quiet. True if a tap landed on one, with the column's type
+// (AIRTAG for the trackers, CAMERA for cameras and doorbells, HACKER for
+// attack kit and evil twins); main.cpp opens the closest device in it.
+bool uiClearCounterHit(int x, int y, DetectionType& column);
+// Whether a device of type d is counted in that column.
+bool uiClearColumnHolds(DetectionType column, DetectionType d);
+// The tiles' centres, for the cursor on the boards with buttons.
+uint8_t uiClearCounterStops(int16_t* xs, int16_t* ys, uint8_t cap);
 // A tap on somebody in the CROWD, which puts his name over him for a few
 // seconds. True if it landed on one. Past four of them the nameplates come
 // off -- at eight they are more clutter than label -- and this is how you ask
