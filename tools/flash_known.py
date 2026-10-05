@@ -26,6 +26,7 @@ BOARDS = {
     # goes back on hold, comment it out again rather than leaving a board here
     # that nobody means to flash.
     "a4:f0:0f:8e:3a:88": ("cyd35-fast", "3.5in, 80MHz, two-band drawing"),
+    "b0:cb:d8:02:ab:50": ("cyd35-fast", "3.5in resistive (ESP32-3248S035R), the second one (2026-10-05)"),
     "a0:f2:62:e1:29:10": ("twatch-s3",  "LilyGo T-Watch S3, native USB (COM13 is allowed for THIS MAC only)"),
     # The T-Watch S3 Plus: the S3's pins exactly, plus GPS on 41/42 and the
     # PMU rails that feed it (LilyGoLib docs/hardware, 2026-09-28). The watch
