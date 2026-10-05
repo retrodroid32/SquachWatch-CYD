@@ -648,6 +648,8 @@ static bool     s_shamblerUnlocked   = false;  // earned by tapping the owl whil
 static bool     s_th3Unlocked        = false;  // earned by tapping the red glyph in the DIGITAL rain
 static bool     s_sharkUnlocked      = false;  // earned by catching the Aquarium shark on his return pass
 static bool     s_petUnlocked        = false;  // earned by tapping the lil guy on the toasters
+static bool     s_clippyUnlocked     = false;  // earned by backspacing ten times in a row
+static const char* s_clippyIntro     = nullptr;
 // Whether the card has been shown for him. Kept separately from the unlock
 // itself, and for the same reason the outfits keep an "announced" bitmask:
 // the pet survives a reboot, so without this the celebration would play
@@ -1436,6 +1438,7 @@ static void ensurePrefsLoaded() {
     s_allOutfitsUnlocked = s_petPrefs.getBool("allOutfits", false);
     s_petUnlocked        = s_petPrefs.getBool("petUnlk", false);
     s_petAnnounced       = s_petPrefs.getBool("petSeen", false);
+    s_clippyUnlocked     = s_petPrefs.getBool("clippy", false);
     // Defaults ON once earned: somebody who just unlocked a pet wants to
     // see it, not to go and find a switch.
     // "petSel" is the one to read; a board from before there were two
@@ -2493,6 +2496,38 @@ bool consumePetUnlockCard() {
 }
 
 bool petUnlocked() { ensurePrefsLoaded(); return s_petUnlocked; }
+bool clippyUnlocked() { ensurePrefsLoaded(); return s_clippyUnlocked; }
+bool anyPetUnlocked() { ensurePrefsLoaded(); return s_petUnlocked || s_clippyUnlocked; }
+
+void unlockClippy(const char* why) {
+    ensurePrefsLoaded();
+    if (s_clippyUnlocked) return;
+    s_clippyUnlocked = true;
+    s_petPrefs.putBool("clippy", true);
+    // On at once: he is the kind of help that does not wait to be asked.
+    s_petSel = (uint8_t)PetId::CLIPPY;
+    s_petPrefs.putUChar("petSel", s_petSel);
+    s_clippyIntro = why;
+}
+
+const char* takeClippyIntro() { const char* w = s_clippyIntro; s_clippyIntro = nullptr; return w; }
+
+// Ten in a row, and anything typed in between starts the count again.
+static uint8_t s_backspaces = 0;
+void noteBackspace() {
+    if (++s_backspaces >= 10) { s_backspaces = 0; unlockClippy("It looks like you're having trouble typing."); }
+}
+void noteTyped() { s_backspaces = 0; }
+
+// The boards with no keyboard: Settings opened from the main screen five
+// times inside thirty seconds.
+void noteSettingsOpened() {
+    static uint32_t first = 0;
+    static uint8_t  n = 0;
+    const uint32_t now = millis();
+    if (!n || now - first > 30000) { first = now; n = 0; }
+    if (++n >= 5) { n = 0; unlockClippy("It looks like you're lost."); }
+}
 bool petEnabled()  { ensurePrefsLoaded(); return s_petSel != 0;  }
 
 PetId petChoice() {
@@ -2504,13 +2539,20 @@ const char* petName() {
     switch (petChoice()) {
         case PetId::SHAGGY: return "VAPOR SHAGGY";
         case PetId::YETI:   return "THE YETI";
+        case PetId::CLIPPY: return "C1iPPY";
         default:            return "OFF";
     }
 }
 
 void cyclePet() {
     ensurePrefsLoaded();
-    s_petSel = (uint8_t)((s_petSel + 1) % (uint8_t)PetId::COUNT);
+    // Round to the next one that is earned: SHAGGY and the yeti come together,
+    // C1iPPY on his own.
+    for (uint8_t k = 0; k < (uint8_t)PetId::COUNT; k++) {
+        s_petSel = (uint8_t)((s_petSel + 1) % (uint8_t)PetId::COUNT);
+        const PetId p = (PetId)s_petSel;
+        if (p == PetId::OFF || (p == PetId::CLIPPY ? s_clippyUnlocked : s_petUnlocked)) break;
+    }
     s_petPrefs.putUChar("petSel", s_petSel);
 }
 
@@ -2653,6 +2695,7 @@ void unlockAllOutfits() {
     // costume set that stops short of the one companion would be a strange
     // place to draw the line.
     if (!s_petUnlocked) { s_petUnlocked = true; s_petPrefs.putBool("petUnlk", true); }
+    if (!s_clippyUnlocked) { s_clippyUnlocked = true; s_petPrefs.putBool("clippy", true); }
     // No popups for the cheat: it already has its own rainbow-and-confetti
     // tell below, and eleven modals in a row would bury it. Mark the lot as
     // seen so nothing queues now or on the next boot.

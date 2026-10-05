@@ -352,7 +352,7 @@ static uint8_t buildDisplayList(DisplayItem* out) {
         // mode. Showing a permanently-off row for something you have never
         // seen would give the secret away -- and a switch for an aura he
         // does not have yet would be a switch that does nothing.
-        if (r == SettingsRow::PET && !Squachy::petUnlocked()) continue;
+        if (r == SettingsRow::PET && !Squachy::anyPetUnlocked()) continue;
         if (r == SettingsRow::AURA && !Squachy::hasAura()) continue;
         // Not a secret, just impossible: a board without a second app slot or
         // a Bluetooth server has nothing to update into.

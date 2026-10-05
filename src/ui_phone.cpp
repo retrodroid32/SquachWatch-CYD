@@ -157,12 +157,13 @@ void saveAndClose() {
     }
     s_done = true;
 }
-void deleteLast() { commitPending(); if (s_len) s_buf[--s_len] = '\0'; }
+void deleteLast() { commitPending(); if (s_len) s_buf[--s_len] = '\0'; Squachy::noteBackspace(); }
 // The name board's SHUFFLE: whatever was typed goes, and the curated name
 // steps to the next one. OK from here keeps it -- an empty board means
 // "the curated one", which is what the readout shows.
 void shuffleName() { commitPending(); s_len = 0; s_buf[0] = '\0'; Squachy::cycleNickname(); }
 void appendChar(char c) {
+    Squachy::noteTyped();
     commitPending();
     if (s_len < s_max) { s_buf[s_len++] = c; s_buf[s_len] = '\0'; }
 }
@@ -499,6 +500,7 @@ void uiPhoneTouch(int x, int y, uint32_t now, PhoneTouch phase) {
         if (i == 9) {                                   // DEL
             commitPending();
             if (s_len) s_buf[--s_len] = '\0';
+            Squachy::noteBackspace();
             return;
         }
         if (i == 11) {                                  // OK
@@ -528,6 +530,7 @@ void uiPhoneTouch(int x, int y, uint32_t now, PhoneTouch phase) {
             // is what lets you type two letters off one key by waiting, and
             // two off different keys without waiting at all.
             if (s_len >= s_max) return;
+            Squachy::noteTyped();
             s_tapIx = 0;
             s_buf[s_len++] = letters[0];
             s_buf[s_len] = '\0';

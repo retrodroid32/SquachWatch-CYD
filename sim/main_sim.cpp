@@ -477,6 +477,7 @@ int main(int argc, char** argv) {
     // unlock comes with it, the same way --outfit unlocks what it selects.
     if (petIdx >= 0) {
         Squachy::unlockPet();
+        if (petIdx == (int)Squachy::PetId::CLIPPY) Squachy::unlockClippy(nullptr);
         for (int k = 0; k < 8 && (int)Squachy::petChoice() != petIdx; k++) Squachy::cyclePet();
     }
 

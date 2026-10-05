@@ -4,6 +4,9 @@
 #include "squachy.h"
 #include "lil_guy.h"
 #include "settings.h"
+#include "clock.h"
+#include "state.h"
+#include <string.h>
 #include <math.h>
 #include <stdlib.h>
 
@@ -171,6 +174,362 @@ static const char* const NAP_REPLY[3] = {
     "he's out cold",
 };
 
+// ---- C1iPPY -------------------------------------------------------------
+// A paperclip that has been unbent into a lock pick. He does not visit: he
+// stays beside Squachy, hops to the other spot now and then, and about once
+// a minute offers advice nobody asked for. After a catch the advice is about
+// the catch, and it is always the most obvious thing there is to say.
+//
+// No mouth. Everything is the eyelids, the eyebrows and the pick. The wire
+// is laid out each frame as points in a 32 x 46 box and stamped into a small
+// grid, then drawn a row at a time, so the hook, the squash and the twitch
+// cost a few thousand byte writes rather than a few thousand pixels.
+//
+// Lines are three balloon lines of 24 characters at most, 72 in all.
+static const char* const CLIP_TIPS[] = {
+    "It looks like you're being watched. Would you like to be watched less?",
+    "Tip: cameras can see you. Try standing behind something.",
+    "It looks like nothing is nearby. Would you like me to worry anyway?",
+    "Did you know? WiFi has no wires. I checked.",
+    "Fun fact: I am also scanning you. Professionally.",
+    "Tip: Squachy works best when he is switched on.",
+    "It looks like you want privacy. Have you tried a hat?",
+    "Battery low? Have you tried charging it?",
+    "Tip: a paperclip opens most locks. Your own locks.",
+    "Need a SIM tray tool? I'm right here. Bent, but here.",
+    "Pro tip: if it says FLOCK, it is a Flock.",
+    "I used to hold papers together. Now I hold grudges.",
+    "Would you like help? No? I'll just stand here, then.",
+    "Tip: look both ways before crossing a WiFi network.",
+    "It looks like you're reading this. Keep going.",
+    "Tip: nothing on the counters is the good kind of nothing.",
+};
+static const uint8_t CLIP_TIPS_N = sizeof(CLIP_TIPS) / sizeof(CLIP_TIPS[0]);
+static const char* const CLIP_NIGHT[] = {
+    "It looks like it's late. Would you like to sleep? I don't.",
+    "Night tip: cameras still see in the dark.",
+    "Can't sleep? Me neither. I'm a paperclip.",
+};
+static const char* const CLIP_SQUAD[] = {
+    "It looks like a friend. Want me to clip you two together?",
+    "Visitor detected. Tip: say hello.",
+    "Two Squachys. Twice the advice.",
+};
+static const char* const CLIP_POKE[] = {
+    "Would you like help?",
+    "Great! Here is a tip: you poked me again.",
+    "It looks like you poked me. Would you like to stop?",
+    "Okay. I'll be right here. Watching. Helpfully.",
+};
+// What Squachy says back, in his own bubble, after a tip has had its turn.
+static const char* const CLIP_BACK[] = {
+    "nobody asked, wire", "go hold a paper", "i'm the detector here",
+    "bent AND smug. wow", "you're a staple's understudy", "thanks. ignoring that.",
+};
+
+static const char* clipCatchLine(uint8_t type) {
+    switch ((DetectionType)type) {
+        case DetectionType::FLOCK:       return "It looks like you found a Flock camera. Try driving past it.";
+        case DetectionType::AXON:        return "Body camera nearby. Tip: it is recording. Smile.";
+        case DetectionType::META:        return "Camera glasses nearby. Would you like to make a face?";
+        case DetectionType::SKIMMER:     return "That's a card skimmer. Have you considered paying in cash?";
+        case DetectionType::RAVEN:       return "Gunshot sensor nearby. Tip: please do not test it.";
+        case DetectionType::AIRTAG:
+        case DetectionType::SAMSUNG_TAG:
+        case DetectionType::GOOGLE_TAG:
+        case DetectionType::TILE:        return "It looks like a tracker. Is it yours? Check your keys.";
+        case DetectionType::DRONE:       return "A drone! Tip: look up.";
+        case DetectionType::ALPR:        return "Plate reader nearby. Have you considered a bicycle?";
+        case DetectionType::CAMERA:      return "It looks like there's a camera. You're on TV!";
+        case DetectionType::RING:        return "A doorbell camera. Tip: do not ring it forty times.";
+        case DetectionType::DEAUTH:      return "Someone is knocking devices off WiFi. Turn it off and on?";
+        case DetectionType::EVILTWIN:    return "That WiFi has an evil twin. Tip: don't join the evil one.";
+        case DetectionType::HACKER:      return "It looks like a hacker tool. Hello, colleague.";
+        case DetectionType::IBEACON:     return "A shop beacon wants to sell you things. Tip: walk faster.";
+        default:                         return nullptr;
+    }
+}
+
+enum class ClipFace : uint8_t { IDLE, TALK, SURPRISED, SMUG };
+static const int      CLIP_W = 32, CLIP_H = 46;
+static const uint32_t CLIP_TALK_MS  = 5500;
+static const uint32_t CLIP_HOP_MS   = 700, CLIP_LAND_MS = 160;
+static const uint32_t CLIP_SMUG_MS  = 3000;
+
+static const char* s_cLine   = nullptr;     // in his balloon until s_cSaidAt + CLIP_TALK_MS
+static uint32_t    s_cSaidAt = 0, s_cNextTip = 0, s_cHopAt = 0, s_cNextHop = 0;
+static uint32_t    s_cSmugAt = 0, s_cPokeAt = 0;
+static bool        s_cCaught = false, s_cAnswered = true, s_cSpotB = false;
+static uint8_t     s_cTip = 0, s_cPoke = 0;
+static int16_t     s_cX = -100, s_cY = 0;   // the box's top-left this frame, for hits
+static uint8_t     s_cPending = 0;          // a catch to talk about, type + 1
+static int16_t     s_cFromX = 0;
+
+void noteCatch(uint8_t type) {
+    if (Squachy::petChoice() != Squachy::PetId::CLIPPY) return;
+    s_cPending = (uint8_t)(type + 1);
+}
+
+static void clipSay(const char* line, uint32_t now, bool caught) {
+    s_cLine = line; s_cSaidAt = now ? now : 1; s_cCaught = caught; s_cAnswered = caught;
+}
+
+bool clippyHit(int x, int y) {
+    if (Squachy::petChoice() != Squachy::PetId::CLIPPY || s_cX < -50) return false;
+    return x >= s_cX - 4 && x <= s_cX + 30 && y >= s_cY - 4 && y <= s_cY + CLIP_H;
+}
+
+void clippyPoke(uint32_t now) {
+    // A run of pokes walks the four lines; a pause starts it over.
+    if (now - s_cPokeAt > 8000) s_cPoke = 0;
+    s_cPokeAt = now;
+    clipSay(CLIP_POKE[s_cPoke % 4], now, false);
+    s_cAnswered = true;           // Squachy keeps out of this one
+    s_cPoke++;
+}
+
+bool clippyCenter(int& x, int& y) {
+    if (Squachy::petChoice() != Squachy::PetId::CLIPPY || s_cX < -50) return false;
+    x = s_cX + 11; y = s_cY + 24;
+    return true;
+}
+
+// ---- the wire ----------------------------------------------------------------
+static uint8_t s_cGrid[CLIP_H][CLIP_W];     // 0 nothing, 1 outline, 2 wire, 3 highlight
+static float   s_cSq = 1.0f;                // squash: 1 none, under 1 flattened
+
+static inline void clipMap(float& x, float& y) {
+    if (s_cSq == 1.0f) return;
+    x = 11.0f + (x - 11.0f) / sqrtf(s_cSq);
+    y = 42.0f - (42.0f - y) * s_cSq;
+}
+static void clipStamp(float x, float y, int r, uint8_t code) {
+    clipMap(x, y);
+    const int cx = (int)lroundf(x), cy = (int)lroundf(y);
+    for (int dy = -r; dy <= r; dy++)
+        for (int dx = -r; dx <= r; dx++) {
+            if (dx * dx + dy * dy > r * r + r) continue;
+            const int gx = cx + dx, gy = cy + dy;
+            if (gx < 0 || gy < 0 || gx >= CLIP_W || gy >= CLIP_H) continue;
+            if (s_cGrid[gy][gx] < code || code == 3) s_cGrid[gy][gx] = code;
+        }
+}
+// The wire as one path: inner leg, small turn, up, top turn, the long leg,
+// the big bottom turn, and the leg bent out into a pick with a hook on it.
+// visit(x, y, i) is called on points roughly two thirds of a pixel apart.
+template <typename F>
+static void clipPath(int wig, bool tipUp, F visit) {
+    int i = 0;
+    auto line = [&](float x0, float y0, float x1, float y1) {
+        const int n = (int)ceilf(hypotf(x1 - x0, y1 - y0) * 1.6f) + 1;
+        for (int k = 0; k <= n; k++) visit(x0 + (x1 - x0) * k / n, y0 + (y1 - y0) * k / n, i++);
+    };
+    auto arc = [&](float cx, float cy, float r, float a0, float a1) {
+        const int n = (int)ceilf(fabsf(a1 - a0) * r * 1.6f) + 6;
+        for (int k = 0; k <= n; k++) { const float a = a0 + (a1 - a0) * k / n; visit(cx + cosf(a) * r, cy + sinf(a) * r, i++); }
+    };
+    const float P = 3.14159265f;
+    line(7.5f, 15, 7.5f, 31); arc(10.5f, 31, 3, P, 0); line(13.5f, 31, 13.5f, 8);
+    arc(8.75f, 8, 4.75f, 0, -P); line(4, 8, 4, 35); arc(10.5f, 35, 6.5f, P, 0);
+    const float tx = 23.0f + wig, ty = tipUp ? 5.0f : 9.0f;
+    line(17, 35, tx, ty);
+    line(tx, ty, tx + 2, ty - 3);              // the hook
+}
+
+static void clipDraw(TFT_eSPI& t, int x, int y, uint32_t now, ClipFace face) {
+    static const uint16_t WIRE = 0, OUT = 1, HI = 2;   // indices into col[]
+    const uint16_t col[3] = { t.color565(169, 178, 195), t.color565(34, 38, 47), t.color565(223, 229, 240) };
+    int wig = (int)lroundf(sinf((float)now / 180.0f) * 1.2f);
+    if (face == ClipFace::IDLE) wig = ((now % 2400) < 600) ? (int)lroundf(sinf((float)now / 60.0f)) : 0;   // raking pins
+    if (face == ClipFace::SMUG) wig = (int)lroundf(sinf((float)now / 220.0f) * 2.0f);
+    const bool surprised = face == ClipFace::SURPRISED;
+
+    memset(s_cGrid, 0, sizeof s_cGrid);
+    clipPath(wig, surprised, [&](float px, float py, int) { clipStamp(px, py, 2, 1); });
+    clipPath(wig, surprised, [&](float px, float py, int) { clipStamp(px, py, 1, 2); });
+    clipPath(wig, surprised, [&](float px, float py, int i) { if (i % 9 < 2) clipStamp(px - 0.6f, py - 0.6f, 0, 3); });
+
+    // A shadow to stand on, then the wire a run at a time.
+    Theme::dimRegion(t, x + 1, y + 42, 22, 2, 128);
+    for (int gy = 0; gy < CLIP_H; gy++) {
+        int gx = 0;
+        while (gx < CLIP_W) {
+            const uint8_t c = s_cGrid[gy][gx];
+            int e = gx + 1;
+            while (e < CLIP_W && s_cGrid[gy][e] == c) e++;
+            if (c) t.drawFastHLine(x + gx, y + gy, e - gx, col[c == 1 ? OUT : c == 2 ? WIRE : HI]);
+            gx = e;
+        }
+    }
+
+    // Eyes, on the two legs.
+    const int R = 3;
+    int look = surprised || face == ClipFace::TALK ? 0 : -1;    // toward Squachy
+    int lid = 3;
+    if (face == ClipFace::TALK) lid = 2;
+    if (surprised) lid = 0;
+    if (face == ClipFace::SMUG) lid = 4;
+    if (face == ClipFace::IDLE && (now % 4700) < 130) lid = 2 * R + 1;   // blink
+    const float ex[2] = { 4, 14 };
+    for (int e = 0; e < 2; e++) {
+        float fx = ex[e], fy = 17; clipMap(fx, fy);
+        const int cx = x + (int)lroundf(fx), cy = y + (int)lroundf(fy);
+        t.fillCircle(cx, cy, R + 1, Theme::BLACK);
+        t.fillCircle(cx, cy, R, Theme::WHITE);
+        const int pr = surprised ? 1 : 2;
+        if (lid < 2 * R) t.fillRect(cx - 1 + look, cy, pr, pr, Theme::BLACK);
+        if (lid > 0) {
+            const int lh = lid < 2 * R + 1 ? lid : 2 * R + 1;
+            t.fillRect(cx - R, cy - R, 2 * R + 1, lh, col[WIRE]);
+            t.drawFastHLine(cx - R, cy - R + lh - 1, 2 * R + 1, Theme::BLACK);
+        }
+    }
+    // Eyebrows: one flat, one raised. They bob while he talks.
+    int lUp = 0, rUp = 0;
+    if (face == ClipFace::TALK) { const int b = (int)((now / 220) % 3); lUp = b == 1; rUp = b == 2 ? 2 : 1; }
+    if (surprised) { lUp = 3; rUp = 2; }
+    if (face == ClipFace::SMUG) rUp = 2;
+    float lx = 0, ly = 10, rx = 11, ry = 8; clipMap(lx, ly); clipMap(rx, ry);
+    t.fillRect(x + (int)lx, y + (int)ly - lUp, 7, 2, Theme::BLACK);
+    t.fillRect(x + (int)rx, y + (int)ry - rUp, 3, 2, Theme::BLACK);
+    t.fillRect(x + (int)rx + 3, y + (int)ry - 1 - rUp, 4, 2, Theme::BLACK);
+}
+
+// His balloon: the help-balloon cream, a hard black edge and a tail to him.
+// Above him, wrapped at 24 characters in three lines -- or, on a screen too
+// short for that (the StickS3), BESIDE him at whatever width the side has,
+// in up to five lines, so it never sits on Squachy's face.
+static void clipBalloon(TFT_eSPI& t, const char* s, int clipX, int clipY, int screenW, int screenH) {
+    const bool side = screenH < 200;
+    int maxC = 24;
+    bool right = true;
+    if (side) {
+        const int roomR = screenW - (clipX + 30) - 4, roomL = clipX - 6;
+        right = roomR >= roomL;
+        maxC = ((right ? roomR : roomL) - 10) / 6;
+        if (maxC > 24) maxC = 24;
+        if (maxC < 14) { maxC = 24; right = true; }     // no room either side: above after all
+    }
+    const uint8_t maxN = side ? 5 : 3;
+    char lines[5][25];
+    uint8_t n = 0;
+    const char* p = s;
+    while (*p && n < maxN) {
+        while (*p == ' ') p++;
+        size_t len = strlen(p);
+        size_t take = len;
+        if ((int)len > maxC) { take = (size_t)maxC; while (take > 0 && p[take] != ' ') take--; if (!take) take = (size_t)maxC; }
+        memcpy(lines[n], p, take); lines[n][take] = '\0';
+        n++; p += take;
+    }
+    if (!n) return;
+    t.setTextSize(1);
+    int tw = 0;
+    for (uint8_t i = 0; i < n; i++) { const int w = t.textWidth(lines[i]); if (w > tw) tw = w; }
+    const int bw = tw + 9, bh = n * 9 + 6;
+    const uint16_t paper = t.color565(255, 251, 208);
+    if (side && maxC < 24 + 1 && (screenW - (clipX + 30) - 4 >= bw || clipX - 6 >= bw)) {
+        int bx = right ? clipX + 30 : clipX - 4 - bw;
+        int by = clipY + 6 - bh / 2;
+        if (by < 16) by = 16;
+        t.fillRect(bx, by, bw, bh, Theme::BLACK);
+        t.fillRect(bx + 1, by + 1, bw - 2, bh - 2, paper);
+        // A tail sideways, back to him.
+        const int ty = by + bh - 9;
+        for (int i = 0; i < 4; i++) {
+            const int tx = right ? bx - i : bx + bw - 1 + i;
+            t.drawFastVLine(tx, ty + i, 6 - 2 * i > 0 ? 6 - 2 * i : 1, paper);
+            t.drawPixel(tx, ty + i - 1, Theme::BLACK);
+        }
+        t.setTextColor(Theme::BLACK, paper);
+        for (uint8_t i = 0; i < n; i++) { t.setCursor(bx + 5, by + 3 + i * 9); t.print(lines[i]); }
+        return;
+    }
+    const int anchorX = clipX + 11, bottomY = clipY - 4;
+    int bx = anchorX - bw / 2;
+    if (bx > screenW - bw - 2) bx = screenW - bw - 2;
+    if (bx < 2) bx = 2;
+    int by = bottomY - bh;
+    if (by < 16) by = 16;
+    t.fillRect(bx, by, bw, bh, Theme::BLACK);
+    t.fillRect(bx + 1, by + 1, bw - 2, bh - 2, paper);
+    int tx = anchorX;
+    if (tx < bx + 5) tx = bx + 5;
+    if (tx > bx + bw - 6) tx = bx + bw - 6;
+    for (int i = 0; i < 4; i++) {
+        t.drawFastHLine(tx - 2 + i, by + bh - 1 + i, 4 - i > 0 ? 4 - i : 1, paper);
+        t.drawPixel(tx - 3 + i, by + bh - 1 + i, Theme::BLACK);
+        t.drawPixel(tx + 2, by + bh - 1 + i, Theme::BLACK);
+    }
+    t.setTextColor(Theme::BLACK, paper);
+    for (uint8_t i = 0; i < n; i++) { t.setCursor(bx + 5, by + 3 + i * 9); t.print(lines[i]); }
+}
+
+static void clippyTick(TFT_eSPI& t, uint32_t now, int screenW) {
+    int cx, halfW, top, bot;
+    if (!Squachy::lastFootprint(cx, halfW, top, bot) || Squachy::isHeld()) { s_cX = -100; return; }
+    (void)top;
+    // Two spots beside him, the right-hand side when it has room.
+    int a = cx + halfW + 2, b = a + 30;
+    if (a + 30 > screenW - 2) { a = cx - halfW - 30; b = a - 30; }
+    if (b < 2 || b + 30 > screenW - 2) b = a;
+
+    if (const char* intro = Squachy::takeClippyIntro()) {
+        clipSay(intro, now, false);
+        s_cAnswered = true;
+        Theme::showToast("C1iPPY", "your new pet. Settings > Pet", Theme::CYAN, 3500);
+        s_cNextTip = now + 60000;
+    }
+    if (!s_cNextTip) s_cNextTip = now + 6000;
+    if (!s_cNextHop) s_cNextHop = now + 30000 + (uint32_t)random(0, 20000);
+    if (s_cPending) {
+        const char* l = clipCatchLine((uint8_t)(s_cPending - 1));
+        s_cPending = 0;
+        if (l) { clipSay(l, now, true); s_cNextTip = now + 60000; }
+    }
+    if ((int32_t)(now - s_cNextTip) >= 0) {
+        const char* l = CLIP_TIPS[s_cTip++ % CLIP_TIPS_N];
+        if (Squachy::visiting() && random(0, 2) == 0) l = CLIP_SQUAD[random(0, 3)];
+        else if (Clock::night() && random(0, 3) == 0) l = CLIP_NIGHT[random(0, 3)];
+        clipSay(l, now, false);
+        s_cNextTip = now + 60000 + (uint32_t)random(0, 30000);
+    }
+    const bool talking = s_cLine && now - s_cSaidAt < CLIP_TALK_MS;
+    // Squachy gets a word in after a tip, now and then, and C1iPPY is smug
+    // about it.
+    if (s_cLine && !talking && !s_cAnswered) {
+        s_cAnswered = true;
+        if (random(0, 2) == 0) { Squachy::visitSay(CLIP_BACK[random(0, 6)]); s_cSmugAt = now; }
+    }
+    // A hop to the other spot, not while he is mid-sentence.
+    if (!talking && (int32_t)(now - s_cNextHop) >= 0 && a != b) {
+        s_cFromX = s_cSpotB ? (int16_t)b : (int16_t)a;
+        s_cSpotB = !s_cSpotB;
+        s_cHopAt = now;
+        s_cNextHop = now + 30000 + (uint32_t)random(0, 20000);
+    }
+    const int to = s_cSpotB ? b : a;
+    float x = (float)to, hop = 0.0f;
+    s_cSq = 1.0f;
+    ClipFace face = ClipFace::IDLE;
+    const uint32_t since = now - s_cHopAt;
+    if (s_cHopAt && since < CLIP_HOP_MS) {
+        const float k = (float)since / (float)CLIP_HOP_MS;
+        x = (float)s_cFromX + (float)(to - s_cFromX) * k;
+        hop = -sinf(k * 3.14159265f) * 24.0f;
+        s_cSq = 1.0f + 0.08f * sinf(k * 3.14159265f);
+        face = ClipFace::SURPRISED;
+    } else {
+        if (s_cHopAt && since < CLIP_HOP_MS + CLIP_LAND_MS) s_cSq = 0.82f + 0.18f * (float)(since - CLIP_HOP_MS) / (float)CLIP_LAND_MS;
+        if (talking) face = (s_cCaught && now - s_cSaidAt < 900) ? ClipFace::SURPRISED : ClipFace::TALK;
+        else if (s_cSmugAt && now - s_cSmugAt < CLIP_SMUG_MS) face = ClipFace::SMUG;
+    }
+    s_cX = (int16_t)lroundf(x);
+    s_cY = (int16_t)(bot - 44 + (int)lroundf(hop));
+    clipDraw(t, s_cX, s_cY, now, face);
+    if (talking && !(s_cHopAt && since < CLIP_HOP_MS)) clipBalloon(t, s_cLine, s_cX, s_cY, screenW, t.height());
+}
+
 void reset() {
     s_phase  = Phase::AWAY;
     s_x      = -100.0f;
@@ -182,6 +541,8 @@ void reset() {
     s_yAnswered = false;
     s_yFlinchAt = 0;
     s_yLine  = nullptr;
+    s_cX     = -100;
+    s_cHopAt = 0;
 }
 
 // A small bubble of his own rather than Squachy's. His is drawn at text
@@ -295,8 +656,15 @@ static void yetiTick(TFT_eSPI& t, uint32_t now, int screenW, int cx, int halfW, 
     }
 }
 
+
 void tick(TFT_eSPI& t, uint32_t now, int screenW, int bandTop, int bandBottom) {
     const Squachy::PetId which = Squachy::petChoice();
+    if (which == Squachy::PetId::CLIPPY) {
+        s_phase = Phase::AWAY; s_yPhase = YPhase::AWAY;
+        if (Squachy::clippyUnlocked()) clippyTick(t, now, screenW);
+        return;
+    }
+    s_cX = -100;
     if (!Squachy::petUnlocked() || which == Squachy::PetId::OFF) {
         s_phase  = Phase::AWAY;
         s_yPhase = YPhase::AWAY;

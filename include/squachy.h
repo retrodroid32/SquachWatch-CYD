@@ -206,10 +206,23 @@ namespace Squachy {
 
     // Which one. There are two now, so the Settings row cycles rather than
     // toggles: OFF, then each companion in turn.
-    enum class PetId : uint8_t { OFF = 0, SHAGGY, YETI, COUNT };
+    enum class PetId : uint8_t { OFF = 0, SHAGGY, YETI, CLIPPY, COUNT };
     PetId       petChoice();
     const char* petName();     // for the row's value column
     void        cyclePet();
+
+    // C1iPPY, the bent paperclip, unlocked on his own. Backspace ten times in
+    // a row on the name or message keyboard (or, on the boards with no
+    // keyboard, Settings opened five times in thirty seconds). He is put on
+    // as the pet the moment he is earned, and introduces himself on CLEAR.
+    bool clippyUnlocked();
+    void unlockClippy(const char* why);
+    bool anyPetUnlocked();               // the Settings PET row's test
+    void noteBackspace();
+    void noteTyped();
+    void noteSettingsOpened();
+    // His first line after the unlock, handed over once; nullptr otherwise.
+    const char* takeClippyIntro();
 
     // True while a finger is carrying him, or he is dangling after being
     // dropped. The pet checks it: perching on a head that is itself flying

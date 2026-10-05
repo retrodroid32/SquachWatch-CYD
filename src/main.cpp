@@ -281,6 +281,7 @@ static void drawCrashCard(TFT_eSPI& t) {
 #include "detection_info.h"
 #include "ui_diary.h"
 #include "ui_outfit.h"
+#include "pet.h"
 #include "ui_outfit_unlock.h"
 #include "ui_ignorelist.h"
 #include "frame_push.h"
@@ -1103,6 +1104,8 @@ static uint8_t stickStopsBuild(StickPt* out, uint8_t cap) {
         add(w * 5 / 6 - 4, h - 16);     // DESK
         add(w / 6 + 2, h - 16);         // SCAN
         add(13, 11);                    // the menu
+        int px0, py0;
+        if (Pet::clippyCenter(px0, py0)) add(px0, py0);   // C1iPPY, for a poke
         return n;
     }
     if (state == AppState::SYS_PROPS) {
@@ -1928,6 +1931,7 @@ static void squachyCatch(DetectionType type, const uint8_t* mac, uint32_t hits, 
     Squachy::catchContext(Regulars::nameFor(mac), Regulars::takeNewRegular(mac),
                           Dex::nemesis(engine) == type, Dex::takeNewClosest(type));
     Squachy::trigger(Squachy::Event::DETECTION, type, engine.lifetimeTotal(), hits, rssi, conf);
+    Pet::noteCatch((uint8_t)type);
 }
 
 #if defined(TWATCH_S3)
@@ -2035,6 +2039,9 @@ static void enterRawScan(bool isBle) {
 }
 
 static void enterSettings() {
+#if defined(SQW_SMALL)
+    if (state == AppState::CLEAR) Squachy::noteSettingsOpened();   // C1iPPY's unlock on these boards
+#endif
     restoreFrameBuffer();   // lent to a download that did not end in a restart
     Settings::deskActive(false);
     Theme::releaseClockBackdrop();
@@ -2126,6 +2133,7 @@ static void enterInvite() {
 volatile bool g_consoleInvert = false;
 volatile bool g_consoleAdc = false;     // ADC: the spare analog inputs, for finding a battery sense line
 volatile bool g_consoleXyzzy = false;   // XYZZY: the TERMINAL background types the magic word now
+volatile bool g_consoleClippy = false;    // CLIPPY: unlock C1iPPY, for the bench
 volatile uint8_t g_consoleHeadsUp = 0;   // HEADSUP n: tell the squad about a made-up catch of type n, for the bench
 volatile bool g_consoleLegend = false;  // LEGEND: wear the Legend look (and its aura) until the next boot, or take it off
 volatile bool g_consoleOutfitSet = false;  // OUTFIT n: wear costume n until the next boot, for timing it; -1 takes it off
@@ -5165,6 +5173,11 @@ void loop() {
                       Settings::meshHeadsUp() ? "on" : "OFF");
     }
 #endif
+    if (g_consoleClippy) {
+        g_consoleClippy = false;
+        Squachy::unlockClippy("It looks like you're having trouble typing.");
+        Serial.println("[pet] C1iPPY unlocked and put on");
+    }
     if (g_consoleLegend) {
         g_consoleLegend = false;
         Squachy::previewLegend(!Squachy::legendPreview());
@@ -5786,6 +5799,12 @@ void loop() {
             // active gesture, still takes priority over the button bar
             // in the branch below -- Squachy is drawn well clear of the
             // button row, so the two never really compete in practice.)
+            // A tap on C1iPPY is his, not Squachy's or the background's.
+            if (touchJustDown && !boring && Pet::clippyHit(tp.x, tp.y)) {
+                Pet::clippyPoke(now);
+                lastTouch = now;
+                break;
+            }
             if (touchJustDown) {
                 sqActive = !boring && Squachy::hitTest(tp.x, tp.y);
                 sqHeld = false;
