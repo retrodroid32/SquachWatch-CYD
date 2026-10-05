@@ -730,17 +730,17 @@
       <li>Not on the list? Tell us what it is on <a href="https://github.com/skizzophrenic/SquachWatch-CYD/issues" target="_blank" rel="noopener">GitHub</a>.</li>
     </ul>
     <p class="white-screen-note" id="whiteScreenNote">
-      The 2.8&quot; CYD ships with one of two different display drivers depending on manufacturing
-      batch, and there's no way to tell which from the outside. If you flash one and get a
-      <strong>solid white screen</strong>, that's not broken — just flash the other 2.8&quot; tile below instead.
+      The 2.8&quot; CYD ships with one of two display drivers depending on the batch, and there\'s no way
+      to tell from the outside. Got a <strong>solid white screen</strong>? It\'s not broken: untick
+      <strong>80 MHz</strong> and flash again, and if it\'s still white, flash the other 2.8&quot; option above.
     </p>
       <div class="tiles" id="boardTiles" role="radiogroup" aria-label="Board"></div>
       <div class="select-fallback">
     <label class="board-picker-label" for="boardSelect">Or pick from the list:</label>
     <select class="board-select" id="boardSelect" aria-label="Board select">
       <optgroup label="CHEAP YELLOW DISPLAYS (CYD)">
-      <option value="./manifest-cyd.json" data-cyd28="1" data-fast="./manifest-cyd-fast.json" selected>2.8&quot; CYD &middot; ST7789 &mdash; ESP32-2432S028R, the usual screen</option>
-      <option value="./manifest-cyd-ili9341.json" data-cyd28="1" data-fast="./manifest-cyd-ili9341-fast.json">2.8&quot; CYD &middot; ILI9341 &mdash; ESP32-2432S028R, older screen</option>
+      <option value="./manifest-cyd.json" data-cyd28="1" data-fast="./manifest-cyd-fast.json" data-fastdefault="1" selected>2.8&quot; CYD &middot; ST7789 &mdash; ESP32-2432S028R, the usual screen</option>
+      <option value="./manifest-cyd-ili9341.json" data-cyd28="1" data-fast="./manifest-cyd-ili9341-fast.json" data-ocdesc="This screen usually can’t keep up at 80 MHz. Leave it unticked unless you want to try your luck.">2.8&quot; CYD &middot; ILI9341 &mdash; ESP32-2432S028R, older screen</option>
       <option value="./manifest-freenove32.json">3.2&quot; &middot; resistive &mdash; Freenove FNK0103</option>
       <option value="./manifest-cyd32c.json" data-ocnote="The 3.2&quot; capacitive already ships at 80MHz.">3.2&quot; &middot; capacitive &mdash; ESP32-2432S032C (NEW)</option>
       <option value="./manifest-cyd35-fast.json" data-ocnote="The 3.5&quot; only ships at 80MHz, so there is no slower build to fall back to.">3.5&quot; &middot; resistive &mdash; ESP32-3248S035R (BETA)</option>
@@ -802,11 +802,10 @@
     <label class="overclock-row" id="overclockRow">
       <input type="checkbox" id="overclockChk">
       <span>
-        <span class="oc-title">Experimental: 80MHz display overclock</span>
+        <span class="oc-title">80 MHz screen (faster)</span>
         <span class="oc-desc" id="overclockDesc">
-          Runs the screen at twice the rated clock, which you will notice everywhere.
-          Not every panel takes it. If the screen stays white or shows torn lines,
-          reflash with this unchecked.
+          About 34 frames a second instead of 20. If the screen stays white or shows torn lines,
+          untick this and flash again.
         </span>
       </span>
     </label>
@@ -1545,7 +1544,7 @@
     } catch (e) { /* location unavailable in some embeddings */ }
 
     var WHITE_SCREEN_LINE =
-      "White screen after flashing? Your CYD's probably got the other display driver — try the other 2.8\" option in that dropdown.";
+      "White screen after flashing? Untick 80 MHz and try again. Still white? Your CYD has the other driver: pick the other 2.8\" option.";
 
     // The manifest's own "version" field is stamped with the release
     // tag by .github/workflows/release-flasher.yml at deploy time (the
@@ -1601,14 +1600,13 @@
     // also overclock touch. An option with no data-fast disables the
     // row instead of silently ignoring the tick.
     var OC_DESC_ON =
-      "Runs the screen at twice the rated clock — about 34fps instead of 22, which you " +
-      "will notice everywhere. Not every panel takes it. If the screen stays white or shows " +
-      "torn lines, reflash with this unchecked.";
+      "About 34 frames a second instead of 20, which you will notice everywhere. On by default " +
+      "for this board. If the screen stays white or shows torn lines, untick it and flash again.";
     var OC_DESC_OFF =
       "Not available for this board — its touchscreen shares the display's SPI bus, so " +
       "overclocking the panel would overclock touch along with it.";
     var OVERCLOCK_LINE =
-      "Overclock, huh. If it comes up white or torn, that panel said no — flash again with the box unticked.";
+      "80 MHz on. If it comes up white or torn, that panel said no: flash again with the box unticked.";
 
     // Which release directory the manifest lives in. "" is the latest,
     // which sits at the site root; older ones are in <tag>/ subdirectories
@@ -1641,12 +1639,17 @@
     function applySelection(announce) {
       var opt = select.options[select.selectedIndex];
       var fast = opt.dataset.fast;
+      // A new board (or the page opening) puts the box back to that board's
+      // own default: on for the usual ST7789 2.8", which almost always takes
+      // 80 MHz; off for everything else. A tick the user changes stays theirs
+      // until they pick another board.
+      if (ocChk && (announce === 'board' || announce === null)) ocChk.checked = opt.dataset.fastdefault === '1';
       if (ocRow) {
         ocRow.classList.toggle('disabled', !fast);
         if (ocChk) ocChk.disabled = !fast;
         // A board may say WHY the row is off rather than take the default
         // reason, which is about a shared touch bus and is not every board's.
-        if (ocDesc) ocDesc.textContent = fast ? OC_DESC_ON
+        if (ocDesc) ocDesc.textContent = fast ? (opt.dataset.ocdesc || OC_DESC_ON)
                                               : (opt.dataset.ocnote || OC_DESC_OFF);
       }
       var useFast = !!fast && !!(ocChk && ocChk.checked && !ocChk.disabled);
@@ -1675,7 +1678,7 @@
     var codeIn = document.getElementById('boardCode');
     var codeOut = document.getElementById('boardCodeAnswer');
     var CODES = [
-      { re: /2432S028/,             v: './manifest-cyd.json',         say: 'That’s the 2.8" CYD. If the screen goes white, pick the ILI9341 one instead.' },
+      { re: /2432S028/,             v: './manifest-cyd.json',         say: 'That’s the 2.8" CYD. If the screen goes white, untick 80 MHz first; still white, pick the ILI9341 one.' },
       { re: /E32R28|32E.*240X320|32E.*2\.8|2\.8.*32E/, v: './manifest-cyd-ili9341.json', say: 'That’s the ESP32-32E 2.8" (E32R28T): the 2.8" CYD’s ILI9341 build. Selected below; leave the overclock box unticked.' },
       { re: /E32R35|32E.*320X480|32E.*3\.5|3\.5.*32E/, v: './manifest-cyd35-fast.json', say: 'That’s the ESP32-32E 3.5" (E32R35T), the 3.5" resistive (BETA). Selected below.' },
       { re: /ESP32-?32E$/, v: null, say: 'ESP32-32E boards come in 2.8" and 3.5". Add the size or the resolution printed beside it, e.g. 32E 240x320.' },
