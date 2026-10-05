@@ -72,6 +72,13 @@ namespace Squachy {
     void toss(int8_t dir);
     // In the air after a throw, or sitting dazed, or walking back from it.
     bool thrown();
+    // Where his speech bubble rises to, when it rises: a screen row, or -1
+    // for the usual BUBBLE_RISE above his band. The main screen puts his
+    // band under the counter tiles and sends the bubble back up to row 1,
+    // above them, where it always sat.
+    void setBubbleRiseTo(int y);
+    // His own bubble as drawn last frame, if he had one up.
+    bool ownBubble(int& x, int& y, int& w, int& h);
 
     // A background telling him something is about to hit him, in screen
     // coordinates -- the reverse of lastFootprint(), which backgrounds

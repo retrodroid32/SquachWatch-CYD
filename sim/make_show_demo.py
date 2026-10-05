@@ -32,6 +32,17 @@ CYAN  = (0, 214, 214)
 # ---- the clips ----
 
 CLIPS = {
+    # v1.31.0 "Need Help?": C1iPPY (earned at ten catches) and his first tip
+    # (due six seconds in), the keyboard shortcut that also unlocks him, Squachy thrown (SQUACHSIM_THROW holds him for
+    # the hold time, then flings), C1iPPY thrown, and the counters as XP
+    # taskbar buttons with the seeded catches in range.
+    "need-help": [
+        ("clear", 185, 44, ["--noseed", "--bg", "0", "--pet", "3"], {}, 1500, "CATCH TEN THINGS. MEET C1iPPY."),
+        ("phone", 0, 24, [], {}, 1500, "OR BACKSPACE TEN TIMES. HE NOTICES."),
+        ("clear", 120, 76, ["--noseed", "--bg", "2", "--pet", "3"], {"SQUACHSIM_THROW": "s:160:120:250:40"}, 1300, "PICK SQUACHY UP. FLING. HE'LL ALLOW IT."),
+        ("clear", 120, 62, ["--noseed", "--bg", "2", "--pet", "3"], {"SQUACHSIM_THROW": "c:-1:0:-120:-70"}, 1500, "C1iPPY BOUNCES BETTER. HE'S WIRE."),
+        ("clear", 200, 30, ["--bg", "5", "--pet", "3"], {}, 1800, "NEARBY IS GONE. WHAT'S HERE, AS TASKBAR BUTTONS"),
+    ],
     # v1.30.0 "No Spoon": the red glyph that falls in the DIGITAL rain now and
     # then (picked ~1100 steps in, column 5, so the tap lands on it ~25 steps
     # later), the TH3 0N3 it earns, his red lenses with something serious

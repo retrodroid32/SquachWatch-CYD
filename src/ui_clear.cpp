@@ -2898,6 +2898,9 @@ void uiClearTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool adv
     // Everything from here that moves by the call, not by the clock, moves
     // on the mascot's clock. See uiMascotStep().
     const bool step = uiMascotStep(now, advance);
+    // His bubble rises past the tiles to row 1, where it always sat. Undone
+    // straight after he is drawn: the desk and the alert cameo want theirs.
+    Squachy::setBubbleRiseTo(1);
 
     // Squachy: main character, reacts to events, cracks jokes when idle.
     // His available region runs all the way to countersTop (not
@@ -2986,6 +2989,7 @@ void uiClearTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool adv
         // so his soles, not his shadow, land on the bar's top line.
         Squachy::tick(t, w / 2, bandTop, squachyBottom + SQ_FOOT_SINK - bandTop, now, step,
                       1.0f, false, -1, Settings::squachySizePct());
+        Squachy::setBubbleRiseTo(-1);
 #if SQUACH_MESH
         // Everybody in range, whether or not one of them is on screen.
         {
@@ -3003,6 +3007,7 @@ void uiClearTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool adv
     // the walkthrough's own bubble (onboarding) -- a UFO flying past
     // mid-lesson would be more distraction than delight.
     FrameProf::lap(FrameProf::SQUACHY);
+    Squachy::setBubbleRiseTo(-1);   // boring mode skips the one above
     if (!Settings::boringMode() && !Squachy::onboardingActive()) {
         IdleEvents::tick(t, now, 0, bandTop, w, squachyBottom, step);
     }
@@ -3200,6 +3205,8 @@ void uiClearTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool adv
         }
     }
     s_tileN = 0;
+    int bX = 0, bY = 0, bW = 0, bH = 0;
+    const bool bub = !Settings::boringMode() && Squachy::ownBubble(bX, bY, bW, bH);
     if (counterN) {
         const uint8_t bse = counterN / rowsUsed, rem = counterN % rowsUsed;
         uint8_t st = 0;
@@ -3217,7 +3224,10 @@ void uiClearTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool adv
                 for (uint8_t d = 0; d < (uint8_t)DetectionType::COUNT && d < 32; d++)
                     if ((s_litMask & (1u << d)) && uiClearColumnHolds(ty, (DetectionType)d)) { lit = true; break; }
                 const int ty0 = rowY - 2, th = 12;
-                if (paint) {
+                // A tile under his speech bubble waits for it to go: the
+                // bubble is the one that has something to say right now.
+                const bool underBubble = bub && x < bX + bW && x + tileW[i] > bX && ty0 < bY + bH && ty0 + th > bY;
+                if (paint && !underBubble) {
                     // Lit is XP blue; just arrived flashes orange; only your
                     // own ignored or snoozed things are a greyed-out slate.
                     const uint32_t since = s_tileSince[(uint8_t)ty];

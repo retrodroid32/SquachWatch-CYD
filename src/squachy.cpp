@@ -670,6 +670,7 @@ static uint32_t s_outfitAnnounced    = 0;
 
 // Runtime-only — reset every boot, not persisted.
 static uint32_t s_cachedLifetimeTotal = 0;  // from the last DETECTION trigger (or BOOTED)
+static const uint32_t CLIPPY_CATCHES = 10;   // C1iPPY's unlock, see trigger()
 static uint32_t s_sessionDetections   = 0;  // this boot's count, vs. s_bestSessionCount
 static uint32_t s_lastDetectionAt     = 0;  // millis() of the last catch, for the live streak
 // Outfits unlocked but not yet shown to the player. A queue rather than a
@@ -1557,6 +1558,10 @@ void trigger(Event evt, DetectionType dt, uint32_t lifetimeTotal, uint32_t hitCo
             ensurePrefsLoaded();
             s_cachedLifetimeTotal = lifetimeTotal;
             refreshOutfitUnlocks();
+            // C1iPPY is the second thing anybody earns: ten catches, between
+            // TINFOIL at five and SHADOW at fifteen.
+            if (lifetimeTotal >= CLIPPY_CATCHES)
+                unlockClippy("It looks like you caught ten things. Want help?");
 
             // Streak/session/heat bookkeeping for the Diary screen and
             // the activity-biased idle chatter below — none of this
@@ -1686,6 +1691,8 @@ void trigger(Event evt, DetectionType dt, uint32_t lifetimeTotal, uint32_t hitCo
             ensurePrefsLoaded();
             s_cachedLifetimeTotal = lifetimeTotal;
             refreshOutfitUnlocks();
+            // A board that passed ten catches before he existed meets him now.
+            if (lifetimeTotal >= CLIPPY_CATCHES) unlockClippy("It looks like you've been busy. Need help?");
             s_bootCount++;
             s_petPrefs.putUInt("boots", s_bootCount);
             if (!s_petPrefs.getBool("onboarded", false)) {
@@ -1982,6 +1989,12 @@ void flick(int8_t dir) {
 // isn't actively saying something.
 static int  lastBubbleX = 0, lastBubbleY = 0, lastBubbleW = 0, lastBubbleH = 0;
 static bool hadBubble   = false;
+static int16_t s_ownBX = 0, s_ownBY = 0, s_ownBW = 0, s_ownBH = 0;   // see tick()'s erase
+bool ownBubble(int& x, int& y, int& w, int& h) {
+    if (s_ownBW <= 0 || s_ownBH <= 0) return false;
+    x = s_ownBX; y = s_ownBY; w = s_ownBW; h = s_ownBH;
+    return true;
+}
 
 // Everyday speech bubble stays single-line and text-hugging (its
 // original compact look) whenever the line actually fits — most
@@ -2068,6 +2081,8 @@ static const int BUBBLE_RISE = 16;   // exactly the row tick() reserves
 static const int CORNER_W    = 30;   // icon box plus a pixel of air
 static const int CORNER_H    = 20;   // ICON_BOX_H over in theme.cpp
 
+static int s_riseTo = -1;
+void setBubbleRiseTo(int y) { s_riseTo = y; }
 static int risenBubbleTop(int topY, int bx, int bw, int screenW) {
     // Clamped to row 1, not rejected below it. Every screen hands Squachy
     // topY = 16 and BUBBLE_RISE is 16, so ry is exactly 0 everywhere -- a
@@ -2075,7 +2090,7 @@ static int risenBubbleTop(int topY, int bx, int bw, int screenW) {
     // rather than move it a pixel. The second line is the other half: it
     // must never push a bubble DOWN, which is what a bare clamp would do on
     // a screen whose band started at 0.
-    int ry = topY - BUBBLE_RISE;
+    int ry = s_riseTo >= 0 ? s_riseTo : topY - BUBBLE_RISE;
     if (ry < 1)          ry = 1;        // always a pixel of air at the top
     if (ry >= topY)      return topY;   // no room to rise; never sink
     if (ry >= CORNER_H)  return ry;     // starts below the buttons anyway
@@ -2593,10 +2608,19 @@ void unlockClippy(const char* why) {
     if (s_clippyUnlocked) return;
     s_clippyUnlocked = true;
     s_petPrefs.putBool("clippy", true);
-    // On at once: he is the kind of help that does not wait to be asked.
-    s_petSel = (uint8_t)PetId::CLIPPY;
-    s_petPrefs.putUChar("petSel", s_petSel);
-    s_clippyIntro = why;
+    // On at once when no pet is out: he is the kind of help that does not
+    // wait to be asked. Somebody walking VAPOR SHAGGY or the yeti keeps
+    // them, and is told where he is instead.
+    // petSel defaults to SHAGGY before he is ever earned, so "out" means
+    // chosen AND unlocked.
+    const bool petOut = (s_petSel == (uint8_t)PetId::SHAGGY || s_petSel == (uint8_t)PetId::YETI) && s_petUnlocked;
+    if (!petOut) {
+        s_petSel = (uint8_t)PetId::CLIPPY;
+        s_petPrefs.putUChar("petSel", s_petSel);
+        s_clippyIntro = why;
+    } else {
+        Theme::showToast("C1iPPY", "new pet. Settings > Pet", Theme::CYAN, 3500);
+    }
 }
 
 const char* takeClippyIntro() { const char* w = s_clippyIntro; s_clippyIntro = nullptr; return w; }
@@ -8381,6 +8405,7 @@ void tick(TFT_eSPI& t, int cx, int topY, int availHeight, uint32_t now,
         if (drew) { ownX = (int16_t)lastBubbleX; ownY = (int16_t)lastBubbleY;
                     ownW = (int16_t)lastBubbleW; ownH = (int16_t)lastBubbleH; }
         else      { ownW = 0; ownH = 0; }
+        s_ownBX = ownX; s_ownBY = ownY; s_ownBW = ownW; s_ownBH = ownH;
     }
     // Gated: hadBubble tracks "did we draw a bubble last FRAME" for the
     // erase above. drawBubble()/drawOnboardBubble() compute identical
