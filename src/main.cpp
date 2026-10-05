@@ -5888,13 +5888,18 @@ void loop() {
 #endif
             } else if (touchJustDown && (now - lastTouch) > TOUCH_DEBOUNCE_MS &&
                        uiClearWatchPillHit(tp.x, tp.y)) {
-                // The watch/hunt pill. Opens the alert screen, which names the
-                // target and carries REMOVE FROM WATCH LIST -- the same screen
-                // a real sighting would have opened, just asked for rather
-                // than waited for.
+                // The watch/hunt pill. With a watch set it opens the alert
+                // screen, which names the target and carries REMOVE FROM WATCH
+                // LIST -- the same screen a real sighting would have opened,
+                // just asked for rather than waited for. With only a hunt it
+                // opens HUNT MODE, whose STOP HUNT is the way out: the alert
+                // screen knows nothing about hunts, and its REMOVE cleared the
+                // watch and left the hunt running (2026-10-05).
                 lastTouch = now;
                 sqActive  = false;
-                enterWatchAlert();
+                if (engine.watchKind() == DetectionEngine::WatchKind::NONE &&
+                    engine.huntKind()  != DetectionEngine::WatchKind::NONE) enterHunt();
+                else                                                         enterWatchAlert();
             } else if (touchJustDown && (now - lastTouch) > TOUCH_DEBOUNCE_MS &&
                        uiClearSquadHit(tp.x, tp.y)) {
                 // The squad badge, ahead of the scene gestures for the same
