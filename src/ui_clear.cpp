@@ -3265,8 +3265,9 @@ void uiClearTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool adv
     // pet is thirty pixels wide and moving, so passing in front reads as
     // depth rather than as an obstruction.
     //
-    // Still before the counters, which he never reaches.
-    if (!Settings::boringMode()) Pet::tick(t, now, w, bandTop, petFloor);
+    // Drawn after the counters now (see below): with DETECTIONS on XP the
+    // counter buttons sit along the top, and C1iPPY's balloon has to land on
+    // top of them rather than under them.
 
     // Counter lines above the buttons — all 13 detection types, split
     // across counterRows (2 in landscape, capped at 4/row in portrait
@@ -3415,6 +3416,9 @@ void uiClearTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool adv
             }
         }
     }
+
+    // The pet, last of the scene: over the counters, under the buttons.
+    if (!Settings::boringMode()) Pet::tick(t, now, w, bandTop, petFloor);
 
     // Soft buttons, straight over the background: it repaints the whole
     // strip under them every frame, margins and gaps included. Each

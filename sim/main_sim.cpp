@@ -563,6 +563,23 @@ int main(int argc, char** argv) {
     if (getenv("SQUACHSIM_PRIVACY") && !Settings::privacyMode()) Settings::togglePrivacyMode();
     // SQUACHSIM_CLASSIC=1: DETECTIONS set to CLASSIC (NEARBY and the full counter rows).
     if (getenv("SQUACHSIM_CLASSIC") && Settings::detXp()) Settings::toggleDetXp();
+    // SQUACHSIM_HEADSUP=TYPE|NAME: a squad heads-up arriving, the way
+    // main.cpp shows one (banner plus Squachy's line), e.g. 1|NESSIE for a
+    // Flock. The banner is drawn on CLEAR only while this is set.
+    static char huSub[40], huLine[40];
+    const bool headsUp = getenv("SQUACHSIM_HEADSUP") != nullptr;
+    if (headsUp) {
+        int ty = 0; char who[16] = "NESSIE";
+        sscanf(getenv("SQUACHSIM_HEADSUP"), "%d|%15s", &ty, who);
+        const char* what = detectionTypeName((DetectionType)ty);
+        snprintf(huSub, sizeof huSub, "%s near %s", what, who);
+        snprintf(huLine, sizeof huLine, "%s says: %s!", who, what);
+        Theme::showToast("HEADS-UP", huSub, Theme::AMBER, 8000);
+        Squachy::announce(huLine);
+    }
+    // SQUACHSIM_CLIPCATCH=TYPE: C1iPPY has just seen a catch of that type and
+    // has his expert opinion ready.
+    if (const char* cc = getenv("SQUACHSIM_CLIPCATCH")) Pet::noteCatch((uint8_t)atoi(cc));
     // SQUACHSIM_LTBRIGHT=N: the STATUS LIGHT's BRIGHTNESS step, 1..7.
     if (const char* lb = getenv("SQUACHSIM_LTBRIGHT"))
         for (int g = 0; g < 8 && Settings::lightBrightness() != atoi(lb); g++) Settings::cycleLightBrightness();
@@ -630,7 +647,8 @@ int main(int argc, char** argv) {
 
     auto tick = [&](uint32_t t) {
         SimClock::nowMs = t;
-        if      (screen == "clear")    { Theme::setRedGlyph(!Squachy::th3Unlocked()); uiClearEmoteTick(t); uiClearTick(frame, t, engine, true, false); }
+        if      (screen == "clear")    { Theme::setRedGlyph(!Squachy::th3Unlocked()); uiClearEmoteTick(t); uiClearTick(frame, t, engine, true, false);
+                                         if (headsUp) Theme::drawToast(frame, t); }
         else if (screen == "log") {
             const bool info = (infoType >= 0);
             const DetectionType it = info ? (DetectionType)infoType : DetectionType::UNKNOWN;

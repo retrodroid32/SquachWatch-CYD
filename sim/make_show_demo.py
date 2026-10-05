@@ -38,10 +38,16 @@ CLIPS = {
     # taskbar buttons with the seeded catches in range.
     "need-help": [
         ("clear", 185, 44, ["--noseed", "--bg", "0", "--pet", "3"], {}, 1500, "CATCH TEN THINGS. MEET C1iPPY."),
-        ("phone", 0, 24, [], {}, 1500, "OR BACKSPACE TEN TIMES. HE NOTICES."),
+        ("phone", 0, 24, [], {}, 1400, "OR BACKSPACE TEN TIMES. HE NOTICES."),
+        ("clear", 120, 40, ["--noseed", "--bg", "4", "--pet", "3"], {"SQUACHSIM_CLIPCATCH": "1"}, 1400, "EVERY CATCH GETS HIS EXPERT OPINION"),
         ("clear", 120, 76, ["--noseed", "--bg", "2", "--pet", "3"], {"SQUACHSIM_THROW": "s:160:120:250:40"}, 1300, "PICK SQUACHY UP. FLING. HE'LL ALLOW IT."),
-        ("clear", 120, 62, ["--noseed", "--bg", "2", "--pet", "3"], {"SQUACHSIM_THROW": "c:-1:0:-120:-70"}, 1500, "C1iPPY BOUNCES BETTER. HE'S WIRE."),
-        ("clear", 200, 30, ["--bg", "5", "--pet", "3"], {}, 1800, "NEARBY IS GONE. WHAT'S HERE, AS TASKBAR BUTTONS"),
+        ("clear", 120, 62, ["--noseed", "--bg", "2", "--pet", "3"], {"SQUACHSIM_THROW": "c:-1:0:-120:-70"}, 1400, "C1iPPY BOUNCES BETTER. HE'S WIRE."),
+        ("clear", 6, 44, ["--bg", "5", "--pet", "3"], {}, 1400, "NEARBY RETIRED. TASKBAR HIRED. NEW ONES FLASH."),
+        ("settings", 10, 16, ["--scroll", "5"], {"SQUACHSIM_PAGE": "1"}, 1300, "MISS THE OLD LOOK? APPEARANCE > DETECTIONS"),
+        ("clear", 200, 24, ["--bg", "5", "--pet", "3"], {"SQUACHSIM_CLASSIC": "1"}, 1300, "CLASSIC BRINGS NEARBY BACK"),
+        ("clear", 40, 40, ["--noseed", "--bg", "1", "--pet", "3"], {"SQUACHSIM_HEADSUP": "1|NESSIE"}, 1600, "SQUAD HEADS-UP: A FLOCK NEAR A FRIEND? YOU KNOW."),
+        ("clear", 100, 30, ["--bg", "0", "--pet", "3"], {"_SIZE": "240x135"}, 1300, "NEW BOARD: M5STACK STICKS3 (BETA)"),
+        ("clear", 100, 30, ["--bg", "6", "--pet", "3"], {"_SIZE": "240x135"}, 1600, "AND THE M5STACK CARDPUTER ADV (BETA)"),
     ],
     # v1.30.0 "No Spoon": the red glyph that falls in the DIGITAL rain now and
     # then (picked ~1100 steps in, column 5, so the tap lands on it ~25 steps
@@ -306,13 +312,19 @@ def render(clip):
                             "ms": (MS * 2) if not last else MS + hold, "caption": caption})
             continue
         raw = os.path.join(out, "scene%d.raw" % i)
+        # A scene can be shot on another panel ("_SIZE": "240x135" in its
+        # env, for the StickS3); encode() letterboxes it into the clip.
+        env = dict(env)
+        sw, sh = cw, ch
+        if "_SIZE" in env:
+            sw, sh = (int(v) for v in env.pop("_SIZE").split("x"))
         run([sim, screen, os.path.join(out, "x.png"), "--frames", str(warm),
              "--sequence", str(n), "--raw", raw,
-             "--size", "%dx%d" % (cw, ch)] + extra, env)
-        if os.path.getsize(raw) != cw * ch * 3 * n:
-            sys.exit("scene %d: %d bytes, expected %d" % (i, os.path.getsize(raw), cw * ch * 3 * n))
+             "--size", "%dx%d" % (sw, sh)] + extra, env)
+        if os.path.getsize(raw) != sw * sh * 3 * n:
+            sys.exit("scene %d: %d bytes, expected %d" % (i, os.path.getsize(raw), sw * sh * 3 * n))
         for k in range(n):
-            man.append({"raw": os.path.basename(raw), "index": k,
+            man.append({"raw": os.path.basename(raw), "index": k, "w": sw, "h": sh,
                         "ms": MS if k < n - 1 else MS + hold, "caption": caption})
     json.dump(man, open(os.path.join(out, "manifest.json"), "w"))
     print("%d frames rendered into %s" % (len(man), out))
@@ -359,10 +371,20 @@ def encode(clip):
         if f["raw"] not in raws:
             raws[f["raw"]] = open(os.path.join(out, f["raw"]), "rb").read()
         b = raws[f["raw"]]
-        off = f["index"] * cw * ch * 3
-        im = Image.frombytes("RGB", (cw, ch), b[off:off + cw * ch * 3])
+        sw, sh = f.get("w", cw), f.get("h", ch)
+        off = f["index"] * sw * sh * 3
+        im = Image.frombytes("RGB", (sw, sh), b[off:off + sw * sh * 3])
         if zoom > 1:
-            im = im.resize((cw * zoom, ch * zoom), Image.NEAREST)
+            im = im.resize((sw * zoom, sh * zoom), Image.NEAREST)
+        if (sw, sh) != (cw, ch):
+            # A smaller panel, centred on black with a one-pixel cyan edge
+            # so it reads as a different screen rather than a cropped one.
+            box = Image.new("RGB", (cw * zoom, ch * zoom), (0, 0, 0))
+            x0, y0 = (box.width - im.width) // 2, (box.height - im.height) // 2
+            from PIL import ImageDraw
+            ImageDraw.Draw(box).rectangle([x0 - 3, y0 - 3, x0 + im.width + 2, y0 + im.height + 2], outline=CYAN, width=2)
+            box.paste(im, (x0, y0))
+            im = box
         if f["caption"] not in bands:
             bands[f["caption"]] = caption_band(f["caption"], im.width)
         page = Image.new("RGB", (im.width, im.height + BAND), (0, 0, 0))
