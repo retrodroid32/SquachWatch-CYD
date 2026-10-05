@@ -2559,6 +2559,11 @@ static uint16_t counterCount(const DetectionEngine& eng, DetectionType t) {
 // orange), 2 greyed out.
 static const int XP_ICON_W = 9;     // the icon and the gap after it
 static const int XP_ADV    = 7;     // per letter: 5 wide, 1 bolder, 1 gap
+// The 135-pixel-tall boards have two rows and no room for bold: plain
+// letters on the font's own 6-pixel step, or six counters run into the
+// corner icons (seen 2026-10-05).
+static inline bool xpBold() { return !Theme::compact(); }
+static inline int  xpAdv()  { return xpBold() ? XP_ADV : 6; }
 static void drawXpTile(TFT_eSPI& t, int x, int y, int w, int h, const char* txt,
                        uint16_t iconCol, uint8_t state, int pad) {
     // Top and bottom of the gradient, then the edge, per state.
@@ -2591,9 +2596,10 @@ static void drawXpTile(TFT_eSPI& t, int x, int y, int w, int h, const char* txt,
     const int ty = y + (h - 8) / 2;
     int tx = ix + XP_ICON_W;
     t.setTextColor(INK[state]);
-    for (const char* c = txt; *c; c++, tx += XP_ADV) {
+    const bool bold = xpBold();
+    for (const char* c = txt; *c; c++, tx += xpAdv()) {
         t.setCursor(tx, ty);         t.write(*c);
-        t.setCursor(tx + 1, ty);     t.write(*c);
+        if (bold) { t.setCursor(tx + 1, ty); t.write(*c); }
     }
 }
 
@@ -3337,7 +3343,7 @@ void uiClearTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool adv
         for (uint8_t i = 0; i < counterN; i++) {
             snprintf(tileTxt[i], sizeof(tileTxt[i]), "%s %u", counterLabel(counterTypes[i]),
                      counterCount(eng, counterTypes[i]));
-            tileW[i] = (uint16_t)((int)strlen(tileTxt[i]) * XP_ADV + 10 + XP_ICON_W);
+            tileW[i] = (uint16_t)((int)strlen(tileTxt[i]) * xpAdv() + 10 + XP_ICON_W);
         }
         int tileGap = 4, tilePad = 5;
         uint8_t rowsUsed = 0;
