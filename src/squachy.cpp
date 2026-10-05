@@ -8384,7 +8384,12 @@ void tick(TFT_eSPI& t, int cx, int topY, int availHeight, uint32_t now,
     // bubble from this very frame and black it out.
     static int16_t ownX = 0, ownY = 0, ownW = 0, ownH = 0;
     bool showBubble = bubbleText && now < bubbleUntil;
-    if (hadBubble) {
+    // Only when the bubble is going away. While one is up the new one paints
+    // its own box, and the background has repainted the rest -- erasing
+    // first blacked out the four rows under the box that only the narrow
+    // pointer redraws, which left a black line under every bubble that had
+    // a pointer (a visit's).
+    if (hadBubble && !showBubble) {
         t.fillRect(ownX, ownY, ownW, ownH, Theme::BG);
     }
     if (showBubble) {
