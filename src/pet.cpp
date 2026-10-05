@@ -9,6 +9,7 @@
 #include <string.h>
 #include <math.h>
 #include <stdlib.h>
+#include <stdio.h>
 
 
 namespace Pet {
@@ -243,6 +244,27 @@ static const char* const CLIP_LANDED[] = {
     "Attached to nothing now. Thanks for that.",
 };
 static const uint8_t CLIP_LANDED_N = sizeof(CLIP_LANDED) / sizeof(CLIP_LANDED[0]);
+// Thrown again within a minute of the last one, and he starts counting.
+static const char* const CLIP_STREAK[] = {
+    "It looks like throw %d. Would you like a hobby?",
+    "Throw %d. I'm filing a complaint.",
+    "%d throws. Tip: that's a lot.",
+    "That's %d. I'm still smarter than you.",
+    "%d. Would you like to stop? No? Okay.",
+    "Throw %d logged. Nobody reads the log.",
+};
+static const uint8_t CLIP_STREAK_N = sizeof(CLIP_STREAK) / sizeof(CLIP_STREAK[0]);
+static char     s_cStreakLine[48];
+static uint8_t  s_cStreak = 0;
+static uint32_t s_cStreakAt = 0;
+static const char* clipStreakLine(uint32_t now) {
+    if (now - s_cStreakAt > 60000) s_cStreak = 0;
+    s_cStreakAt = now;
+    if (s_cStreak < 255) s_cStreak++;
+    if (s_cStreak < 3 || random(0, 2)) return nullptr;
+    snprintf(s_cStreakLine, sizeof(s_cStreakLine), CLIP_STREAK[random(0, CLIP_STREAK_N)], (int)s_cStreak);
+    return s_cStreakLine;
+}
 // When it is Squachy who gets thrown.
 static const char* const CLIP_SQTHROWN[] = {
     "It looks like you're throwing Squachy. Need a hand?",
@@ -709,6 +731,7 @@ static void clippyTick(TFT_eSPI& t, uint32_t now, int screenW, int floorY) {
                     s_cfY = floorY;
                     s_cSqAt = now;
                     s_cSqK = s_cvY > 0.9f ? 1.0f : s_cvY / 0.9f;
+                    if (s_cBounces == 0 && s_cFlung) Squachy::petLandedAt((int)s_cfX + 11);
                     if (s_cvY > 0.2f && s_cBounces < 5) {
                         s_cvY = -s_cvY * 0.5f;
                         s_cvX *= 0.75f;
@@ -720,7 +743,8 @@ static void clippyTick(TFT_eSPI& t, uint32_t now, int screenW, int floorY) {
                         // Said once he is down, where it can be read for
                         // as long as any other line.
                         if (s_cFlung) {
-                            clipSay(s_cBounces >= 2 ? CLIP_LANDED[random(0, CLIP_LANDED_N)] : CLIP_THROWN[random(0, CLIP_THROWN_N)], now, false);
+                            const char* streak = clipStreakLine(now);
+                            clipSay(streak ? streak : (s_cBounces >= 2 ? CLIP_LANDED[random(0, CLIP_LANDED_N)] : CLIP_THROWN[random(0, CLIP_THROWN_N)]), now, false);
                             s_cAnswered = true;
                             s_cFlung = false;
                         }

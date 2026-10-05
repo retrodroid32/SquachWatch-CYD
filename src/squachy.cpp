@@ -2669,6 +2669,20 @@ bool mouthPoint(int& x, int& y) {
     return true;
 }
 
+void petLandedAt(int x) {
+    static const char* const NEAR_MISS[7] = {
+        "Hey! Watch the feet.", "Incoming!", "That nearly took a toe.",
+        "We don't throw friends. Okay, we do.", "Not at ME.",
+        "I felt that through the floor.", "Nice shot. Terrible aim.",
+    };
+    if (s_lastCx <= -9999 || s_grabbed || s_thPhase != Throw::NONE) return;
+    if (abs(x - s_lastCx) > (int)(26.0f * s_lastScale)) return;   // his feet, not the spot beside them
+    const uint32_t now = millis();
+    mood      = Mood::SHOCKED;
+    moodUntil = now + tempo(900);
+    say(NEAR_MISS[random(0, 7)], 2600);
+}
+
 void eatToast(bool golden) {
     static const char* const BITES[4] = { "Nom.", "Toast! Thanks, buddy.", "Mmf. Still warm.", "Crunchy. Good." };
     const uint32_t now = millis();

@@ -61,6 +61,29 @@ static const char* const TOAST_FLIPPED[] = {
     "Right side up is overrated.",
 };
 static const uint8_t TOAST_FLIPPED_N = sizeof(TOAST_FLIPPED) / sizeof(TOAST_FLIPPED[0]);
+// Thrown again within a minute of the last one, and he starts counting.
+// %d is the number of throws in the run; one of these is used from the
+// third throw on, every other time.
+static const char* const TOAST_STREAK[] = {
+    "That's %d. I'm counting.",
+    "Throw %d. Still brave.",
+    "%d times. Is this a sport now?",
+    "%d throws. I live in the air now.",
+    "%d. Okay. I'm actually impressed.",
+    "Number %d. My lever came loose.",
+};
+static const uint8_t TOAST_STREAK_N = sizeof(TOAST_STREAK) / sizeof(TOAST_STREAK[0]);
+static char    s_tStreakLine[40];
+static uint8_t s_tStreak = 0;
+static uint32_t s_tStreakAt = 0;
+static const char* toastStreakLine(uint32_t now) {
+    if (now - s_tStreakAt > 60000) s_tStreak = 0;
+    s_tStreakAt = now;
+    if (s_tStreak < 255) s_tStreak++;
+    if (s_tStreak < 3 || random(0, 2)) return nullptr;
+    snprintf(s_tStreakLine, sizeof(s_tStreakLine), TOAST_STREAK[random(0, TOAST_STREAK_N)], (int)s_tStreak);
+    return s_tStreakLine;
+}
 // When it is Squachy who gets thrown past.
 static const char* const TOAST_SQTHROWN[] = {
     "MASTER! I'm not scared! You fly! I'm fine!",
@@ -516,6 +539,7 @@ static void toasterTick(TFT_eSPI& t, uint32_t now, int screenW, int floorY) {
                     s_tSqK = s_tvY > 0.9f ? 1.0f : s_tvY / 0.9f;
                     if (s_tBounces == 0) {
                         toastCrumbs((int)s_tfX + TOAST_W / 2, (int)s_tfY + TOAST_H, now);
+                        if (s_tFlung) Squachy::petLandedAt((int)s_tfX + TOAST_W / 2);
                         if (s_tFlung) {
                             s_tlLive = true; s_tlBorn = now;
                             s_tlX = s_tfX + 8; s_tlY = s_tfY; s_tlVX = -0.03f; s_tlVY = -0.4f;
@@ -529,12 +553,13 @@ static void toasterTick(TFT_eSPI& t, uint32_t now, int screenW, int floorY) {
                     } else {
                         s_tvY = 0;
                         s_tThAt = now;
+                        const char* streak = s_tFlung ? toastStreakLine(now) : nullptr;
                         if (s_tHard && s_tFlung) {
                             s_tPh = TPhase::FLIPPED;
-                            toastSay(TOAST_FLIPPED[random(0, TOAST_FLIPPED_N)], now, false);
+                            toastSay(streak ? streak : TOAST_FLIPPED[random(0, TOAST_FLIPPED_N)], now, false);
                         } else {
                             s_tPh = TPhase::SIT;
-                            if (s_tFlung) toastSay(TOAST_THROWN[random(0, TOAST_THROWN_N)], now, false);
+                            if (s_tFlung) toastSay(streak ? streak : TOAST_THROWN[random(0, TOAST_THROWN_N)], now, false);
                         }
                         s_tAnswered = true;
                         s_tFlung = false;

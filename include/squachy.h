@@ -250,6 +250,9 @@ namespace Squachy {
     // for the rare golden slice.
     bool mouthPoint(int& x, int& y);
     void eatToast(bool golden);
+    // A thrown pet has just hit the floor at screen x. Close to his feet and
+    // he flinches and says so; anywhere else, nothing.
+    void petLandedAt(int x);
 
     // True while a finger is carrying him, or he is dangling after being
     // dropped. The pet checks it: perching on a head that is itself flying
