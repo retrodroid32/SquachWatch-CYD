@@ -221,17 +221,28 @@ static const char* const CLIP_POKE[] = {
     "It looks like you poked me. Would you like to stop?",
     "Okay. I'll be right here. Watching. Helpfully.",
 };
+// People will throw him. A lot. So there is a dozen and more of these:
+// THROWN after a plain landing, LANDED after a bouncy one.
 static const char* const CLIP_THROWN[] = {
     "It looks like you're throwing a paperclip.",
     "This is not a supported workflow!",
     "Wheeee. Would you like help with that?",
     "Filing myself under DRAFTS!",
+    "It looks like gravity. Would you like to turn it off?",
+    "I'd rate that throw a six. Low effort.",
+    "Office supplies have feelings. Allegedly.",
+    "Have you tried throwing Squachy? He's rounder.",
 };
+static const uint8_t CLIP_THROWN_N = sizeof(CLIP_THROWN) / sizeof(CLIP_THROWN[0]);
 static const char* const CLIP_LANDED[] = {
     "Bent, but not broken. Mostly bent.",
     "Would you like to undo that? You can't.",
     "Tip: paperclips do not fly. Noted.",
+    "Tip: aim for the recycling. I'm metal.",
+    "It looks like you're venting. Tip: stop.",
+    "Attached to nothing now. Thanks for that.",
 };
+static const uint8_t CLIP_LANDED_N = sizeof(CLIP_LANDED) / sizeof(CLIP_LANDED[0]);
 // When it is Squachy who gets thrown.
 static const char* const CLIP_SQTHROWN[] = {
     "It looks like you're throwing Squachy. Need a hand?",
@@ -709,7 +720,7 @@ static void clippyTick(TFT_eSPI& t, uint32_t now, int screenW, int floorY) {
                         // Said once he is down, where it can be read for
                         // as long as any other line.
                         if (s_cFlung) {
-                            clipSay(s_cBounces >= 2 ? CLIP_LANDED[random(0, 3)] : CLIP_THROWN[random(0, 4)], now, false);
+                            clipSay(s_cBounces >= 2 ? CLIP_LANDED[random(0, CLIP_LANDED_N)] : CLIP_THROWN[random(0, CLIP_THROWN_N)], now, false);
                             s_cAnswered = true;
                             s_cFlung = false;
                         }

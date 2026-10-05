@@ -1482,6 +1482,13 @@ static void ensurePrefsLoaded() {
     s_petAnnounced       = s_petPrefs.getBool("petSeen", false);
     s_clippyUnlocked     = s_petPrefs.getBool("clippy", false);
     s_toasterUnlocked    = s_petPrefs.getBool("toaster", false);
+    // The master unlock means every pet too, including ones that did not
+    // exist when it was entered: a board that has it catches up at boot.
+    if (s_allOutfitsUnlocked) {
+        if (!s_petUnlocked)     { s_petUnlocked = true;     s_petPrefs.putBool("petUnlk", true); }
+        if (!s_clippyUnlocked)  { s_clippyUnlocked = true;  s_petPrefs.putBool("clippy", true); }
+        if (!s_toasterUnlocked) { s_toasterUnlocked = true; s_petPrefs.putBool("toaster", true); }
+    }
     // Defaults ON once earned: somebody who just unlocked a pet wants to
     // see it, not to go and find a switch.
     // "petSel" is the one to read; a board from before there were two

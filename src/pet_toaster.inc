@@ -35,16 +35,32 @@ static const char* const TOAST_POKE[] = {
     "I'm fine. That's just the heating element.",
     "Don't poke the toaster. The toaster is brave.",
 };
+// People will throw him. A lot. So there is a dozen of these.
 static const char* const TOAST_THROWN[] = {
     "I meant to do that.",
     "Still brave.",
     "Ow. Bravely.",
     "Which way is the kitchen?",
+    "That counts as flying. I flew.",
+    "Note to self: toasters don't bounce.",
+    "Master, I saw the whole screen from up there.",
+    "My crumbs! Those were mine.",
+    "Again! No. Yes. No.",
+    "I kept my toast in. Mostly.",
+    "Was that a test? Did I pass?",
+    "Brave toasters land on their feet. Eventually.",
+    "Is the floor meant to spin?",
 };
+static const uint8_t TOAST_THROWN_N = sizeof(TOAST_THROWN) / sizeof(TOAST_THROWN[0]);
 static const char* const TOAST_FLIPPED[] = {
     "Little help?",
     "I'm fine down here. Very brave.",
+    "The ceiling is lovely. Help.",
+    "I can see my own cord from here.",
+    "This is a tactical position.",
+    "Right side up is overrated.",
 };
+static const uint8_t TOAST_FLIPPED_N = sizeof(TOAST_FLIPPED) / sizeof(TOAST_FLIPPED[0]);
 // When it is Squachy who gets thrown past.
 static const char* const TOAST_SQTHROWN[] = {
     "MASTER! I'm not scared! You fly! I'm fine!",
@@ -515,10 +531,10 @@ static void toasterTick(TFT_eSPI& t, uint32_t now, int screenW, int floorY) {
                         s_tThAt = now;
                         if (s_tHard && s_tFlung) {
                             s_tPh = TPhase::FLIPPED;
-                            toastSay(TOAST_FLIPPED[random(0, 2)], now, false);
+                            toastSay(TOAST_FLIPPED[random(0, TOAST_FLIPPED_N)], now, false);
                         } else {
                             s_tPh = TPhase::SIT;
-                            if (s_tFlung) toastSay(TOAST_THROWN[random(0, 4)], now, false);
+                            if (s_tFlung) toastSay(TOAST_THROWN[random(0, TOAST_THROWN_N)], now, false);
                         }
                         s_tAnswered = true;
                         s_tFlung = false;
