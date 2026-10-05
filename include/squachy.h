@@ -239,7 +239,7 @@ namespace Squachy {
     // His first line after the unlock, handed over once; nullptr otherwise.
     const char* takeClippyIntro();
 
-    // T0ASTY, the brave little toaster, unlocked on his own: tap the same
+    // T0@$TY, the brave little toaster, unlocked on his own: tap the same
     // flying toaster three times on the TOASTERS background and he drops out
     // of the flock. Put on the moment he is earned, like C1iPPY.
     bool toasterUnlocked();

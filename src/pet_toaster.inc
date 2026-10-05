@@ -1,4 +1,4 @@
-// SquachWatch-CYD — T0ASTY, the brave little toaster. Included by pet.cpp
+// SquachWatch-CYD — T0@$TY, the brave little toaster. Included by pet.cpp
 // inside namespace Pet, after C1iPPY, whose balloon and throw he borrows.
 //
 // A chrome two-slot toaster off the kitchen counter, 30 x 23 pixels, who
@@ -429,7 +429,7 @@ static void toasterTick(TFT_eSPI& t, uint32_t now, int screenW, int floorY) {
     if (const char* intro = Squachy::takeToasterIntro()) {
         toastSay(intro, now, false);
         s_tAnswered = true;
-        Theme::showToast("T0ASTY", "your new pet. Settings > Pet", Theme::AMBER, 3500);
+        Theme::showToast("T0@$TY", "your new pet. Settings > Pet", Theme::AMBER, 3500);
         s_tNextTip = now + 60000;
     }
     if (!s_tNextTip) s_tNextTip = now + 8000;

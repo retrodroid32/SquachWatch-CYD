@@ -2655,7 +2655,7 @@ void unlockToaster(const char* why) {
         s_petPrefs.putUChar("petSel", s_petSel);
         s_toasterIntro = why;
     } else {
-        Theme::showToast("T0ASTY", "new pet. Settings > Pet", Theme::AMBER, 3500);
+        Theme::showToast("T0@$TY", "new pet. Settings > Pet", Theme::AMBER, 3500);
     }
 }
 
@@ -2725,7 +2725,7 @@ const char* petName() {
         case PetId::SHAGGY: return "VAPOR SHAGGY";
         case PetId::YETI:   return "THE YETI";
         case PetId::CLIPPY: return "C1iPPY";
-        case PetId::TOASTER: return "T0ASTY";
+        case PetId::TOASTER: return "T0@$TY";
         default:            return "OFF";
     }
 }
@@ -2733,7 +2733,7 @@ const char* petName() {
 void cyclePet() {
     ensurePrefsLoaded();
     // Round to the next one that is earned: SHAGGY and the yeti come together,
-    // C1iPPY and T0ASTY each on their own.
+    // C1iPPY and T0@$TY each on their own.
     for (uint8_t k = 0; k < (uint8_t)PetId::COUNT; k++) {
         s_petSel = (uint8_t)((s_petSel + 1) % (uint8_t)PetId::COUNT);
         if ((PetId)s_petSel == PetId::OFF || petOutNow()) break;
