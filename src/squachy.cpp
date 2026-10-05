@@ -650,6 +650,8 @@ static bool     s_sharkUnlocked      = false;  // earned by catching the Aquariu
 static bool     s_petUnlocked        = false;  // earned by tapping the lil guy on the toasters
 static bool     s_clippyUnlocked     = false;  // earned by backspacing ten times in a row
 static const char* s_clippyIntro     = nullptr;
+static bool     s_toasterUnlocked    = false;  // earned by tapping the same flying toaster three times
+static const char* s_toasterIntro    = nullptr;
 // Whether the card has been shown for him. Kept separately from the unlock
 // itself, and for the same reason the outfits keep an "announced" bitmask:
 // the pet survives a reboot, so without this the celebration would play
@@ -1479,6 +1481,7 @@ static void ensurePrefsLoaded() {
     s_petUnlocked        = s_petPrefs.getBool("petUnlk", false);
     s_petAnnounced       = s_petPrefs.getBool("petSeen", false);
     s_clippyUnlocked     = s_petPrefs.getBool("clippy", false);
+    s_toasterUnlocked    = s_petPrefs.getBool("toaster", false);
     // Defaults ON once earned: somebody who just unlocked a pet wants to
     // see it, not to go and find a switch.
     // "petSel" is the one to read; a board from before there were two
@@ -2601,7 +2604,18 @@ bool consumePetUnlockCard() {
 
 bool petUnlocked() { ensurePrefsLoaded(); return s_petUnlocked; }
 bool clippyUnlocked() { ensurePrefsLoaded(); return s_clippyUnlocked; }
-bool anyPetUnlocked() { ensurePrefsLoaded(); return s_petUnlocked || s_clippyUnlocked; }
+bool toasterUnlocked() { ensurePrefsLoaded(); return s_toasterUnlocked; }
+bool anyPetUnlocked() { ensurePrefsLoaded(); return s_petUnlocked || s_clippyUnlocked || s_toasterUnlocked; }
+
+// Whether a pet somebody chose is actually out: petSel defaults to SHAGGY
+// before he is ever earned, so "out" means chosen AND unlocked.
+static bool petOutNow() {
+    const PetId p = (PetId)s_petSel;
+    if (p == PetId::SHAGGY || p == PetId::YETI) return s_petUnlocked;
+    if (p == PetId::CLIPPY)  return s_clippyUnlocked;
+    if (p == PetId::TOASTER) return s_toasterUnlocked;
+    return false;
+}
 
 void unlockClippy(const char* why) {
     ensurePrefsLoaded();
@@ -2611,10 +2625,7 @@ void unlockClippy(const char* why) {
     // On at once when no pet is out: he is the kind of help that does not
     // wait to be asked. Somebody walking VAPOR SHAGGY or the yeti keeps
     // them, and is told where he is instead.
-    // petSel defaults to SHAGGY before he is ever earned, so "out" means
-    // chosen AND unlocked.
-    const bool petOut = (s_petSel == (uint8_t)PetId::SHAGGY || s_petSel == (uint8_t)PetId::YETI) && s_petUnlocked;
-    if (!petOut) {
+    if (!petOutNow()) {
         s_petSel = (uint8_t)PetId::CLIPPY;
         s_petPrefs.putUChar("petSel", s_petSel);
         s_clippyIntro = why;
@@ -2624,6 +2635,46 @@ void unlockClippy(const char* why) {
 }
 
 const char* takeClippyIntro() { const char* w = s_clippyIntro; s_clippyIntro = nullptr; return w; }
+
+void unlockToaster(const char* why) {
+    ensurePrefsLoaded();
+    if (s_toasterUnlocked) return;
+    s_toasterUnlocked = true;
+    s_petPrefs.putBool("toaster", true);
+    // The same manners as C1iPPY: on at once when nobody else is out,
+    // otherwise a toast saying where he went.
+    if (!petOutNow()) {
+        s_petSel = (uint8_t)PetId::TOASTER;
+        s_petPrefs.putUChar("petSel", s_petSel);
+        s_toasterIntro = why;
+    } else {
+        Theme::showToast("T0ASTY", "new pet. Settings > Pet", Theme::AMBER, 3500);
+    }
+}
+
+const char* takeToasterIntro() { const char* w = s_toasterIntro; s_toasterIntro = nullptr; return w; }
+
+bool mouthPoint(int& x, int& y) {
+    if (s_lastCx <= -9999) return false;
+    // drawBody() puts the mouth S(19) under the head's top line.
+    x = s_lastCx;
+    y = s_lastHeadTopY + (int)(19.0f * s_lastScale);
+    return true;
+}
+
+void eatToast(bool golden) {
+    static const char* const BITES[4] = { "Nom.", "Toast! Thanks, buddy.", "Mmf. Still warm.", "Crunchy. Good." };
+    const uint32_t now = millis();
+    if (golden) {
+        mood      = Mood::DANCE;
+        moodUntil = now + tempo(2600);
+        say("GOLDEN TOAST!", 3000);
+    } else {
+        mood      = Mood::BOUNCE;
+        moodUntil = now + tempo(1200);
+        say(BITES[random(0, 4)], 2200);
+    }
+}
 
 // Ten in a row, and anything typed in between starts the count again.
 static uint8_t s_backspaces = 0;
@@ -2653,6 +2704,7 @@ const char* petName() {
         case PetId::SHAGGY: return "VAPOR SHAGGY";
         case PetId::YETI:   return "THE YETI";
         case PetId::CLIPPY: return "C1iPPY";
+        case PetId::TOASTER: return "T0ASTY";
         default:            return "OFF";
     }
 }
@@ -2660,11 +2712,10 @@ const char* petName() {
 void cyclePet() {
     ensurePrefsLoaded();
     // Round to the next one that is earned: SHAGGY and the yeti come together,
-    // C1iPPY on his own.
+    // C1iPPY and T0ASTY each on their own.
     for (uint8_t k = 0; k < (uint8_t)PetId::COUNT; k++) {
         s_petSel = (uint8_t)((s_petSel + 1) % (uint8_t)PetId::COUNT);
-        const PetId p = (PetId)s_petSel;
-        if (p == PetId::OFF || (p == PetId::CLIPPY ? s_clippyUnlocked : s_petUnlocked)) break;
+        if ((PetId)s_petSel == PetId::OFF || petOutNow()) break;
     }
     s_petPrefs.putUChar("petSel", s_petSel);
 }
@@ -2809,6 +2860,7 @@ void unlockAllOutfits() {
     // place to draw the line.
     if (!s_petUnlocked) { s_petUnlocked = true; s_petPrefs.putBool("petUnlk", true); }
     if (!s_clippyUnlocked) { s_clippyUnlocked = true; s_petPrefs.putBool("clippy", true); }
+    if (!s_toasterUnlocked) { s_toasterUnlocked = true; s_petPrefs.putBool("toaster", true); }
     // No popups for the cheat: it already has its own rainbow-and-confetti
     // tell below, and eleven modals in a row would bury it. Mark the lot as
     // seen so nothing queues now or on the next boot.

@@ -300,7 +300,20 @@ static bool        s_aValid = false, s_sqWasThrown = false;
 static int         s_aCx = 0, s_aHalfW = 0, s_aBot = 0;
 static const float CLIP_G = 0.0028f, CLIP_MIN_V = 0.32f, CLIP_MAX_V = 1.8f;
 
+// The toaster's half of each of these lives in pet_toaster.inc; the
+// functions keep C1iPPY's names because main.cpp learned them first, and
+// what they mean is "the pet that can be picked up".
+static bool toasterOn() { return Squachy::petChoice() == Squachy::PetId::TOASTER && Squachy::toasterUnlocked(); }
+static void toasterNoteCatch(uint8_t type);
+static bool toasterHit(int x, int y);
+static bool toasterCenter(int& x, int& y);
+static void toasterPoke(uint32_t now);
+static void toasterGrab(int x, int y, uint32_t now);
+static void toasterDrag(int x, int y, uint32_t now);
+static void toasterRelease(uint32_t now);
+
 void noteCatch(uint8_t type) {
+    if (toasterOn()) { toasterNoteCatch(type); return; }
     if (Squachy::petChoice() != Squachy::PetId::CLIPPY) return;
     s_cPending = (uint8_t)(type + 1);
 }
@@ -318,11 +331,13 @@ static void clipSay(const char* line, uint32_t now, bool caught) {
 }
 
 bool clippyHit(int x, int y) {
+    if (toasterOn()) return toasterHit(x, y);
     if (Squachy::petChoice() != Squachy::PetId::CLIPPY || s_cX < -50) return false;
     return x >= s_cX - 4 && x <= s_cX + 30 && y >= s_cY - 4 && y <= s_cY + CLIP_H;
 }
 
 void clippyPoke(uint32_t now) {
+    if (toasterOn()) { toasterPoke(now); return; }
     // A run of pokes walks the four lines; a pause starts it over.
     if (now - s_cPokeAt > 8000) s_cPoke = 0;
     s_cPokeAt = now;
@@ -332,12 +347,14 @@ void clippyPoke(uint32_t now) {
 }
 
 bool clippyCenter(int& x, int& y) {
+    if (toasterOn()) return toasterCenter(x, y);
     if (Squachy::petChoice() != Squachy::PetId::CLIPPY || s_cX < -50) return false;
     x = s_cX + 11; y = s_cY + 24;
     return true;
 }
 
 void clippyGrab(int x, int y, uint32_t now) {
+    if (toasterOn()) { toasterGrab(x, y, now); return; }
     if (Squachy::petChoice() != Squachy::PetId::CLIPPY || s_cX < -50) return;
     s_cTh = ClipThrow::HELD;
     s_cfX = (float)s_cX; s_cfY = (float)s_cY;
@@ -351,6 +368,7 @@ void clippyGrab(int x, int y, uint32_t now) {
 }
 
 void clippyDrag(int x, int y, uint32_t now) {
+    if (toasterOn()) { toasterDrag(x, y, now); return; }
     if (s_cTh != ClipThrow::HELD) return;
     const int dx = x - s_cDownX, dy = y - s_cDownY;
     if (dx * dx + dy * dy > 8 * 8) s_cMoved = true;
@@ -379,6 +397,7 @@ static void clipLaunch(float vx, float vy, uint32_t now) {
 }
 
 void clippyRelease(uint32_t now) {
+    if (toasterOn()) { toasterRelease(now); return; }
     if (s_cTh != ClipThrow::HELD) return;
     if (!s_cMoved && now - s_cGrabAt < 450) {
         s_cTh = ClipThrow::NONE;
@@ -510,12 +529,12 @@ static void clipDraw(TFT_eSPI& t, int x, int y, uint32_t now, ClipFace face) {
 // Above him, wrapped at 24 characters in three lines -- or, on a screen too
 // short for that (the StickS3), BESIDE him at whatever width the side has,
 // in up to five lines, so it never sits on Squachy's face.
-static void clipBalloon(TFT_eSPI& t, const char* s, int clipX, int clipY, int screenW, int screenH) {
+static void petBalloon(TFT_eSPI& t, const char* s, int boxX, int boxY, int boxW, int screenW, int screenH) {
     const bool side = screenH < 200;
     int maxC = 24;
     bool right = true;
     if (side) {
-        const int roomR = screenW - (clipX + 30) - 4, roomL = clipX - 6;
+        const int roomR = screenW - (boxX + boxW + 4) - 4, roomL = boxX - 6;
         right = roomR >= roomL;
         maxC = ((right ? roomR : roomL) - 10) / 6;
         if (maxC > 24) maxC = 24;
@@ -539,9 +558,9 @@ static void clipBalloon(TFT_eSPI& t, const char* s, int clipX, int clipY, int sc
     for (uint8_t i = 0; i < n; i++) { const int w = t.textWidth(lines[i]); if (w > tw) tw = w; }
     const int bw = tw + 9, bh = n * 9 + 6;
     const uint16_t paper = t.color565(255, 251, 208);
-    if (side && maxC < 24 + 1 && (screenW - (clipX + 30) - 4 >= bw || clipX - 6 >= bw)) {
-        int bx = right ? clipX + 30 : clipX - 4 - bw;
-        int by = clipY + 6 - bh / 2;
+    if (side && maxC < 24 + 1 && (screenW - (boxX + boxW + 4) - 4 >= bw || boxX - 6 >= bw)) {
+        int bx = right ? boxX + boxW + 4 : boxX - 4 - bw;
+        int by = boxY + 6 - bh / 2;
         if (by < 16) by = 16;
         t.fillRect(bx, by, bw, bh, Theme::BLACK);
         t.fillRect(bx + 1, by + 1, bw - 2, bh - 2, paper);
@@ -556,7 +575,7 @@ static void clipBalloon(TFT_eSPI& t, const char* s, int clipX, int clipY, int sc
         for (uint8_t i = 0; i < n; i++) { t.setCursor(bx + 5, by + 3 + i * 9); t.print(lines[i]); }
         return;
     }
-    const int anchorX = clipX + 11, bottomY = clipY - 4;
+    const int anchorX = boxX + boxW / 2, bottomY = boxY - 4;
     int bx = anchorX - bw / 2;
     if (bx > screenW - bw - 2) bx = screenW - bw - 2;
     if (bx < 2) bx = 2;
@@ -574,6 +593,10 @@ static void clipBalloon(TFT_eSPI& t, const char* s, int clipX, int clipY, int sc
     }
     t.setTextColor(Theme::BLACK, paper);
     for (uint8_t i = 0; i < n; i++) { t.setCursor(bx + 5, by + 3 + i * 9); t.print(lines[i]); }
+}
+
+static void clipBalloon(TFT_eSPI& t, const char* s, int clipX, int clipY, int screenW, int screenH) {
+    petBalloon(t, s, clipX, clipY, 22, screenW, screenH);
 }
 
 static void clippyTick(TFT_eSPI& t, uint32_t now, int screenW, int floorY) {
@@ -740,7 +763,10 @@ static void clippyTick(TFT_eSPI& t, uint32_t now, int screenW, int floorY) {
     }
 }
 
+#include "pet_toaster.inc"
+
 void reset() {
+    toasterReset();
     s_phase  = Phase::AWAY;
     s_x      = -100.0f;
     s_nextAt = 0;
@@ -871,11 +897,17 @@ static void yetiTick(TFT_eSPI& t, uint32_t now, int screenW, int cx, int halfW, 
 void tick(TFT_eSPI& t, uint32_t now, int screenW, int bandTop, int bandBottom) {
     const Squachy::PetId which = Squachy::petChoice();
     if (which == Squachy::PetId::CLIPPY) {
-        s_phase = Phase::AWAY; s_yPhase = YPhase::AWAY;
+        s_phase = Phase::AWAY; s_yPhase = YPhase::AWAY; s_tX = -100;
         if (Squachy::clippyUnlocked()) clippyTick(t, now, screenW, bandBottom);
         return;
     }
     s_cX = -100;
+    if (which == Squachy::PetId::TOASTER) {
+        s_phase = Phase::AWAY; s_yPhase = YPhase::AWAY;
+        if (Squachy::toasterUnlocked()) toasterTick(t, now, screenW, bandBottom);
+        return;
+    }
+    s_tX = -100;
     if (!Squachy::petUnlocked() || which == Squachy::PetId::OFF) {
         s_phase  = Phase::AWAY;
         s_yPhase = YPhase::AWAY;

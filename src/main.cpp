@@ -2141,6 +2141,7 @@ volatile bool g_consoleInvert = false;
 volatile bool g_consoleAdc = false;     // ADC: the spare analog inputs, for finding a battery sense line
 volatile bool g_consoleXyzzy = false;   // XYZZY: the TERMINAL background types the magic word now
 volatile bool g_consoleClippy = false;    // CLIPPY: unlock C1iPPY, for the bench
+volatile bool g_consoleToaster = false;   // TOASTER: unlock T0ASTY, for the bench
 volatile uint8_t g_consoleHeadsUp = 0;   // HEADSUP n: tell the squad about a made-up catch of type n, for the bench
 volatile bool g_consoleLegend = false;  // LEGEND: wear the Legend look (and its aura) until the next boot, or take it off
 volatile bool g_consoleOutfitSet = false;  // OUTFIT n: wear costume n until the next boot, for timing it; -1 takes it off
@@ -5185,6 +5186,11 @@ void loop() {
         Squachy::unlockClippy("It looks like you're having trouble typing.");
         Serial.println("[pet] C1iPPY unlocked and put on");
     }
+    if (g_consoleToaster) {
+        g_consoleToaster = false;
+        Squachy::unlockToaster("Reporting for duty. I'm not scared.");
+        Serial.println("[pet] T0ASTY unlocked and put on");
+    }
     if (g_consoleLegend) {
         g_consoleLegend = false;
         Squachy::previewLegend(!Squachy::legendPreview());
@@ -5731,6 +5737,7 @@ void loop() {
             // renderer stays unaware of the outfit system.
             if (Theme::consumeWerewolfSummon()) Squachy::unlockWolfPelt();
             if (Theme::consumeToasterCatch())   Squachy::unlockChromeWing();
+            if (Theme::consumeToasterPetCatch()) Squachy::unlockToaster("You came for me? I knew you would. I wasn't scared.");
             if (Theme::consumeEyeCatch())       Squachy::unlockVoidEye();
             if (Theme::consumeLodgeKnock())     Squachy::unlockParka();
             if (Theme::consumeOwlReek())        Squachy::unlockShambler();

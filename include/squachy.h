@@ -221,7 +221,7 @@ namespace Squachy {
 
     // Which one. There are two now, so the Settings row cycles rather than
     // toggles: OFF, then each companion in turn.
-    enum class PetId : uint8_t { OFF = 0, SHAGGY, YETI, CLIPPY, COUNT };
+    enum class PetId : uint8_t { OFF = 0, SHAGGY, YETI, CLIPPY, TOASTER, COUNT };
     PetId       petChoice();
     const char* petName();     // for the row's value column
     void        cyclePet();
@@ -238,6 +238,18 @@ namespace Squachy {
     void noteSettingsOpened();
     // His first line after the unlock, handed over once; nullptr otherwise.
     const char* takeClippyIntro();
+
+    // T0ASTY, the brave little toaster, unlocked on his own: tap the same
+    // flying toaster three times on the TOASTERS background and he drops out
+    // of the flock. Put on the moment he is earned, like C1iPPY.
+    bool toasterUnlocked();
+    void unlockToaster(const char* why);
+    const char* takeToasterIntro();
+    // Where his mouth is this frame, for a slice of toast aimed at it; false
+    // before he has ever been drawn. And the bite: a hop and a word, a dance
+    // for the rare golden slice.
+    bool mouthPoint(int& x, int& y);
+    void eatToast(bool golden);
 
     // True while a finger is carrying him, or he is dangling after being
     // dropped. The pet checks it: perching on a head that is itself flying

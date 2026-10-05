@@ -504,6 +504,9 @@ namespace Theme {
     // TOASTERS background. Same consume-once contract as the werewolf
     // summon above; main.cpp turns it into an outfit unlock.
     bool consumeToasterCatch();
+    // ...and after the player has tapped the same ordinary chrome toaster
+    // three times in a row: it drops out of the flock and becomes the pet.
+    bool consumeToasterPetCatch();
 
     // The Aquarium shark, caught on the SECOND touch: the first one only
     // turns him round. True once per catch, and true again on a catch after

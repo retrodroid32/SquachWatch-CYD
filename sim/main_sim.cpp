@@ -479,6 +479,7 @@ int main(int argc, char** argv) {
     if (petIdx >= 0) {
         Squachy::unlockPet();
         if (petIdx == (int)Squachy::PetId::CLIPPY) Squachy::unlockClippy(nullptr);
+        if (petIdx == (int)Squachy::PetId::TOASTER) Squachy::unlockToaster(nullptr);
         for (int k = 0; k < 8 && (int)Squachy::petChoice() != petIdx; k++) Squachy::cyclePet();
     }
 

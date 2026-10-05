@@ -2309,6 +2309,8 @@ static void drawMowinManAt(TFT_eSPI& t, int x, int baseY, uint32_t now, float sc
 
 // Defined further down, next to backgroundTap() which consumes it.
 static void publishGoldToaster(int cx, int cy, int hw, int hh, uint32_t now);
+static void publishFlockToaster(uint8_t i, int cx, int cy, int hw, int hh, uint32_t now);
+static int8_t s_flockTaken = -1;     // a toaster tapped three times, to be dropped from the flock
 
 void drawFlyingToasters(TFT_eSPI& t, uint32_t now, int yStart, int yEnd) {
     static const uint8_t N = 5;
@@ -2566,6 +2568,9 @@ void drawFlyingToasters(TFT_eSPI& t, uint32_t now, int yStart, int yEnd) {
     for (uint8_t i = 0; i < N; i++) {
         tx[i] += (0.6f + (float)(i % 3) * 0.25f) * tscale[i];
         ty[i] -= (0.15f + (float)(i % 2) * 0.1f) * tscale[i];
+        // One tapped three times leaves the flock (see backgroundTap): it
+        // is respawned at once, and the pet it became takes over from here.
+        if (s_flockTaken == (int8_t)i) { s_flockTaken = -1; tx[i] = (float)w + 50.0f; }
         if (tx[i] > w + 40 || ty[i] < (float)yStart - 44) {
             tx[i]     = (float)(-random(0, 40) - 70);
             ty[i]     = (float)random(yStart + 12, yEnd - 12);
@@ -2579,6 +2584,9 @@ void drawFlyingToasters(TFT_eSPI& t, uint32_t now, int yStart, int yEnd) {
         // every toaster on every frame costs a couple of compares.
         Squachy::toasterNear((int)tx[i], (int)ty[i]);
         drawToasterAt(t, (int)tx[i], (int)ty[i], now, tcol[i], tscale[i]);
+        if (tcol[i] != goldCol && tx[i] >= 0.0f && tx[i] + 44.0f * tscale[i] <= (float)w)
+            publishFlockToaster(i, (int)tx[i] + (int)(22.0f * tscale[i]), (int)ty[i] + (int)(15.0f * tscale[i]),
+                                (int)(22.0f * tscale[i]), (int)(15.0f * tscale[i]), now);
         if (tcol[i] == goldCol) {
             // Publish the body's centre so a tap can find it. Radius covers
             // the body, not the wings -- the wings sweep and a hit box that
@@ -4617,6 +4625,28 @@ bool consumeToasterCatch() {
     return true;
 }
 
+// The ordinary chrome toasters, the same way: where each was last drawn, so
+// a tap can tell WHICH one it hit. Three taps on the same one inside a
+// short window and it drops out of the flock as the pet. Three rather than
+// one because the gold toaster's one-tap catch is what a stray tap is
+// allowed to land; this needs to be meant.
+static const uint8_t FLOCK_N = 5;
+static int      s_flockX[FLOCK_N], s_flockY[FLOCK_N], s_flockHW[FLOCK_N], s_flockHH[FLOCK_N];
+static uint32_t s_flockAt[FLOCK_N] = {};
+static int8_t   s_flockTapIdx = -1;
+static uint8_t  s_flockTaps = 0;
+static uint32_t s_flockTapAt = 0;
+static bool     s_flockPetCaught = false;
+static void publishFlockToaster(uint8_t i, int cx, int cy, int hw, int hh, uint32_t now) {
+    if (i >= FLOCK_N) return;
+    s_flockX[i] = cx; s_flockY[i] = cy; s_flockHW[i] = hw; s_flockHH[i] = hh; s_flockAt[i] = now;
+}
+bool consumeToasterPetCatch() {
+    if (!s_flockPetCaught) return false;
+    s_flockPetCaught = false;
+    return true;
+}
+
 bool consumeSharkCatch() {
     if (!s_sharkCaught) return false;
     s_sharkCaught = false;
@@ -4895,6 +4925,24 @@ bool backgroundTap(int x, int y, uint32_t now) {
             s_goldX = -1;               // caught: stop accepting taps on it
             return true;
         }
+    }
+
+    // An ordinary toaster: three taps on the same one, each within two and
+    // a half seconds of the last, and it is yours.
+    for (uint8_t i = 0; i < FLOCK_N; i++) {
+        if (!s_flockAt[i] || (now - s_flockAt[i]) > 250) continue;
+        const int fdx = x - s_flockX[i], fdy = y - s_flockY[i];
+        if (fdx > s_flockHW[i] || fdx < -s_flockHW[i] || fdy > s_flockHH[i] || fdy < -s_flockHH[i]) continue;
+        if (s_flockTapIdx != (int8_t)i || (now - s_flockTapAt) > 2500) s_flockTaps = 0;
+        s_flockTapIdx = (int8_t)i;
+        s_flockTapAt  = now;
+        if (++s_flockTaps >= 3) {
+            s_flockTaps = 0;
+            s_flockTaken = (int8_t)i;
+            s_flockAt[i] = 0;
+            s_flockPetCaught = true;
+        }
+        return true;
     }
 
     // Not drawn recently means not on screen.
