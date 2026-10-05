@@ -6,6 +6,7 @@
 // Needed this early: the message helpers sit up with the visit machine,
 // above where the rest of this file pulls these in.
 #include "theme.h"
+#include "security.h"   // the lock icon the counter tiles keep clear of
 #include "settings.h"
 #include "meshtalk.h"
 #if SQUACH_MESH
@@ -2898,7 +2899,18 @@ void uiClearTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool adv
     // title bar to the counters, which are at the bottom, with NEARBY over
     // his feet.
     const bool xp = Settings::detXp();
-    const int tilesTop      = titleBottom + 2;
+    // XP's tiles start a couple of rows from the very top, in the title
+    // bar between its corner icons, the way a taskbar sits. Not when the
+    // WATCHING / HUNTING pill is up -- that lives in the same middle of the
+    // bar, so they drop under it, and Squachy gives up those rows while it
+    // is set -- and never on the T-Watch, whose clock and badges are there.
+#if defined(TWATCH_S3)
+    const bool tilesLow = true;
+#else
+    const bool tilesLow = eng.watchKind() != DetectionEngine::WatchKind::NONE ||
+                          eng.huntKind()  != DetectionEngine::WatchKind::NONE;
+#endif
+    const int tilesTop      = tilesLow ? titleBottom + 2 : 2;
     const int bandTop       = xp ? tilesTop + counterRows * lineH : titleBottom;
     const int squachyBottom = xp ? bar.y - 1 : counterTextTop - 2;
     // Measured: feet ended 6 rows above the bar; CLASSIC never sank them.
@@ -2942,7 +2954,10 @@ void uiClearTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool adv
     const bool step = uiMascotStep(now, advance);
     // His bubble rises past the tiles to row 1, where it always sat. Undone
     // straight after he is drawn: the desk and the alert cameo want theirs.
-    if (xp) Squachy::setBubbleRiseTo(1);
+    // XP: his bubble rises to just under last frame's tiles, or to the top
+    // row when there are none -- not onto them.
+    static uint8_t s_tileRowsLast = 0;
+    if (xp) Squachy::setBubbleRiseTo(s_tileRowsLast ? tilesTop + s_tileRowsLast * lineH + 1 : 1);
 
     // Squachy: main character, reacts to events, cracks jokes when idle.
     // His available region runs all the way to countersTop (not
@@ -3319,6 +3334,16 @@ void uiClearTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool adv
         }
         int tileGap = 4, tilePad = 5;
         uint8_t rowsUsed = 0;
+        // A row that reaches into the title bar's icon band keeps between the
+        // corner icons: the menu on the left, rotate (and the lock, when the
+        // PIN is on) on the right. Centred, so the same margin both sides.
+        const int iconMargin = (Theme::TITLE_ICON_W + (Security::enabled() ? 26 : 0) > Theme::TITLE_ICON_W
+                                    ? Theme::TITLE_ICON_W + (Security::enabled() ? 26 : 0)
+                                    : Theme::TITLE_ICON_W) + 3;
+        auto rowRoom = [&](uint8_t row) {
+            const int top = tilesTop + row * lineH;
+            return top < Theme::TITLE_ICON_BAND_H ? w - 2 * iconMargin : w - 8;
+        };
         // Tighter tiles, once, if a crowded day will not fit the rows there are.
         for (uint8_t pass = 0; pass < 2 && counterN && !rowsUsed; pass++) {
         if (pass == 1) {
@@ -3333,13 +3358,14 @@ void uiClearTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool adv
                 const uint8_t n = bse + (row < rem ? 1 : 0);
                 int rw = 0;
                 for (uint8_t k = 0; k < n; k++) rw += tileW[st + k] + (k ? tileGap : 0);
-                if (n > perRowCap || rw > w - 8) fits = false;
+                if (n > perRowCap || rw > rowRoom(row)) fits = false;
                 st += n;
             }
             if (fits) { rowsUsed = r; break; }
         }
         }
         if (counterN && !rowsUsed) rowsUsed = counterRows;
+        s_tileRowsLast = rowsUsed;
         // A kind that has just turned up flashes orange for a few seconds, the
         // way an XP taskbar button asks for you.
         static uint32_t s_tileSince[(uint8_t)DetectionType::COUNT] = {};
