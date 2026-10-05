@@ -2559,11 +2559,6 @@ static uint16_t counterCount(const DetectionEngine& eng, DetectionType t) {
 // orange), 2 greyed out.
 static const int XP_ICON_W = 9;     // the icon and the gap after it
 static const int XP_ADV    = 7;     // per letter: 5 wide, 1 bolder, 1 gap
-// The 135-pixel-tall boards have two rows and no room for bold: plain
-// letters on the font's own 6-pixel step, or six counters run into the
-// corner icons (seen 2026-10-05).
-static inline bool xpBold() { return !Theme::compact(); }
-static inline int  xpAdv()  { return xpBold() ? XP_ADV : 6; }
 static void drawXpTile(TFT_eSPI& t, int x, int y, int w, int h, const char* txt,
                        uint16_t iconCol, uint8_t state, int pad) {
     // Top and bottom of the gradient, then the edge, per state.
@@ -2596,10 +2591,9 @@ static void drawXpTile(TFT_eSPI& t, int x, int y, int w, int h, const char* txt,
     const int ty = y + (h - 8) / 2;
     int tx = ix + XP_ICON_W;
     t.setTextColor(INK[state]);
-    const bool bold = xpBold();
-    for (const char* c = txt; *c; c++, tx += xpAdv()) {
+    for (const char* c = txt; *c; c++, tx += XP_ADV) {
         t.setCursor(tx, ty);         t.write(*c);
-        if (bold) { t.setCursor(tx + 1, ty); t.write(*c); }
+        t.setCursor(tx + 1, ty);     t.write(*c);
     }
 }
 
@@ -2923,7 +2917,12 @@ void uiClearTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool adv
                           eng.huntKind()  != DetectionEngine::WatchKind::NONE;
 #endif
     const int tilesTop      = tilesLow ? titleBottom + 2 : 2;
-    const int bandTop       = xp ? tilesTop + counterRows * lineH : titleBottom;
+    // The 135-pixel boards may borrow a third row on a crowded day (see the
+    // fit below); Squachy gives up that row's height only while it is used.
+    static uint8_t s_tileRowsLast = 0;      // rows the tiles took last frame
+    const uint8_t extraRows = Theme::compact() ? 1 : 0;
+    const uint8_t rowsKept  = (extraRows && s_tileRowsLast > counterRows) ? s_tileRowsLast : counterRows;
+    const int bandTop       = xp ? tilesTop + rowsKept * lineH : titleBottom;
     const int squachyBottom = xp ? bar.y - 1 : counterTextTop - 2;
     // Measured: feet ended 6 rows above the bar; CLASSIC never sank them.
     const int SQ_FOOT_SINK  = xp ? 6 : 0;
@@ -2968,7 +2967,6 @@ void uiClearTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool adv
     // straight after he is drawn: the desk and the alert cameo want theirs.
     // XP: his bubble rises to just under last frame's tiles, or to the top
     // row when there are none -- not onto them.
-    static uint8_t s_tileRowsLast = 0;
     if (xp) Squachy::setBubbleRiseTo(s_tileRowsLast ? tilesTop + s_tileRowsLast * lineH + 1 : 1);
 
     // Squachy: main character, reacts to events, cracks jokes when idle.
@@ -3343,7 +3341,7 @@ void uiClearTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool adv
         for (uint8_t i = 0; i < counterN; i++) {
             snprintf(tileTxt[i], sizeof(tileTxt[i]), "%s %u", counterLabel(counterTypes[i]),
                      counterCount(eng, counterTypes[i]));
-            tileW[i] = (uint16_t)((int)strlen(tileTxt[i]) * xpAdv() + 10 + XP_ICON_W);
+            tileW[i] = (uint16_t)((int)strlen(tileTxt[i]) * XP_ADV + 10 + XP_ICON_W);
         }
         int tileGap = 4, tilePad = 5;
         uint8_t rowsUsed = 0;
@@ -3363,7 +3361,7 @@ void uiClearTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool adv
             tileGap = 2; tilePad = 2;
             for (uint8_t i = 0; i < counterN; i++) tileW[i] -= 6;
         }
-        for (uint8_t r = 1; r <= counterRows; r++) {
+        for (uint8_t r = 1; r <= counterRows + extraRows; r++) {
             const uint8_t bse = counterN / r, rem = counterN % r;
             bool fits = true;
             uint8_t st = 0;
@@ -3377,7 +3375,7 @@ void uiClearTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool adv
             if (fits) { rowsUsed = r; break; }
         }
         }
-        if (counterN && !rowsUsed) rowsUsed = counterRows;
+        if (counterN && !rowsUsed) rowsUsed = counterRows + extraRows;
         s_tileRowsLast = rowsUsed;
         // A kind that has just turned up flashes orange for a few seconds, the
         // way an XP taskbar button asks for you.
