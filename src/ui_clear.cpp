@@ -2558,16 +2558,17 @@ static uint16_t counterCount(const DetectionEngine& eng, DetectionType t) {
 // colour, and white bold text. state 0 lit, 1 flashing for attention (XP's
 // orange), 2 greyed out.
 static const int XP_ICON_W = 9;     // the icon and the gap after it
+static const int XP_ADV    = 7;     // per letter: 5 wide, 1 bolder, 1 gap
 static void drawXpTile(TFT_eSPI& t, int x, int y, int w, int h, const char* txt,
                        uint16_t iconCol, uint8_t state, int pad) {
     // Top and bottom of the gradient, then the edge, per state.
-    static const uint16_t TOP[3]  = { 0x4D3F /* #4CA6FF */, 0xFD8A /* #FFB050 */, 0x8C77 /* #8C8EB8 */ };
-    static const uint16_t BOT[3]  = { 0x1ABA /* #1854D4 */, 0xDB02 /* #DC6010 */, 0x4A90 /* #4A5282 */ };
-    static const uint16_t EDGE[3] = { 0x0A13 /* #0A4098 */, 0x8A00 /* #884000 */, 0x2929 /* #282448 */ };
-    // Black text (asked for 2026-10-05: white on the blue was hard to read),
-    // over a pale one-pixel shadow so it still lifts off the gradient.
+    // The blue is the channel's #0099FF at the bottom, lighter up top.
+    static const uint16_t TOP[3]  = { 0x661F /* #66C2FF */, 0xFD8A /* #FFB050 */, 0x8C77 /* #8C8EB8 */ };
+    static const uint16_t BOT[3]  = { 0x04DF /* #0099FF */, 0xDB02 /* #DC6010 */, 0x4A90 /* #4A5282 */ };
+    static const uint16_t EDGE[3] = { 0x0AF5 /* #0A5CA8 */, 0x8A00 /* #884000 */, 0x2929 /* #282448 */ };
+    // Black text (asked for 2026-10-05: white on the blue was hard to read).
+    // No drop shadow: at this size it only muddied the letters.
     static const uint16_t INK[3]  = { 0x0000, 0x0000, 0x2104 };
-    static const uint16_t LIFT[3] = { 0x9E7F /* pale blue */, 0xFEF6 /* pale orange */, 0xB5B6 };
     if (state > 2) state = 2;
     for (int r = 1; r < h - 1; r++) {
         // A bright gloss line under the top edge, then the gradient down.
@@ -2584,14 +2585,16 @@ static void drawXpTile(TFT_eSPI& t, int x, int y, int w, int h, const char* txt,
     t.drawFastVLine(ix, iy, 6, 0xFFFF);
     t.drawFastHLine(ix, iy + 5, 6, EDGE[state]);
     t.drawFastVLine(ix + 5, iy, 6, EDGE[state]);
-    // Tahoma Bold, near enough: the text twice, a pixel apart, over a
-    // one-pixel pale shadow.
-    const int tx = ix + XP_ICON_W, ty = y + (h - 8) / 2;
-    t.setTextColor(LIFT[state]);
-    t.setCursor(tx + 1, ty + 1); t.print(txt);
+    // Tahoma Bold, near enough: each letter twice, a pixel apart. One
+    // letter at a time on a 7-pixel advance: the font's own 6 leaves no gap
+    // once the letters are a pixel wider, and they ran together (2026-10-05).
+    const int ty = y + (h - 8) / 2;
+    int tx = ix + XP_ICON_W;
     t.setTextColor(INK[state]);
-    t.setCursor(tx, ty);         t.print(txt);
-    t.setCursor(tx + 1, ty);     t.print(txt);
+    for (const char* c = txt; *c; c++, tx += XP_ADV) {
+        t.setCursor(tx, ty);         t.write(*c);
+        t.setCursor(tx + 1, ty);     t.write(*c);
+    }
 }
 
 // CLASSIC's counters: one plain line of LABEL:COUNT pairs.
@@ -3334,7 +3337,7 @@ void uiClearTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool adv
         for (uint8_t i = 0; i < counterN; i++) {
             snprintf(tileTxt[i], sizeof(tileTxt[i]), "%s %u", counterLabel(counterTypes[i]),
                      counterCount(eng, counterTypes[i]));
-            tileW[i] = (uint16_t)(t.textWidth(tileTxt[i]) + 1 + 10 + XP_ICON_W);
+            tileW[i] = (uint16_t)((int)strlen(tileTxt[i]) * XP_ADV + 10 + XP_ICON_W);
         }
         int tileGap = 4, tilePad = 5;
         uint8_t rowsUsed = 0;
