@@ -2564,7 +2564,10 @@ static void drawXpTile(TFT_eSPI& t, int x, int y, int w, int h, const char* txt,
     static const uint16_t TOP[3]  = { 0x4D3F /* #4CA6FF */, 0xFD8A /* #FFB050 */, 0x8C77 /* #8C8EB8 */ };
     static const uint16_t BOT[3]  = { 0x1ABA /* #1854D4 */, 0xDB02 /* #DC6010 */, 0x4A90 /* #4A5282 */ };
     static const uint16_t EDGE[3] = { 0x0A13 /* #0A4098 */, 0x8A00 /* #884000 */, 0x2929 /* #282448 */ };
-    static const uint16_t INK[3]  = { 0xFFFF, 0xFFFF, 0xC618 };
+    // Black text (asked for 2026-10-05: white on the blue was hard to read),
+    // over a pale one-pixel shadow so it still lifts off the gradient.
+    static const uint16_t INK[3]  = { 0x0000, 0x0000, 0x2104 };
+    static const uint16_t LIFT[3] = { 0x9E7F /* pale blue */, 0xFEF6 /* pale orange */, 0xB5B6 };
     if (state > 2) state = 2;
     for (int r = 1; r < h - 1; r++) {
         // A bright gloss line under the top edge, then the gradient down.
@@ -2582,9 +2585,9 @@ static void drawXpTile(TFT_eSPI& t, int x, int y, int w, int h, const char* txt,
     t.drawFastHLine(ix, iy + 5, 6, EDGE[state]);
     t.drawFastVLine(ix + 5, iy, 6, EDGE[state]);
     // Tahoma Bold, near enough: the text twice, a pixel apart, over a
-    // one-pixel shadow.
+    // one-pixel pale shadow.
     const int tx = ix + XP_ICON_W, ty = y + (h - 8) / 2;
-    t.setTextColor(EDGE[state]);
+    t.setTextColor(LIFT[state]);
     t.setCursor(tx + 1, ty + 1); t.print(txt);
     t.setTextColor(INK[state]);
     t.setCursor(tx, ty);         t.print(txt);
