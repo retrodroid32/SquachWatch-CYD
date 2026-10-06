@@ -32,6 +32,20 @@ CYAN  = (0, 214, 214)
 # ---- the clips ----
 
 CLIPS = {
+    # v1.32.0 "Put On Your Brave Face": T0@$TY on the TOASTERS background he
+    # is earned on (--pet 4 unlocks him; his first tip is due eight seconds
+    # in), a catch popping toast that Squachy eats (SQUACHSIM_CLIPCATCH goes
+    # to whichever pet is out), a hard throw that lands him on his back at
+    # Squachy's feet, C1iPPY's new landing lines, the reworked counter
+    # buttons, and the StickS3 taking a third row.
+    "brave-face": [
+        ("clear", 112, 44, ["--noseed", "--bg", "2", "--pet", "4"], {}, 1500, "TAP ONE FLYING TOASTER THREE TIMES. MEET T0@$TY."),
+        ("clear", 10, 64, ["--noseed", "--bg", "0", "--pet", "4"], {"SQUACHSIM_CLIPCATCH": "1"}, 1500, "EVERY CATCH POPS TOAST. SQUACHY EATS IT."),
+        ("clear", 30, 70, ["--noseed", "--bg", "8", "--pet", "4"], {"SQUACHSIM_THROW": "c:-1:0:-150:-90"}, 1500, "THROW HIM. HE LANDS LIKE A TOASTER."),
+        ("clear", 30, 60, ["--noseed", "--bg", "2", "--pet", "3"], {"SQUACHSIM_THROW": "c:-1:0:-120:-70"}, 1400, "A DOZEN NEW LANDING LINES EACH. THEY COUNT, TOO."),
+        ("clear", 6, 40, ["--bg", "5", "--pet", "4"], {}, 1400, "THE BUTTONS: BLACK LETTERS WITH ROOM TO BREATHE"),
+        ("clear", 60, 30, ["--bg", "5", "--pet", "4"], {"_SIZE": "240x135"}, 1600, "THE STICK BORROWS A THIRD ROW ON A BUSY DAY"),
+    ],
     # v1.31.0 "Need Help?": C1iPPY (earned at ten catches) and his first tip
     # (due six seconds in), the keyboard shortcut that also unlocks him, Squachy thrown (SQUACHSIM_THROW holds him for
     # the hold time, then flings), C1iPPY thrown, and the counters as XP
