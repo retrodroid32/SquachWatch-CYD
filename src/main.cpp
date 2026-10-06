@@ -3477,6 +3477,9 @@ static void printBootBanner() {
 static void wardriveBegin();
 #endif
 void setup() {
+#if defined(ARDUINO_ARCH_ESP32) && !defined(CROWPANEL7)
+    g_frameSprite = &frame;
+#endif
     // Before anything else can allocate: the breadcrumb has to be read out
     // while it is still the previous life's, not this one's.
     crashReportInit();

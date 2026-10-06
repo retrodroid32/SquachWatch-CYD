@@ -22,6 +22,7 @@ static inline uint32_t tempo(uint32_t ms) { return ms * s_tempoPct / 100; }
 #if SQUACH_MESH
 #include "emote_script.h"   // spokenName, for the banter
 #include "draw_band.h"
+#include "fast_sprite.h"
 #include "squachmesh.h"     // OUTFIT_N, checked against OutfitId::COUNT below
 #endif
 #include <Arduino.h>
@@ -5994,19 +5995,34 @@ static void prisonStripes(TFT_eSPI& t, int cx2, int hy, float scale, uint16_t fu
     const int hr = S(4) + 1, hr2 = hr * hr;
     static uint8_t cls[512];
     const int yA = DrawBand::top(y0), yB = DrawBand::bot(y1);
+    // The frame sprite is read straight from its buffer, a byte a pixel,
+    // against the fur colours' own 8-bit codes: through readPixel() this
+    // loop was 7-9 ms a frame on the 3.2in (measured 2026-10-06).
+#if defined(ARDUINO_ARCH_ESP32)
+    const FastSprite* fs = (g_frameSprite && (TFT_eSPI*)g_frameSprite == &t) ? g_frameSprite : nullptr;
+    const uint8_t cM8 = (uint8_t)t.color16to8(furMain), cL8 = (uint8_t)t.color16to8(furLight);
+#endif
     for (int y = yA; y < yB; y++) {
         const bool dark = (((y - torsoTop) + band * 64) / band) & 1;
         const int n = x1 - x0 > 512 ? 512 : x1 - x0;
+        const int dyL = (y - s_armL1y) * (y - s_armL1y), dyR = (y - s_armR1y) * (y - s_armR1y);
+        auto handAt = [&](int x) { return (x - s_armL1x) * (x - s_armL1x) + dyL <= hr2 || (x - s_armR1x) * (x - s_armR1x) + dyR <= hr2; };
+#if defined(ARDUINO_ARCH_ESP32)
+        const uint8_t* row = fs ? fs->row8(y) : nullptr;
+        if (row) {
+            const uint8_t* p = row + x0;
+            for (int i = 0; i < n; i++) {
+                const uint8_t v = p[i];
+                cls[i] = v == cM8 ? 1 : (v == cL8 ? (handAt(x0 + i) ? 0 : 2) : 0);
+            }
+        } else
+#endif
         for (int i = 0; i < n; i++) {
             const int x = x0 + i;
             const uint16_t c = t.readPixel(x, y);
             uint8_t k = 0;
             if (c == furMain || c == qM) k = 1;
-            else if (c == furLight || c == qL) {
-                const int dl = (x - s_armL1x) * (x - s_armL1x) + (y - s_armL1y) * (y - s_armL1y);
-                const int dr = (x - s_armR1x) * (x - s_armR1x) + (y - s_armR1y) * (y - s_armR1y);
-                k = (dl <= hr2 || dr <= hr2) ? 0 : 2;
-            }
+            else if (c == furLight || c == qL) k = handAt(x) ? 0 : 2;
             cls[i] = k;
         }
         for (int i = 0; i < n; ) {
