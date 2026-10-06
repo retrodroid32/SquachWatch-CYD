@@ -94,136 +94,112 @@ static void ballPoke(uint32_t now) {
 // ---- the ball ---------------------------------------------------------------------
 // Sitting on the floor at (cx, bottom), radius r. mood: 0 talk, 1 laugh,
 // 2 smug, 3 idle, 4 eye roll, 5 squashed.
-static void ballDraw(TFT_eSPI& t, int cx, int bottom, int r, uint32_t now, uint8_t mood, int lookDir) {
-    const float k = (float)r / 13.0f;
-    auto K = [k](float v) { int n = (int)lroundf(v * k); return n < 1 ? 1 : n; };
-    const uint16_t BASE = t.color565(43, 46, 52), SHADE = t.color565(22, 24, 28), HI = t.color565(138, 147, 163);
-    const uint16_t INK = t.color565(232, 236, 242), PUPIL = t.color565(11, 11, 13), RIM = t.color565(5, 5, 7);
-    const uint16_t CH_HI = t.color565(170, 177, 188);
-    const float sq = mood == 5 ? 0.78f : 1.0f;
-    int ry = (int)lroundf((float)r * sq);
-    if (ry < 3) ry = 3;
+// Sitting on the floor at (cx, bottom), radius r. mood: 0 talk, 1 laugh,
+// 2 smug, 3 idle. Whole-number maths and the library's own circles: the
+// first version drew the same ball with square roots and sines a row at a
+// time, and cost three times the flash.
+__attribute__((noinline)) static void ballDraw(TFT_eSPI& t, int cx, int bottom, int r, uint32_t now, uint8_t mood) {
+    const uint16_t BASE = (uint16_t)0x2966, SHADE = (uint16_t)0x10C3, HI = (uint16_t)0x8C94;
+    const uint16_t INK = (uint16_t)0xEF7E, PUPIL = (uint16_t)0x0841;
     if (mood == 1) cx += ((now / 70) & 1) ? 1 : -1;
-    const int cy = bottom - ry;
-    auto oval = [&](int rr, int ryy, uint16_t col) {
-        for (int y = -ryy; y <= ryy; y++) {
-            const float u = 1.0f - (float)(y * y) / (float)(ryy * ryy);
-            const int half = (int)(rr * sqrtf(u > 0 ? u : 0) + 0.35f);
-            t.drawFastHLine(cx - half, cy + y, half * 2 + 1, col);
-        }
-    };
-    t.drawFastHLine(cx - r + 2, bottom + 1, r * 2 - 4, t.color565(20, 20, 20));
-    oval(r + 1, ry + 1, RIM);
-    oval(r, ry, BASE);
-    for (int y = -ry; y <= ry; y++) {
-        const float u = 1.0f - (float)(y * y) / (float)(ry * ry);
-        const int half = (int)(r * sqrtf(u > 0 ? u : 0) + 0.35f);
-        const int s = (int)lroundf(half * 0.35f + y * 0.25f);
-        if (s > 0) t.drawFastHLine(cx + half - s + 1, cy + y, s, SHADE);
-    }
-    t.fillRect(cx - (int)lroundf(r * 0.55f), cy - (int)lroundf(ry * 0.6f), K(3), K(2), HI);
-    t.fillRect(cx - (int)lroundf(r * 0.6f), cy - (int)lroundf(ry * 0.3f), 1, K(2), HI);
+    const int cy = bottom - r, u = r / 5 > 1 ? r / 5 : 1;      // u: one "unit" of his face
+    t.drawFastHLine(cx - r + 2, bottom + 1, r * 2 - 4, (uint16_t)0x10A2);
+    t.fillCircle(cx, cy, r + 1, (uint16_t)0x0020);
+    // the shadow side, then the lit side over it, nudged up and left
+    t.fillCircle(cx, cy, r, SHADE);
+    t.fillCircle(cx - u / 2, cy - u / 2, r - u, BASE);
+    t.fillRect(cx - r / 2, cy - r * 3 / 5, u + 1, u, HI);
     // the ring the chain hangs from
-    t.drawCircle(cx - (int)lroundf(r * 0.72f), cy - (int)lroundf(ry * 0.72f), K(2), CH_HI);
+    t.drawCircle(cx - r * 3 / 4, cy - r * 3 / 4, u, (uint16_t)0xAD97);
     // ---- his face ----
+    const int ey = cy - r / 4, er = u + 1 > 1 ? u + 1 : 2;
     const bool blink = mood == 3 && (now % 3900) < 140;
-    const int ey = cy - (int)lroundf(ry * 0.25f);
-    const int er = K(2.5f);
-    const int exs[2] = { cx - K(5), cx + K(5) };
-    for (int e = 0; e < 2; e++) {
-        const int x = exs[e];
+    for (int e = -1; e <= 1; e += 2) {
+        const int x = cx + e * 2 * er;
         if (blink) { t.drawFastHLine(x - er, ey, er * 2 + 1, INK); continue; }
         t.fillCircle(x, ey, er, INK);
-        const int p = er * 7 / 10 > 0 ? er * 7 / 10 : 1;
-        t.fillRect(x + lookDir * (er - 1 > 0 ? er - 1 : 0), ey, p, p, PUPIL);
-        if (mood == 2 || mood == 4) t.fillRect(x - er, ey - er, er * 2 + 1, er, BASE);
-        if (mood == 4) t.fillRect(x - 1, ey - er + 1, 2, 1, PUPIL);
-    }
-    // brows: angry when he talks or watches, one up when he is smug
-    {
-        const int bw = K(5), by = ey - (K(5) > 3 ? K(5) : 3);
-        const bool angry = mood == 0 || mood == 3;
-        for (int i = 0; i < bw; i++) {
-            t.drawPixel(exs[0] - bw / 2 + i, by + (angry ? i / 2 : 0) - (mood == 2 && i > bw / 2 ? 1 : 0), INK);
-            t.drawPixel(exs[1] - bw / 2 + i, by + (angry ? (bw - 1 - i) / 2 : 0) - (mood == 1 ? 1 : 0), INK);
-        }
+        t.fillRect(x - er + 1, ey, er, er, PUPIL);                // looking at Squachy, on his left
+        if (mood == 2) t.fillRect(x - er, ey - er, er * 2 + 1, er, BASE);   // smug: lids half down
+        // brows: angry, slanting in, while he watches or talks
+        const int by = ey - er - 2;
+        if (mood == 0 || mood == 3) t.drawLine(x - er, by - (e < 0 ? 0 : 1), x + er, by - (e < 0 ? 1 : 0), INK);
+        else t.drawFastHLine(x - er, by - (mood == 2 && e > 0 ? 1 : 0), er * 2 + 1, INK);
     }
     // the mouth
-    const int my = cy + (int)lroundf(ry * 0.4f), mw = K(9) > 3 ? K(9) : 3;
+    const int my = cy + r * 2 / 5, mw = 2 * er + 1;
     if (mood == 1) {
-        t.fillRect(cx - mw / 2, my - 1, mw, K(4) > 2 ? K(4) : 2, INK);
-        t.fillRect(cx - mw / 2 + 1, my, mw - 2, K(2), t.color565(122, 13, 26));
+        t.fillRect(cx - mw / 2, my - 1, mw, u + 1, INK);
+        t.fillRect(cx - mw / 2 + 1, my, mw - 2, u, (uint16_t)0x7863);
     } else if (mood == 0 && ((now / 150) & 1) == 0) {
-        t.fillRect(cx - mw / 2 + 1, my - 1, mw - 2, K(3) > 2 ? K(3) : 2, INK);
+        t.fillRect(cx - mw / 2 + 1, my - 1, mw - 2, u, INK);
     } else {
         t.drawFastHLine(cx - mw / 2, my, mw, INK);
         t.drawPixel(cx + mw / 2, my - 1, INK);          // the smirk
     }
 }
 
-// The chain, ankle to ring: a sagging curve of links lying along the floor,
-// pulled straight while he is off the ground.
-static void chainDraw(TFT_eSPI& t, int ax, int ay, int bx, int by, int floorY, uint32_t now, float k, bool taut) {
-    const uint16_t LINK = t.color565(107, 114, 128), LINK_HI = t.color565(170, 177, 188), RIM = t.color565(5, 5, 7);
-    int sag = taut ? 0 : (int)lroundf((6.0f + sinf((float)now / 400.0f) * 1.5f) * k);
-    if (!taut && sag < 2) sag = 2;
-    const float cx = (ax + bx) * 0.5f;
-    float cy = (float)((ay > by ? ay : by) + sag * 2);
-    if (cy > floorY - 1) cy = (float)(floorY - 1);
-    const float step = 3.0f * k > 2.0f ? 3.0f * k : 2.0f;
-    int n = (int)(hypotf((float)(bx - ax), (float)(by - ay)) / step);
-    if (n < 6) n = 6;
-    const int big = (int)lroundf(3 * k) > 2 ? (int)lroundf(3 * k) : 2, small = (int)lroundf(2 * k) > 1 ? (int)lroundf(2 * k) : 1;
-    for (int i = 0; i <= n; i++) {
-        const float u = (float)i / (float)n;
-        const float x = (1 - u) * (1 - u) * ax + 2 * (1 - u) * u * cx + u * u * bx;
-        float y = (1 - u) * (1 - u) * ay + 2 * (1 - u) * u * cy + u * u * by;
-        if (y > floorY - 1) y = (float)(floorY - 1);
-        const int lw = (i & 1) ? small : big, lh = (i & 1) ? big : small;
-        const int lx = (int)lroundf(x) - lw / 2, ly = (int)lroundf(y) - lh / 2;
-        t.fillRect(lx - 1, ly - 1, lw + 2, lh + 2, RIM);
-        t.fillRect(lx, ly, lw, lh, LINK);
-        t.drawPixel(lx, ly, LINK_HI);
+// The chain, ankle to ring: two straight runs of links meeting low in the
+// middle, so it lies along the floor -- or one straight run, pulled taut,
+// while he is off the ground.
+__attribute__((noinline)) static void chainDraw(TFT_eSPI& t, int ax, int ay, int bx, int by, int floorY, int link, bool taut) {
+    const uint16_t LINK = (uint16_t)0x6B90, LINK_HI = (uint16_t)0xAD97, RIM = (uint16_t)0x0020;
+    int mx = (ax + bx) / 2, my = (ay > by ? ay : by) + (taut ? 0 : link * 2);
+    if (taut) my = (ay + by) / 2;
+    if (my > floorY - 1) my = floorY - 1;
+    int i = 0;
+    for (int seg = 0; seg < 2; seg++) {
+        const int x0 = seg ? mx : ax, y0 = seg ? my : ay, x1 = seg ? bx : mx, y1 = seg ? by : my;
+        const int dx = x1 - x0, dy = y1 - y0;
+        int n = (abs(dx) > abs(dy) ? abs(dx) : abs(dy)) / link;
+        if (n < 1) n = 1;
+        for (int s = 0; s < n; s++, i++) {
+            const int x = x0 + dx * s / n, y = y0 + dy * s / n;
+            const int lw = (i & 1) ? link - 1 : link, lh = (i & 1) ? link : link - 1;
+            t.fillRect(x - lw / 2 - 1, y - lh / 2 - 1, lw + 2, lh + 2, RIM);
+            t.fillRect(x - lw / 2, y - lh / 2, lw, lh, LINK);
+            t.drawPixel(x - lw / 2, y - lh / 2, LINK_HI);
+        }
     }
 }
 
-static void jailTick(TFT_eSPI& t, uint32_t now, int screenW) {
+__attribute__((noinline)) static void jailTick(TFT_eSPI& t, uint32_t now, int screenW) {
     int cx, halfW, top, bot;
     if (!Squachy::lastFootprint(cx, halfW, top, bot)) { s_jX = -100; return; }
     (void)top;
     // The ball stays where he stands; a carried or thrown Squachy pulls the
     // chain, not the ball.
-    if (Squachy::isHeld() || Squachy::thrown()) {
+    const bool away = Squachy::isHeld() || Squachy::thrown();
+    if (away) {
         if (!s_jaValid) { s_jX = -100; return; }
         cx = s_jaCx; halfW = s_jaHalfW; bot = s_jaBot;
     } else { s_jaCx = cx; s_jaHalfW = halfW; s_jaBot = bot; s_jaValid = true; }
     const int H = t.height();
-    const float scale = (float)halfW / 24.0f, k = scale / 2.7f;
-    int r = (int)lroundf(13.0f * k);
+    // Sized from him: halfW is 24 units of his scale, and the ball is a
+    // 13-unit radius at the main screen's 2.7.
+    int r = halfW / 5;
     if (r < 6) r = 6;
-    int ballX = cx + (int)lroundf(76.0f * k);
+    int ballX = cx + halfW * 76 / 65;
     if (ballX > screenW - r - 4) ballX = screenW - r - 4;
     const int floorY = bot + 1;
 
     // Walked out: the ball says its piece, then goes up in smoke.
     if (Squachy::takeJailFreed()) { s_jFreeAt = now ? now : 1; s_jArrestAt = 0; ballSay(BALL_FREE, now, 2); s_jAnswered = true; }
 
-    int drop = 0;
+    int drop = 0, puff = -1;                     // puff: 0..7 while the smoke is up
     bool ballOn = true, clank = false, siren = false;
-    float puff = -1.0f;
     if (s_jArrestAt) {
-        const uint32_t a = now - s_jArrestAt;
+        const int a = (int)(now - s_jArrestAt);
         siren = a < 1800;
         if (a < 1000) ballOn = false;
-        if (a >= 500 && a < 1300) puff = (float)(a - 500) / 800.0f;
-        if (a >= 1000 && a < 1500) { const float u = (float)(a - 1000) / 500.0f; drop = (int)lroundf((1.0f - u * u) * -90.0f * H / 240.0f); }
+        if (a >= 500 && a < 1300) puff = (a - 500) / 100;
+        if (a >= 1000 && a < 1500) { const int v = 500 - (a - 1000); drop = -(90 * H / 240) * v / 500 * v / 500; }
         if (a >= 1450 && a < 1900) clank = true;
         if (a >= 1500 && !s_jLine) { ballSay(BALL_ARREST, now, 2); s_jAnswered = true; }
         if (a > 1900) s_jArrestAt = 0;
     }
     if (s_jFreeAt) {
-        const uint32_t a = now - s_jFreeAt;
-        if (a > 3400) { ballOn = false; if (a < 4200) puff = (float)(a - 3400) / 800.0f; }
+        const int a = (int)(now - s_jFreeAt);
+        if (a > 3400) { ballOn = false; if (a < 4200) puff = (a - 3400) / 100; }
     }
     // The chain stopped a throw: he enjoyed that.
     const uint32_t ya = Squachy::yankedAt();
@@ -242,19 +218,17 @@ static void jailTick(TFT_eSPI& t, uint32_t now, int screenW) {
     if (ballOn) {
         const int bb = floorY + drop;
         int ax, ay;
-        const bool chained = Squachy::chainPoint(ax, ay);
-        const int ringX = ballX - (int)lroundf(r * 0.72f), ringY = bb - r - (int)lroundf(r * 0.72f);
-        if (chained && drop == 0) chainDraw(t, ax, ay, ringX, ringY, floorY, now, k, Squachy::isHeld() || Squachy::thrown());
+        if (drop == 0 && Squachy::chainPoint(ax, ay)) {
+            const int link = r / 4 > 2 ? r / 4 : 2;
+            chainDraw(t, ax, ay, ballX - r * 3 / 4, bb - r - r * 3 / 4, floorY, link, away);
+        }
         uint8_t mood = 3;
         if (talking) mood = (s_jMood == 1 && now - s_jSaidAt < 1600) ? 1 : (s_jMood == 2 && now - s_jSaidAt > 2000 ? 2 : 0);
-        else if ((now % 9000) > 7600) mood = 4;
-        if (s_jArrestAt && now - s_jArrestAt >= 1500 && now - s_jArrestAt < 1700) mood = 5;
-        ballDraw(t, ballX, bb, r, now, mood, -1);
+        ballDraw(t, ballX, bb, r, now, mood);
         s_jX = (int16_t)ballX; s_jY = (int16_t)bb; s_jR = (int16_t)r;
         if (clank) {
             t.setTextSize(1);
-            const int cw = t.textWidth("CLANK") + 4;
-            t.fillRect(ballX + r - 2, bb - 2 * r - 10, cw, 10, t.color565(255, 225, 77));
+            t.fillRect(ballX + r - 2, bb - 2 * r - 10, 34, 10, (uint16_t)0xFF09);
             t.setTextColor(Theme::BLACK);
             t.setCursor(ballX + r, bb - 2 * r - 9);
             t.print("CLANK");
@@ -263,26 +237,25 @@ static void jailTick(TFT_eSPI& t, uint32_t now, int screenW) {
         // higher up or it sits on the buttons.
         if (talking && drop == 0) petBalloon(t, s_jLine, ballX - r, bb - 2 * r - (H < 200 ? 3 * r : 0), 2 * r, screenW, H);
     } else s_jX = -100;
-    if (puff >= 0.0f) {
-        const uint16_t smoke = t.color565(217, 217, 217);
-        for (int i = 0; i < 10; i++) {
-            const float a = (float)i / 10.0f * 6.2831853f, d = 4.0f + puff * 18.0f * k;
-            const int pr = (int)lroundf(3 * k) > 1 ? (int)lroundf(3 * k) : 1;
-            if (puff < 0.85f) t.fillCircle(ballX + (int)lroundf(cosf(a) * d), floorY - (int)lroundf(10 * k) + (int)lroundf(sinf(a) * d * 0.6f), pr, smoke);
-        }
+    if (puff >= 0) {
+        // Eight puffs round where the ball sits, drifting out.
+        static const int8_t PX[8] = { 10, 7, 0, -7, -10, -7, 0, 7 }, PY[8] = { 0, 4, 6, 4, 0, -4, -6, -4 };
+        const uint16_t smoke = (uint16_t)0xDEDB;
+        const int d = 2 + puff, pr = r / 4 > 1 ? r / 4 : 1;
+        if (puff < 7) for (int i = 0; i < 8; i++)
+            t.fillCircle(ballX + PX[i] * d * r / 52, floorY - r + PY[i] * d * r / 52, pr, smoke);
     }
     if (siren) {
         const bool red = ((now / 180) & 1) == 0;
-        const uint16_t R_ = t.color565(255, 32, 32), B_ = t.color565(32, 80, 255);
+        const uint16_t R_ = (uint16_t)0xF904, B_ = (uint16_t)0x229F;
         t.fillRect(0, 0, screenW, 4, red ? R_ : B_);
         t.fillRect(0, H - 4, screenW, 4, red ? B_ : R_);
         t.setTextSize(H >= 200 ? 3 : 2);
-        const char* s = "BUSTED!";
-        const int tw = t.textWidth(s), ty = H * 2 / 5;
+        const int tw = t.textWidth("BUSTED!"), ty = H * 2 / 5;
         t.setTextColor(Theme::BLACK);
-        t.setCursor((screenW - tw) / 2 + 2, ty + 2); t.print(s);
-        t.setTextColor(t.color565(255, 225, 77));
-        t.setCursor((screenW - tw) / 2, ty); t.print(s);
+        t.setCursor((screenW - tw) / 2 + 2, ty + 2); t.print("BUSTED!");
+        t.setTextColor((uint16_t)0xFF09);
+        t.setCursor((screenW - tw) / 2, ty); t.print("BUSTED!");
         t.setTextSize(1);
     }
 }
