@@ -1360,7 +1360,7 @@ static_assert(sizeof(BG_LINES) / sizeof(BG_LINES[0]) == Settings::BACKGROUND_COU
 // brings one up it is a nudge, the second is clearer, and from then on he just
 // tells you what to do. Counted in RAM, so a reboot starts the nudges over,
 // which is right for somebody who has not been paying attention.
-enum Egg : uint8_t { EGG_WOLF, EGG_CHROME, EGG_PET, EGG_EYE, EGG_PARKA, EGG_YZZERD, EGG_O9K, EGG_REEK, EGG_GLYPH, EGG_N };
+enum Egg : uint8_t { EGG_WOLF, EGG_CHROME, EGG_PET, EGG_EYE, EGG_PARKA, EGG_YZZERD, EGG_O9K, EGG_REEK, EGG_GLYPH, EGG_TOASTY, EGG_N };
 static const char* const HINTS[EGG_N][3] = {
     /* FIRE: five taps on the moon */
     { "That moon's got a werewolf look to it.",
@@ -1398,6 +1398,10 @@ static const char* const HINTS[EGG_N][3] = {
     { "Ever see a glyph that didn't belong?",
       "One glyph in the rain falls red. Watch for it.",
       "When a red glyph falls, tap it!" },
+    /* TOASTERS: the same chrome toaster, three taps */
+    { "One of those toasters looks lonely.",
+      "Keep tapping the same toaster. It wants down.",
+      "Tap one toaster three times, quick!" },
 };
 static uint8_t s_hintSaid[EGG_N] = {};
 
@@ -1415,17 +1419,18 @@ static bool eggLocked(uint8_t e) {
         case EGG_O9K:    return !outfitUnlocked((uint8_t)OutfitId::OVER9000);
         case EGG_REEK:   return !outfitUnlocked((uint8_t)OutfitId::SHAMBLER);
         case EGG_GLYPH:  return !outfitUnlocked((uint8_t)OutfitId::TH3_0N3);
+        case EGG_TOASTY: return !s_toasterUnlocked;
         default:         return false;
     }
 }
 
-// The locked unlocks this background holds, at most two.
-static uint8_t eggsHere(uint8_t out[2]) {
+// The locked unlocks this background holds, at most three (TOASTERS).
+static uint8_t eggsHere(uint8_t out[3]) {
     uint8_t n = 0;
-    auto add = [&](uint8_t e) { if (n < 2 && eggLocked(e)) out[n++] = e; };
+    auto add = [&](uint8_t e) { if (n < 3 && eggLocked(e)) out[n++] = e; };
     switch (Settings::background()) {
         case Settings::Background::FIRE:      add(EGG_WOLF); add(EGG_REEK); break;
-        case Settings::Background::TOASTERS:  add(EGG_CHROME); add(EGG_PET); break;
+        case Settings::Background::TOASTERS:  add(EGG_CHROME); add(EGG_PET); add(EGG_TOASTY); break;
         case Settings::Background::STARFIELD: add(EGG_EYE); break;
         case Settings::Background::SNOWFALL:  add(EGG_PARKA); break;
         case Settings::Background::TERMINAL:  add(EGG_YZZERD); break;
@@ -1438,7 +1443,7 @@ static uint8_t eggsHere(uint8_t out[2]) {
 }
 
 static bool hintAvailable() {
-    uint8_t e[2];
+    uint8_t e[3];
     return eggsHere(e) > 0;
 }
 
@@ -1446,7 +1451,7 @@ static const char* pickBackgroundLine() {
     uint8_t idx = (uint8_t)Settings::background();
     if (idx >= Settings::BACKGROUND_COUNT) idx = 0;
     // Two times in three, if there is something to find here, a hint instead.
-    uint8_t eggs[2];
+    uint8_t eggs[3];
     const uint8_t n = eggsHere(eggs);
     if (n && random(0, 3) != 0) {
         const uint8_t e = eggs[random(0, n)];
