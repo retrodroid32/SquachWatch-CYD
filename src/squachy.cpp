@@ -6025,7 +6025,7 @@ static void prisonStripes(TFT_eSPI& t, int cx2, int hy, float scale, uint16_t fu
             i = e + 1;
         }
     }
-    // The number patch on his chest: 0010, in the little 3x5 digits where he
+    // The number patch on his chest: 1337, in the little 3x5 digits where he
     // is big enough to read them.
     {
         const int w = S(8) > 8 ? S(8) : 8, h = S(3) > 5 ? S(3) + 1 : 5;
@@ -6033,8 +6033,8 @@ static void prisonStripes(TFT_eSPI& t, int cx2, int hy, float scale, uint16_t fu
         t.fillRect(px0 - 1, py0 - 1, w + 2, h + 2, Theme::BLACK);
         t.fillRect(px0, py0, w, h, Theme::WHITE);
         if (scale >= 1.9f) {
-            static const uint8_t D0[5] = { 7, 5, 5, 5, 7 }, D1[5] = { 2, 6, 2, 2, 7 };
-            const uint8_t* dig[4] = { D0, D0, D1, D0 };
+            static const uint8_t D1[5] = { 2, 6, 2, 2, 7 }, D3[5] = { 7, 1, 7, 1, 7 }, D7[5] = { 7, 1, 2, 2, 2 };
+            const uint8_t* dig[4] = { D1, D3, D3, D7 };
             int tx = px0 + (w - 15) / 2;
             const int ty = py0 + (h - 5) / 2;
             for (int d = 0; d < 4; d++, tx += 4)
