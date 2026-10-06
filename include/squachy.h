@@ -250,6 +250,22 @@ namespace Squachy {
     // for the rare golden slice.
     bool mouthPoint(int& x, int& y);
     void eatToast(bool golden);
+
+    // Cell block. Throw a pet ten times inside a minute and it is taken into
+    // custody: Squachy does ten minutes in STRIPES, chained to a ball that
+    // talks (Pet draws the ball). Outfit and Pet are locked while he serves;
+    // the time left is saved, so a reboot does not let him out. When it is
+    // served the stripes are his for good.
+    bool     jailed();
+    uint32_t jailLeftMs();
+    void     jailStart();
+    void     jailFree();                 // console FREE, and the clock running out
+    bool     takeJailFreed();            // once, when he walks out: the ball says goodbye
+    // Where the chain hooks onto his ankle this frame; false while he is
+    // not wearing the cuff.
+    bool     chainPoint(int& x, int& y);
+    // The last time the chain stopped a throw short, 0 if never.
+    uint32_t yankedAt();
     // A thrown pet has just hit the floor at screen x. Close to his feet and
     // he flinches and says so; anywhere else, nothing.
     void petLandedAt(int x);

@@ -438,6 +438,8 @@ int main(int argc, char** argv) {
     // Settings' own cycle* mutators are the only public way in, so walk
     // them to the requested index rather than reaching past the API.
     if (themeIdx >= 0) while ((int)Settings::paletteIndex() != themeIdx % (int)Theme::PALETTE_COUNT) Settings::cyclePalette();
+    // SQUACHSIM_BORING=1: BORING MODE on -- the backdrop with nobody on it.
+    if (getenv("SQUACHSIM_BORING") && !Settings::boringMode()) Settings::toggleBoringMode();
     if (bg >= 0) {
         const int want = bg % (int)Settings::BACKGROUND_COUNT;
         // BLACK only exists while BORING MODE is on, so asking for it here
@@ -581,6 +583,12 @@ int main(int argc, char** argv) {
     // SQUACHSIM_CLIPCATCH=TYPE: C1iPPY has just seen a catch of that type and
     // has his expert opinion ready.
     if (const char* cc = getenv("SQUACHSIM_CLIPCATCH")) Pet::noteCatch((uint8_t)atoi(cc));
+    // SQUACHSIM_JAIL=1: arrested as the screen opens, sirens and all; =2 is
+    // already serving, the ball in place.
+    if (const char* jl = getenv("SQUACHSIM_JAIL")) {
+        if (atoi(jl) == 2) Squachy::jailStart();
+        else Pet::arrest(SimClock::nowMs ? SimClock::nowMs : 1);
+    }
     // SQUACHSIM_LTBRIGHT=N: the STATUS LIGHT's BRIGHTNESS step, 1..7.
     if (const char* lb = getenv("SQUACHSIM_LTBRIGHT"))
         for (int g = 0; g < 8 && Settings::lightBrightness() != atoi(lb); g++) Settings::cycleLightBrightness();
@@ -797,7 +805,11 @@ int main(int argc, char** argv) {
                     printf("BENCH pix %.0f\n", (double)g_simPix / N);
                 }
             }
-            Squachy::drawWaving(frame, W / 2, H - 14, t, 2.2f, nullptr, false, 0,
+            // SQUACHSIM_SOLOSCALE / SQUACHSIM_SOLOFEET: another size and floor,
+            // e.g. the main screen's, for a costume lab drawn over him.
+            const float sc = getenv("SQUACHSIM_SOLOSCALE") ? (float)atof(getenv("SQUACHSIM_SOLOSCALE")) : 2.2f;
+            const int   fy = getenv("SQUACHSIM_SOLOFEET") ? atoi(getenv("SQUACHSIM_SOLOFEET")) : H - 14;
+            Squachy::drawWaving(frame, W / 2, fy, t, sc, nullptr, false, 0,
                                 /*waving*/ pi == 1, 34, false, false, false, kP[pi]);
         }
         else return false;

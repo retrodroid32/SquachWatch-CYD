@@ -380,11 +380,11 @@ static void toasterRelease(uint32_t now) {
     if (s_tPh != TPhase::HELD) return;
     if (!s_tMoved && now - s_tGrabAt < 450) { s_tPh = TPhase::NONE; toasterPoke(now); return; }
 #if defined(SQW_SMALL)
-    if (!s_tMoved) { toastLaunch(random(0, 2) ? 0.5f : -0.5f, -1.0f, now); s_tFlung = true; return; }
+    if (!s_tMoved) { toastLaunch(random(0, 2) ? 0.5f : -0.5f, -1.0f, now); s_tFlung = true; noteThrow(now); return; }
 #endif
     if (!s_tMoved) { s_tPh = TPhase::NONE; return; }
     const bool fresh = now - s_tgT < 120;
-    if (fresh && s_tgvX * s_tgvX + s_tgvY * s_tgvY > CLIP_MIN_V * CLIP_MIN_V) { toastLaunch(s_tgvX, s_tgvY, now); s_tFlung = true; }
+    if (fresh && s_tgvX * s_tgvX + s_tgvY * s_tgvY > CLIP_MIN_V * CLIP_MIN_V) { toastLaunch(s_tgvX, s_tgvY, now); s_tFlung = true; noteThrow(now); }
     else { toastLaunch(0, 0, now); s_tFlung = false; }
 }
 

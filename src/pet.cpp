@@ -344,6 +344,14 @@ static void toasterPoke(uint32_t now);
 static void toasterGrab(int x, int y, uint32_t now);
 static void toasterDrag(int x, int y, uint32_t now);
 static void toasterRelease(uint32_t now);
+// The ball and chain, in pet_jail.inc: while it is out, a touch on the pet
+// is a touch on the ball.
+static void noteThrow(uint32_t now);
+static bool jailShowing(uint32_t now);
+static bool ballHit(int x, int y);
+static void ballPoke(uint32_t now);
+static bool s_jGrab = false;
+extern int16_t s_jX, s_jY, s_jR;
 
 void noteCatch(uint8_t type) {
     if (toasterOn()) { toasterNoteCatch(type); return; }
@@ -364,6 +372,7 @@ static void clipSay(const char* line, uint32_t now, bool caught) {
 }
 
 bool clippyHit(int x, int y) {
+    if (jailShowing(millis())) return ballHit(x, y);
     if (toasterOn()) return toasterHit(x, y);
     if (Squachy::petChoice() != Squachy::PetId::CLIPPY || s_cX < -50) return false;
     return x >= s_cX - 4 && x <= s_cX + 30 && y >= s_cY - 4 && y <= s_cY + CLIP_H;
@@ -380,6 +389,7 @@ void clippyPoke(uint32_t now) {
 }
 
 bool clippyCenter(int& x, int& y) {
+    if (jailShowing(millis())) { if (s_jX < -50) return false; x = s_jX; y = s_jY - s_jR; return true; }
     if (toasterOn()) return toasterCenter(x, y);
     if (Squachy::petChoice() != Squachy::PetId::CLIPPY || s_cX < -50) return false;
     x = s_cX + 11; y = s_cY + 24;
@@ -387,6 +397,7 @@ bool clippyCenter(int& x, int& y) {
 }
 
 void clippyGrab(int x, int y, uint32_t now) {
+    if (jailShowing(now)) { s_jGrab = true; return; }
     if (toasterOn()) { toasterGrab(x, y, now); return; }
     if (Squachy::petChoice() != Squachy::PetId::CLIPPY || s_cX < -50) return;
     s_cTh = ClipThrow::HELD;
@@ -401,6 +412,7 @@ void clippyGrab(int x, int y, uint32_t now) {
 }
 
 void clippyDrag(int x, int y, uint32_t now) {
+    if (s_jGrab) return;
     if (toasterOn()) { toasterDrag(x, y, now); return; }
     if (s_cTh != ClipThrow::HELD) return;
     const int dx = x - s_cDownX, dy = y - s_cDownY;
@@ -430,6 +442,7 @@ static void clipLaunch(float vx, float vy, uint32_t now) {
 }
 
 void clippyRelease(uint32_t now) {
+    if (s_jGrab) { s_jGrab = false; ballPoke(now); return; }
     if (toasterOn()) { toasterRelease(now); return; }
     if (s_cTh != ClipThrow::HELD) return;
     if (!s_cMoved && now - s_cGrabAt < 450) {
@@ -443,6 +456,7 @@ void clippyRelease(uint32_t now) {
     if (!s_cMoved) {
         clipLaunch(random(0, 2) ? 0.5f : -0.5f, -1.0f, now);
         s_cFlung = true;
+        noteThrow(now);
         return;
     }
 #endif
@@ -451,6 +465,7 @@ void clippyRelease(uint32_t now) {
     if (fresh && s_cgvX * s_cgvX + s_cgvY * s_cgvY > CLIP_MIN_V * CLIP_MIN_V) {
         clipLaunch(s_cgvX, s_cgvY, now);
         s_cFlung = true;
+        noteThrow(now);
     } else {
         clipLaunch(0, 0, now);       // just let go: he falls from there
         s_cFlung = false;
@@ -799,9 +814,11 @@ static void clippyTick(TFT_eSPI& t, uint32_t now, int screenW, int floorY) {
 }
 
 #include "pet_toaster.inc"
+#include "pet_jail.inc"
 
 void reset() {
     toasterReset();
+    jailReset();
     s_phase  = Phase::AWAY;
     s_x      = -100.0f;
     s_nextAt = 0;
@@ -930,6 +947,13 @@ static void yetiTick(TFT_eSPI& t, uint32_t now, int screenW, int cx, int halfW, 
 
 
 void tick(TFT_eSPI& t, uint32_t now, int screenW, int bandTop, int bandBottom) {
+    // Serving time: the pet is in custody, and the ball is out instead.
+    if (jailShowing(now)) {
+        s_phase = Phase::AWAY; s_yPhase = YPhase::AWAY; s_cX = -100; s_tX = -100;
+        jailTick(t, now, screenW);
+        return;
+    }
+    s_jX = -100;
     const Squachy::PetId which = Squachy::petChoice();
     if (which == Squachy::PetId::CLIPPY) {
         s_phase = Phase::AWAY; s_yPhase = YPhase::AWAY; s_tX = -100;

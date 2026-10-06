@@ -62,6 +62,8 @@ extern volatile bool g_consoleLegend;
 extern volatile uint8_t g_consoleHeadsUp;
 extern volatile bool g_consoleClippy;
 extern volatile bool g_consoleToaster;
+extern volatile bool g_consoleJail;
+extern volatile bool g_consoleFree;
 #if defined(CARDPUTER_ADV)
 extern volatile int8_t g_consoleExt;
 #endif
@@ -564,6 +566,8 @@ void pollSerial() {
 #endif
         if (strcasecmp(line, "CLIPPY") == 0) { g_consoleClippy = true; continue; }
         if (strcasecmp(line, "TOASTER") == 0) { g_consoleToaster = true; continue; }
+        if (strcasecmp(line, "JAIL") == 0)    { g_consoleJail = true; continue; }
+        if (strcasecmp(line, "FREE") == 0)    { g_consoleFree = true; continue; }
         if (strncasecmp(line, "HEADSUP ", 8) == 0) { g_consoleHeadsUp = (uint8_t)atoi(line + 8); continue; }
         if (strcasecmp(line, "AURA") == 0)   { g_consoleAura = true; continue; }
         if (strncasecmp(line, "OUTFIT ", 7) == 0) { g_consoleOutfit = (int8_t)atoi(line + 7); g_consoleOutfitSet = true; continue; }
