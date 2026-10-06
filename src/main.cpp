@@ -2142,6 +2142,8 @@ volatile bool g_consoleAdc = false;     // ADC: the spare analog inputs, for fin
 volatile bool g_consoleXyzzy = false;   // XYZZY: the TERMINAL background types the magic word now
 volatile bool g_consoleClippy = false;    // CLIPPY: unlock C1iPPY, for the bench
 volatile bool g_consoleToaster = false;   // TOASTER: unlock T0@$TY, for the bench
+volatile bool g_consoleJail = false;      // JAIL: the arrest, for the bench
+volatile bool g_consoleFree = false;      // FREE: time served, now
 volatile uint8_t g_consoleHeadsUp = 0;   // HEADSUP n: tell the squad about a made-up catch of type n, for the bench
 volatile bool g_consoleLegend = false;  // LEGEND: wear the Legend look (and its aura) until the next boot, or take it off
 volatile bool g_consoleOutfitSet = false;  // OUTFIT n: wear costume n until the next boot, for timing it; -1 takes it off
@@ -5186,6 +5188,16 @@ void loop() {
         Squachy::unlockClippy("It looks like you're having trouble typing.");
         Serial.println("[pet] C1iPPY unlocked and put on");
     }
+    if (g_consoleJail) {
+        g_consoleJail = false;
+        Pet::arrest(millis());
+        Serial.println("[jail] arrested: ten minutes");
+    }
+    if (g_consoleFree) {
+        g_consoleFree = false;
+        Squachy::jailFree();
+        Serial.println("[jail] time served");
+    }
     if (g_consoleToaster) {
         g_consoleToaster = false;
         Squachy::unlockToaster("Reporting for duty. I'm not scared.");
@@ -6955,8 +6967,16 @@ void loop() {
                             break;
                         case SettingsRow::SHADES_COLOR: Squachy::cycleShadesColor(); break;
                         case SettingsRow::SQUACHY_SIZE: Settings::cycleSquachySize(); break;
-                        case SettingsRow::OUTFIT:       enterOutfit(); break;
-                        case SettingsRow::PET:          Squachy::cyclePet(); break;
+                        case SettingsRow::OUTFIT:
+                        case SettingsRow::PET:
+                            if (Squachy::jailed()) {
+                                const uint32_t left = (Squachy::jailLeftMs() + 999) / 1000;
+                                char b[24];
+                                snprintf(b, sizeof(b), "%u:%02u left. Behave.", (unsigned)(left / 60), (unsigned)(left % 60));
+                                Theme::showToast("SERVING TIME", b, Theme::AMBER, 2500);
+                            } else if (row == SettingsRow::OUTFIT) enterOutfit();
+                            else Squachy::cyclePet();
+                            break;
                         case SettingsRow::BANTER:       Settings::cycleBanter(); break;
                         case SettingsRow::VIEW_DIARY:   enterDiary(); break;
                         case SettingsRow::BINGO:        enterBingo(); break;
