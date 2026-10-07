@@ -3,6 +3,7 @@
 #include "ui_scroll.h"
 #include "ui_fit.h"
 #include "theme.h"
+#include "privacy.h"
 #include "squachy.h"
 #include "settings.h"
 #include "ignore_list.h"
@@ -350,7 +351,8 @@ switch (Settings::background()) {
             const int rw = t.textWidth(rssi);
             const int ax = w - rw - 14 - 11;
             char fittedName[40];
-            UiFit::fitMid(fittedName, sizeof fittedName, r->name[0] ? r->name : "(unnamed)",
+            char pv[40];
+            UiFit::fitMid(fittedName, sizeof fittedName, r->name[0] ? Privacy::name(r->name, pv, sizeof pv) : "(unnamed)",
                           UiFit::chars(ax - 6, 2));
             t.setTextSize(2);
             t.setTextColor(Theme::CYAN, Theme::BG);
@@ -360,8 +362,7 @@ switch (Settings::background()) {
             t.setTextSize(1);
             t.setTextColor(Theme::WHITE, Theme::BG);
             char mac[24];
-            snprintf(mac, sizeof(mac), "%02X:%02X:%02X:%02X:%02X:%02X",
-                     r->mac[0], r->mac[1], r->mac[2], r->mac[3], r->mac[4], r->mac[5]);
+            Privacy::mac(mac, sizeof mac, r->mac);
             t.setCursor(4, y + detailY);
             t.print(mac);
             const bool watched = eng.isWatched(r->mac, true);
@@ -388,7 +389,8 @@ switch (Settings::background()) {
             snprintf(wifiRssi, sizeof(wifiRssi), "%ddBm", eng.rawWifiRssi(idx));
             const int wifiRw = t.textWidth(wifiRssi);
             char fittedSsid[40];
-            UiFit::fitMid(fittedSsid, sizeof fittedSsid, eng.rawWifiSsid(idx),
+            char pv[40];
+            UiFit::fitMid(fittedSsid, sizeof fittedSsid, Privacy::name(eng.rawWifiSsid(idx), pv, sizeof pv),
                           UiFit::chars(w - wifiRw - 20, 2));
             t.setTextSize(2);
             t.setTextColor(Theme::CYAN, Theme::BG);

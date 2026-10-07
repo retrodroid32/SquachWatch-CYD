@@ -41,6 +41,7 @@
 #include "regulars.h"
 #include "notices.h"
 #include "theme.h"            // the crash card on the splash
+#include "privacy.h"
 #include "clock.h"
 
 // Written every second, read once on the next boot. RTC_NOINIT_ATTR is the
@@ -1024,6 +1025,8 @@ static char s_confirmName[sizeof(Detection::name)]     = "";
 static char s_alertVendor[16]   = "";
 static char s_alertName[sizeof(Detection::name)]       = "";
 static char    s_confirmLabel[24];
+static const char* privLabel(const char* in) { static char b[40]; return Privacy::name(in, b, sizeof b); }
+static const char* privName(const char* in)  { static char b[40]; return Privacy::name(in, b, sizeof b); }
 // LOG's long-press sets this per-row (BLE vs WiFi isn't implied by a
 // "current mode" the way it is for RAWSCAN, which already knows that
 // from s_rawScanIsBle) -- RAWSCAN's own WATCH/HUNT branches don't
@@ -4480,11 +4483,11 @@ void loop() {
             const char* alertInfoText =
                 s_infoPage == InfoPage::PRIMER ? DetectionInfo::rssiConfidencePrimer()
               : s_infoPage == InfoPage::EVIDENCE ? DetectionInfo::evidenceText(s_confirmDetection)
-              : DetectionInfo::explainFor(s_confirmType, s_confirmVendor, s_confirmName, engine);
+              : DetectionInfo::explainFor(s_confirmType, s_confirmVendor, privName(s_confirmName), engine);
             const char* alertInfoTypeName =
                 s_infoPage == InfoPage::PRIMER ? nullptr
               : s_infoPage == InfoPage::EVIDENCE ? "EVIDENCE"
-              : DetectionInfo::titleFor(s_confirmType, s_confirmVendor, s_confirmName);
+              : DetectionInfo::titleFor(s_confirmType, s_confirmVendor, privName(s_confirmName));
 #if defined(CYD35)
             if (frameBufferOk) {
                 // Same two-pass half-height `frame` trick CLEAR/BOOT
@@ -4719,16 +4722,16 @@ void loop() {
             const char* infoText =
                 s_infoPage == InfoPage::PRIMER ? DetectionInfo::rssiConfidencePrimer()
               : s_infoPage == InfoPage::EVIDENCE ? DetectionInfo::evidenceText(s_confirmDetection)
-              : DetectionInfo::explainFor(s_confirmType, s_confirmVendor, s_confirmName, engine);
+              : DetectionInfo::explainFor(s_confirmType, s_confirmVendor, privName(s_confirmName), engine);
 
             const char* infoTypeName =
                 s_infoPage == InfoPage::PRIMER ? nullptr
               : s_infoPage == InfoPage::EVIDENCE ? "EVIDENCE"
-              : DetectionInfo::titleFor(s_confirmType, s_confirmVendor, s_confirmName);
+              : DetectionInfo::titleFor(s_confirmType, s_confirmVendor, privName(s_confirmName));
             // Nothing on LOG moves by the call -- the note about
             // drawActiveBackground in ui_log.cpp is a comment, not a call.
             drawTwoBand([&](TFT_eSPI& t, bool) {
-                uiLogTick(t, now, engine, 0, s_confirmPending, s_confirmLabel,
+                uiLogTick(t, now, engine, 0, s_confirmPending, privLabel(s_confirmLabel),
                           s_infoPending, infoTypeName, infoText,
                           engine.isWatched(s_confirmMac, s_confirmIsBle),
                           engine.isHunted(s_confirmMac, s_confirmIsBle),
@@ -4945,7 +4948,7 @@ void loop() {
             const bool done = s_rawScanCachedView ||
                               (s_rawScanIsBle ? engine.rawBleScanDone() : engine.rawWifiScanDone());
             drawTwoBand([&](TFT_eSPI& t, bool advance) {
-                uiRawScanTick(t, now, engine, s_rawScanIsBle, done, s_confirmPending, s_confirmLabel,
+                uiRawScanTick(t, now, engine, s_rawScanIsBle, done, s_confirmPending, privLabel(s_confirmLabel),
                               engine.isWatched(s_confirmMac, s_rawScanIsBle),
                               engine.isHunted(s_confirmMac, s_rawScanIsBle),
                               IgnoreList::contains(s_confirmMac), advance);
@@ -5256,6 +5259,11 @@ void loop() {
                         case SettingsRow::ALERT_RULES: enterAlertRules(); break;
                         case SettingsRow::DETECTION_FILTER: enterDetFilter(); break;
                         case SettingsRow::POWER_SAVER: enterPower(); break;
+                        case SettingsRow::PRIVACY:
+                            Settings::togglePrivacyMode();
+                            Theme::showToast(Settings::privacyMode() ? "PRIVACY MODE ON" : "PRIVACY MODE OFF",
+                                             Settings::privacyMode() ? "Addresses and names are hidden" : nullptr, Theme::CYAN);
+                            break;
 #if defined(TWATCH_S3)
                         case SettingsRow::WATCH_RADIO: Settings::cycleRadioDuty(); break;
                         case SettingsRow::WATCH_LISTEN: Settings::cycleBleListen(); break;

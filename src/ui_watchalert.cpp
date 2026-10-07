@@ -1,6 +1,7 @@
 // SquachWatch-CYD — watched-target alert screen implementation
 #include "ui_watchalert.h"
 #include "theme.h"
+#include "privacy.h"
 #include "squachy.h"
 #include "ui_fit.h"
 #include <Arduino.h>
@@ -106,7 +107,8 @@ static void drawWatchList(TFT_eSPI& t,uint32_t now,const DetectionEngine& eng){
         const int y=top+row*rowH; const bool fresh=info.seen && now-info.lastSeenMs<=10000;
         t.drawFastHLine(6,y+rowH-1,w-12,Theme::PURPLE);
         char fitted[28]; t.setTextSize(2);
-        UiFit::fitMid(fitted,sizeof fitted,info.label,UiFit::chars(w-104,2));
+        char pv[40];
+        UiFit::fitMid(fitted,sizeof fitted,Privacy::name(info.label, pv, sizeof pv),UiFit::chars(w-104,2));
         t.setTextColor(Theme::WHITE,Theme::BG); t.setCursor(8,y+1); t.print(fitted);
         char rbuf[16]; if(fresh)snprintf(rbuf,sizeof rbuf,"%d dBm",(int)info.rssi); else if(info.seen)snprintf(rbuf,sizeof rbuf,"OUT"); else snprintf(rbuf,sizeof rbuf,"WAIT");
         const int rw=t.textWidth(rbuf); t.setTextColor(fresh?Theme::CYAN:Theme::AMBER,Theme::BG); t.setCursor(w-rw-24,y+1); t.print(rbuf);
@@ -206,9 +208,11 @@ void uiWatchAlertTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, boo
     t.setTextSize(1);
     t.setTextWrap(false);
     t.setTextColor(Theme::WHITE, bg);
-    int sw2 = t.textWidth(eng.watchLabel());
+    char pv[40];
+    const char* watchLabel = Privacy::name(eng.watchLabel(), pv, sizeof pv);
+    int sw2 = t.textWidth(watchLabel);
     t.setCursor((w - sw2) / 2, ty + 30);
-    t.print(eng.watchLabel());
+    t.print(watchLabel);
 
     // Signal-strength trend -- lets you tell "getting closer" from
     // "just sitting there" instead of only knowing it's in range at

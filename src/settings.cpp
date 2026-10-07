@@ -164,6 +164,7 @@ static const uint8_t  IDLE_CPU_DEFAULT   = 2;   // historical 240 MHz
 static uint8_t  s_bleIx        = BLE_LISTEN_DEFAULT;
 static uint8_t  s_idleCpuIx    = IDLE_CPU_DEFAULT;
 static bool     s_wakeOnAlert  = true;
+static bool     s_privacy      = false;
 static uint8_t  s_buzzMode     = 2;    // 0 OFF, 1 HIGH, 2 MED, 3 LOW; MED by default
 static bool     s_steady       = false;
 // The watch's radio duty cycle: on for a few seconds, resting for the rest.
@@ -240,6 +241,7 @@ uint8_t  idleFps()          { return s_powerSaver ? IDLE_FPS[s_idleFpsIx] : 0; }
 uint16_t idleAfterSec()     { return IDLE_AFTER[s_idleAfterIx]; }
 uint16_t cpuMhz()           { return s_powerSaver ? CPU_MHZ[s_cpuIx] : 240; }
 bool     wakeOnAlert()      { return s_wakeOnAlert; }
+bool     privacyMode()      { return s_privacy; }
 bool     buzz()             { return s_buzzMode != 0; }
 bool     steadyPower()      { return s_steady; }
 // Only while POWER SAVER is on. Either RADIO DUTY row (the Power screen,
@@ -314,6 +316,10 @@ void cycleBuzz() {
 void toggleWakeOnAlert() {
     s_wakeOnAlert = !s_wakeOnAlert;
     s_prefs.putBool("pwrWake", s_wakeOnAlert);
+}
+void togglePrivacyMode() {
+    s_privacy = !s_privacy;
+    s_prefs.putBool("privacy", s_privacy);
 }
 
 // ---- easter-egg hunt progress ----------------------------------------
@@ -451,6 +457,7 @@ void load() {
     if (s_bleIx > 2)     s_bleIx = BLE_LISTEN_DEFAULT;
     if (s_idleCpuIx > 2) s_idleCpuIx = IDLE_CPU_DEFAULT;
     s_wakeOnAlert  = s_prefs.getBool("pwrWake", true);
+    s_privacy      = s_prefs.getBool("privacy", false);
     // Preserve the old ON/OFF choice on first boot with this firmware.
     // Existing OFF remains OFF; existing ON lands at MED, the 3 V library
     // appropriate for the watch motor. New writes use the separate mode key.
