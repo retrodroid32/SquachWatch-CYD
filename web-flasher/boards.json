@@ -184,6 +184,20 @@
       "lab": false,
       "cyd28": false,
       "note": "Compile-validation profile for the Sunton ESP32-2432S032C with ST7789 IPS and GT911 capacitive touch. Publication is handled in a separate follow-up PR."
+    },
+    {
+      "id": "crowpanel7",
+      "label": "Elecrow CrowPanel Advance 7.0 (compile-only)",
+      "manifest": null,
+      "visible": false,
+      "ci": true,
+      "release": false,
+      "sign": false,
+      "shared_esp32": false,
+      "merged": false,
+      "lab": false,
+      "cyd28": false,
+      "note": "Compile-validation profile for the 800x480 RGB CrowPanel Advance 7.0; hardware validation required before publication."
     }
   ]
 }

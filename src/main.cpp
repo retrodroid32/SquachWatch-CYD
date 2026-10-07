@@ -7,7 +7,13 @@
 #include <SPI.h>
 #include <Wire.h>
 #include <TFT_eSPI.h>
-#if defined(CYD32C)
+#if defined(CROWPANEL7)
+#include "crowpanel7_board.h"
+#include "crowpanel7_display.h"
+#include "crowpanel7_blit.h"
+#include "crowpanel7_backlight.h"
+#endif
+#if defined(CYD32C) || defined(CROWPANEL7)
 #include "gt911_touch.h"
 #endif
 #include <XPT2046_Touchscreen.h>
@@ -421,6 +427,8 @@ constexpr bool PANEL_NEEDS_INVERSION = false;
 // AWOK's ILI9341 (this panel's ST7796 may differ; adjust from live
 // observation).
 constexpr bool PANEL_NEEDS_INVERSION = false;
+#elif defined(CROWPANEL7)
+constexpr bool PANEL_NEEDS_INVERSION = false;  // RGB panel has no inversion register
 #elif defined(AWOK)
 // Confirmed on real hardware: true visibly changed something (proving
 // this, not the dead awok_user_setup.h define, is the actual control
@@ -465,7 +473,11 @@ public:
 };
 
 // ---- Globals ----
+#if defined(CROWPANEL7)
+CrowPanelTFT        tft;
+#else
 TFT_eSPI            tft = TFT_eSPI();
+#endif
 // All screens draw into this off-screen buffer, pushed to the physical
 // display in one shot at the end of each loop(). Without it, every
 // screen's erase-then-redraw sequence is briefly visible on real
@@ -623,8 +635,13 @@ static bool rawReadResistive(int16_t& a, int16_t& b);
 // (rotation 1). Not const: overwritten at boot if a saved calibration
 // exists (see loadOrDefaultCal()/TouchCal), and by the long-press
 // calibration flow (see checkCalibrationTrigger()).
+#if defined(CROWPANEL7)
+static uint16_t CAP_NX_MIN = CROW_CAP_NX_MIN, CAP_NX_MAX = CROW_CAP_NX_MAX;
+static uint16_t CAP_NY_MIN = CROW_CAP_NY_MIN, CAP_NY_MAX = CROW_CAP_NY_MAX;
+#else
 static uint16_t CAP_NX_MIN = 32,  CAP_NX_MAX = 166;
 static uint16_t CAP_NY_MIN = 10,  CAP_NY_MAX = 308;
+#endif
 // Resistive XPT2046 raw ADC range — same idea, factory default was a
 // flat 200-3800 for both axes; not const for the same reason.
 static uint16_t RAW_X_MIN = 200, RAW_X_MAX = 3800;
@@ -831,7 +848,7 @@ static bool rawReadFiltered(int16_t& a, int16_t& b) {
 // The one reader pollTouch(), the calibration and the diagnostics screen all
 // use, so what the calibration measures is exactly what touch then reads.
 static bool readTouchRaw(int16_t& a, int16_t& b) {
-#if defined(CYD32C)
+#if defined(CYD32C) || defined(CROWPANEL7)
     uint16_t x, y;
     if (!Gt911::read(x, y)) return false;
     a = (int16_t)x;
@@ -905,9 +922,13 @@ static void applyBrightness() {
         applyCpuClock();   // back to CPU CLOCK
     }
 #endif
+#if defined(CROWPANEL7)
+    CrowBL::set(duty);
+#else
     ledcWrite(BL_CH_ORIG, duty);
     ledcWrite(BL_CH_CAP,  duty);
     ledcWrite(BL_CH_AWOK, duty);
+#endif
 }
 
 // 240, 160 or 80 MHz. Never lower: the radio needs an 80 MHz APB clock, and
@@ -2825,10 +2846,12 @@ void setup() {
 // Not on AWOK (TOUCH_CS there) and not on either RL Phantom, where GPIO21 is
 // the capacitive controller's INTERRUPT line. Driving it high at boot is the
 // same mistake as the LEDC attach further down, just earlier.
-#if !defined(AWOK) && !defined(RLPHANTOM) && !defined(RLPHANTOM_R) && !defined(TWATCH_S3) && !defined(CYD32C)
+#if !defined(AWOK) && !defined(RLPHANTOM) && !defined(RLPHANTOM_R) && !defined(TWATCH_S3) && !defined(CYD32C) && !defined(CROWPANEL7)
     pinMode(21, OUTPUT); digitalWrite(21, HIGH);
 #endif
-#if defined(TWATCH_S3)
+#if defined(CROWPANEL7)
+    // Backlight is owned by the helper MCU; tft.init() brings it and Wire up.
+#elif defined(TWATCH_S3)
     // GPIO27 and GPIO32 are the S3's PSRAM lines: touching either hangs the
     // chip until the watchdog reboots it. The watch's backlight is GPIO45.
     pinMode(45, OUTPUT); digitalWrite(45, HIGH);
@@ -2858,7 +2881,9 @@ void setup() {
     // Which version lives in this slot, and whether this boot is a fresh
     // update on probation or the aftermath of one that was rolled back.
     OtaCore::boot();
-#if !defined(AWOK)
+#if defined(CROWPANEL7)
+    screenRotation = 0;
+#elif !defined(AWOK)
     // AWOK has no rotate button and stays fixed at its one physical
     // orientation (see screenRotation's own comment above) -- only
     // boards that can actually rotate restore a saved orientation.
@@ -2893,7 +2918,9 @@ void setup() {
 // TOUCH_CS on AWOK, and the capacitive controller's INTERRUPT line on the RL
 // Phantom. Driving a 5 kHz PWM onto either is the kind of fault that looks
 // like dead touch, which is exactly how it presented on the Phantom.
-#if defined(TWATCH_S3)
+#if defined(CROWPANEL7)
+    // No direct backlight GPIO: CrowBL talks to the helper MCU over I2C.
+#elif defined(TWATCH_S3)
     // One backlight, GPIO45, on the first channel. The CYD pins below are
     // flash/PSRAM lines and the power chip's interrupt on an S3.
     ledcSetup(BL_CH_ORIG, 5000, 8);
@@ -3030,6 +3057,10 @@ void setup() {
     usingCapTouch = Gt911::begin();
     Serial.println(usingCapTouch ? "ESP32-2432S032C -- GT911 capacitive touch answered."
                                  : "ESP32-2432S032C -- GT911 did not answer; no touch.");
+#elif defined(CROWPANEL7)
+    usingCapTouch = Gt911::begin();
+    Serial.println(usingCapTouch ? "CrowPanel 7 -- GT911 capacitive touch answered."
+                                 : "CrowPanel 7 -- GT911 did not answer; no touch.");
 #elif defined(TWATCH_S3)
     // The T-Watch's FT6336, on I2C SDA 39 / SCL 40 at 0x38. No reset line;
     // the AXP2101 powers it (ALDO3) in twatchPowerUp(), before this runs.
@@ -3086,7 +3117,7 @@ void setup() {
         uint32_t windowStart = millis();
         while (millis() - windowStart < 1200) {
             int16_t a, b;
-#if defined(CYD32C)
+#if defined(CYD32C) || defined(CROWPANEL7)
             bool down = readTouchRaw(a, b);
 #else
             bool down = usingCapTouch ? rawReadCap(a, b) : rawReadResistive(a, b);
@@ -3133,16 +3164,23 @@ void setup() {
     // injected against the compiled-in ranges -- a calibration screen would
     // just sit there waiting for a finger.
     initTouchFit();
-#if defined(ESP32)
+#if defined(ESP32) && !defined(CROWPANEL7)
     if (s_calSource != CalSource::SAVED) {
         Serial.println("Touch: no five-target calibration yet -- running it now.");
         runTouchCalibration();
     }
 #endif
+#if defined(CROWPANEL7)
+    Serial.println("Touch: CrowPanel GT911 reports panel pixels; no calibration needed.");
+#endif
 
-    // Seed the PRNG so the digital rain starts in a fresh-looking state
-    // on every boot. Analog read on a floating pin is plenty.
+    // Seed the PRNG so the digital rain starts in a fresh-looking state.
+#if defined(CROWPANEL7)
+    randomSeed(esp_random());
+#else
+    // Analog read on a floating pin is plenty on classic ESP32 boards.
     randomSeed(analogRead(34));
+#endif
 
     // The backlight goes down while the radios come up, and back to your
     // setting once they are running.
@@ -3154,9 +3192,13 @@ void setup() {
     // browned out at exactly this point on every boot -- three seconds a
     // cycle, forever -- off any supply short of a powered hub. The backlight
     // is the one large load that nobody misses for a second at boot.
+#if defined(CROWPANEL7)
+    CrowBL::set(24);
+#else
     ledcWrite(BL_CH_ORIG, 24);
     ledcWrite(BL_CH_CAP,  24);
     ledcWrite(BL_CH_AWOK, 24);
+#endif
 
     // The black box, before the radios: this boot's record -- with the crash
     // in it when there was one -- then the log as the last boot left it, so
@@ -3424,6 +3466,9 @@ static inline void pushFrame(int x, int y) {
     const bool roster =
         state == AppState::WATCH_LIST || state == AppState::HUNT_LIST;
 
+#if defined(CROWPANEL7)
+    CrowBlit::push(frame.buf(), frame.bufW(), frame.bufH(), x, y);
+#else
     if (roster) {
         // Isolation path: no changed-row hashing, no multiple address-window
         // spans and no periodic FramePush full refresh. The complete sprite is
@@ -3443,6 +3488,7 @@ static inline void pushFrame(int x, int y) {
         frame.pushSprite(x, y);
         FramePush::invalidate();
     }
+#endif
     s_pushAccumUs += micros() - t0;
 }
 
@@ -6386,7 +6432,9 @@ void loop() {
                 info.calB0 = (int16_t)lroundf(b0); info.calB1 = (int16_t)lroundf(b1);
             }
             info.usingCapTouch = usingCapTouch;
-#if defined(FREENOVE32)
+#if defined(CROWPANEL7)
+            info.boardName = "CrowPanel 7";
+#elif defined(FREENOVE32)
             info.boardName = "Freenove 3.2";
 #elif defined(CYD32)
             info.boardName = "CYD 3.2";
