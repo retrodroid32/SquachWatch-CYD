@@ -646,7 +646,7 @@ int main(int argc, char** argv) {
         else if (screen == "bingo")    uiBingoTick(frame, t, engine);
         else if (screen == "dex")      uiDexTick(frame, t, engine);
         else if (screen == "meshmenu") uiMeshMenuTick(frame, t, engine);
-        else if (screen == "roster")   uiSquadTick(frame, t, engine);
+        else if (screen == "roster" || screen == "squad") uiSquadTick(frame, t, engine);
         else if (screen == "meshwarn") uiMeshWarnTick(frame, t, engine);
         else if (screen == "phrase")   uiMeshPhraseTick(frame, t, engine);
         else if (screen == "compose")  uiMeshComposeTick(frame, t, engine);
@@ -899,10 +899,12 @@ int main(int argc, char** argv) {
         }
     }
     else if (screen == "meshmenu")   uiMeshMenuInit(frame);
-    else if (screen == "roster") {
+    else if (screen == "roster" || screen == "squad") {
         // Three members, through the real paths: an advert each so Mesh knows
         // their look, then a sealed HELLO each so MeshTalk puts them on the
         // roster. --pose 1 marks the first of them as still in range.
+        // `squad` is the same seeding on the in-range page (SQUAD from the
+        // main screen), which wants --pose 1 to have anybody in range.
         if (!Settings::meshDetect()) Settings::cycleMeshDetect();
         if (!Settings::messagesOn()) Settings::toggleMessages();
         MeshTalk::setPhrase("GIBSON MOTHMAN PHREAK NESSIE ZEROCOOL");
@@ -944,7 +946,7 @@ int main(int argc, char** argv) {
             const size_t an = SquachMesh::encode(p, ad + 2);
             Mesh::onManufacturerData(ad, an + 2, SEEDS[0].mac, millis());
         }
-        uiSquadInit(frame, true);
+        uiSquadInit(frame, screen == "roster");
     }
     else if (screen == "phrase")     {
         uiMeshPhraseInit(frame);
