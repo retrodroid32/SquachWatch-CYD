@@ -1,6 +1,6 @@
 # SquachWatch-CYD
 
-**Current fork version: v1.20.1**
+**Current fork version: v1.21.0**
 
 > Surveillance-device detector for ESP32 Cheap Yellow Display (CYD) boards and compatible touchscreen variants.
 
@@ -27,148 +27,170 @@ the glitchy SquachWatch wordmark.
   <a href="https://retrodroid32.github.io/SquachWatch-CYD/emulator/"><b>Click it to drive it in your browser &rarr;</b></a>
 </p>
 
-## Quick Start
-
-For most users, no build tools are required.
-
-1. Pick a supported board from **Supported hardware** below.
-2. Open the [SquachWatch web flasher](https://retrodroid32.github.io/SquachWatch-CYD/).
-3. Select the exact board/display profile, connect over USB, and install.
-4. After boot, use **SCAN** for the live detector, **LOG** for detections/history, and **DESK** for desk mode.
-
-Useful links: [browser emulator](https://retrodroid32.github.io/SquachWatch-CYD/emulator/) · [build guide](docs/BUILD.md) · [pinout](docs/PINOUT.md) · [detection provenance](docs/DETECTIONS.md) · [FAQ](docs/FAQ.md).
-
-
-## Why this fork
-
-This fork is being built as the **hardware-flexible, data-rich, release-disciplined SquachWatch distribution**. The goal is not to mirror upstream commit-for-commit; it is to keep the useful upstream work, preserve fork-specific capabilities, and push the platform into areas the stock project does not cover as deeply.
-
-What sets this fork apart:
-
-- **More hardware choices:** released 2.8-inch and 3.2-inch CYDs, Freenove 3.2-inch, AWOK, RL Phantom and T-Watch S3 support, with additional capacitive 3.2-inch and S3 Plus work in the next-release pipeline.
-- **Detection intelligence instead of simple hits:** concrete match evidence, per-type alert rules, device policies, chronological EVENTS history and RSSI trends are already merged to `master` for the next release.
-- **Location-aware detection work:** optional CYD GPS builds support both NMEA and UBX NAV-PVT/NAV-DOP, and the T-Watch S3 Plus pipeline adds GNSS-aware wardriving and WiGLE export.
-- **Backward compatibility matters:** this fork intentionally retains CYD BLE OTA and adds migration handling so persisted BLE policy/history data survives MAC-order normalization.
-- **A stronger flasher experience:** board-specific profiles, lab publishing, signed firmware, exact artifact validation, optional performance/GPS variants and a board-code finder are part of the fork roadmap.
-- **Measured performance work:** bounded radio queues, frame/render telemetry, indexed hot-path detection lookup, allocation-reduced BLE parsing and buffered SD logging are released in v1.20.1.
-- **Regression-first development:** host tests, emulator regression, firmware matrix builds, crypto verification and hardware gates are treated as release requirements rather than cleanup after release.
-- **Selective upstream reconciliation:** upstream changes are reviewed one-by-one. Useful work is ported or reimplemented; incompatible release history and upstream's CYD BLE-OTA removal are deliberately excluded.
-
-The intent is simple: users should be able to choose this fork for **broader hardware support, richer detection context, better logging/export, safer upgrades, and more transparent release status** rather than because it merely has a different name.
-
-## Release & development matrix
-
-**Public release:** `v1.20.1`  
-**Production tag:** `2dad3060aa1a2093b8e11c50cc701e984ba0b24e`  
-**v1.21+ public release:** **not published yet**
-
-The tables below are the public feature ledger. “Next release” means implemented on `master` or actively developed in an open PR; it does **not** mean the feature is already in the production `v1.20.1` image.
-
-### In the current v1.20.1 release
-
-| Area | Update | Status |
-|---|---|---|
-| Hardware | 2.8-inch CYD ST7789/ILI9341 profiles | **Released** |
-| Hardware | 3.2-inch CYD ST7798/ST7789-compatible profile | **Released** |
-| Hardware | Experimental 80 MHz 2.8/3.2 display profiles | **Released option** |
-| Hardware | Freenove FNK0103L/FNK0114L 3.2-inch profile | **Released** |
-| Hardware | AWOK 2.4-inch and RL Phantom 2.4-inch profiles | **Released** |
-| Hardware | LilyGo T-Watch S3 public beta | **Released beta** |
-| T-Watch | Battery-aware display timeout, motion-aware snooze and haptic standby | **Released** |
-| T-Watch | Radio self-heal, two-tap reset, STEADY POWER, chip temperature and CLOCK CHECK | **Released** |
-| T-Watch | BLE LISTEN and sleeping-CPU controls | **Released** |
-| Detection | Expanded signature coverage, Remote ID decoding and confidence grading | **Released** |
-| SquachMesh | Visitors, shared appearance/name, messages, invites and improved invite listening | **Released / WIP feature** |
-| Performance | Stage 1 bounded radio work + queue/frame telemetry | **Released** |
-| Performance | Stage 2 render/layout caching and 30 FPS CLEAR cadence | **Released** |
-| Performance | Stage 3 indexed detection lookup | **Released** |
-| Performance | Stage 3B allocation-reduced BLE advertisement parsing | **Released** |
-| Performance | Stage 3C fixed-buffer SD logging | **Released** |
-| Storage | Calendar-dated SD logs with honest uptime fallback | **Released** |
-| Storage/security | Full SquachWatch SD wipe + safe-preserve NVS wipe | **Released** |
-| OTA | Fork-owned HTTPS OTA endpoint | **Released** |
-| OTA | Signed production firmware gate using the fork OTA public key | **Released infrastructure** |
-| Release engineering | Board matrix drives CI and release assembly | **Released infrastructure** |
-| Release engineering | Production Pages publishes only validated release artifacts | **Released infrastructure** |
-| Release engineering | Lab publishing preserves production while exposing feature builds | **Released infrastructure** |
-| Diagnostics | Crash breadcrumbs, reset reasons, coredump summary and radio/battery telemetry | **Released** |
-
-Exact fix-by-fix v1.20.1 details remain in [the v1.20.1 release notes](.github/release-notes/v1.20.1.md).
-
-### In the works for the next release
-
-| Area | Update | Development status |
-|---|---|---|
-| Detection intelligence | Match evidence + uniform sighting counts | **Merged to master, unreleased** |
-| Detection intelligence | ~15-second RSSI history/trend | **Merged to master, unreleased** |
-| Detection intelligence | Per-type alert rules: confidence/repeats/cooldown/wake/log-only | **Merged to master, unreleased** |
-| Detection intelligence | Device policies: IGNORE / TRUSTED / ALWAYS ALERT | **Merged to master, unreleased** |
-| Detection intelligence | LOG DEVICES / chronological EVENTS views | **Merged to master, unreleased** |
-| Detection intelligence | Compact RSSI sparklines in live device rows | **Merged to master, unreleased** |
-| CYD GPS | Optional GPS firmware variants independent of 80 MHz display choice | **PR #39 — hardware-validated UBX/NMEA path** |
-| CYD GPS | NMEA + FlightMesh-style UBX NAV-PVT / NAV-DOP support | **PR #39 — verified real fix** |
-| CYD GPS | GPS-stamped SD detection fields | **PR #39 — final real-detection logging validation pending** |
-| Upstream reconciliation | CrowPanel/Freenove/time-zone/watch/cosmetic/ignore/Remote ID/Flock/spam improvements | **PR #40 — draft reconciliation** |
-| BLE correctness | Advertised-name lifetime fix + conventional MAC display/storage order | **PR #41** |
-| BLE compatibility | Legacy reversed-MAC policy/Regulars/BlackBox migration | **PR #44 — stacked on #41** |
-| UI | Bottom-edge hit targets, text fitting, toast wrapping, diagnostics clipping and two-press LOG clear | **PR #42** |
-| Test infrastructure | Header dependency fixes + real mesh crypto host verification | **PR #43** |
-| GNSS/WiGLE | Shared NMEA parser, security parser and WiGLE 1.6 formatting groundwork | **PR #45** |
-| Hardware | Sunton ESP32-2432S032C 3.2-inch ST7789 + GT911 capacitive support | **PR #46 — stacked on #40** |
-| Flasher | Grouped board picker + “code on the back of your board” finder | **PR #47 — stacked on #46** |
-| Flasher | CYD32C release/sign/lab manifest support | **PR #47** |
-| Status light | Seven brightness levels with migration from the old five-level setting | **PR #48** |
-| Settings UX | Group headings stay labels instead of accidentally collapsing sections | **PR #54** |
-| Diagnostics | Hardware ADC console command with GPIO35 protected when GPS uses it | **PR #55** |
-| T-Watch S3 Plus | Board recognition + GNSS power/baud probing | **PR #56 — stacked on #45** |
-| T-Watch S3 Plus | GPS STATUS, best seen/heard/used counts, first-fix timing and last-fix history | **PR #56** |
-| T-Watch S3 Plus | Main-screen GPS status badge layered below Squachy/speech bubbles | **PR #56** |
-| Wardriving | Persistent GPS-stamped Wi-Fi/BLE sighting store with deduplication | **PR #57 — stacked on #56** |
-| Wardriving | WARDRIVE ON/OFF, GPS FAKE and WIGLE console tools | **PR #57** |
-| Wardriving | WATCH SETTINGS wardrive control/status | **PR #57** |
-| Wardriving | USB WiGLE CSV dump helper | **PR #57** |
-| Wardriving | Web Serial **DOWNLOAD WIGLE FILE** in the browser flasher | **PR #57** |
-| Reconciliation | Every one of the 53 currently upstream-only commits classified and accounted for | **PR #53 — documentation ledger** |
-| Fork policy | Retain CYD BLE OTA instead of adopting upstream's removal | **Intentional fork difference** |
-
-The complete 53-commit reconciliation is tracked in [PR #53](https://github.com/retrodroid32/SquachWatch-CYD/pull/53) and `docs/UPSTREAM_53_RECONCILIATION_20260929.md`. The rule is deliberate: **do not copy upstream history just to make the commit counts match; port the useful behavior and keep the fork's own compatibility and release decisions.**
-
 ## Contents
 
-- [Quick Start](#quick-start)
-- [Why this fork](#why-this-fork)
-- [Release & development matrix](#release--development-matrix)
-- [Release status](#release-status)
+- [Current release — v1.21.0](#current-release--v1210)
+  - [New features](#new-features)
+  - [Fixes and improvements](#fixes-and-improvements)
+- [Roadmap — in development after v1.21.0](#roadmap--in-development-after-v1210)
+- [Project overview](#project-overview)
+  - [Why this fork](#why-this-fork)
+- [Detection coverage](#detection-coverage)
 - [Supported hardware](#supported-hardware)
-- [Install with Web Flash](#install-with-web-flash)
+- [Install](#install)
+  - [Quick start](#quick-start)
+  - [Web flasher and update notes](#web-flasher-and-update-notes)
 - [Using SquachWatch](#using-squachwatch)
-  - [v1.21 Detection intelligence](#v121-detection-intelligence)
-  - [Detection coverage](#detection-coverage)
-  - [The clock](#the-clock)
-  - [Desk mode](#desk-mode)
-  - [Status light](#status-light)
 - [SquachMesh](#squachmesh)
 - [Customization](#customization)
 - [Build from source](#build-from-source)
 - [Hardware-specific notes](#hardware-specific-notes)
 - [Developer reference](#developer-reference)
 - [Release history](#release-history)
-- [Project status](#project-status)
+- [Project status, license and credits](#project-status-license-and-credits)
 
-## Release status
 
-The current public production release is **v1.20.1**. There is **no v1.21+ production release yet**.
+## Current release — v1.21.0
 
-Detection-intelligence Stages A-E are already merged to `master` and remain unreleased. Additional next-release work is intentionally being developed in reviewable PRs rather than pushed directly into production; the current pipeline includes optional CYD GPS, BLE compatibility fixes, UI hardening, expanded board support, T-Watch S3 Plus GNSS, wardriving/WiGLE export, flasher improvements, diagnostics and test infrastructure.
+**Production release:** `v1.21.0`  
+**Previous release:** `v1.20.1` / `2dad3060aa1a2093b8e11c50cc701e984ba0b24e`
 
-This separation is intentional:
+v1.21.0 is the first production release of the fork's staged detection-intelligence work. It also rolls in the verified BLE, UI, privacy, Remote ID, Flock, tracker-spam, T-Watch, diagnostics and status-light improvements merged after v1.20.1.
 
-- **Released** means present in the immutable v1.20.1 production tag.
-- **Merged to master, unreleased** means implemented but not yet published as a production version.
-- **PR / draft PR** means still under review, CI, rebase or hardware validation.
-- No open PR should be described as a production feature until it is explicitly approved, integrated, release-gated and tagged.
+### New features
 
-See [v1.21.0 development notes](.github/release-notes/v1.21.0-development.md) for the merged detection-intelligence stages and [the release/development matrix above](#release--development-matrix) for the broader next-release pipeline.
+**Detection intelligence**
+- Concrete evidence for why a BLE or Wi-Fi device matched.
+- Uniform sighting/repeat counts where applicable.
+- About 15 seconds of live RSSI history with shared movement classification.
+- Per-type **Alert Rules** for LOG ONLY/full alert, minimum confidence, repeat threshold, cooldown and screen wake.
+- Persistent **Device Policies**: NORMAL, IGNORE, TRUSTED and ALWAYS ALERT.
+- LOG now switches between deduplicated **DEVICES** and chronological **EVENTS** history.
+- Live LOG rows can show compact RSSI direction/sparklines.
+
+**WATCH and HUNT**
+- WATCH and HUNT are separate title-bar controls.
+- HUNT supports up to eight simultaneous BLE/Wi-Fi targets.
+- The HUNT roster is sorted by signal strength and shows current RSSI, last-seen age and movement direction.
+- Opening or stopping one HUNT target no longer destroys the rest of the roster.
+
+**Detection coverage**
+- Expanded ASTM F3411/OpenDroneID support over BLE and Wi-Fi.
+- Wi-Fi NAN Remote ID recognition.
+- Curated drone-manufacturer IEEE prefixes with exact MA-L/MA-M matching.
+- Refreshed Flock field signatures and confidence handling.
+- Tracker-only **SpamWatch** suppresses repeated interruptions from rapidly rotating AirTag, SmartTag, Google Find My and Tile identities.
+
+**Privacy and compatibility**
+- New screen-only **PRIVACY MODE** masks displayed names and MAC suffixes while preserving the real data internally for tracking, BlackBox, SD/wardrive and console use.
+- BLE advertised names are parsed with lifetime-safe helpers.
+- BLE addresses are normalized to conventional human-readable MAC order.
+- Legacy reversed-MAC Device Policies, Regulars and BlackBox history remain readable/migratable.
+- CYD BLE OTA remains intentionally supported.
+
+### Fixes and improvements
+
+- LOG shows **IGNORED/IGN** state and offers **UNIGNORE** when appropriate.
+- LOG clear requires a confirming second press.
+- Bottom-edge touch targets, raw-scan controls, alert-card fitting, toast wrapping and diagnostics clipping were hardened.
+- Settings group headings are stable labels instead of collapsible rows.
+- APPEARANCE **BRIGHT - / +** touch zones now match the controls drawn on screen.
+- Status-light brightness expands from five to seven levels with migration of saved settings.
+- T-Watch gets a dedicated WATCH SETTINGS page and OFF/LOW/MED/HIGH haptic levels.
+- BLACKBOX console output can walk the full forensic ring including CLR markers.
+- Classic ESP32 CYDs gain a GPS-safe `ADC` console diagnostic.
+- Host tests now track header dependencies and include an optional real SquachMesh crypto test with mbedTLS 2/3 compatibility.
+
+For the complete change record, see [the v1.21.0 release notes](.github/release-notes/v1.21.0.md). The detailed Stage A–E implementation history remains in [v1.21.0 development notes](.github/release-notes/v1.21.0-development.md).
+
+
+## Roadmap — in development after v1.21.0
+
+These items are **not** part of v1.21.0. They remain in open PRs until review, CI and—where applicable—real-hardware validation are complete.
+
+| Area | Work in progress | PRs |
+|---|---|---|
+| CYD GPS | Optional GPS firmware variants; NMEA + FlightMesh-style UBX NAV-PVT/NAV-DOP | #77 |
+| GNSS / WiGLE | Shared GNSS/WiGLE groundwork | #69 |
+| T-Watch | Battery/charging status improvements | #70 |
+| T-Watch S3 Plus | GNSS runtime | #71 |
+| Wardriving | GPS-stamped wardrive runtime + WiGLE export | #72 |
+| Capacitive CYD | ESP32-2432S032C support | #73 |
+| Flasher | Board-code finder and CYD32C publication | #74, #90 |
+| 3.5-inch capacitive | S035C support + keyboard fixes | #75 |
+| ESP32-S3 boards | LCDWiki ES3C28P and Freenove S3 support | #76, #78 |
+| CrowPanel | Advance 7.0 base + stability work | #79, #84 |
+| Time zones | Expanded zones + bidirectional settings row | #80, #93 |
+| Detection | Additional Flock/spam hardening | #81 |
+| WATCH | Keep WATCH alerts open until acknowledged | #82 |
+| UI | Wardrobe polish and aquarium optimization | #83, #89 |
+| Nearby policy | Hide NEARBY for ignore-only / snooze-only activity | #88, #92 |
+| SquachMesh | SEND button on the in-range SQUAD page | #91 |
+| T-Watch policy | TAGS + RINGS log-only behavior | #96 |
+| Reconciliation | Upstream audit ledgers and selective ports | #85, #86, #97 |
+
+The reconciliation rule is deliberate: **do not copy upstream history just to make commit counts match.** Useful behavior is reviewed and ported selectively, while fork-specific compatibility decisions—especially retaining CYD BLE OTA—remain intact.
+
+
+## Project overview
+
+SquachWatch-CYD is a standalone 2.4 GHz surveillance-device detector for ESP32 touchscreen boards. It watches BLE advertisements and Wi-Fi traffic for known signatures, presents detections locally, keeps history, and can run without a PC after installation.
+
+### Why this fork
+
+This fork is maintained as the **hardware-flexible, data-rich, release-disciplined SquachWatch distribution** rather than a commit-for-commit mirror of upstream.
+
+- **Broader hardware support:** released 2.8-inch and 3.2-inch CYDs, Freenove 3.2-inch, AWOK, RL Phantom and T-Watch S3, with additional hardware in the roadmap.
+- **Richer detection context:** evidence, Alert Rules, Device Policies, EVENTS history, RSSI trends and multi-target HUNT.
+- **Backward compatibility:** CYD BLE OTA is retained, and persisted BLE policy/history data survives MAC-order normalization.
+- **Measured performance work:** bounded radio queues, render telemetry, indexed detection lookup, reduced BLE allocation and buffered SD logging.
+- **Regression-first development:** host tests, emulator regression, firmware-matrix builds, crypto verification and hardware gates are treated as release requirements.
+- **Selective upstream reconciliation:** useful upstream changes are ported or reimplemented; incompatible release history and upstream's CYD BLE-OTA removal are intentionally excluded.
+
+The goal is simple: broader hardware support, richer detection context, safer upgrades, and a clear distinction between **released** and **still in development**.
+
+
+## Detection coverage
+
+| Type | What | How |
+|---|---|---|
+| `FLOCK` | Flock Safety ALPR cameras | 29 WiFi OUI prefixes + BLE name + company ID `0x09C8` |
+| `AXON` | Axon body cameras, TASERs, LE equipment | 3 WiFi OUI + SSID prefixes `AB2-`/`AB3-`/`AB4-`/`AXON-` |
+| `META` | Camera glasses — Ray-Ban Meta, Snap Spectacles | BLE service UUID `0xFD5F` + Meta / Luxottica / Snap company IDs |
+| `SKIMMER` | Bluetooth card skimmers (HC-05/06/03, RN42, BT04-A) | BT Classic name match + SPP UUID `0x1101` + 3 OUI |
+| `RAVEN` | Raven gunshot detector | Service UUIDs `0x3100`–`0x3500` |
+| `AIRTAG` | Apple AirTag / Find My trackers | Company ID `0x004C` + Find My payload check |
+| `DRONE` | Remote ID drones | Service UUID `0xFFFA`, then the ASTM F3411 message **decoded** — aircraft position, altitude, serial, and the operator's location |
+| `ALPR` | Motorola Solutions / Genetec plate readers | 6 WiFi OUI |
+| `CAMERA` | Generic / covert IP cameras | 17 WiFi OUI (Wyze, Amazon, Tuya, Verkada, Avigilon, Axis, …) |
+| `SAMSUNG_TAG` | Samsung Galaxy SmartTag / SmartTag+ | BLE service UUID `0xFD5A` |
+| `GOOGLE_TAG` | Google Find My Device trackers (Chipolo, Pebblebee, Moto Tag) | BLE service UUID `0xFEAA` |
+| `TILE` | Tile BLE trackers | BLE service UUID `0xFEED` / `0xFEEC` |
+| `RING` | Ring doorbells / cameras | 15 WiFi OUI (Ring LLC's registered block + Amazon's) |
+| `DEAUTH` | WiFi deauthentication floods | Rate-detected burst, not a signature |
+| `EVILTWIN` | Rogue / spoofed access points | One SSID beaconing from two BSSIDs that disagree about encryption |
+| `IBEACON` | Retail proximity beacons | Exact Apple header `4C 00 02 15` — **off by default**, see below |
+| `HACKER` | Flipper Zero, Pwnagotchi, WiFi Pineapple, ESP deauthers | Flipper's service UUIDs `0x3081`–`0x3083`, company ID `0x0E29` and OUI `0C:FA:22`; the Pwnagotchi's own beacon payload; `Pineapple_` and `pwned` SSIDs |
+
+### Confidence is per signature, not per type
+
+Every hardware prefix in the firmware was checked against the IEEE registry
+rather than against other detectors. Of 77 rows: **33 High, 4 Medium, 40
+Low**.
+
+That grading matters most on `FLOCK`, where exactly **one** of 29 prefixes is
+registered to Flock Safety and the rest are the generic Espressif and Liteon
+parts they build on — real evidence, shared with every dev board on earth.
+`ALERT FILTER` is a minimum-confidence gate, so setting it to High keeps a
+passing ESP32 in the log without taking over the screen.
+
+The audit also removed `00:0E:58`, which sat here for eleven releases
+labelled "Vigilant" and is registered to **Sonos**. Every speaker in range
+was being logged as a plate reader.
+
+`IBEACON` ships switched off — not a judgement about importance, one about
+volume. One shop can put more beacons in range than this device would
+otherwise see all week. It is one tap away in `DETECTION FILTER`.
 
 ## Supported hardware
 
@@ -190,7 +212,20 @@ issue is unresolved.
 Most CYD installations need no add-on hardware: no GPS, buzzer, or external
 radio module is required.
 
-## Install with Web Flash
+## Install
+
+### Quick start
+
+For most users, no build tools are required.
+
+1. Pick the exact board/display profile from **Supported hardware**.
+2. Open the [SquachWatch web flasher](https://retrodroid32.github.io/SquachWatch-CYD/).
+3. Connect the board over USB and install the selected profile.
+4. After boot, use **SCAN** for live detection, **LOG** for detections/history, and **DESK** for desk mode.
+
+Useful links: [browser emulator](https://retrodroid32.github.io/SquachWatch-CYD/emulator/) · [build guide](docs/BUILD.md) · [pinout](docs/PINOUT.md) · [detection provenance](docs/DETECTIONS.md) · [FAQ](docs/FAQ.md).
+
+### Web flasher and update notes
 
 No build tools, no IDE, no cloning anything — flash a board straight
 from your browser:
@@ -218,6 +253,7 @@ Works in Firefox, Chrome, Edge, or Brave on desktop. Pick your board (2.8" CYD,
 LilyGo T-Watch S3 beta),
 plug in, click Connect & Install, done. A T-Watch has its clock set after install.
 
+
 ## Using SquachWatch
 
 1. Plug the CYD into USB-C.
@@ -239,6 +275,17 @@ plug in, click Connect & Install, done. A T-Watch has its clock set after instal
 
 If a microSD card is present, every detection is also appended to
 `squachwatch-<day>.log` (CSV: `ts,type,rssi,mac,channel,vendor,ssid`).
+
+### v1.21 controls at a glance
+
+- **Alert Rules:** tune alert/log-only behavior, confidence, repeats, cooldown and screen wake by detection type.
+- **Device Policies:** mark a specific device NORMAL, IGNORE, TRUSTED or ALWAYS ALERT.
+- **LOG → DEVICES / EVENTS:** switch between one-row-per-device history and chronological sightings.
+- **WATCH:** keep one passive target selected.
+- **HUNT:** keep up to eight active targets and open the strongest one for live signal guidance.
+- **Privacy Mode:** mask identities on-screen without destroying the underlying detection data.
+
+For implementation history of the detection-intelligence stages, see [v1.21.0 development notes](.github/release-notes/v1.21.0-development.md).
 
 ### The clock
 
@@ -314,81 +361,6 @@ the theme, the background, or one of nine fixed colours, brightness in seven
 steps, and a TEST row that plays the lot in six seconds. Boards whose LED pins
 have not been checked (the AWOK and the 3.5") compile it out and say so on
 that screen.
-
-## v1.21 Detection intelligence
-
-The v1.21 detection-intelligence work is feature-complete on `master` but is
-not yet the public release. The five staged areas are:
-
-- **Stage A — evidence + RSSI trend:** each live detection now records the
-  concrete match source (BLE manufacturer/service/name/Find My/iBeacon or Wi-Fi
-  OUI/SSID/Pwnagotchi/evil-twin/deauth), a uniform sighting count, and an
-  allocation-free eight-sample RSSI history. ALERT, LOG and MORE INFO expose
-  that evidence and ~15-second APPROACHING / STEADY / MOVING AWAY trend.
-- **Stage B — per-type alert rules:** each detection type can independently be
-  full-alert or log-only, inherit or override the global confidence threshold,
-  require 1/2/3/5 sightings, enforce OFF/30s/1m/5m/15m cooldowns, and choose
-  whether a normal signature alert wakes a sleeping display. Defaults preserve
-  v1.20.1 behavior.
-- **Stage C — device policies:** persistent per-device behavior now distinguishes
-  IGNORE, TRUSTED and ALWAYS ALERT. The compact 8-byte records migrate the older
-  ignore-list formats transactionally; TRUSTED/IGNORE suppress interruption
-  while detections remain logged, and ALWAYS ALERT bypasses alert rules,
-  cooldown and snooze without overriding the detection filter or lock security.
-- **Stage D — Detection Timeline / EVENTS:** LOG now switches between the
-  existing one-row-per-device DEVICES view and a chronological EVENTS view.
-  EVENTS reuses LOG's BlackBox page cache and shows FIRST/BACK, time, MAC,
-  RSSI, confidence, hits, name/vendor, live HERE/GONE state and current policy
-  without a second event database or persistent-format change.
-- **Stage E — RSSI trend UI:** live DEVICES rows now add a compact fixed-scale
-  sparkline for the same ~15-second RSSI history already used by ALERT and MORE
-  INFO. The chart appears only when there is safe horizontal room, so names and
-  timestamps keep priority on 240px layouts.
-
-These features were developed and validated independently so the released
-v1.20.1 baseline remained recoverable throughout the work.
-
-## Detection coverage
-
-| Type | What | How |
-|---|---|---|
-| `FLOCK` | Flock Safety ALPR cameras | 29 WiFi OUI prefixes + BLE name + company ID `0x09C8` |
-| `AXON` | Axon body cameras, TASERs, LE equipment | 3 WiFi OUI + SSID prefixes `AB2-`/`AB3-`/`AB4-`/`AXON-` |
-| `META` | Camera glasses — Ray-Ban Meta, Snap Spectacles | BLE service UUID `0xFD5F` + Meta / Luxottica / Snap company IDs |
-| `SKIMMER` | Bluetooth card skimmers (HC-05/06/03, RN42, BT04-A) | BT Classic name match + SPP UUID `0x1101` + 3 OUI |
-| `RAVEN` | Raven gunshot detector | Service UUIDs `0x3100`–`0x3500` |
-| `AIRTAG` | Apple AirTag / Find My trackers | Company ID `0x004C` + Find My payload check |
-| `DRONE` | Remote ID drones | Service UUID `0xFFFA`, then the ASTM F3411 message **decoded** — aircraft position, altitude, serial, and the operator's location |
-| `ALPR` | Motorola Solutions / Genetec plate readers | 6 WiFi OUI |
-| `CAMERA` | Generic / covert IP cameras | 17 WiFi OUI (Wyze, Amazon, Tuya, Verkada, Avigilon, Axis, …) |
-| `SAMSUNG_TAG` | Samsung Galaxy SmartTag / SmartTag+ | BLE service UUID `0xFD5A` |
-| `GOOGLE_TAG` | Google Find My Device trackers (Chipolo, Pebblebee, Moto Tag) | BLE service UUID `0xFEAA` |
-| `TILE` | Tile BLE trackers | BLE service UUID `0xFEED` / `0xFEEC` |
-| `RING` | Ring doorbells / cameras | 15 WiFi OUI (Ring LLC's registered block + Amazon's) |
-| `DEAUTH` | WiFi deauthentication floods | Rate-detected burst, not a signature |
-| `EVILTWIN` | Rogue / spoofed access points | One SSID beaconing from two BSSIDs that disagree about encryption |
-| `IBEACON` | Retail proximity beacons | Exact Apple header `4C 00 02 15` — **off by default**, see below |
-| `HACKER` | Flipper Zero, Pwnagotchi, WiFi Pineapple, ESP deauthers | Flipper's service UUIDs `0x3081`–`0x3083`, company ID `0x0E29` and OUI `0C:FA:22`; the Pwnagotchi's own beacon payload; `Pineapple_` and `pwned` SSIDs |
-
-### Confidence is per signature, not per type
-
-Every hardware prefix in the firmware was checked against the IEEE registry
-rather than against other detectors. Of 77 rows: **33 High, 4 Medium, 40
-Low**.
-
-That grading matters most on `FLOCK`, where exactly **one** of 29 prefixes is
-registered to Flock Safety and the rest are the generic Espressif and Liteon
-parts they build on — real evidence, shared with every dev board on earth.
-`ALERT FILTER` is a minimum-confidence gate, so setting it to High keeps a
-passing ESP32 in the log without taking over the screen.
-
-The audit also removed `00:0E:58`, which sat here for eleven releases
-labelled "Vigilant" and is registered to **Sonos**. Every speaker in range
-was being logged as a plate reader.
-
-`IBEACON` ships switched off — not a judgement about importance, one about
-volume. One shop can put more beacons in range than this device would
-otherwise see all week. It is one tap away in `DETECTION FILTER`.
 
 ## SquachMesh
 
@@ -804,6 +776,26 @@ without changing intended detection semantics.
 
 ## Release history
 
+### v1.21.0
+
+**Sharper Signals.** v1.21.0 promotes the fork's staged detection-intelligence work and subsequent verified improvements into the production release.
+
+Highlights:
+
+- Evidence-aware detections, uniform repeat counts and short RSSI history.
+- Per-type Alert Rules and persistent IGNORE / TRUSTED / ALWAYS ALERT policies.
+- LOG DEVICES / chronological EVENTS history and compact RSSI trends.
+- Separate WATCH/HUNT controls with an up-to-eight-target HUNT roster.
+- Expanded BLE/Wi-Fi Remote ID and curated drone-manufacturer recognition.
+- Refreshed Flock matching plus tracker-only SpamWatch flood suppression.
+- Canonical BLE MAC handling with legacy policy/Regulars/BlackBox compatibility.
+- Screen-only Privacy Mode that masks identities on the display while retaining the real data internally.
+- Safer UI hit targets, fitting, LOG clear confirmation, stable settings headings and corrected brightness controls.
+- Seven-level status-light brightness, T-Watch haptic levels, full BLACKBOX console traversal and GPS-safe ADC diagnostics.
+- CYD BLE OTA remains intentionally supported.
+
+The complete release record is in `.github/release-notes/v1.21.0.md`.
+
 ### v1.20.1
 
 This fork's v1.20.1 work has been reconciled against the complete history since
@@ -846,7 +838,9 @@ the v1.20.0 tag, not just the most recent commits. The detailed record is in
   work protects frame latency, while serial diagnostics now expose queue
   pressure, drops, drain time and rolling frame p95/max jitter.
 
-## Project status
+## Project status, license and credits
+
+### Project status
 
 **Shipping.** Releases are cut by pushing a `v*.*.*` tag. The release
 workflow builds, signs, validates, and assembles the exact Pages artifact,
@@ -866,11 +860,11 @@ compiles the actual `src/` against shims, and a host test suite in `test/`
 (`make -C test`) covering the decoders, the signature tables and the
 emulator's own fidelity to the display library.
 
-## License
+### License
 
 **GNU General Public License v3.0 (GPL-3.0).** See [LICENSE](LICENSE).
 
-## Credits
+### Credits
 
 - Flock Safety OUI research: [@NitekryDPaul](https://x.com/NitekryDPaul),
   DeFlockJoplin, [`colonelpanichacks/flock-you`](https://github.com/colonelpanichacks/flock-you)
