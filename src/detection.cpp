@@ -2742,8 +2742,15 @@ void DetectionEngine::drainBlackBox(uint32_t now) {
     // every four. The ring only holds eighteen hundred sightings, so nothing
     // real is lost by capping it -- and a crowded festival stops wearing the
     // flash out at a hundred times the rate an ordinary day does.
+#if defined(CROWPANEL7)
+    // CrowPanel RGB DMA shares PSRAM/cache bandwidth with flash activity.
+    // Pace writes more sparsely to avoid visible horizontal framebuffer steps.
+    static const uint8_t  BURST = 2;
+    static const uint32_t EVERY = 30000;
+#else
     static const uint8_t  BURST = 6;
     static const uint32_t EVERY = 3000;
+#endif
     static uint8_t  tokens = BURST;
     static uint32_t filled = 0;
     if (!filled) filled = now;
@@ -2784,7 +2791,12 @@ void logDump() {
 // The lifetime tally, to flash: at most once every five seconds while it
 // has changed. Five seconds of counting is what a power cut can lose.
 void DetectionEngine::saveLifetime(uint32_t now) {
-    if (!_lifetimeDirty || now - _lifetimeSavedMs < 5000) return;
+#if defined(CROWPANEL7)
+    static const uint32_t LIFETIME_EVERY_MS = 60000;
+#else
+    static const uint32_t LIFETIME_EVERY_MS = 5000;
+#endif
+    if (!_lifetimeDirty || now - _lifetimeSavedMs < LIFETIME_EVERY_MS) return;
     _lifetimeDirty   = false;
     _lifetimeSavedMs = now;
     _prefs.putUInt("total", _lifetimeTotal);
