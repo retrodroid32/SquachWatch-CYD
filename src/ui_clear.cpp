@@ -13,6 +13,7 @@
 #include "meshtutor.h"
 #include "squachy.h"
 #include "detection.h"
+#include "ignore_list.h"
 #include "emote_script.h"
 #include <esp_system.h>
 #include "crowd_bench.h"
@@ -3024,6 +3025,23 @@ void uiClearTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool adv
     bool anyActive = false;
     for (uint8_t i = 0; i < (uint8_t)DetectionType::COUNT; i++) {
         if (eng.countByType((DetectionType)i) > 0) { anyActive = true; break; }
+    }
+    // IGNORE is an alert-policy choice, not a counter filter: ignored devices
+    // still contribute to the live counters but should not keep the NEARBY
+    // headline permanently active. A deauth flood has no device MAC of its
+    // own to ignore, so it still qualifies. Cache the 64x64 scan for 250 ms.
+    if (anyActive) {
+        static uint32_t s_nearbyUnignoredAt = 0;
+        static bool     s_nearbyHasUnignored = true;
+        if (!s_nearbyUnignoredAt || now - s_nearbyUnignoredAt >= 250) {
+            s_nearbyUnignoredAt = now ? now : 1;
+            s_nearbyHasUnignored = eng.countByType(DetectionType::DEAUTH) > 0;
+            for (uint8_t i = 0; !s_nearbyHasUnignored && i < eng.logCount(); i++) {
+                const Detection* d = eng.logAt(i);
+                if (d && d->active && !IgnoreList::contains(d->mac)) s_nearbyHasUnignored = true;
+            }
+        }
+        anyActive = s_nearbyHasUnignored;
     }
     s_nearbyOn = false;           // set again below only if it is drawn
     // Its ARRIVAL is the event, so the glitch fires on the edge rather than
