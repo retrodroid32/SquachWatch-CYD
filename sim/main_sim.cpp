@@ -744,6 +744,30 @@ int main(int argc, char** argv) {
             Squachy::drawWaving(frame, W / 2, H - 12, tt, 2.0f, nullptr, false, 0,
                                 /*waving*/ pi == 1, 34, false, false, false, kPoses[pi]);
         }
+        else if (screen == "solo") {
+            // Draw Squachy alone on the key colour at main-screen scale.
+            // SQUACHSIM_BENCH=1 repeats the draw and reports average sprite
+            // pixel writes per frame, which is useful for weighing costumes.
+            using VP = Squachy::VisitPose;
+            static const VP kP[] = { VP::NONE, VP::NONE, VP::HANDS_UP, VP::CHEER, VP::DANCE,
+                                     VP::BOW, VP::STARTLED, VP::CROUCH, VP::COVER, VP::HIGH_FIVE };
+            const int pi = poseIdx < 0 ? 0 : poseIdx % 10;
+            frame.fillRect(0, 0, W, H, 0x024A);
+            if (getenv("SQUACHSIM_BENCH")) {
+                static bool done = false;
+                if (!done) {
+                    done = true;
+                    const int N = 4000;
+                    g_simPix = 0;
+                    for (int i = 0; i < N; i++)
+                        Squachy::drawWaving(frame, W / 2, H - 14, t + 7000u + (uint32_t)i * 33u, 2.2f, nullptr, false, 0,
+                                            pi == 1, 34, false, false, false, kP[pi]);
+                    printf("BENCH pix %.0f\n", (double)g_simPix / N);
+                }
+            }
+            Squachy::drawWaving(frame, W / 2, H - 14, t, 2.2f, nullptr, false, 0,
+                                /*waving*/ pi == 1, 34, false, false, false, kP[pi]);
+        }
         else return false;
         return true;
     };
