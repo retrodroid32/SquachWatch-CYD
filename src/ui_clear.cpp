@@ -3,6 +3,9 @@
 #include "clock.h"      // the watch's corner clock
 #include "draw_band.h"
 #include "frame_prof.h"
+#if defined(GPS_SUPPORT)
+#include "gps.h"
+#endif
 // Needed this early: the message helpers sit up with the visit machine,
 // above where the rest of this file pulls these in.
 #include "theme.h"
@@ -1713,6 +1716,31 @@ static bool    s_huntPillOn  = false;
 // top band covers the clock rather than the clock cutting a hole in the
 // bubble. Returns where the WATCH pill's free span must end, or -1.
 static int16_t s_cornerClockPillR = -1;
+#if defined(GPS_SUPPORT)
+// GPS variants show a compact green reticle only while the fix is fresh.
+// Losing the fix removes the icon immediately, so stale location is never
+// presented as current. Returns the next free x coordinate to the left.
+static int16_t drawGpsFixIcon(TFT_eSPI& t, int w, int16_t rightLimit = -1) {
+    if (!Gps::snapshot().fix) return rightLimit;
+    if (rightLimit < 0) {
+        const int icons = Theme::titleBarRightIconsX(w);
+        rightLimit = (int16_t)(icons - (icons < w ? 2 : 4));
+    }
+    const int cx = rightLimit - 9, cy = 10;
+    const uint16_t col = Theme::GREEN;
+    t.fillRect(cx - 7, cy - 7, 15, 15, TFT_BLACK);
+    t.drawFastHLine(cx - 6, cy - 6, 4, col);
+    t.drawFastVLine(cx - 6, cy - 6, 4, col);
+    t.drawFastHLine(cx + 3, cy - 6, 4, col);
+    t.drawFastVLine(cx + 6, cy - 6, 4, col);
+    t.drawFastHLine(cx - 6, cy + 6, 4, col);
+    t.drawFastVLine(cx - 6, cy + 3, 4, col);
+    t.drawFastHLine(cx + 3, cy + 6, 4, col);
+    t.drawFastVLine(cx + 6, cy + 3, 4, col);
+    t.fillCircle(cx, cy, 2, col);
+    return (int16_t)(cx - 12);
+}
+#endif
 #if defined(TWATCH_S3)
 static int16_t drawCornerClock(TFT_eSPI& t, int w) {
     if (!Clock::trusted()) return -1;
@@ -2881,6 +2909,11 @@ void uiClearTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool adv
     Theme::drawActiveBackground(t, now, 0, h, eng, advance);
     Theme::clearBackgroundFloor();
     FrameProf::lap(FrameProf::BG);
+    s_cornerClockPillR = -1;
+#if defined(GPS_SUPPORT)
+    if (DrawBand::has(0, titleBottom))
+        s_cornerClockPillR = drawGpsFixIcon(t, w, s_cornerClockPillR);
+#endif
 #if defined(TWATCH_S3)
     // Under everything that moves: see drawCornerClock().
     if (DrawBand::has(0, titleBottom)) s_cornerClockPillR = drawCornerClock(t, w);
