@@ -1,6 +1,6 @@
 # SquachWatch-CYD
 
-**Current fork version: v1.20.1**
+**Current fork version: v1.21.0**
 
 > Surveillance-device detector for ESP32 Cheap Yellow Display (CYD) boards and compatible touchscreen variants.
 
@@ -46,7 +46,7 @@ This fork is being built as the **hardware-flexible, data-rich, release-discipli
 What sets this fork apart:
 
 - **More hardware choices:** released 2.8-inch and 3.2-inch CYDs, Freenove 3.2-inch, AWOK, RL Phantom and T-Watch S3 support, with additional capacitive 3.2-inch and S3 Plus work in the next-release pipeline.
-- **Detection intelligence instead of simple hits:** concrete match evidence, per-type alert rules, device policies, chronological EVENTS history and RSSI trends are already merged to `master` for the next release.
+- **Detection intelligence instead of simple hits:** v1.21.0 ships concrete match evidence, per-type alert rules, device policies, chronological EVENTS history and RSSI trends.
 - **Location-aware detection work:** optional CYD GPS builds support both NMEA and UBX NAV-PVT/NAV-DOP, and the T-Watch S3 Plus pipeline adds GNSS-aware wardriving and WiGLE export.
 - **Backward compatibility matters:** this fork intentionally retains CYD BLE OTA and adds migration handling so persisted BLE policy/history data survives MAC-order normalization.
 - **A stronger flasher experience:** board-specific profiles, lab publishing, signed firmware, exact artifact validation, optional performance/GPS variants and a board-code finder are part of the fork roadmap.
@@ -58,13 +58,13 @@ The intent is simple: users should be able to choose this fork for **broader har
 
 ## Release & development matrix
 
-**Public release:** `v1.20.1`  
-**Production tag:** `2dad3060aa1a2093b8e11c50cc701e984ba0b24e`  
-**v1.21+ public release:** **not published yet**
+**Public release:** `v1.21.0`  
+**Production tag:** `v1.21.0`  
+**Previous production release:** `v1.20.1` / `2dad3060aa1a2093b8e11c50cc701e984ba0b24e`
 
-The tables below are the public feature ledger. “Next release” means implemented on `master` or actively developed in an open PR; it does **not** mean the feature is already in the production `v1.20.1` image.
+The tables below separate what is shipped in v1.21.0 from work that remains in open development PRs.
 
-### In the current v1.20.1 release
+### In the current v1.21.0 release
 
 | Area | Update | Status |
 |---|---|---|
@@ -74,64 +74,59 @@ The tables below are the public feature ledger. “Next release” means impleme
 | Hardware | Freenove FNK0103L/FNK0114L 3.2-inch profile | **Released** |
 | Hardware | AWOK 2.4-inch and RL Phantom 2.4-inch profiles | **Released** |
 | Hardware | LilyGo T-Watch S3 public beta | **Released beta** |
-| T-Watch | Battery-aware display timeout, motion-aware snooze and haptic standby | **Released** |
-| T-Watch | Radio self-heal, two-tap reset, STEADY POWER, chip temperature and CLOCK CHECK | **Released** |
-| T-Watch | BLE LISTEN and sleeping-CPU controls | **Released** |
-| Detection | Expanded signature coverage, Remote ID decoding and confidence grading | **Released** |
-| SquachMesh | Visitors, shared appearance/name, messages, invites and improved invite listening | **Released / WIP feature** |
-| Performance | Stage 1 bounded radio work + queue/frame telemetry | **Released** |
-| Performance | Stage 2 render/layout caching and 30 FPS CLEAR cadence | **Released** |
-| Performance | Stage 3 indexed detection lookup | **Released** |
-| Performance | Stage 3B allocation-reduced BLE advertisement parsing | **Released** |
-| Performance | Stage 3C fixed-buffer SD logging | **Released** |
-| Storage | Calendar-dated SD logs with honest uptime fallback | **Released** |
-| Storage/security | Full SquachWatch SD wipe + safe-preserve NVS wipe | **Released** |
-| OTA | Fork-owned HTTPS OTA endpoint | **Released** |
-| OTA | Signed production firmware gate using the fork OTA public key | **Released infrastructure** |
-| Release engineering | Board matrix drives CI and release assembly | **Released infrastructure** |
-| Release engineering | Production Pages publishes only validated release artifacts | **Released infrastructure** |
-| Release engineering | Lab publishing preserves production while exposing feature builds | **Released infrastructure** |
-| Diagnostics | Crash breadcrumbs, reset reasons, coredump summary and radio/battery telemetry | **Released** |
+| Detection intelligence | Match evidence + uniform sighting/repeat counts | **Released in v1.21.0** |
+| Detection intelligence | ~15-second RSSI history/trend + LOG sparkline | **Released in v1.21.0** |
+| Detection intelligence | Per-type alert rules: confidence/repeats/cooldown/wake/log-only | **Released in v1.21.0** |
+| Detection intelligence | Device policies: IGNORE / TRUSTED / ALWAYS ALERT | **Released in v1.21.0** |
+| Detection intelligence | LOG DEVICES / chronological EVENTS views | **Released in v1.21.0** |
+| WATCH/HUNT | Separate controls + up to 8 simultaneous HUNT targets | **Released in v1.21.0** |
+| Detection | Expanded BLE/Wi-Fi Remote ID and drone-manufacturer recognition | **Released in v1.21.0** |
+| Detection | Refreshed Flock signatures and false-positive controls | **Released in v1.21.0** |
+| Detection | Tracker-only SpamWatch flood suppression | **Released in v1.21.0** |
+| Privacy | Screen-only PRIVACY MODE with internal identities preserved | **Released in v1.21.0** |
+| BLE | Safe advertised-name parsing + canonical MAC order | **Released in v1.21.0** |
+| BLE compatibility | Legacy policy/Regulars/BlackBox MAC-order migration | **Released in v1.21.0** |
+| UI | Visible IGNORE/UNIGNORE state, safer hit targets, fitting and two-press LOG clear | **Released in v1.21.0** |
+| Settings | Non-collapsible section headings + corrected BRIGHT +/- touch zones | **Released in v1.21.0** |
+| Status light | Seven brightness levels with legacy migration | **Released in v1.21.0** |
+| T-Watch | WATCH SETTINGS + OFF/LOW/MED/HIGH haptic levels | **Released in v1.21.0** |
+| Diagnostics | Full BLACKBOX console traversal + GPS-safe ADC console command | **Released in v1.21.0** |
+| Test infrastructure | Header dependency tracking + real SquachMesh crypto host test | **Released in v1.21.0** |
+| Performance | Bounded radio queues, render telemetry, indexed lookup, reduced BLE allocation and buffered SD logging | **Released from v1.20.1 onward** |
+| OTA | Fork-owned HTTPS OTA + signed production firmware gate | **Released infrastructure** |
+| Fork policy | CYD BLE OTA retained | **Intentional fork difference** |
 
-Exact fix-by-fix v1.20.1 details remain in [the v1.20.1 release notes](.github/release-notes/v1.20.1.md).
+Exact release details are in [the v1.21.0 release notes](.github/release-notes/v1.21.0.md).
 
-### In the works for the next release
+### In development after v1.21.0
 
 | Area | Update | Development status |
 |---|---|---|
-| Detection intelligence | Match evidence + uniform sighting counts | **Merged to master, unreleased** |
-| Detection intelligence | ~15-second RSSI history/trend | **Merged to master, unreleased** |
-| Detection intelligence | Per-type alert rules: confidence/repeats/cooldown/wake/log-only | **Merged to master, unreleased** |
-| Detection intelligence | Device policies: IGNORE / TRUSTED / ALWAYS ALERT | **Merged to master, unreleased** |
-| Detection intelligence | LOG DEVICES / chronological EVENTS views | **Merged to master, unreleased** |
-| Detection intelligence | Compact RSSI sparklines in live device rows | **Merged to master, unreleased** |
-| CYD GPS | Optional GPS firmware variants independent of 80 MHz display choice | **PR #39 — hardware-validated UBX/NMEA path** |
-| CYD GPS | NMEA + FlightMesh-style UBX NAV-PVT / NAV-DOP support | **PR #39 — verified real fix** |
-| CYD GPS | GPS-stamped SD detection fields | **PR #39 — final real-detection logging validation pending** |
-| Upstream reconciliation | CrowPanel/Freenove/time-zone/watch/cosmetic/ignore/Remote ID/Flock/spam improvements | **PR #40 — draft reconciliation** |
-| BLE correctness | Advertised-name lifetime fix + conventional MAC display/storage order | **PR #41** |
-| BLE compatibility | Legacy reversed-MAC policy/Regulars/BlackBox migration | **PR #44 — stacked on #41** |
-| UI | Bottom-edge hit targets, text fitting, toast wrapping, diagnostics clipping and two-press LOG clear | **PR #42** |
-| Test infrastructure | Header dependency fixes + real mesh crypto host verification | **PR #43** |
-| GNSS/WiGLE | Shared NMEA parser, security parser and WiGLE 1.6 formatting groundwork | **PR #45** |
-| Hardware | Sunton ESP32-2432S032C 3.2-inch ST7789 + GT911 capacitive support | **PR #46 — stacked on #40** |
-| Flasher | Grouped board picker + “code on the back of your board” finder | **PR #47 — stacked on #46** |
-| Flasher | CYD32C release/sign/lab manifest support | **PR #47** |
-| Status light | Seven brightness levels with migration from the old five-level setting | **PR #48** |
-| Settings UX | Group headings stay labels instead of accidentally collapsing sections | **PR #54** |
-| Diagnostics | Hardware ADC console command with GPIO35 protected when GPS uses it | **PR #55** |
-| T-Watch S3 Plus | Board recognition + GNSS power/baud probing | **PR #56 — stacked on #45** |
-| T-Watch S3 Plus | GPS STATUS, best seen/heard/used counts, first-fix timing and last-fix history | **PR #56** |
-| T-Watch S3 Plus | Main-screen GPS status badge layered below Squachy/speech bubbles | **PR #56** |
-| Wardriving | Persistent GPS-stamped Wi-Fi/BLE sighting store with deduplication | **PR #57 — stacked on #56** |
-| Wardriving | WARDRIVE ON/OFF, GPS FAKE and WIGLE console tools | **PR #57** |
-| Wardriving | WATCH SETTINGS wardrive control/status | **PR #57** |
-| Wardriving | USB WiGLE CSV dump helper | **PR #57** |
-| Wardriving | Web Serial **DOWNLOAD WIGLE FILE** in the browser flasher | **PR #57** |
-| Reconciliation | Every one of the 53 currently upstream-only commits classified and accounted for | **PR #53 — documentation ledger** |
-| Fork policy | Retain CYD BLE OTA instead of adopting upstream's removal | **Intentional fork difference** |
+| CYD GPS | Optional GPS firmware variants independent of 80 MHz display choice | **PR #77 — hardware validation in progress** |
+| CYD GPS | NMEA + FlightMesh-style UBX NAV-PVT / NAV-DOP support | **PR #77** |
+| GNSS/WiGLE | Shared GNSS/WiGLE groundwork | **PR #69** |
+| T-Watch | Battery/charging status improvements | **PR #70** |
+| T-Watch S3 Plus | GNSS runtime | **PR #71 — stacked on #69** |
+| Wardriving | T-Watch wardrive runtime + WiGLE export | **PR #72 — stacked on #71** |
+| Hardware | Sunton ESP32-2432S032C capacitive support | **PR #73** |
+| Flasher | Board-code finder / CYD32C publication | **PR #74 / #90** |
+| Hardware | S035C capacitive support + 3.5-inch keyboard fix | **PR #75** |
+| Hardware | LCDWiki ES3C28P ESP32-S3 profile | **PR #76** |
+| Hardware | Freenove ESP32-S3 2.8-inch support | **PR #78** |
+| Hardware | CrowPanel Advance 7.0 base + stability work | **PR #79 / #84** |
+| Detection | Expanded time-zone support / bidirectional time-zone row | **PR #80 / #93** |
+| Detection | Additional Flock/spam hardening | **PR #81** |
+| WATCH | Keep WATCH alerts open until acknowledged | **PR #82** |
+| UI | Wardrobe artwork polish | **PR #83** |
+| Maintenance | Drop unused Bluetooth Classic GAP include | **PR #87** |
+| Nearby policy | Ignore-only / snooze-only NEARBY suppression | **PR #88 / #92 — hardware verification deferred** |
+| UI | Aquarium integer-math optimization | **PR #89** |
+| SquachMesh | SEND button on in-range SQUAD page | **PR #91** |
+| Emulator | Solo costume pixel bench | **PR #94** |
+| T-Watch | TAGS + RINGS log-only policy | **PR #96** |
+| Reconciliation | New upstream audit ledgers | **PR #85 / #86 / #97** |
 
-The complete 53-commit reconciliation is tracked in [PR #53](https://github.com/retrodroid32/SquachWatch-CYD/pull/53) and `docs/UPSTREAM_53_RECONCILIATION_20260929.md`. The rule is deliberate: **do not copy upstream history just to make the commit counts match; port the useful behavior and keep the fork's own compatibility and release decisions.**
+The reconciliation rule remains deliberate: **do not copy upstream history just to make commit counts match; port useful behavior selectively and keep the fork's compatibility and release decisions.**
 
 ## Contents
 
@@ -157,18 +152,19 @@ The complete 53-commit reconciliation is tracked in [PR #53](https://github.com/
 
 ## Release status
 
-The current public production release is **v1.20.1**. There is **no v1.21+ production release yet**.
+The current public production release is **v1.21.0**.
 
-Detection-intelligence Stages A-E are already merged to `master` and remain unreleased. Additional next-release work is intentionally being developed in reviewable PRs rather than pushed directly into production; the current pipeline includes optional CYD GPS, BLE compatibility fixes, UI hardening, expanded board support, T-Watch S3 Plus GNSS, wardriving/WiGLE export, flasher improvements, diagnostics and test infrastructure.
+v1.21.0 promotes the merged detection-intelligence stages and the later verified fork improvements into production: evidence-aware detections, per-type Alert Rules, Device Policies, LOG EVENTS history, RSSI trends, multi-target HUNT, Remote ID/drone improvements, refreshed Flock handling, tracker SpamWatch, BLE address compatibility, UI safety fixes, seven-level status-light brightness, GPS-safe ADC diagnostics, and screen-only Privacy Mode.
 
-This separation is intentional:
+Work listed in the development table above remains in open PRs and is **not** part of v1.21.0. In particular, the optional external CYD GPS variants, capacitive-board profiles, T-Watch S3 Plus GNSS/wardrive work, newer time-zone changes, CrowPanel/Freenove-S3 work and other open reconciliation items remain development-only.
 
-- **Released** means present in the immutable v1.20.1 production tag.
-- **Merged to master, unreleased** means implemented but not yet published as a production version.
+Release-state terminology:
+
+- **Released** means present in the tagged v1.21.0 production image.
 - **PR / draft PR** means still under review, CI, rebase or hardware validation.
-- No open PR should be described as a production feature until it is explicitly approved, integrated, release-gated and tagged.
+- No open PR is described as a production feature until it is explicitly approved, integrated, release-gated and tagged.
 
-See [v1.21.0 development notes](.github/release-notes/v1.21.0-development.md) for the merged detection-intelligence stages and [the release/development matrix above](#release--development-matrix) for the broader next-release pipeline.
+See [v1.21.0 release notes](.github/release-notes/v1.21.0.md) for the shipped change list and [v1.21.0 development notes](.github/release-notes/v1.21.0-development.md) for the staged detection-intelligence implementation history.
 
 ## Supported hardware
 
@@ -317,8 +313,7 @@ that screen.
 
 ## v1.21 Detection intelligence
 
-The v1.21 detection-intelligence work is feature-complete on `master` but is
-not yet the public release. The five staged areas are:
+The v1.21 detection-intelligence work is released in **v1.21.0**. The five staged areas are:
 
 - **Stage A — evidence + RSSI trend:** each live detection now records the
   concrete match source (BLE manufacturer/service/name/Find My/iBeacon or Wi-Fi
@@ -345,8 +340,7 @@ not yet the public release. The five staged areas are:
   INFO. The chart appears only when there is safe horizontal room, so names and
   timestamps keep priority on 240px layouts.
 
-These features were developed and validated independently so the released
-v1.20.1 baseline remained recoverable throughout the work.
+These features were developed and validated independently so the v1.20.1 baseline remained recoverable throughout development before they were promoted into v1.21.0.
 
 ## Detection coverage
 
@@ -803,6 +797,26 @@ baseline while hot-path lookup, BLE parsing and SD write overhead are reduced
 without changing intended detection semantics.
 
 ## Release history
+
+### v1.21.0
+
+**Sharper Signals.** v1.21.0 promotes the fork's staged detection-intelligence work and subsequent verified improvements into the production release.
+
+Highlights:
+
+- Evidence-aware detections, uniform repeat counts and short RSSI history.
+- Per-type Alert Rules and persistent IGNORE / TRUSTED / ALWAYS ALERT policies.
+- LOG DEVICES / chronological EVENTS history and compact RSSI trends.
+- Separate WATCH/HUNT controls with an up-to-eight-target HUNT roster.
+- Expanded BLE/Wi-Fi Remote ID and curated drone-manufacturer recognition.
+- Refreshed Flock matching plus tracker-only SpamWatch flood suppression.
+- Canonical BLE MAC handling with legacy policy/Regulars/BlackBox compatibility.
+- Screen-only Privacy Mode that masks identities on the display while retaining the real data internally.
+- Safer UI hit targets, fitting, LOG clear confirmation, stable settings headings and corrected brightness controls.
+- Seven-level status-light brightness, T-Watch haptic levels, full BLACKBOX console traversal and GPS-safe ADC diagnostics.
+- CYD BLE OTA remains intentionally supported.
+
+The complete release record is in `.github/release-notes/v1.21.0.md`.
 
 ### v1.20.1
 
