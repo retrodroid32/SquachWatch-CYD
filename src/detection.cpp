@@ -29,7 +29,6 @@
 #include "settings.h"
 #endif
 #include <esp_bt.h>
-#include <esp_gap_bt_api.h>
 #include <esp_heap_caps.h>
 #include <string.h>
 #include <SD.h>
