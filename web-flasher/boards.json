@@ -184,6 +184,20 @@
       "lab": false,
       "cyd28": false,
       "note": "Compile-validation profile for the Sunton ESP32-2432S032C with ST7789 IPS and GT911 capacitive touch. Publication is handled in a separate follow-up PR."
+    },
+    {
+      "id": "cyd35c",
+      "label": "3.5\" CYD capacitive — ESP32-3248S035C (compile-only)",
+      "manifest": "manifest-cyd35c.json",
+      "visible": false,
+      "ci": true,
+      "release": false,
+      "sign": false,
+      "shared_esp32": true,
+      "merged": false,
+      "lab": true,
+      "cyd28": false,
+      "note": "LAB-only Sunton ESP32-3248S035C profile with ST7796 and GT911. Not a release profile; hardware validation required."
     }
   ]
 }
