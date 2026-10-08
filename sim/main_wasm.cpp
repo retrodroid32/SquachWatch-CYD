@@ -53,10 +53,14 @@ EM_JS(void, squachsim_nvs_write, (const char* key, const char* val), {
 #include "sim_detections.h"
 #include "meshsim.h"
 #include "squachy.h"
+#include "frame_push.h"
 
-// Defined by the firmware's main.cpp, which this target compiles.
+// Defined by the firmware's main.cpp, which this target compiles. Declared
+// here, outside the extern "C" block below, so they link as the C++ symbols
+// main.cpp defines.
 void setup();
 void loop();
+void simResizeFrame(int w, int h);
 extern TFT_eSPI tft;
 extern AppState state;
 extern uint8_t  screenRotation;
@@ -208,6 +212,24 @@ EMSCRIPTEN_KEEPALIVE void sw_panel(int w, int h) {
 // frame buffer, the saved rotation and Squachy's reaction all happen as
 // they do for a tap on the icon.
 EMSCRIPTEN_KEEPALIVE void sw_rotate() { g_consoleRotate = true; }
+
+// A new panel while running, `w` x `h` AS SHOWN: the phone app's band is the
+// board's own screen upright (240x320), its SQUACHY tab is phone-shaped. A
+// board could never do this (the frame buffer is allocated once, and only a
+// rotation's same-count reshape is ever asked of it); the sim's sprite
+// re-buffers on a resize, so here it is one assignment and a reshape. The
+// rotation is set to match the shape, odd being landscape on these boards,
+// and is not saved: it is the host's choice, not the person's.
+EMSCRIPTEN_KEEPALIVE void sw_resize(int w, int h) {
+    if (w < 64 || h < 64 || w > 1024 || h > 1024) return;
+    const bool land = w >= h;
+    tft = TFT_eSPI(land ? w : h, land ? h : w);
+    TFT_eSPI::rotates = true;
+    screenRotation = land ? 1 : 0;
+    tft.setRotation(screenRotation);
+    simResizeFrame(tft.width(), tft.height());
+    FramePush::invalidate();
+}
 
 // A line from the host, said once in his bubble: the phone app's status and
 // setup lines ("Let me use Bluetooth?"). Copied, because say() keeps the
