@@ -556,6 +556,7 @@ static const uint8_t  WALK_CYCLES     = 5;
 static uint32_t       WALK_DURATION_MS = WALK_CYCLE_MS_BASE * WALK_CYCLES;
 static uint32_t       s_walkStart = 0;
 static int8_t         s_walkDir   = 1;
+static bool           s_walkYanked = false;     // this wander already reached the end of the chain
 static const char*   bubbleText      = nullptr;
 static uint32_t      bubbleUntil     = 0;
 // When the current line started, for the bubble's pop-in (see
@@ -665,6 +666,7 @@ static bool     s_petUnlocked        = false;  // earned by tapping the lil guy 
 static bool     s_clippyUnlocked     = false;  // earned by backspacing ten times in a row
 static const char* s_clippyIntro     = nullptr;
 static bool     s_toasterUnlocked    = false;  // earned by tapping the same flying toaster three times
+static bool     s_ballUnlocked    = false;      // the ball and chain, earned by serving a sentence
 static const char* s_toasterIntro    = nullptr;
 // Whether the card has been shown for him. Kept separately from the unlock
 // itself, and for the same reason the outfits keep an "announced" bitmask:
@@ -1508,12 +1510,14 @@ static void ensurePrefsLoaded() {
     s_petAnnounced       = s_petPrefs.getBool("petSeen", false);
     s_clippyUnlocked     = s_petPrefs.getBool("clippy", false);
     s_toasterUnlocked    = s_petPrefs.getBool("toaster", false);
+    s_ballUnlocked       = s_petPrefs.getBool("ball", false);
     // The master unlock means every pet too, including ones that did not
     // exist when it was entered: a board that has it catches up at boot.
     if (s_allOutfitsUnlocked) {
         if (!s_petUnlocked)     { s_petUnlocked = true;     s_petPrefs.putBool("petUnlk", true); }
         if (!s_clippyUnlocked)  { s_clippyUnlocked = true;  s_petPrefs.putBool("clippy", true); }
         if (!s_toasterUnlocked) { s_toasterUnlocked = true; s_petPrefs.putBool("toaster", true); }
+        if (!s_ballUnlocked)    { s_ballUnlocked = true;    s_petPrefs.putBool("ball", true); }
     }
     // Defaults ON once earned: somebody who just unlocked a pet wants to
     // see it, not to go and find a switch.
@@ -2644,7 +2648,16 @@ bool consumePetUnlockCard() {
 bool petUnlocked() { ensurePrefsLoaded(); return s_petUnlocked; }
 bool clippyUnlocked() { ensurePrefsLoaded(); return s_clippyUnlocked; }
 bool toasterUnlocked() { ensurePrefsLoaded(); return s_toasterUnlocked; }
-bool anyPetUnlocked() { ensurePrefsLoaded(); return s_petUnlocked || s_clippyUnlocked || s_toasterUnlocked; }
+bool anyPetUnlocked() { ensurePrefsLoaded(); return s_petUnlocked || s_clippyUnlocked || s_toasterUnlocked || s_ballUnlocked; }
+bool ballUnlocked() { ensurePrefsLoaded(); return s_ballUnlocked; }
+bool ballPetOn() { ensurePrefsLoaded(); return s_ballUnlocked && (PetId)s_petSel == PetId::BALL && !s_jailLeft; }
+void unlockBall() {
+    ensurePrefsLoaded();
+    if (s_ballUnlocked) return;
+    s_ballUnlocked = true;
+    s_petPrefs.putBool("ball", true);
+    Theme::showToast("BALL & CHAIN", "new pet. Settings > Pet", Theme::AMBER, 3500);
+}
 
 // Whether a pet somebody chose is actually out: petSel defaults to SHAGGY
 // before he is ever earned, so "out" means chosen AND unlocked.
@@ -2653,6 +2666,7 @@ static bool petOutNow() {
     if (p == PetId::SHAGGY || p == PetId::YETI) return s_petUnlocked;
     if (p == PetId::CLIPPY)  return s_clippyUnlocked;
     if (p == PetId::TOASTER) return s_toasterUnlocked;
+    if (p == PetId::BALL)    return s_ballUnlocked;
     return false;
 }
 
@@ -2758,6 +2772,7 @@ const char* petName() {
         case PetId::YETI:   return "THE YETI";
         case PetId::CLIPPY: return "C1iPPY";
         case PetId::TOASTER: return "T0@$TY";
+        case PetId::BALL:   return "BALL & CHAIN";
         default:            return "OFF";
     }
 }
@@ -2800,8 +2815,18 @@ bool th3Unlocked() {
 // any screen, not frames drawn on this one.
 static const uint32_t JAIL_MS = 10u * 60u * 1000u;
 static void jailSave() { s_petPrefs.putUInt("jailMs", s_jailLeft); s_jailSaved = millis(); }
+// How far the chain lets him go, in units of his scale: up on a throw, and
+// either way on a wander. Chained as the jailer's prisoner or as the ball's
+// owner, it is the same chain.
+static const float CHAIN_PX = 13.0f;
+static bool chained() { return s_jailLeft || ballPetOn(); }
+static uint32_t s_ballToastAt = 0;        // the "new pet" toast, due after the ball has said goodbye
 
 bool jailed() {
+    if (s_ballToastAt && (int32_t)(millis() - s_ballToastAt) >= 0) {
+        s_ballToastAt = 0;
+        Theme::showToast("BALL & CHAIN", "new pet. Settings > Pet", Theme::AMBER, 3500);
+    }
     if (!s_jailLeft) return false;
     const uint32_t now = millis();
     const uint32_t el = now - s_jailLast;
@@ -2839,6 +2864,9 @@ void jailFree() {
     mood      = Mood::BOUNCE;
     moodUntil = millis() + tempo(2000);
     say("Free! I'm keeping the stripes.", 3600);
+    // And the ball, as it turns out: he can be chosen as a pet from now on.
+    // The toast waits for the ball's own goodbye (see jailTick) to clear.
+    if (!s_ballUnlocked) { s_ballUnlocked = true; s_petPrefs.putBool("ball", true); s_ballToastAt = millis() + 5000; }
 }
 
 bool takeJailFreed() { const bool f = s_jailFreed; s_jailFreed = false; return f; }
@@ -2972,6 +3000,7 @@ void unlockAllOutfits() {
     if (!s_petUnlocked) { s_petUnlocked = true; s_petPrefs.putBool("petUnlk", true); }
     if (!s_clippyUnlocked) { s_clippyUnlocked = true; s_petPrefs.putBool("clippy", true); }
     if (!s_toasterUnlocked) { s_toasterUnlocked = true; s_petPrefs.putBool("toaster", true); }
+    if (!s_ballUnlocked) { s_ballUnlocked = true; s_petPrefs.putBool("ball", true); }
     // No popups for the cheat: it already has its own rainbow-and-confetti
     // tell below, and eleven modals in a row would bury it. Mark the lot as
     // seen so nothing queues now or on the next boot.
@@ -5962,6 +5991,7 @@ static void auraFront(TFT_eSPI& t, int cx2, int hy, int ground, uint32_t now, Mo
 // left end and a shadow on its right, which is what makes it read as cloth.
 // own: this is our Squachy, not a visitor: the cuff's ring is where the
 // chain goes, and only ours wears the chain.
+static void ankleCuff(TFT_eSPI& t, float scale, bool own);
 static void prisonStripes(TFT_eSPI& t, int cx2, int hy, float scale, uint16_t furMain, uint16_t furLight, bool own) {
     auto S = [scale](int v) { return (int)(v * scale); };
     // From the shoulders down -- or from his hands, when they are up in the
@@ -6059,7 +6089,13 @@ static void prisonStripes(TFT_eSPI& t, int cx2, int hy, float scale, uint16_t fu
                         if (dig[d][r] & (4 >> k)) t.drawPixel(tx + k, ty + r, Theme::BLACK);
         }
     }
-    // The iron cuff on his right ankle, and its ring.
+    ankleCuff(t, scale, own);
+}
+
+// The iron cuff on his right ankle, and its ring: worn in STRIPES, and
+// whenever the ball is his pet.
+static void ankleCuff(TFT_eSPI& t, float scale, bool own) {
+    auto S = [scale](int v) { return (int)(v * scale); };
     {
         const int lx = s_footRx + S(1), lw = S(8);
         const int ch = S(1) > 2 ? S(1) + 1 : 2;
@@ -7076,6 +7112,7 @@ static void drawBody(TFT_eSPI& t, int cx, int hy, int headTopY, uint32_t now, Mo
     // would show around it. Everything inside keeps its original indentation
     // so this stays a two-line change instead of a two-hundred-line reformat.
     if (outfitNow == OutfitId::STRIPES) prisonStripes(t, cx2, hy, scale, furMain, furLight, s_outfitOverride < 0);
+    else if (s_outfitOverride < 0 && ballPetOn()) ankleCuff(t, scale, true);
     const bool hideFace = (outfitNow == OutfitId::VOIDEYE);
     // PARKA has no mouth. Guarded at each draw rather than painted over
     // afterwards: the mouth moves and changes shape with the mood, so no
@@ -7782,7 +7819,7 @@ void tick(TFT_eSPI& t, int cx, int topY, int availHeight, uint32_t now,
                              s_recentTypes[2] = DetectionType::CAMERA;
                              say("PACKET JUGGLE", SHOW_STEP_MS); break;
                     case 7:  mood = Mood::DANCE;   say("DANCE", SHOW_STEP_MS); break;
-                    case 8:  mood = Mood::WALK; s_walkStart = now; s_walkDir = 1;
+                    case 8:  mood = Mood::WALK; s_walkStart = now; s_walkDir = 1; s_walkYanked = false;
                              s_showWB = 1; say("WALK: SNIFF", SHOW_STEP_MS); break;
                     case 9:  s_showWB = 2; say("WALK: LOOK UP", SHOW_STEP_MS); break;
                     case 10: s_showWB = 3; say("WALK: SCRATCH", SHOW_STEP_MS); break;
@@ -8025,6 +8062,7 @@ void tick(TFT_eSPI& t, int cx, int topY, int availHeight, uint32_t now,
             moodUntil = now + WALK_DURATION_MS;
             s_walkStart = now;
             s_walkDir = random(0, 2) ? 1 : -1;
+            s_walkYanked = false;
             nextIdleAt = now + WALK_DURATION_MS + 12000 + random(0, 18000);
         } else if (random(0, 12) == 0) {
             // A brief fourth-wall wink -- see drawBody()'s Mood::WINK
@@ -8271,6 +8309,13 @@ void tick(TFT_eSPI& t, int cx, int topY, int availHeight, uint32_t now,
         float roomR = (float)(t.width() - cx - halfW / 3);
         if (roomL < 0) roomL = 0;
         if (roomR < 0) roomR = 0;
+        // Chained to the ball, as the jailer or the pet: the chain is as
+        // long as it is, and a wander stops where it runs out.
+        if (chained()) {
+            const float reach = CHAIN_PX * scale;
+            if (roomL > reach) roomL = reach;
+            if (roomR > reach) roomR = reach;
+        }
         // WALK_CYCLES full sine cycles instead of one: 0 at the start,
         // out to one full edge, back through center, out to the other
         // full edge, then back to 0 -- repeated WALK_CYCLES times -- an
@@ -8279,6 +8324,9 @@ void tick(TFT_eSPI& t, int cx, int topY, int availHeight, uint32_t now,
         // idle.
         const float sweep = sinf(walkT * 6.2831853f * WALK_CYCLES) * (float)s_walkDir;
         bodyCx = cx + (int)(sweep * (sweep < 0.0f ? roomL : roomR));
+        // The first time a wander reaches the end of the chain, the ball
+        // notices (see the yank lines in pet_jail.inc).
+        if (chained() && !s_walkYanked && (sweep > 0.97f || sweep < -0.97f)) { s_walkYanked = true; s_yankAt = now ? now : 1; }
 
         // One beat per sweep, at the far end of it. cf is how far through
         // the current cycle he is; 0.25 and 0.75 are the two extremes,
@@ -8353,6 +8401,7 @@ void tick(TFT_eSPI& t, int cx, int topY, int availHeight, uint32_t now,
         // fixed 900ms period read as "impossibly fast" once the range
         // grew from a small corner dart to nearly the full screen.
         float jT = (float)(now % WALK_CYCLE_MS) / (float)WALK_CYCLE_MS * 6.2831853f;
+        if (chained() && (float)wanderRangePx > CHAIN_PX * scale) wanderRangePx = (int)(CHAIN_PX * scale);
         bodyCx = cx + (int)(sinf(jT) * wanderRangePx);
     }
 
@@ -8521,8 +8570,9 @@ void tick(TFT_eSPI& t, int cx, int topY, int availHeight, uint32_t now,
                 }
                 if (s_thY < loYf && s_thVY < 0) { s_thY = loYf; s_thVY = -s_thVY * 0.4f; }
                 // Chained: about a third of the way up, and the ball has him.
-                if (s_jailLeft && s_thY < floorY - 13.0f * scale && s_thVY < 0) {
-                    s_thY = floorY - 13.0f * scale;
+                // The pet's chain is as short as the jailer's.
+                if (chained() && s_thY < floorY - CHAIN_PX * scale && s_thVY < 0) {
+                    s_thY = floorY - CHAIN_PX * scale;
                     s_thVY = 0.12f;
                     s_thVX *= 0.3f;
                     if (!s_thYanked) { s_thYanked = true; s_yankAt = now ? now : 1; }

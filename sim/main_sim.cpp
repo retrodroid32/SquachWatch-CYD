@@ -292,7 +292,7 @@ static void usage() {
         "  --alert N         DetectionType the ALERT screen fires on\n"
         "  --first / --night / --lastfree   the ALERT card's banners\n"
         "  --noseed          no detections at all -- CLEAR's idle state\n"
-        "  --pet N           companion: 0 off, 1 VAPOR SHAGGY, 2 the yeti\n"
+        "  --pet N           companion: 0 off, 1 VAPOR SHAGGY, 2 the yeti, 3 C1iPPY, 4 T0@$TY, 5 the ball\n"
         "  --peer N          draw a visiting SquachMesh peer in outfit N\n"
         "  --peername NAME   give that visitor a custom name\n"
         "  --crowd N         clear screen: N squad members in range, roaming with ours\n"
@@ -482,6 +482,7 @@ int main(int argc, char** argv) {
         Squachy::unlockPet();
         if (petIdx == (int)Squachy::PetId::CLIPPY) Squachy::unlockClippy(nullptr);
         if (petIdx == (int)Squachy::PetId::TOASTER) Squachy::unlockToaster(nullptr);
+        if (petIdx == (int)Squachy::PetId::BALL) Squachy::unlockBall();
         for (int k = 0; k < 8 && (int)Squachy::petChoice() != petIdx; k++) Squachy::cyclePet();
     }
 

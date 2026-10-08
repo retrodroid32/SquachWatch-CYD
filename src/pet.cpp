@@ -389,6 +389,8 @@ static void toasterRelease(uint32_t now);
 // is a touch on the ball.
 static void noteThrow(uint32_t now);
 static bool jailShowing(uint32_t now);
+// The ball is out either as the jailer or as the pet somebody chose.
+static bool ballOut(uint32_t now) { return jailShowing(now) || Squachy::ballPetOn(); }
 static bool ballHit(int x, int y);
 static void ballPoke(uint32_t now);
 static bool s_jGrab = false;
@@ -413,7 +415,7 @@ static void clipSay(const char* line, uint32_t now, bool caught) {
 }
 
 bool clippyHit(int x, int y) {
-    if (jailShowing(millis())) return ballHit(x, y);
+    if (ballOut(millis())) return ballHit(x, y);
     if (toasterOn()) return toasterHit(x, y);
     if (Squachy::petChoice() != Squachy::PetId::CLIPPY || s_cX < -50) return false;
     return x >= s_cX - 4 && x <= s_cX + 30 && y >= s_cY - 4 && y <= s_cY + CLIP_H;
@@ -430,7 +432,7 @@ void clippyPoke(uint32_t now) {
 }
 
 bool clippyCenter(int& x, int& y) {
-    if (jailShowing(millis())) { if (s_jX < -50) return false; x = s_jX; y = s_jY - s_jR; return true; }
+    if (ballOut(millis())) { if (s_jX < -50) return false; x = s_jX; y = s_jY - s_jR; return true; }
     if (toasterOn()) return toasterCenter(x, y);
     if (Squachy::petChoice() != Squachy::PetId::CLIPPY || s_cX < -50) return false;
     x = s_cX + 11; y = s_cY + 24;
@@ -438,7 +440,7 @@ bool clippyCenter(int& x, int& y) {
 }
 
 void clippyGrab(int x, int y, uint32_t now) {
-    if (jailShowing(now)) { s_jGrab = true; return; }
+    if (ballOut(now)) { s_jGrab = true; return; }
     if (toasterOn()) { toasterGrab(x, y, now); return; }
     if (Squachy::petChoice() != Squachy::PetId::CLIPPY || s_cX < -50) return;
     s_cTh = ClipThrow::HELD;
@@ -959,8 +961,9 @@ static void yetiTick(TFT_eSPI& t, uint32_t now, int screenW, int cx, int halfW, 
 
 
 void tick(TFT_eSPI& t, uint32_t now, int screenW, int bandTop, int bandBottom) {
-    // Serving time: the pet is in custody, and the ball is out instead.
-    if (jailShowing(now)) {
+    // Serving time: the pet is in custody, and the ball is out instead. Or
+    // he IS the pet, by choice, which is its own kind of sentence.
+    if (ballOut(now)) {
         s_phase = Phase::AWAY; s_yPhase = YPhase::AWAY; s_cX = -100; s_tX = -100;
         jailTick(t, now, screenW);
         return;
