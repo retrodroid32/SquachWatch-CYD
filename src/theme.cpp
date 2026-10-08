@@ -1603,7 +1603,12 @@ void drawStarfield(TFT_eSPI& t, uint32_t now, int yStart, int yEnd) {
     const float wob = (float)now / 2860.0f;
     const int   cx  = w / 2              + (int)(sinf(wob) * 14.0f);
     const int   cy  = yStart + bandH / 2 + (int)(cosf(wob * 1.29f) * 9.0f);
-    const float aspect = (float)bandH / (float)w * 1.25f;
+    // The rings take the band's shape: a little squashed on a landscape board,
+    // a little tall on a portrait one. Past 8:5 tall -- the phone app, upright;
+    // no board is that shape -- that stretched them into long thin ovals, so
+    // there they stay round and run off the sides instead, like looking down
+    // the same tube through a narrower window.
+    const float aspect = (bandH * 5 > w * 8) ? 1.0f : (float)bandH / (float)w * 1.25f;
     const float maxR   = sqrtf((float)(w * w + bandH * bandH)) * 0.62f;
 
     // Flat clear. The old nebula gradient was ~190 dithered drawFastHLine
