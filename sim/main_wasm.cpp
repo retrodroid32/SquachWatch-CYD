@@ -52,6 +52,7 @@ EM_JS(void, squachsim_nvs_write, (const char* key, const char* val), {
 #include "sim_touch.h"
 #include "sim_detections.h"
 #include "meshsim.h"
+#include "squachy.h"
 
 // Defined by the firmware's main.cpp, which this target compiles.
 void setup();
@@ -207,6 +208,19 @@ EMSCRIPTEN_KEEPALIVE void sw_panel(int w, int h) {
 // frame buffer, the saved rotation and Squachy's reaction all happen as
 // they do for a tap on the icon.
 EMSCRIPTEN_KEEPALIVE void sw_rotate() { g_consoleRotate = true; }
+
+// A line from the host, said once in his bubble: the phone app's status and
+// setup lines ("Let me use Bluetooth?"). Copied, because say() keeps the
+// pointer for as long as the bubble is up and JS strings do not outlive the
+// call.
+EMSCRIPTEN_KEEPALIVE void sw_say(const char* text) {
+    static char line[96];
+    if (!text) return;
+    size_t i = 0;
+    for (; i < sizeof line - 1 && text[i]; i++) line[i] = text[i];
+    line[i] = 0;
+    Squachy::announce(line);
+}
 
 EMSCRIPTEN_KEEPALIVE int sw_state()    { return (int)state; }
 EMSCRIPTEN_KEEPALIVE int sw_rotation() { return (int)screenRotation; }
