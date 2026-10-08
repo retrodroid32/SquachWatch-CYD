@@ -106,8 +106,47 @@ int main() {
         ck("an unknown version is refused", !decode(buf, n, p));
 
         n = good(false);
-        buf[7] = 0x01;
-        ck("a non-zero reserved flags byte is refused", !decode(buf, n, p));
+        buf[7] = 0x02;
+        ck("a reserved flags bit is refused", !decode(buf, n, p));
+        n = good(false);
+        buf[7] = FLAG_PHONE;
+        ck("the phone flag without its identity bytes is refused", !decode(buf, n, p));
+    }
+
+    suite("A phone carries an identity after everything else");
+    {
+        Peer me{};
+        me.nick = 3; me.outfit = 13; me.shade = 1;
+        me.phone = true;
+        me.id[0] = 0xDE; me.id[1] = 0xAD; me.id[2] = 0xBE; me.id[3] = 0xEF;
+        size_t n = encode(me, buf);
+        ck("an indexed phone payload is 12 bytes", n == LEN_INDEXED_PHONE);
+        ck("its flags byte says phone", buf[7] == FLAG_PHONE);
+        ck("it decodes", decode(buf, n, p));
+        ck("as a phone", p.phone);
+        ck("with the identity", memcmp(p.id, me.id, PHONE_ID_LEN) == 0);
+        ck("and the look", p.nick == 3 && p.outfit == 13 && p.shade == 1 && !p.custom);
+        ck("one byte short is refused", !decode(buf, n - 1, p));
+        ck("one byte long is refused", !decode(buf, n + 1, p));
+
+        me.custom = true;
+        strcpy(me.name, "NIGHTWALKER");
+        n = encode(me, buf);
+        ck("a named phone payload is 24 bytes", n == LEN_NAMED_PHONE);
+        ck("it decodes", decode(buf, n, p));
+        ck("with the name", strcmp(p.name, "NIGHTWALKER") == 0 && p.custom && p.phone);
+        ck("and the identity after the name", memcmp(p.id, me.id, PHONE_ID_LEN) == 0);
+
+        uint8_t pm[6];
+        phoneMac(me.id, pm);
+        ck("the sealing address is a local prefix and the identity",
+           pm[0] == 0x02 && pm[1] == 'P' && memcmp(pm + 2, me.id, 4) == 0);
+
+        Peer board{};
+        board.nick = 1;
+        n = encode(board, buf);
+        ck("a board's payload has no phone bytes", n == LEN_INDEXED && buf[7] == 0);
+        ck("and decodes as not a phone", decode(buf, n, p) && !p.phone);
     }
 
     suite("Only two lengths are legal");
