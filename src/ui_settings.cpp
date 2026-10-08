@@ -114,7 +114,7 @@ static const SettingsRow WATCH_ROWS[] = {
     SettingsRow::WATCH_BATTERY, SettingsRow::WATCH_RADIO, SettingsRow::WATCH_LISTEN,
     SettingsRow::WATCH_IDLE_CPU, SettingsRow::WATCH_BUZZ,
     SettingsRow::WATCH_RADIO_RESET, SettingsRow::WATCH_STEADY, SettingsRow::WATCH_TEMP,
-    SettingsRow::WATCH_XTAL,
+    SettingsRow::WATCH_XTAL, SettingsRow::WATCH_QUIET_TAGS,
 };
 static const uint8_t WATCH_ROWS_N = sizeof(WATCH_ROWS) / sizeof(WATCH_ROWS[0]);
 #endif
@@ -194,6 +194,7 @@ static RowGroupId groupFor(SettingsRow r) {
         case SettingsRow::WATCH_SETTINGS:
         case SettingsRow::WATCH_RADIO_RESET:
         case SettingsRow::WATCH_STEADY:
+        case SettingsRow::WATCH_QUIET_TAGS:
         case SettingsRow::WATCH_TEMP:
         case SettingsRow::WATCH_XTAL:
             return RowGroupId::WATCH;
@@ -865,6 +866,9 @@ static void rowContent(SettingsRow r, const DetectionEngine& eng, char* valBuf, 
             break;
         case SettingsRow::WATCH_STEADY:
             label = "STEADY POWER"; value = Settings::steadyPower() ? "ON" : "OFF";
+            break;
+        case SettingsRow::WATCH_QUIET_TAGS:
+            label = "TAGS + RINGS"; value = Settings::quietTrackers() ? "LOG ONLY" : "ALERT";
             break;
         case SettingsRow::WATCH_TEMP:
             label = "CHIP TEMP"; snprintf(valBuf, valBufN, "%d C", twatchChipC()); value = valBuf;
