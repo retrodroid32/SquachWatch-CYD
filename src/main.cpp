@@ -557,6 +557,12 @@ ResizableSprite     frame = ResizableSprite(&tft);
 #else
     TFT_eSPI*        canvas = &frame;
 #endif
+// The phone app's emulator changes its panel while it runs (sim/main_wasm.cpp,
+// sw_resize): the band above the lists is the board's own upright screen,
+// the SQUACHY tab is phone-shaped. The sim's sprite re-buffers itself on a
+// resizeInPlace() to a new size, which a board's never could. Only the
+// emulator calls this; on a board it is a few bytes nobody reaches.
+void simResizeFrame(int w, int h) { if (frame.created()) frame.resizeInPlace((int16_t)w, (int16_t)h); }
 XPT2046_Touchscreen touch(TOUCH_CS, TOUCH_IRQ);
 // cyd35's touch bus IS the display's bus, shared via CS rather than a
 // separate peripheral — see the CYD35 touch-init branch in setup(),
