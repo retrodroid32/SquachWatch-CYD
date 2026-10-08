@@ -208,7 +208,10 @@ void saveReplay() {
 // BLE task -> loop task. Single producer, single consumer, so two indices and
 // acquire/release ordering are the whole synchronisation -- no lock, and
 // nothing the BLE task can block on.
-struct Slot { uint8_t mac[6]; uint8_t len; uint8_t data[MeshMsg::FRAME_MAX]; char name[13]; };
+// `mac` is who it came from, for the visit and the roster; `nmac` is what
+// its nonce and replay entry are keyed by: the same bytes for a board, a
+// phone's own identity for a phone (meshtalk.h, onFrame).
+struct Slot { uint8_t mac[6]; uint8_t nmac[6]; uint8_t len; uint8_t data[MeshMsg::FRAME_MAX]; char name[13]; };
 constexpr uint32_t RING = 4;
 Slot     s_ring[RING];
 uint32_t s_head = 0;       // written only by the BLE task
@@ -257,7 +260,7 @@ void deliverInvite(const Slot& s, uint32_t now, uint32_t ctr, uint8_t kind) {
         const bool ok = MeshMsg::invitePubUnblob(s_invAsm.bytes, target, role, pub);
         s_invAsm.clear();
         if (!ok || memcmp(target, s_ownMac, 6) != 0) return;     // somebody else's invite
-        s_replay.record(s.mac, ctr);
+        s_replay.record(s.nmac, ctr);
         saveReplay();
         if (role == 0) {
             // An offer. Only while nothing else is going on: a second offer
@@ -291,14 +294,14 @@ void deliverInvite(const Slot& s, uint32_t now, uint32_t ctr, uint8_t kind) {
         // The session key is what opens these. Swapped in for the call and
         // the squad key (if this board had one) put back after.
         if (!MeshCrypto::impl().setKey(s_invKey)) return;
-        const MeshMsg::Open r = MeshMsg::openInviteKey(MeshCrypto::impl(), s.mac, s.data, s.len, ctr, part, bytes);
+        const MeshMsg::Open r = MeshMsg::openInviteKey(MeshCrypto::impl(), s.nmac, s.data, s.len, ctr, part, bytes);
         inviteKeyRestore();
         if (r != MeshMsg::Open::OK) return;
         if (!s_invAsm.add(s.mac, kind, ctr, part, bytes)) return;
         const bool ok = MeshMsg::inviteKeyUnblob(s_invAsm.bytes, s_invPhrase);
         s_invAsm.clear();
         if (!ok) { inviteFail("Garbled phrase", now); return; }
-        s_replay.record(s.mac, ctr);
+        s_replay.record(s.nmac, ctr);
         saveReplay();
         s_invPhraseIn = true;
         Serial.println("[invite] the phrase is in");
@@ -318,14 +321,14 @@ void deliver(const Slot& s, uint32_t now) {
     if (!MeshMsg::parseHeader(s.data, s.len, ctr, kind)) return;
     // Cheap check first: a counter this sender has already used cannot be a
     // new message, so it never costs a decryption.
-    if (!s_replay.fresh(s.mac, ctr)) return;
+    if (!s_replay.fresh(s.nmac, ctr)) return;
     // The invite's frames are the one thing a board without a phrase reads.
     if (kind == MeshMsg::KIND_INVITE_PUB || kind == MeshMsg::KIND_INVITE_KEY) { deliverInvite(s, now, ctr, kind); return; }
     if (!ready()) return;
 
     if (kind == MeshMsg::KIND_READ) {
         uint32_t mc = 0;
-        if (MeshMsg::openRead(MeshCrypto::impl(), s.mac, s.data, s.len, ctr, mc) == MeshMsg::Open::OK) {
+        if (MeshMsg::openRead(MeshCrypto::impl(), s.nmac, s.data, s.len, ctr, mc) == MeshMsg::Open::OK) {
             squadNote(s.mac, now);
             if (mc == s_sentCtr) {
                 s_readHave = true;
@@ -339,8 +342,12 @@ void deliver(const Slot& s, uint32_t now) {
     if (kind == MeshMsg::KIND_HELLO) {
         uint8_t ver[3];
         uint32_t theirEpoch = 0; uint8_t theirZone = 0;
-        if (MeshMsg::openHello(MeshCrypto::impl(), s.mac, s.data, s.len, ctr, ver, theirEpoch, theirZone) == MeshMsg::Open::OK) {
+        if (MeshMsg::openHello(MeshCrypto::impl(), s.nmac, s.data, s.len, ctr, ver, theirEpoch, theirZone) == MeshMsg::Open::OK) {
             squadNote(s.mac, now);
+#ifdef BENCH_TOOLS
+            Serial.printf("[meshtalk] hello from %s: v%u.%u.%u epoch %lu zone %u (clock %s)\n", s.name[0] ? s.name : "a member",
+                          ver[0], ver[1], ver[2], (unsigned long)theirEpoch, theirZone, Clock::trusted() ? "already set" : "unset");
+#endif
             // A member's clock, for a board that has none: the squad is in
             // the same room, so its zone too when none was ever chosen here.
             // Never over a clock this board already has; a hello is a
@@ -367,13 +374,13 @@ void deliver(const Slot& s, uint32_t now) {
 
     if (kind == MeshMsg::KIND_CANNED) {
         uint8_t line = 0;
-        const MeshMsg::Open r = MeshMsg::openCanned(MeshCrypto::impl(), s.mac,
+        const MeshMsg::Open r = MeshMsg::openCanned(MeshCrypto::impl(), s.nmac,
                                                     s.data, s.len, ctr, line);
         // Anything else is another group's message, or a forgery, or a frame
         // this build cannot read. None of them is recorded, which is what
         // stops a forger poisoning the replay table.
         if (r != MeshMsg::Open::OK && r != MeshMsg::Open::UNKNOWN_LINE) return;
-        s_replay.record(s.mac, ctr);
+        s_replay.record(s.nmac, ctr);
         saveReplay();
         squadNote(s.mac, now);
         s_inbox.text        = false;
@@ -387,15 +394,15 @@ void deliver(const Slot& s, uint32_t now) {
     if (kind == MeshMsg::KIND_TEXT) {
         uint8_t part = 0, total = 0;
         char chars[MeshMsg::TEXT_PART_CHARS + 1];
-        if (MeshMsg::openTextPart(MeshCrypto::impl(), s.mac, s.data, s.len,
+        if (MeshMsg::openTextPart(MeshCrypto::impl(), s.nmac, s.data, s.len,
                                   ctr, part, total, chars) != MeshMsg::Open::OK) return;
         char body[MeshMsg::TEXT_MAX + 1];
         uint32_t base = 0;
         // Parts wait here, each already authenticated, until the last one
         // lands. Only then is the message recorded -- by its LAST counter, so
         // its own parts coming round again are stale from then on.
-        if (!s_asm.add(s.mac, ctr, part, total, chars, body, base)) return;
-        s_replay.record(s.mac, base + total - 1);
+        if (!s_asm.add(s.nmac, ctr, part, total, chars, body, base)) return;
+        s_replay.record(s.nmac, base + total - 1);
         saveReplay();
         squadNote(s.mac, now);
         s_inbox.text        = true;
@@ -408,12 +415,12 @@ void deliver(const Slot& s, uint32_t now) {
 
     if (kind == MeshMsg::KIND_NUDGE) {
         uint8_t ver[3] = { 0, 0, 0 }, parts = 0;
-        if (MeshMsg::openNudge(MeshCrypto::impl(), s.mac, s.data, s.len, ctr, ver, parts)
+        if (MeshMsg::openNudge(MeshCrypto::impl(), s.nmac, s.data, s.len, ctr, ver, parts)
                 != MeshMsg::Open::OK) return;
         // Recorded at the nudge's own counter, not past its WiFi parts: those
         // still have to get through the replay check, and they carry
         // higher counters of their own.
-        s_replay.record(s.mac, ctr);
+        s_replay.record(s.nmac, ctr);
         saveReplay();
         squadNote(s.mac, now);
         memcpy(s_nudge.ver, ver, 3);
@@ -433,21 +440,21 @@ void deliver(const Slot& s, uint32_t now) {
 
     if (kind == MeshMsg::KIND_WIFI) {
         uint8_t part = 0, total = 0, bytes[MeshMsg::WIFI_PART_BYTES];
-        if (MeshMsg::openWifiPart(MeshCrypto::impl(), s.mac, s.data, s.len, ctr, part, total, bytes)
+        if (MeshMsg::openWifiPart(MeshCrypto::impl(), s.nmac, s.data, s.len, ctr, part, total, bytes)
                 != MeshMsg::Open::OK) return;
         // Not recorded in the replay table part by part: a nudge is rare and
         // the series is used once, so the table's slots are better spent on
         // the senders' message counters. The nudge itself was recorded.
-        if (s_wifiAsm.add(s.mac, ctr, part, total, bytes))
+        if (s_wifiAsm.add(s.nmac, ctr, part, total, bytes))
             Serial.println("[meshtalk] shared wifi received");
         return;
     }
 
     if (kind == MeshMsg::KIND_UPDATED) {
         uint8_t ver[3] = { 0, 0, 0 };
-        if (MeshMsg::openUpdated(MeshCrypto::impl(), s.mac, s.data, s.len, ctr, ver)
+        if (MeshMsg::openUpdated(MeshCrypto::impl(), s.nmac, s.data, s.len, ctr, ver)
                 != MeshMsg::Open::OK) return;
-        s_replay.record(s.mac, ctr);
+        s_replay.record(s.nmac, ctr);
         saveReplay();
         squadNote(s.mac, now);
         memcpy(s_updated.ver, ver, 3);
@@ -464,12 +471,12 @@ void deliver(const Slot& s, uint32_t now) {
     if (kind == MeshMsg::KIND_HEADSUP) {
         uint8_t type = 0, tail[3] = { 0, 0, 0 };
         int8_t  rssi = 0;
-        if (MeshMsg::openHeadsUp(MeshCrypto::impl(), s.mac, s.data, s.len, ctr, type, rssi, tail)
+        if (MeshMsg::openHeadsUp(MeshCrypto::impl(), s.nmac, s.data, s.len, ctr, type, rssi, tail)
                 != MeshMsg::Open::OK) return;
         // Recorded so its nine seconds of repeats are one banner, but not
         // written to flash for it: a busy street would wear the store for
         // news nobody replays.
-        s_replay.record(s.mac, ctr);
+        s_replay.record(s.nmac, ctr);
         squadNote(s.mac, now);
         if (!Settings::meshHeadsUp() || !headsUpType(type)) return;   // off, or a newer build's type
         s_huIn.type = type;
@@ -485,10 +492,10 @@ void deliver(const Slot& s, uint32_t now) {
 
     if (kind == MeshMsg::KIND_EMOTE) {
         uint8_t em = 0, setup = 0;
-        const MeshMsg::Open r = MeshMsg::openEmote(MeshCrypto::impl(), s.mac,
+        const MeshMsg::Open r = MeshMsg::openEmote(MeshCrypto::impl(), s.nmac,
                                                    s.data, s.len, ctr, em, setup);
         if (r != MeshMsg::Open::OK && r != MeshMsg::Open::UNKNOWN_LINE) return;
-        s_replay.record(s.mac, ctr);
+        s_replay.record(s.nmac, ctr);
         saveReplay();
         squadNote(s.mac, now);
         if (r != MeshMsg::Open::OK) return;      // a newer build's: nothing to act out
@@ -985,7 +992,7 @@ void setOwnMac(const uint8_t mac[6]) {
     s_macSet = true;
 }
 
-void onFrame(const uint8_t mac[6], const uint8_t* d, size_t len, const char* name) {
+void onFrame(const uint8_t mac[6], const uint8_t* d, size_t len, const char* name, const uint8_t* sealedAs) {
     if (len == 0 || len > sizeof(Slot::data)) return;
     if (len == s_lastQLen && memcmp(mac, s_lastQMac, 6) == 0 && memcmp(d, s_lastQ, len) == 0) return;
     const uint32_t h = __atomic_load_n(&s_head, __ATOMIC_RELAXED);
@@ -993,6 +1000,7 @@ void onFrame(const uint8_t mac[6], const uint8_t* d, size_t len, const char* nam
     if (h - t >= RING) return;          // full -- the sender repeats, it will be back
     Slot& s = s_ring[h % RING];
     memcpy(s.mac, mac, 6);
+    memcpy(s.nmac, sealedAs ? sealedAs : mac, 6);
     s.len = (uint8_t)len;
     memcpy(s.data, d, len);
     size_t i = 0;

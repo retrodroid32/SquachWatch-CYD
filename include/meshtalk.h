@@ -57,8 +57,11 @@ const uint8_t* outgoing(uint32_t now, size_t& len, uint32_t& gen);
 
 // ---- radio side ----
 void setOwnMac(const uint8_t mac[6]);
-// BLE host task. Copies and returns; see the note at the top.
-void onFrame(const uint8_t mac[6], const uint8_t* d, size_t len, const char* name);
+// BLE host task. Copies and returns; see the note at the top. `sealedAs` is
+// the six bytes the frame's nonce was built from when that is not the
+// address it came from: a phone's identity (squachmesh.h). Null for a board.
+void onFrame(const uint8_t mac[6], const uint8_t* d, size_t len, const char* name,
+             const uint8_t* sealedAs = nullptr);
 
 struct Message {
     bool     have;

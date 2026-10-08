@@ -47,11 +47,30 @@ static const uint8_t VERSION = 1;
 // the settings row it lives in on its own device.
 static const size_t NAME_LEN = 12;
 
-// The two lengths a valid payload can have. Nothing in between is legal --
+// The lengths a valid payload can have. Nothing in between is legal --
 // a custom-name payload is all twelve name bytes or it is malformed.
 static const size_t LEN_INDEXED = 8;
 static const size_t LEN_NAMED   = LEN_INDEXED + NAME_LEN;   // 20
-static const size_t LEN_MAX     = LEN_NAMED;
+
+// A PHONE. The companion app visits boards exactly like a board does, with
+// one difference it cannot help: Android hides a phone's own Bluetooth
+// address from the app, and that address is what a message frame's nonce
+// is built from (meshmsg.h). So a phone carries an identity of its own --
+// four random bytes, picked once and kept -- in its presence advert, and a
+// board that sees it builds the frame nonce from phoneMac() instead of the
+// address it heard the frame from. The frames themselves are unchanged:
+// every kind a board sends, a phone sends the same way.
+//
+// The flag bit is what makes this safe for older boards: they refuse a
+// non-zero flags byte, so a phone is invisible to them rather than misread.
+static const uint8_t FLAG_PHONE = 0x01;
+static const size_t  PHONE_ID_LEN = 4;
+static const size_t  LEN_INDEXED_PHONE = LEN_INDEXED + PHONE_ID_LEN;  // 12
+static const size_t  LEN_NAMED_PHONE   = LEN_NAMED + PHONE_ID_LEN;    // 24
+static const size_t  LEN_MAX     = LEN_NAMED_PHONE;
+// The six bytes a phone's frames are sealed under: a locally-administered
+// prefix no ESP32 ever has, then the identity. Both ends build it this way.
+void phoneMac(const uint8_t id[PHONE_ID_LEN], uint8_t out[6]);
 
 // ---------------------------------------------------------------------
 // The appearance word. Field order matches the byte map in the plan doc.
@@ -98,6 +117,8 @@ struct Peer {
     char    name[NAME_LEN + 1];// NUL-terminated; empty unless custom
     bool    aura;              // the Legend's aura is lit (last, so the
                                // five-field initialisers leave it off)
+    bool    phone;             // the companion app, with an identity below
+    uint8_t id[PHONE_ID_LEN];
 };
 
 // Builds the advertised payload. Returns the number of bytes written, which
