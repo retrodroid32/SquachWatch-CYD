@@ -2142,6 +2142,8 @@ volatile bool g_consoleAdc = false;     // ADC: the spare analog inputs, for fin
 volatile bool g_consoleXyzzy = false;   // XYZZY: the TERMINAL background types the magic word now
 volatile bool g_consoleClippy = false;    // CLIPPY: unlock C1iPPY, for the bench
 volatile bool g_consoleToaster = false;   // TOASTER: unlock T0@$TY, for the bench
+volatile bool g_consoleBall    = false;   // BALL: unlock the ball and chain as a pet, for the bench
+volatile bool g_consolePet     = false;   // PET: the next earned pet, as the Settings row would
 volatile bool g_consoleJail = false;      // JAIL: the arrest, for the bench
 volatile bool g_consoleFree = false;      // FREE: time served, now
 volatile uint8_t g_consoleHeadsUp = 0;   // HEADSUP n: tell the squad about a made-up catch of type n, for the bench
@@ -5201,6 +5203,8 @@ void loop() {
         Squachy::jailFree();
         Serial.println("[jail] time served");
     }
+    if (g_consoleBall) { g_consoleBall = false; Squachy::unlockBall(); Serial.println("[pet] ball and chain unlocked"); }
+    if (g_consolePet)  { g_consolePet = false; Squachy::cyclePet(); Serial.printf("[pet] now %s\n", Squachy::petName()); }
     if (g_consoleToaster) {
         g_consoleToaster = false;
         Squachy::unlockToaster("Reporting for duty. I'm not scared.");

@@ -31,6 +31,29 @@ static const char* const BALL_ARREST = "Ten throws in one minute? You're under a
 static const char* const BALL_YANK[3] = { "Nope.", "Where do you think you're going?", "Sit." };
 static const char* const BALL_POKE[3] = { "Don't touch me. You'll throw me.", "Hands where I can see them.", "Poking counts. I'm writing it down." };
 static const char* const BALL_FREE = "Time served. Try petting them this time.";
+// Out of custody, chosen as the pet. Same ball, different outlook.
+static const char* const BALL_PET_LINES[] = {
+    "You chose me. Over a toaster. Bold.",
+    "The only pet you can't throw. Think about that.",
+    "I don't fetch. I anchor.",
+    "Time served. I stayed anyway.",
+    "No food. No walks. No mercy.",
+    "Parole officer. Unpaid.",
+    "Heavy is a lifestyle.",
+    "Try to run. I dare you.",
+    "Not a ball and chain. A commitment.",
+    "No stripes today. I miss the stripes.",
+    "Throws this week: zero. Keep it up.",
+    "He's rehabilitated. Mostly.",
+};
+static const uint8_t BALL_PET_LINES_N = sizeof(BALL_PET_LINES) / sizeof(BALL_PET_LINES[0]);
+static const char* const BALL_PET_POKE[3] = { "Pet. Not poke. Pet.", "That's it. That's the whole trick.", "I'm iron. Did that feel good?" };
+static const char* const BALL_PET_YANK[3] = { "Leash law.", "Short chain. Long memory.", "We go where I go." };
+// Squachy, on his choice of companion.
+static const char* const PET_SQ[4] = {
+    "He followed me home.", "We're not friends. We're attached.",
+    "Walkies are... short.", "He's my emotional support anchor.",
+};
 // Squachy, doing his time.
 static const char* const JAIL_SQ[4] = {
     "I was framed. By a toaster.", "Three square meals. All toast.",
@@ -49,6 +72,7 @@ static uint32_t s_jSaidAt = 0, s_jNextAt = 0, s_jYankSeen = 0, s_jPokeAt = 0;
 static uint8_t  s_jMood = 0;              // 0 talk, 1 laugh, 2 smug
 static uint8_t  s_jIx = 0, s_jPoke = 0, s_jSq = 0;
 static bool     s_jAnswered = true;
+static bool     s_jWasPet = false;        // last frame he was out as the pet, not the jailer
 int16_t         s_jX = -100, s_jY = 0, s_jR = 0;   // the ball this frame, for taps
 static int      s_jaCx = 0, s_jaHalfW = 0, s_jaBot = 0;
 static bool     s_jaValid = false;
@@ -87,7 +111,7 @@ static bool ballHit(int x, int y) {
 static void ballPoke(uint32_t now) {
     if (now - s_jPokeAt > 8000) s_jPoke = 0;
     s_jPokeAt = now;
-    ballSay(BALL_POKE[s_jPoke++ % 3], now, 2);
+    ballSay((Squachy::ballPetOn() ? BALL_PET_POKE : BALL_POKE)[s_jPoke++ % 3], now, 2);
     s_jAnswered = true;
 }
 
@@ -174,6 +198,10 @@ __attribute__((noinline)) static void jailTick(TFT_eSPI& t, uint32_t now, int sc
         cx = s_jaCx; halfW = s_jaHalfW; bot = s_jaBot;
     } else { s_jaCx = cx; s_jaHalfW = halfW; s_jaBot = bot; s_jaValid = true; }
     const int H = t.height();
+    // Out as the pet, not the jailer: his first remark comes soon after he
+    // is chosen, and the jail's own lines never do.
+    const bool pet = Squachy::ballPetOn();
+    if (pet != s_jWasPet) { s_jWasPet = pet; s_jNextAt = now + 6000; s_jLine = nullptr; }
     // Sized from him: halfW is 24 units of his scale, and the ball is a
     // 13-unit radius at the main screen's 2.7.
     int r = halfW / 5;
@@ -203,16 +231,17 @@ __attribute__((noinline)) static void jailTick(TFT_eSPI& t, uint32_t now, int sc
     }
     // The chain stopped a throw: he enjoyed that.
     const uint32_t ya = Squachy::yankedAt();
-    if (ya && ya != s_jYankSeen) { s_jYankSeen = ya; ballSay(BALL_YANK[random(0, 3)], now, 1); s_jAnswered = true; }
+    if (ya && ya != s_jYankSeen) { s_jYankSeen = ya; ballSay((pet ? BALL_PET_YANK : BALL_YANK)[random(0, 3)], now, 1); s_jAnswered = true; }
     // Something to say about once a minute, and Squachy answers now and then.
     const bool talking = s_jLine && now - s_jSaidAt < 5500;
-    if (Squachy::jailed() && !s_jArrestAt && !talking && (int32_t)(now - s_jNextAt) >= 0) {
-        ballSay(BALL_LINES[s_jIx++ % BALL_LINES_N], now, random(0, 3) == 0 ? 1 : 0);
+    if ((Squachy::jailed() || pet) && !s_jArrestAt && !talking && (int32_t)(now - s_jNextAt) >= 0) {
+        if (pet) ballSay(BALL_PET_LINES[s_jIx++ % BALL_PET_LINES_N], now, random(0, 4) == 0 ? 1 : 0);
+        else     ballSay(BALL_LINES[s_jIx++ % BALL_LINES_N], now, random(0, 3) == 0 ? 1 : 0);
         s_jNextAt = now + 45000 + (uint32_t)random(0, 30000);
     }
     if (s_jLine && !talking && !s_jAnswered) {
         s_jAnswered = true;
-        if (random(0, 3) == 0) Squachy::visitSay(JAIL_SQ[s_jSq++ % 4]);
+        if (random(0, 3) == 0) Squachy::visitSay((pet ? PET_SQ : JAIL_SQ)[s_jSq++ % 4]);
     }
 
     if (ballOn) {
@@ -236,6 +265,20 @@ __attribute__((noinline)) static void jailTick(TFT_eSPI& t, uint32_t now, int sc
         // On a short screen the balloon goes beside him, so hang it from
         // higher up or it sits on the buttons.
         if (talking && drop == 0) petBalloon(t, s_jLine, ballX - r, bb - 2 * r - (H < 200 ? 3 * r : 0), 2 * r, screenW, H);
+        // Time left, over the ball, whenever the balloon is not there: the
+        // sentence was only ever readable from Settings before.
+        else if (drop == 0 && !clank && Squachy::jailed()) {
+            const uint32_t left = (Squachy::jailLeftMs() + 999) / 1000;
+            char tm[8];
+            snprintf(tm, sizeof tm, "%u:%02u", (unsigned)(left / 60), (unsigned)(left % 60));
+            t.setTextSize(1);
+            const int tw = t.textWidth(tm), tx = ballX - tw / 2, ty = bb - 2 * r - 12;
+            t.fillRect(tx - 3, ty - 2, tw + 6, 11, Theme::BLACK);
+            t.drawRect(tx - 3, ty - 2, tw + 6, 11, (uint16_t)0x7C11);
+            t.setTextColor(Theme::AMBER, Theme::BLACK);
+            t.setCursor(tx, ty);
+            t.print(tm);
+        }
     } else s_jX = -100;
     if (puff >= 0) {
         // Eight puffs round where the ball sits, drifting out.
@@ -260,4 +303,4 @@ __attribute__((noinline)) static void jailTick(TFT_eSPI& t, uint32_t now, int sc
     }
 }
 
-static void jailReset() { s_jX = -100; s_jaValid = false; }
+static void jailReset() { s_jX = -100; s_jaValid = false; s_jWasPet = false; }
