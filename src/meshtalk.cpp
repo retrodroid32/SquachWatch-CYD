@@ -4,6 +4,7 @@
 #if SQUACH_MESH
 #include "meshcrypto.h"
 #include "mesh_airtime.h"
+#include "mesh_primary_transport.h"
 #include "settings.h"
 #include "clock.h"
 #include "ota_core.h"
@@ -857,24 +858,26 @@ static Send sendUpdated(uint32_t now) {
     return Send::OK;
 }
 
+// Broadcast each encrypted frame as a primary advertisement, then one
+// appearance/identity slot per complete rotation. Never request a scan
+// response from the receiver; both BLE scan modes can now receive frames.
 const uint8_t* outgoing(uint32_t now, size_t& len, uint32_t& gen) {
     if (s_outN && (int32_t)(now - s_outUntil) < 0) {
-        const uint8_t p = (uint8_t)(((now - s_outStart) / PART_MS) % s_outN);
-        len = s_outLen[p];
-        // Never 0 while something is on the air: s_outGen is at least 1 by
-        // the time anything has been sent.
-        gen = (s_outGen << 2) | p;
-        return s_out[p];
+        const uint8_t part = MeshPrimaryTransport::slot(now - s_outStart, s_outN);
+        if (part < s_outN) {
+            len = s_outLen[part];
+            gen = MeshPrimaryTransport::generation(s_outGen, part);
+            return s_out[part];
+        }
     }
-    len = 0;
-    gen = 0;
+    len = 0; gen = 0; // presence slot or idle
     return nullptr;
 }
 
 bool sending(uint32_t now) {
-    size_t l;
-    uint32_t g;
-    return outgoing(now, l, g) != nullptr;
+    // A presence slot must NOT allow a hello/receipt to overwrite a live
+    // message, invitation, or firmware update nudge.
+    return s_outN && (int32_t)(now - s_outUntil) < 0;
 }
 
 bool sendingMessage(uint32_t now) { return sending(now) && !s_outEmote; }
