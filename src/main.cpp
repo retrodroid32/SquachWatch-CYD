@@ -1476,15 +1476,46 @@ static bool     s_onUsb = true;
 static bool s_radiosResting = false;   // the duty cycle's state; see twatchRadioTick()
 #endif
 #if defined(TWATCH_S3) || SQW_BOOT_BTN
-// A crown press (or the CYDs' BOOT button) with the screen on turns it off
-// at once, cable or not. It stays off until the next touch or press:
-// lastTouch moving past this moment is what ends it. An alert only borrows
-// the screen (see the power saver in loop()).
+// POCKET MODE. A crown press (or the CYDs' BOOT button) with the screen on
+// turns it off at once, cable or not, and only another press turns it back
+// on: a touch does not, so a board in a pocket or a bag cannot be woken by
+// whatever it is rubbing against. Alerts still borrow the screen while they
+// are up (see the power saver in loop()), then it goes dark again.
 static bool     s_crownDark   = false;
-static uint32_t s_crownDarkAt = 0;
 // When the button was pressed: an alert already on screen then is one the
 // press was meant to put out, so only alerts after it light the screen.
 static uint32_t s_crownPressAt = 0;
+// The first time ever, the screen stays on a moment to say how to get out.
+static uint32_t s_pocketNoteUntil = 0;
+static const uint32_t POCKET_NOTE_MS = 4000;
+#if defined(TWATCH_S3)
+static const char* const POCKET_HOW = "Press the crown to wake";
+#else
+static const char* const POCKET_HOW = "Press BOOT again to wake";
+#endif
+
+// Every short press of the button: in or out of pocket mode, or just a wake
+// when it was the screen timeout that dimmed the screen.
+static void pocketPress(uint32_t now) {
+    if (s_crownDark) {
+        s_crownDark = false;
+        s_pocketNoteUntil = 0;
+        lastTouch = now;
+        Serial.println("[pocket] off");
+    } else if (s_screenDimmed) {
+        lastTouch = now;
+    } else {
+        s_crownDark = true;
+        s_crownPressAt = now;
+        if (!Settings::pocketNoteShown()) {
+            Settings::markPocketNoteShown();
+            s_pocketNoteUntil = now + POCKET_NOTE_MS;
+            if (!s_pocketNoteUntil) s_pocketNoteUntil = 1;
+            Theme::showToast("POCKET MODE", POCKET_HOW, Theme::CYAN, POCKET_NOTE_MS);
+        }
+        Serial.println("[pocket] on");
+    }
+}
 #endif
 
 static void applyCpuClock();
@@ -3395,17 +3426,7 @@ static void twatchCrownTick(uint32_t now) {
     // buzzes, about 1.5 s) is surely over.
     if (s_drvAwakeAt && now - s_drvAwakeAt > 3000) { s_drvAwakeAt = 0; drvWrite(0x01, 0x40); }
     s_pmu.getIrqStatus();
-    if (s_pmu.isPekeyShortPressIrq()) {
-        if (!s_screenDimmed) {
-            s_crownDark = true;
-            s_crownDarkAt = s_crownPressAt = now;
-            Serial.println("[crown] screen off");
-        } else {
-            s_crownDark = false;
-            lastTouch = now;
-            Serial.println("[crown] screen on");
-        }
-    }
+    if (s_pmu.isPekeyShortPressIrq()) pocketPress(now);
     s_pmu.clearIrqStatus();
 }
 #endif
@@ -4851,8 +4872,7 @@ static void bootButtonTick(uint32_t now) {
     if (!down && was && !longDone && now - downAt >= 30) {
         Serial.println("[button] short press");
         if (s_chargeMode) exitChargeMode();
-        else if (!s_screenDimmed) { s_crownDark = true; s_crownDarkAt = s_crownPressAt = now; }
-        else { s_crownDark = false; lastTouch = now; }
+        else pocketPress(now);
     }
     was = down;
 }
@@ -4974,7 +4994,8 @@ void loop() {
     // so a wake tap that turns into a drag cannot scroll a list either.
     //
     // lastTouch is still updated here, because that is what actually undims
-    // on the next frame -- the touch is being consumed, not ignored.
+    // on the next frame -- the touch is being consumed, not ignored. In
+    // POCKET MODE it undims nothing: only the button does.
     static bool s_swallowTouch = false;
     if (s_screenDimmed && touchJustDown) {
         s_swallowTouch = true;
@@ -8200,36 +8221,30 @@ void loop() {
         if (s_onUsb) wantDim = false;
 #endif
 #if defined(TWATCH_S3) || SQW_BOOT_BTN
-        // The crown, which beats the cable, the desk and a timeout of NEVER.
-        // A touch or press since then ends it.
+        // POCKET MODE, which beats the cable, the desk and a timeout of NEVER.
+        // Only the button ends it (pocketPress); a touch never does.
         //
-        // An alert borrows the screen without ending it: lit for as long as
-        // an alert card is up on its own (ten seconds; a WATCH card, which
-        // waits for a tap, goes dark with the card still on it), and dark
-        // the moment that is over -- no Squachy after it. It used to stay lit
-        // for the whole screen timeout, which read as the button undone.
-        // Taps on the alert card -- the one that dismisses it above all -- do
-        // not count as the touch that ends crown mode; a touch after that,
-        // including the one that wakes a dark WATCH card, does.
+        // Things that need to be seen borrow the screen without ending it:
+        // an alert card for as long as it is up on its own (ten seconds; a
+        // WATCH card, which waits for a tap, goes dark with the card still
+        // on it), a squad member's update offer or invite for its countdown,
+        // and the first-time note. Then it is dark again, no Squachy after.
         {
             const uint32_t shownAt = state == AppState::WATCH_ALERT ? watchAlertStart : alertStart;
             const bool alertLit = alerting && Settings::wakeOnAlert() &&
                                   (int32_t)(now - shownAt) < (int32_t)ALERT_AUTO_DISMISS_MS &&
                                   (int32_t)(shownAt - s_crownPressAt) > 0;
-            static bool wasLit = false;
-            if (s_crownDark) {
-                if (alertLit || wasLit) s_crownDarkAt = now;
-                if ((int32_t)(lastTouch - s_crownDarkAt) > 0) s_crownDark = false;
-            }
-            wasLit = alertLit;
-            if (s_crownDark) wantDim = !alertLit;
+            const bool askLit  = state == AppState::NUDGE || state == AppState::INVITE;
+            const bool noteLit = s_pocketNoteUntil && (int32_t)(s_pocketNoteUntil - now) > 0;
+            if (!noteLit) s_pocketNoteUntil = 0;
+            if (s_crownDark) wantDim = !alertLit && !askLit && !noteLit;
         }
 #endif
         if (wantDim != s_screenDimmed) {
             s_screenDimmed = wantDim;
             applyBrightness();
 #if defined(TWATCH_S3) || SQW_BOOT_BTN
-            if (s_crownDark) Serial.println(wantDim ? "[button] screen dark" : "[button] screen lit by an alert");
+            if (s_crownDark) Serial.println(wantDim ? "[pocket] screen dark" : "[pocket] screen lit for an alert");
 #endif
         }
 

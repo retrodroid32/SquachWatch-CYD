@@ -27,6 +27,7 @@ static bool        s_meshHeadsUp  = true;
 static bool        s_msgTutor     = false;
 #endif
 static bool        s_infoPrimerShown = false;
+static bool        s_pocketNoteShown = false;
 // Locked on the watch: a square screen with a crown has one way up, and a
 // corner button that spins it is a thing to hit by accident on a wrist.
 // Locked on the CrowPanel too, for a different reason: an RGB panel has no
@@ -471,6 +472,7 @@ void load() {
     s_msgTutor     = s_prefs.getBool("msgtut", false);
 #endif
     s_infoPrimerShown = s_prefs.getBool("infoprimer", false);
+    s_pocketNoteShown = s_prefs.getBool("pocketnote", false);
     s_rotationLocked = s_prefs.getBool("rotlock", DEFAULT_ROTATION_LOCK);
     // A new key, not the top hat's: somebody who took the hat off never said
     // anything about the aura, and should see it once before deciding.
@@ -732,6 +734,13 @@ bool infoPrimerShown() { return s_infoPrimerShown; }
 void markInfoPrimerShown() {
     s_infoPrimerShown = true;
     s_prefs.putBool("infoprimer", true);
+}
+
+bool pocketNoteShown() { return s_pocketNoteShown; }
+
+void markPocketNoteShown() {
+    s_pocketNoteShown = true;
+    s_prefs.putBool("pocketnote", true);
 }
 
 bool auraShown() { return s_aura; }

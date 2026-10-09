@@ -121,6 +121,10 @@ namespace Settings {
     // LOG entry, before that entry's own explanation.
     bool       infoPrimerShown();
     void       markInfoPrimerShown();
+    // Whether POCKET MODE's how-to-wake note has been shown: once ever, the
+    // first time the button turns the screen off.
+    bool       pocketNoteShown();
+    void       markPocketNoteShown();
 
     // Disables the title-bar rotate button (and the ROTATED gesture it
     // triggers) without touching its icon -- an accidental tap during
