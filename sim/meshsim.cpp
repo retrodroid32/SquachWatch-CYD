@@ -59,6 +59,15 @@ bool macSet  = false, advDue = true;
 // Squachy there is, so nobody wonders which one is the visitor.
 SquachMesh::Peer look = { 4, 12, 1, false, "" };
 
+// What the peer's frames are sealed under: its address as a board, or the
+// identity in its advert as a phone (see the "phone" command).
+const uint8_t* sealMac() {
+    static uint8_t pm[6];
+    if (!look.phone) return PEER_MAC;
+    SquachMesh::phoneMac(look.id, pm);
+    return pm;
+}
+
 uint32_t lastAdv = 0, ctr = 0, sendUntil = 0, heardGen = 0, replyAt = 0, heardMsg = 0;
 // How many SquachWatches are here, counting this one. The rest only advertise:
 // the firmware hosts one visitor at a time, so they only ever show up as the
@@ -125,7 +134,7 @@ bool say(int line, uint32_t now) {
         return false;
     }
     const uint32_t c = ++ctr;
-    frameLen[0] = MeshMsg::sealCanned(MeshCrypto::impl(), PEER_MAC, c, (uint8_t)line,
+    frameLen[0] = MeshMsg::sealCanned(MeshCrypto::impl(), sealMac(), c, (uint8_t)line,
                                       frames[0], sizeof frames[0]);
     snprintf(said, sizeof said, "%s", MeshMsg::CANNED[line]);
     broadcast(frameLen[0] ? 1 : 0, now);
@@ -143,7 +152,7 @@ bool sayText(const char* text, uint32_t now) {
     ctr += total;
     uint8_t n = total;
     for (uint8_t p = 0; p < total; p++) {
-        frameLen[p] = MeshMsg::sealTextPart(MeshCrypto::impl(), PEER_MAC, base + p, text,
+        frameLen[p] = MeshMsg::sealTextPart(MeshCrypto::impl(), sealMac(), base + p, text,
                                             p, total, frames[p], sizeof frames[p]);
         if (!frameLen[p]) n = 0;
     }
@@ -162,7 +171,7 @@ bool emote(int e, int arg, uint32_t now) {
     if (arg < 0) arg = EmoteScript::roll((MeshMsg::Emote)e, (uint32_t)millis() * 2654435761u,
                                          (uint8_t)DetectionType::FLOCK);
     const uint32_t c = ++ctr;
-    frameLen[0] = MeshMsg::sealEmote(MeshCrypto::impl(), PEER_MAC, c, (uint8_t)e, (uint8_t)arg,
+    frameLen[0] = MeshMsg::sealEmote(MeshCrypto::impl(), sealMac(), c, (uint8_t)e, (uint8_t)arg,
                                      frames[0], sizeof frames[0]);
     snprintf(said, sizeof said, "(emote %d, setup %d)", e, arg);
     broadcast(frameLen[0] ? 1 : 0, now);
@@ -313,6 +322,7 @@ void tick(uint32_t now) {
             o.custom = false;
             o.name[0] = '\0';
             o.aura = false;             // one Legend in the room is plenty
+            o.phone = false;            // and the rest are boards
             o.nick =(uint8_t)((look.nick + i) % nickCount());
             // Dressed differently, so the SQUAD screen's carousel shows three
             // Squachys rather than one in three names.
@@ -355,6 +365,19 @@ bool command(const char* line) {
     if (!strcmp(verb, "aura")) {
         if (onOff(arg, look.aura, "lit", "out")) { advDue = true; return true; }
         fprintf(stderr, "[meshsim] aura on|off\n");
+        return false;
+    }
+    if (!strcmp(verb, "phone")) {
+        // Plays a phone: the companion app's flag and identity in the advert, its
+        // frames sealed under that identity, and the headset on him. The phone app
+        // uses it for the phones it hears, so they look like phones here too.
+        if (onOff(arg, look.phone, "a phone", "a board")) {
+            const uint8_t id[4] = { 0x5A, 0x57, 0x00, 0x02 };
+            memcpy(look.id, id, sizeof id);
+            advDue = true;
+            return true;
+        }
+        fprintf(stderr, "[meshsim] phone on|off\n");
         return false;
     }
     if (!strcmp(verb, "name")) {
@@ -400,7 +423,7 @@ bool command(const char* line) {
         const long rs = (end && *end) ? strtol(end, nullptr, 10) : -60;
         const uint8_t tail[3] = { 0xAB, 0xCD, (uint8_t)ty };
         const uint32_t c = ++ctr;
-        frameLen[0] = MeshMsg::sealHeadsUp(MeshCrypto::impl(), PEER_MAC, c, (uint8_t)ty, (int8_t)rs, tail,
+        frameLen[0] = MeshMsg::sealHeadsUp(MeshCrypto::impl(), sealMac(), c, (uint8_t)ty, (int8_t)rs, tail,
                                            frames[0], sizeof frames[0]);
         snprintf(said, sizeof said, "(heads-up, type %ld)", ty);
         broadcast(frameLen[0] ? 1 : 0, now);

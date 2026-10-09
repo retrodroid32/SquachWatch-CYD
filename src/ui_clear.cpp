@@ -2021,6 +2021,9 @@ void uiClearDrawCrowd(TFT_eSPI& t, uint32_t now, const Mesh::SquadMember* crowd,
         // him. Four or fewer and everybody wears one; past that only the
         // one who was tapped, for a few seconds.
         Squachy::setNameTag(wantsName(i) ? peerName(i) : nullptr);
+        // A phone (the companion app) wears the WATCH screen's headset: it can't
+        // catch anything itself, and at a glance it looks like any other board.
+        Squachy::setHeadset(p.phone);
         const char* line = (isGuest && !msgFresh) ? s_visitGuestLine : nullptr;
         // His bubble hangs from the caller's row when it names one; the gap
         // is taken from where his head is this frame, so the bubble holds
@@ -2038,6 +2041,7 @@ void uiClearDrawCrowd(TFT_eSPI& t, uint32_t now, const Mesh::SquadMember* crowd,
                             isGuest && !s_guestTurn, line != nullptr,
                             isGuest ? guestPose(now) : Squachy::VisitPose::NONE);
         Squachy::setNameTag(nullptr);
+        Squachy::setHeadset(false);
         Squachy::setAuraPreview(-1);
         Squachy::setShadesPreview(-1);
         Squachy::setOutfitPreview(-1);
@@ -2088,12 +2092,16 @@ void uiClearDrawCrowd(TFT_eSPI& t, uint32_t now, const Mesh::SquadMember* crowd,
         const int k = peerCell(i);
         drawOne(i, cellX(k, i, true), cellY(k, i, true), false);
     }
-    // 2. the visitor, bubble and all.
+    // 2. the visitor. His bubble is held back and drawn after ours (step 4):
+    //    ours sits in the middle seat, and drawn after the words he stood on
+    //    them -- which crowds of phones and boards on a bench made common.
     if (guestI >= 0) {
         const uint8_t i = (uint8_t)guestI;
         const int k = peerCell(i);
         const int cx = cellX(k, i, true), baseY = cellY(k, i, true);
+        Squachy::deferBubble(true);
         drawOne(i, cx, baseY, true);
+        Squachy::deferBubble(false);
     }
     // 3. and ours last of all, in the seat that does not move. He is drawn
     //    through tick(), which owns his moods, his quips and his bubble, so he
@@ -2142,6 +2150,8 @@ void uiClearDrawCrowd(TFT_eSPI& t, uint32_t now, const Mesh::SquadMember* crowd,
         Squachy::tick(t, cx, bandTop, band, now, advance, 0.3f, false, 0, (uint8_t)pct);
         Squachy::setCompany(false);
     }
+    // 4. the visitor's words, over everybody.
+    Squachy::drawDeferredBubble(t, now);
 }
 
 // A tap on one of the crowd: puts his name up for a few seconds. Ours is
@@ -2739,6 +2749,7 @@ static void drawVisit(TFT_eSPI& t, uint32_t now, const SquachMesh::Peer* guest,
     // meet, so he is named for the whole visit, talking or not.
     Squachy::setNameTag((guest->custom && guest->name[0]) ? guest->name
                                                           : Squachy::nicknameAt(guest->nick));
+    Squachy::setHeadset(guest->phone);   // a phone wears the headset, as in the crowd
     Squachy::drawWaving(t, gx, squachyBottom - scriptGuestLift(now, gs,
                             squachyBottom - (int)(58.0f * gs) - 20), now, gs,
                         msgFresh ? nullptr : s_visitGuestLine,
@@ -2762,6 +2773,7 @@ static void drawVisit(TFT_eSPI& t, uint32_t now, const SquachMesh::Peer* guest,
                         true,
                         guestPose(now));
     Squachy::setNameTag(nullptr);
+    Squachy::setHeadset(false);
     Squachy::setAuraPreview(-1);
     Squachy::setShadesPreview(-1);
     Squachy::setOutfitPreview(-1);

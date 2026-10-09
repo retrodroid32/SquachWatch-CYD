@@ -391,6 +391,13 @@ namespace Squachy {
     // uses it while a message box shares the screen with him.
     void holdBubble(bool held);
 
+    // While on, a cameo (drawWaving) keeps its speech bubble instead of
+    // drawing it, and drawDeferredBubble() draws it later: the crowd draws the
+    // visitor, then our own Squachy in the middle seat, then the visitor's
+    // words on top, so ours never stands over them.
+    void deferBubble(bool on);
+    void drawDeferredBubble(TFT_eSPI& t, uint32_t now);
+
 #if SQUACH_MESH
     // Which beat of a visit a line is wanted for. The pools live in
     // squachy.cpp with every other pool rather than out with the visit
