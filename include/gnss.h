@@ -61,4 +61,13 @@ uint32_t toEpoch(int year, int month, int day, int h, int m, int s);
 void fake(int32_t lat7, int32_t lon7, uint32_t epoch, uint32_t nowMs);
 bool faked();
 
+// A position from a phone in the squad (the companion app's FIX frame), for a
+// board with no GPS of its own. A real position, so nothing leaves it out; it
+// stays fresh for PHONE_FRESH_MS, because the phone sends one every ten
+// seconds or so rather than every second. A board's own GPS, when it has a
+// fresh fix, wins: the phone is somewhere near, the module is right here.
+constexpr uint32_t PHONE_FRESH_MS = 60000;
+void phone(int32_t lat7, int32_t lon7, uint8_t accM, uint32_t epoch, uint32_t nowMs);
+bool fromPhone();
+
 }  // namespace Gnss

@@ -53,10 +53,10 @@ device_info_test_SRCS        := $(SRC)/device_info.cpp $(SRC)/signatures.cpp
 security_test_SRCS           := $(SRC)/security.cpp $(SRC)/ignore_list.cpp
 # The rings, on the emulator's RAM flash. The two clock calls it makes are
 # stubbed in the test.
-blackbox_test_SRCS           := $(SRC)/blackbox.cpp
+blackbox_test_SRCS           := $(SRC)/blackbox.cpp $(SRC)/gnss.cpp
 blackbox_test_FLAGS          := -DBLACKBOX_TEST
 # One LOG row per device, over the same RAM flash.
-logindex_test_SRCS           := $(SRC)/blackbox.cpp $(SRC)/log_index.cpp
+logindex_test_SRCS           := $(SRC)/blackbox.cpp $(SRC)/gnss.cpp $(SRC)/log_index.cpp
 # The DEX's cards and the record, through the Preferences shim; the clock is stubbed.
 dex_test_SRCS                := $(SRC)/dex.cpp $(SIM)/detection_sim.cpp $(SRC)/remote_id.cpp
 # The neighbours table; the clock is stubbed.

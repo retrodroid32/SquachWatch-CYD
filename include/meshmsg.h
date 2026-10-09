@@ -253,6 +253,14 @@ constexpr uint8_t KIND_READ       = 10;
 constexpr uint8_t KIND_HEADSUP    = 11;
 constexpr size_t  HEADSUP_FRAME_LEN = HDR_LEN + 5 + TAG_LEN;                  // 19
 static_assert(HEADSUP_FRAME_LEN <= FRAME_MAX, "a heads-up fits where a message does");
+// FIX: where a phone in the squad is, from the companion app: latitude and
+// longitude in degrees x 10^7 (little-endian int32) and an accuracy in metres.
+// A board stamps its own catches with it while it is fresh (gnss.h). Sealed,
+// so only the squad reads it; not replay-recorded, like HELLO -- it is a fact
+// about the sender, superseded by the next one. Builds before it drop kind 12.
+constexpr uint8_t KIND_FIX        = 12;
+constexpr size_t  FIX_FRAME_LEN   = HDR_LEN + 9 + TAG_LEN;                    // 23
+static_assert(FIX_FRAME_LEN <= FRAME_MAX, "a position fits where a message does");
 constexpr uint8_t INVITE_PART_BYTES = 12;
 constexpr uint8_t INVITE_PARTS      = 4;
 constexpr size_t  INVITE_BLOB       = INVITE_PART_BYTES * INVITE_PARTS;   // 48
@@ -347,6 +355,10 @@ Open openHello(const Crypto& c, const uint8_t mac[6], const uint8_t* in, size_t 
 Open   openRead(const Crypto& c, const uint8_t mac[6], const uint8_t* in, size_t len, uint32_t& counter, uint32_t& msgCounter);
 Open   openHeadsUp(const Crypto& c, const uint8_t mac[6], const uint8_t* in, size_t len,
                    uint32_t& counter, uint8_t& type, int8_t& rssi, uint8_t tail[3]);
+size_t sealFix(const Crypto& c, const uint8_t mac[6], uint32_t counter,
+               int32_t lat7, int32_t lon7, uint8_t accM, uint8_t* out, size_t cap);
+Open   openFix(const Crypto& c, const uint8_t mac[6], const uint8_t* in, size_t len,
+               uint32_t& counter, int32_t& lat7, int32_t& lon7, uint8_t& accM);
 Open openNudge(const Crypto& c, const uint8_t mac[6], const uint8_t* in, size_t len,
                uint32_t& counter, uint8_t ver[3], uint8_t& wifiParts);
 Open openWifiPart(const Crypto& c, const uint8_t mac[6], const uint8_t* in, size_t len,

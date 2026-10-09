@@ -212,6 +212,22 @@ LogConfirmTap uiLogHitConfirm(int x, int y, int screenW, int screenH) {
     return LogConfirmTap::NONE;
 }
 
+static bool    s_whereHas = false;
+static int32_t s_whereLat = 0, s_whereLon = 0;
+void uiLogSetConfirmWhere(bool has, int32_t lat7, int32_t lon7) {
+    s_whereHas = has; s_whereLat = lat7; s_whereLon = lon7;
+}
+
+// "SEEN AT 41.43910,-123.69580" (Bluff Creek, where the 1967 film was shot):
+// five decimals is about a metre, more than any fix this board is given can
+// claim.
+static void whereText(char* out, size_t n) {
+    const long la = (long)s_whereLat, lo = (long)s_whereLon;
+    snprintf(out, n, "SEEN AT %s%ld.%05ld,%s%ld.%05ld",
+             la < 0 ? "-" : "", labs(la) / 10000000L, (labs(la) % 10000000L) / 100L,
+             lo < 0 ? "-" : "", labs(lo) / 10000000L, (labs(lo) % 10000000L) / 100L);
+}
+
 static void drawConfirmPanel(TFT_eSPI& t, int w, int h, const char* label, bool watched, bool hunted, bool ignored) {
     int px, py, pw, ph, wX, wY, wW, wH, huX, huY, huW, huH, infX, infY, infW, infH,
         igX, igY, igW, igH, cnX, cnY, cnW, cnH;
@@ -240,7 +256,9 @@ static void drawConfirmPanel(TFT_eSPI& t, int w, int h, const char* label, bool 
     t.setTextWrap(false);
     t.setTextSize(1);
     t.setTextColor(Theme::CYAN, Theme::BG);
-    const char* q = "TRACK THIS TARGET?";
+    char where[40];
+    if (s_whereHas) whereText(where, sizeof where);
+    const char* q = s_whereHas ? where : "TRACK THIS TARGET?";
     int qw = t.textWidth(q);
     t.setCursor(px + (pw - qw) / 2, py + 8);
     t.print(q);

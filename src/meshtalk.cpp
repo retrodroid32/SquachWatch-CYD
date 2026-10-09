@@ -1,5 +1,6 @@
 // SquachWatch-CYD — SquachMesh messages at runtime. See include/meshtalk.h.
 #include "meshtalk.h"
+#include "gnss.h"
 
 #if SQUACH_MESH
 #include "meshcrypto.h"
@@ -334,6 +335,25 @@ void deliver(const Slot& s, uint32_t now) {
                 s_readHave = true;
                 snprintf(s_readBy, sizeof s_readBy, "%s", s.name[0] ? s.name : "SOMEONE");
                 Serial.printf("[meshtalk] %s read #%lu\n", s_readBy, (unsigned long)mc);
+            }
+        }
+        return;
+    }
+
+    if (kind == MeshMsg::KIND_FIX) {
+        // Where a phone in the squad is (the companion app). Handed to the GPS
+        // module as a phone's position: the black box stamps catches with it
+        // and the watches wardrive with it. Logged once a minute, not per frame.
+        int32_t la = 0, lo = 0; uint8_t acc = 0;
+        if (MeshMsg::openFix(MeshCrypto::impl(), s.nmac, s.data, s.len, ctr, la, lo, acc) == MeshMsg::Open::OK) {
+            squadNote(s.mac, now);
+            const bool had = Gnss::fresh(now);
+            Gnss::phone(la, lo, acc, Clock::trusted() ? Clock::nowEpoch() : 0, now);
+            static uint32_t s_saidAt = 0;
+            if (!had || now - s_saidAt > 60000) {
+                s_saidAt = now;
+                Serial.printf("[gnss] position from %s, +/-%u m%s\n", s.name[0] ? s.name : "a phone",
+                              (unsigned)acc, Gnss::fromPhone() ? "" : " (ignored: own GPS has a fix)");
             }
         }
         return;

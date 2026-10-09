@@ -1,6 +1,7 @@
 // SquachWatch-CYD — the black box. See blackbox.h.
 #include "blackbox.h"
 #include "clock.h"
+#include "gnss.h"
 #include <Arduino.h>
 #include <string.h>
 
@@ -360,7 +361,37 @@ void noteDetection(const Detection& d, bool again) {
     copyText(r.vendor, sizeof r.vendor, vendorText(d));
     memcpy(r.name, d.name, sizeof r.name);
     r.name[sizeof r.name - 1] = '\0';
+    if (Gnss::fresh(millis()) && !Gnss::faked()) {
+        const Gnss::Fix& f = Gnss::fix();
+        r.flags |= DET_POS;
+        r.name[11] = '\0';
+        memcpy(r.name + 12, &f.lat7, 4);
+        memcpy(r.name + 16, &f.lon7, 4);
+    }
     if (s_dets.append((uint8_t*)&r) && s_detKept < 0xFFFF) s_detKept++;
+}
+
+bool detPosition(const DetRecord& r, int32_t& lat7, int32_t& lon7) {
+    if (!(r.flags & DET_POS)) return false;
+    memcpy(&lat7, r.name + 12, 4);
+    memcpy(&lon7, r.name + 16, 4);
+    return true;
+}
+
+bool lastPosition(const uint8_t mac[6], uint8_t type, int32_t& lat7, int32_t& lon7) {
+    struct W { const uint8_t* mac; uint8_t type; bool got; int32_t la, lo; } w = { mac, type, false, 0, 0 };
+    forEachDetection([](const DetRecord& r, void* c) {
+        W& w = *(W*)c;
+        int32_t la, lo;
+        if (r.type == w.type && memcmp(r.mac, w.mac, 6) == 0 && detPosition(r, la, lo)) {
+            // The walk is newest first, so the first one with a position is the one.
+            w.got = true; w.la = la; w.lo = lo;
+            return false;
+        }
+        return true;
+    }, &w);
+    if (w.got) { lat7 = w.la; lon7 = w.lo; }
+    return w.got;
 }
 
 void markCleared() {
@@ -459,7 +490,7 @@ void dump() {
                       (r.flags & BOOT_DUMP) ? r.task : "", (unsigned long)r.pc, (unsigned long)r.cause);
         return true;
     }, nullptr);
-    Serial.println("boot,epoch,up_s,type,mac,rssi,channel,hits,again,vendor,name");
+    Serial.println("boot,epoch,up_s,type,mac,rssi,channel,hits,again,vendor,name,lat,lon");
     // Everything the ring holds, CLR or not. The LOG screen stops at the mark
     // a CLR leaves (a restart must not bring back what was cleared), but this
     // is the record: it prints the mark as a line and carries on, so a
@@ -473,12 +504,19 @@ void dump() {
         }
         if (p[0] != KIND_DET) return true;
         const DetRecord& r = *(const DetRecord*)p;
-        Serial.printf("%u,%lu,%lu,%s,%02x:%02x:%02x:%02x:%02x:%02x,%d,%u,%u,%u,%s,%s\n",
+        // Where it was, as two decimal-degree columns, empty when it wasn't known.
+        char pos[32] = ",";
+        int32_t la, lo;
+        if (detPosition(r, la, lo))
+            snprintf(pos, sizeof pos, "%s%ld.%07ld,%s%ld.%07ld",
+                     la < 0 ? "-" : "", labs((long)la) / 10000000L, labs((long)la) % 10000000L,
+                     lo < 0 ? "-" : "", labs((long)lo) / 10000000L, labs((long)lo) % 10000000L);
+        Serial.printf("%u,%lu,%lu,%s,%02x:%02x:%02x:%02x:%02x:%02x,%d,%u,%u,%u,%s,%s,%s\n",
                       (unsigned)r.boot, (unsigned long)r.epoch, (unsigned long)r.upSec,
                       detectionTypeName((DetectionType)r.type),
                       r.mac[0], r.mac[1], r.mac[2], r.mac[3], r.mac[4], r.mac[5],
                       (int)r.rssi, (unsigned)r.channel, (unsigned)r.hits,
-                      (r.flags & DET_AGAIN) ? 1u : 0u, r.vendor, r.name);
+                      (r.flags & DET_AGAIN) ? 1u : 0u, r.vendor, r.name, pos);
         return true;
     }, nullptr);
     Serial.println("[blackbox] end");

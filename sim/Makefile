@@ -57,6 +57,7 @@ CXXFLAGS := -std=c++17 -O1 -g -Wall -Wno-unused-parameter $(EXTRA_CXXFLAGS) \
             -I$(SIM_DIR) -I$(INC) -DSQUACH_MESH=1
 
 UI_SRCS  := $(SRC)/theme.cpp \
+            $(SRC)/gnss.cpp \
             $(SRC)/squachy.cpp \
             $(SRC)/squachmesh.cpp \
             $(SRC)/mesh.cpp \
