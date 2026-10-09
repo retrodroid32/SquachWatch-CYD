@@ -929,6 +929,7 @@ Stats stats() {
 #if SQUACH_MESH
 #include "meshmsg.h"
 #include "meshtalk.h"
+#include "mesh_airtime.h"
 
 // SquachMesh's radio half: our advert, our scan response and our own
 // address. Everything that does not touch NimBLE -- who is visiting, the
@@ -941,7 +942,6 @@ static uint32_t        s_advAt      = 0;
 // Which outgoing message the scan response carries right now; 0 is none.
 static uint32_t        s_srGen      = 0;
 static bool            s_macSet     = false;
-static const uint16_t  ADV_MS       = 1500;
 
 bool advertising() { return s_advOn; }
 
@@ -1022,8 +1022,15 @@ static void setAdvertising(bool on, uint32_t now) {
     // Never connectable. Update mode's server shares this advertiser, and a
     // stack with the peripheral role compiled in defaults to connectable.
     adv->setConnectableMode(BLE_GAP_CONN_MODE_NON);
-    adv->setMinInterval((uint16_t)(ADV_MS * 8 / 5));
-    adv->setMaxInterval((uint16_t)(ADV_MS * 8 / 5 + 16));
+    // Message frames live in legacy scan responses. Formerly the 1.5s
+    // advertising interval was almost as long as each 1.6s frame dwell:
+    // every part could miss its only beacon after a stop/restart, leaving
+    // the invitee with a code but the inviter without one. Increase the
+    // beacon cadence *only while a frame is present*. Idle stays 1.5s.
+    const uint16_t advMs = out ? MeshAirtime::MESSAGE_ADVERTISING_MS
+                               : MeshAirtime::IDLE_ADVERTISING_MS;
+    adv->setMinInterval((uint16_t)(advMs * 8 / 5));
+    adv->setMaxInterval((uint16_t)(advMs * 8 / 5 + 16));
     adv->start();
 
     memcpy(s_lastAdv, buf, n);
