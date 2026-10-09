@@ -3,6 +3,9 @@
 #include "clock.h"
 #include "theme.h"
 #include "detection.h"
+#if SQUACH_MESH
+#include "meshtalk.h"
+#endif
 #include <Arduino.h>
 #include <stdarg.h>
 
@@ -117,6 +120,18 @@ void uiDiagnosticsTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, co
                      tx.sendingFrame ? "FRAME" : "IDLE",
                      (unsigned long)tx.starts, (unsigned long)tx.failures,
                      (unsigned)tx.lastFailure);
+        const MeshTalk::RxDiagnostics rx = MeshTalk::rxDiagnostics();
+        y = drawLine(t, y, Theme::CYAN, "MESH RX:", "%lu queued / %lu heard, full %lu",
+                     (unsigned long)rx.queued, (unsigned long)rx.seen,
+                     (unsigned long)rx.queueFull);
+        y = drawLine(t, y, Theme::CYAN, "INV RX:", "parts %lu mask %x/15 done %lu",
+                     (unsigned long)rx.inviteParts, (unsigned)rx.mask,
+                     (unsigned long)rx.inviteComplete);
+        y = drawLine(t, y, rx.inviteRejected ? Theme::AMBER : Theme::CYAN,
+                     "INV ERR:", "%lu rejected (%u), replay %lu",
+                     (unsigned long)rx.inviteRejected,
+                     (unsigned)rx.lastReject,
+                     (unsigned long)rx.replayRejected);
     }
 #endif
     // Where the heap went on the way up, in KB: free/largest with WiFi up,
