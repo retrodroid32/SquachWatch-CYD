@@ -20,12 +20,20 @@ cameras that aren't actively transmitting — they still leak their MAC
 when the promiscuous listener sends them a frame.
 
 **What the audit found.** Every prefix in this table was checked against
-the IEEE registry. Of 29 entries, exactly **one** is registered to Flock
-Safety: `B4:1E:52`. The rest break down as sixteen Espressif blocks, nine
-Liteon, one Shenzhen Intellirocks, one SPECTRA - TEK (labelled
+the IEEE registry. Of the 29 entries it had then, exactly **one** is
+registered to Flock Safety: `B4:1E:52`. Sixteen are Espressif blocks; the
+rest are Liteon, one Shenzhen Intellirocks, one SPECTRA - TEK (labelled
 "Flock-Sierra" for a long time, which is neither Sierra nor Flock), one
 not in the registry at all, and one locally-administered address, which
 by definition identifies no vendor.
+
+v1.24.0 added twenty more from Flock-You's field list and a Flock
+camera's firmware dump: thirteen Liteon, two USI, three Silicon Labs, one
+Espressif, and Atheros's factory-default block. All module vendors, so
+all Low. That makes **49** Flock prefixes, still with exactly one High.
+One prefix from that list was left out on purpose: `48:27:EA` is
+registered to Samsung Electronics and would call every Samsung TV a
+Flock camera.
 
 That is not an argument for deleting them. Flock really does build on
 ESP32, so an Espressif prefix really is evidence — it is just evidence
@@ -42,13 +50,22 @@ of the matched signature rather than of the type:
 | **Medium** | Registered to a parent whose range is far wider than the product — Amazon owns Ring, and also Echo, Fire TV and Kindle. |
 | **Low** | A module or ODM vendor whose parts are in everything, or a block not in the IEEE registry. |
 
-Across all 73 OUI rows in the firmware that comes out at 31 High, 4
-Medium, 38 Low.
+Across all 97 OUI rows in the firmware that comes out at 33 High, 4
+Medium, 60 Low.
 
 **This is what makes ALERT FILTER work.** It has always been a minimum-
 confidence filter, and until now confidence was constant per type, so it
 had nothing to filter on. Set it to High and a passing ESP32 stays in the
 log without taking over the screen.
+
+**Not only prefixes.** Flock is also matched by a WiFi network called
+exactly `Flock` (exact, not a prefix, so "Flockhart Family WiFi" is
+safe), the `flock-` / `FLOCK-` setup SSIDs, Flock's own Bluetooth
+accessory service (a 128-bit UUID from a camera's firmware), the BLE
+names `Flock`, `Penguin`, `Pigvision`, `Flock_Setup` and `FS Ext
+Battery`, the BLE company ID `0x09C8` (XUNTONG, Flock's radio supplier),
+and a battery pack that names itself with a bare ten-digit serial. That
+last one is a string any gadget could carry, so it is logged Low.
 
 **Source:** [`colonelpanichacks/flock-you`](https://github.com/colonelpanichacks/flock-you)
 (MIT) — the canonical Flock detector project. OUI research by
@@ -73,6 +90,10 @@ Taser International) and `E4:05:40` (modern Axon) OUIs.
 **Confidence in v1.0:** **High** for the SSID-prefix match (we catch
 the camera in pairing mode). **Medium** for the OUI match (depends
 on the camera being powered on and transmitting).
+
+**Since the OUI audit** the prefixes carry their own grades: `00:25:DF`,
+the legacy Taser International block, is High; `E4:05:40` and
+`28:24:FF` are Low.
 
 ---
 
@@ -118,9 +139,10 @@ serial-port-profile (SPP) UUID `0x1101` is also exposed.
 
 **Confidence in v1.0:** **High** for the BLE name match.
 **Medium** for the SPP UUID (some skimmers use different SPP
-implementations). BT Classic inquiry is **not** enabled in v1.0
-(it conflicts with NimBLE on a single radio — documented as a
-v1.1 task).
+implementations). BT Classic inquiry is **not** enabled (it
+conflicts with NimBLE on a single radio) and still has not been
+switched on, so skimmers are caught by their BLE name. Three module
+OUIs (`20:13:00`, `98:D3:00`, `00:1A:7D`) also match, graded Low.
 
 ---
 
@@ -128,7 +150,10 @@ v1.1 task).
 
 **Why it works:** Raven devices advertise custom service UUIDs in
 the `0x3100`–`0x3500` range (proprietary, not in the Bluetooth
-SIG assigned range).
+SIG assigned range). Until v1.24.0 only the five round values
+(`0x3100`, `0x3200` ... `0x3500`) matched; now the whole range does,
+including `0x3101` and `0x3102`, the two that hand out its GPS
+position.
 
 **Source:** [Flock You documentation](https://github.com/colonelpanichacks/flock-you/wiki/Detection-Datasets#raven).
 
@@ -162,22 +187,26 @@ frequently, so detection may flicker in and out.
 
 ---
 
-## Tile trackers — `AIRTAG` (categorised here) — **Medium confidence**
+## Tile trackers — formerly under `AIRTAG`
 
-**Why it works:** Tile devices advertise the proprietary service
-UUID `0xFEED`.
-
-**Source:** [Eye Spy](https://simeononsecurity.com/articles/eye-spy-passive-surveillance-detector-esp32-2026/).
-
-**Confidence in v1.0:** **Medium**. Categorised as `AIRTAG` in v1.0
-for simplicity; a `TILE` category is a v1.1 improvement.
+In v1.0 Tile's `0xFEED` service UUID (from
+[Eye Spy](https://simeononsecurity.com/articles/eye-spy-passive-surveillance-detector-esp32-2026/))
+was counted as `AIRTAG`. Tile has its own `TILE` type now — see
+[Tile trackers — `TILE`](#tile-trackers--tile--high-confidence) below.
 
 ---
 
 ## OpenDroneID drones — `DRONE` — **Medium confidence**
 
-**Why it works:** ASTM F3411 Remote ID broadcasts over BLE using
-the service UUID `0xFFFA`.
+**Why it works:** ASTM F3411 Remote ID broadcasts over BLE in the
+advert's **service data** under UUID `0xFFFA`. The message fills the
+whole advert, so a real drone has no room left to list `0xFFFA` among
+its services — which is where the check looked until v1.24.0, and why
+no real drone was ever reported before then. It reads the service data
+now. Drones also put Remote ID in their **WiFi beacons**, as an
+ASD-STAN vendor element (`FA:0B:BC`, type `0x0D`) carrying a pack of
+messages; since v1.24.0 those are logged as `DRONE` too, named by the
+serial in the pack.
 
 **Source:** [ASTM F3411 spec](https://www.astm.org/f3411-22.html) +
 [Eye Spy](https://simeononsecurity.com/articles/eye-spy-passive-surveillance-detector-esp32-2026/).
@@ -192,15 +221,17 @@ Offsets and scaling taken from
 [opendroneid-core-c](https://github.com/opendroneid/opendroneid-core-c);
 coordinates are degrees x 10^7, altitude is half-metres offset by 1000.
 
-**What it cannot reach:** the Bluetooth *Legacy* form only. Bluetooth 5
-Long Range is out of scope permanently on this board — the ESP32-WROOM
-is BLE 4.2 and Espressif document no hardware support for Coded PHY or
-extended advertising. The WiFi Beacon form, which packs several
-messages into one frame, would need the promiscuous path rather than
-the NimBLE one and is not implemented.
+The full decode — position, altitude, the operator — comes from the
+Bluetooth form. A WiFi beacon names the drone by its serial in the log.
+
+**What it cannot reach:** Bluetooth 5 Long Range. That is out of scope
+permanently on the original board — the ESP32-WROOM is BLE 4.2 and
+Espressif document no hardware support for Coded PHY or extended
+advertising — and no build listens for it on the newer chips either.
+Bluetooth *Legacy* and WiFi beacons are both heard.
 
 **Confidence:** **Medium**. Compliance is rolling out so detection is
-opportunistic, and half the transport is unreachable per above.
+opportunistic, and the Long Range transport is unreachable per above.
 
 ---
 
@@ -216,27 +247,32 @@ rather than corrected, because there was nothing to correct it to.
 
 **Why it works:** IEEE MA-L blocks registered to the vendors who
 actually sell these systems. Motorola Solutions, who absorbed
-Vigilant: `00:04:7D`, `00:18:85`, `00:1F:92`, `4C:CC:34`. Genetec,
-whose AutoVu line is an LPR platform: `00:BF:15`, `0C:BF:15`.
+Vigilant: `00:04:7D`, `00:18:85`, `00:1F:92`, `4C:CC:34`, plus
+`B8:E2:8C`, which is registered to Motorola Solutions Malaysia rather
+than the US parent. Genetec, whose AutoVu line is an LPR platform:
+`00:BF:15`, `0C:BF:15`.
 
 **Source:** the IEEE registry itself, read per vendor rather than
 copied from another detector — which is how the Sonos entry got in.
 Vendor list cross-checked against
 [FlipDeFlock](https://github.com/ReconGrunt/FlipDeFlock).
 
-**Confidence:** **Medium**. The blocks are certain; what is not
-certain is that a given device on one is a plate reader rather than
-some other product from a large vendor. That is the same caveat
-`CAMERA` carries, and it is why this is not High.
+**Confidence:** **Medium** for the type. The blocks are certain; what
+is not certain is that a given device on one is a plate reader rather
+than some other product from a large vendor. That is the same caveat
+`CAMERA` carries. Under the per-signature grading at the top of this
+file the seven rows themselves are graded High, because each block
+really is registered to the vendor named.
 
 ---
 
-## Generic / covert IP cameras — `CAMERA` — **High confidence**
+## Generic / covert IP cameras — `CAMERA` — **graded per row**
 
 **Why it works:** Most consumer IP cameras use WiFi modules from a
-small set of manufacturers. We match OUIs from Wyze, Ring, Arlo,
-Blink, Reolink, Hikvision, Amazon, Realtek, and Tuya on the consumer
-side, plus Verkada, Avigilon (Alta), and Axis Communications on the
+small set of manufacturers. We match OUIs from Wyze, Arlo, Blink,
+Hikvision, Amazon, Realtek, and Tuya on the consumer side (Ring has
+its own type, below), plus Verkada, Avigilon (Alta), and Axis
+Communications on the
 commercial/institutional side — the brands actually installed in
 offices, stores, and public spaces, not just homes.
 
@@ -254,6 +290,13 @@ discussed (see the note atop `kOuiTable` in `signatures.cpp`) but
 would need a real audit of Espressif's OUI ranges against known false
 positives before shipping — it is **not** built, and the UI does not
 show a Low-confidence camera reading in v1.0.
+
+**Since the OUI audit** the rows carry their own grades: the blocks
+registered to Wyze, Hikvision, Verkada, Avigilon and Axis are High;
+Amazon's two are Medium (Amazon makes far more than cameras); Realtek,
+Tuya, Arlo, Blink and Wyze's module block are Low. Two rows were
+relabelled by the audit: `F0:27:2D` was "Hikvision" and is Amazon's,
+and `28:57:BE` was "Reolink" and is Hikvision's.
 
 ---
 
@@ -328,7 +371,9 @@ independent lookups (netify.ai and maclookup.app) that agree on the
 same 13 prefixes for "Ring LLC" (registered 2019-03-01).
 
 **Confidence in v1.0:** **High** — same evidentiary basis (real MA-L
-registry OUI matches) as the generic `CAMERA` type.
+registry OUI matches) as the generic `CAMERA` type. Since the OUI
+audit, the 13 Ring LLC blocks are High and the two that came over from
+`CAMERA` (`FC:65:DE`, `68:37:E9`) are Medium.
 
 ---
 
@@ -448,7 +493,7 @@ that no locally-administered row is ever graded above Low.
 ### What is deliberately NOT in this bucket
 
 **Bare Espressif and other generic silicon.** A nyanBOX, an ESP32 Marauder,
-an M5Stack and a SquachWatch are the same chip. Sixteen Espressif prefixes
+an M5Stack and a SquachWatch are the same chip. Seventeen Espressif prefixes
 already sit under `FLOCK`; adding them here as well would have the two
 types fight over the same evidence and make every SquachWatch flag every
 other one. HACKER takes exact signatures only, and that is what makes it
@@ -485,7 +530,7 @@ plenty of things that are not a Pineapple produce one.
 
 | Source | License | Used for |
 |---|---|---|
-| flock-you (NitekryDPaul) | MIT (project) | Flock OUI list |
+| flock-you (NitekryDPaul) | MIT (project) | Flock OUI list; v1.24.0's Flock SSID, GATT service, serial-name rule and Raven range |
 | ESP32Marauder | GPL-2 | AirTag / skimmer pattern references |
 | Eye Spy (simeononsecurity) | (article code) | UUID table and scoring |
 | Cardputer-CSI-Human-Detector | MIT | Generic camera OUI list |

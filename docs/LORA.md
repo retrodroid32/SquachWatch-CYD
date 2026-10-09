@@ -15,6 +15,41 @@ are collected in [Measure first](#10-measure-first), and the ones a bench
 session on 2026-09-26 answered are marked there as answered, with the reading
 that answered them.
 
+Everything after the next section is about the CrowPanel. The T-Watch S3 and
+S3 Plus use the same radio driver and decoders in a much smaller package, and
+that is the next section.
+
+## On the T-Watch S3 and S3 Plus
+
+Since v1.26.0 both watches listen to LoRa as well as WiFi and Bluetooth.
+**Receive only:** the watch never transmits.
+
+- **What it hears:** Meshtastic and MeshCore, the two community mesh
+  networks. Public traffic reads in full: Meshtastic's default LongFast
+  channel, and MeshCore's Public and hashtag channels. Private channels and
+  direct messages stay unread, because the watch does not have their keys.
+- **Which frequencies:** one Meshtastic preset (LongFast) and one MeshCore
+  preset per band. **EU 868** listens on 869.525 MHz (Meshtastic) and
+  869.618 MHz (MeshCore); **US 915** on 906.875 MHz (Meshtastic) and
+  910.525 MHz (MeshCore). With both networks on, it takes turns between the
+  two.
+- **Which band:** picked from the time zone at boot: 915 for the US zones
+  (Alaska and Hawaii included) and the rest of the Americas, 868 everywhere
+  else. `LORA REGION AUTO|EU|US` on the console
+  overrides it; the change takes effect at the next restart.
+- **Where it shows:** a pink **LORA *n* NEW** pill at the top of the main
+  screen (tap it), and one buzz per new message, at most one every 30
+  seconds. **LORA CHATS** has one tab per network, with who sent each
+  message and on which channel. Privacy Mode covers the chats too.
+- **Settings:** WATCH SETTINGS > **LORA** cycles BOTH (the default),
+  MESHTASTIC, MESHCORE and OFF. WATCH SETTINGS > **LORA CHATS** opens the
+  chats and shows how many are new.
+- **Console:** `LORA` for the status, `LORA NODES`, `LORA MSGS`, and
+  `LORA REGION`.
+
+The radio driver and every decoder came from DH5DAX's CrowPanel work. On the
+bench it caught 26 of 26 test messages across both networks.
+
 ## What is built
 
 The research below became code on 2026-09-26, in the `crowpanel7` build

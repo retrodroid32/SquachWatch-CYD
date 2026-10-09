@@ -1,6 +1,8 @@
 # Ideas
 
-Things worth building that nobody has started. Each one carries what it would
+Things worth building. A few have shipped since they were written down; those
+are marked with the version they shipped in and kept here for the record.
+Each one carries what it would
 cost, because on this board that is the deciding factor: there is about 310 KB
 of firmware space and only about 52 KB of working memory free (both after
 v1.12.0 gave back 108 KB and 6 KB), and the screen already takes 50 ms a frame.
@@ -18,11 +20,15 @@ these are cheap:
 - **A screen.** New full screens are a switch case and a draw function.
 - **Touch.** Taps, holds and swipes are all handled.
 - **Saving.** Settings storage keeps small things across restarts, and the
-  black box (branch, untested) can keep bigger ones.
+  black box (shipped in v1.12.0) can keep bigger ones.
 - **Detections and the clock.** Both are live, so a game can be about what is
   really around you, and about the real day.
 
 ### 1. DETECTION BINGO — the best of these
+
+> **Shipped in v1.12.0.** BINGO in Settings: a 4x4 card dealt from the
+> detection types, a fresh card every week, lines, a streak, STATS, and a tap
+> on a square opens that type's MORE INFO.
 
 A card of detection types. Every type you actually detect marks its square.
 Lines and a full card hand out rewards.
@@ -106,6 +112,10 @@ log, something in the fire.
 
 **Cost:** 1-2 KB each, no new screens, no saved state beyond the unlock bit.
 
+> **Three more have shipped since:** XYZZY on the TERMINAL background (YZZERD,
+> v1.27.0), the owl on the FIRE background (SHAMBLER, v1.29.0), and the red
+> glyph in the DIGITAL rain (TH3 0N3, v1.30.0).
+
 ### 7. TWO-BOARD GAMES OVER SQUACHMESH
 
 Tic-tac-toe or battleship between two boards in range.
@@ -120,6 +130,11 @@ Worth keeping in mind for when squad messaging is finished, not before.
 ## Companions
 
 ### THE YETI, as a second pet
+
+> **Shipped in v1.13.0.** PET became a picker (OFF / VAPOR SHAGGY / THE YETI),
+> and he walks on, shouts one line, and leaves, or naps about one visit in
+> five, with Squachy answering him. He comes with the same unlock as VAPOR
+> SHAGGY. Not built: the rare eat, and the skier-rescue unlock described below.
 
 The ski hill's yeti turns up on the main screen, at his own size, shouts
 something short, and wanders off again. Rarely, he drags a skier on from the
@@ -216,7 +231,10 @@ who would rather it did not happen.
   talk about.
 - **A day chart.** Detections per hour for the last month, drawn on the desk.
   Needs the black box, then it is tiny.
-- **Egg progress that survives a restart.** The unlocks themselves are saved,
+- **Egg progress that survives a restart.** *Partly shipped in v1.13.0: the
+  starfield eye streak is saved now; the lodge knocks are left out on purpose,
+  since they are a quick drum roll that cannot span a restart anyway.* The
+  unlocks themselves are saved,
   but the progress towards them is not: the lodge knocks (5 needed) and the
   starfield eye streak (2 in a row) are plain variables in memory, so a
   restart -- or a crash, or a flat battery -- starts the hunt over. Three
@@ -227,6 +245,8 @@ who would rather it did not happen.
 - **Devices seen before.** "This tag has been near you on four different
   days." The genuinely useful one, and the one to be careful with: many
   trackers change their address, so it has to be tested before it is claimed.
+  *Partly shipped in v1.19.0 as the regulars: a device seen on three
+  different days gets a name on its LOG row.*
 
 ## Faster frames on the ESP32-S3 boards
 

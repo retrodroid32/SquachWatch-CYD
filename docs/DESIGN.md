@@ -4,6 +4,11 @@ This document is the single source of truth for the SquachWatch-CYD firmware.
 All implementation tracks MUST conform to the interfaces, color palette, file
 layout, and signature tables defined here.
 
+> **Read this as history.** This is the v1.0 contract, kept as the record of
+> how the firmware started. The code has moved a long way since (more boards,
+> more detection types, more screens, and Squachy where the ghost was), so
+> where this file and the code disagree, the code is right.
+
 ## 1. Hardware Target
 
 - **Board:** ESP32-2432S028R ("Cheap Yellow Display" / CYD)
@@ -87,7 +92,7 @@ disabled and everything else works normally.
 SquachWatch-CYD/
 ├── platformio.ini
 ├── README.md
-├── LICENSE                       (MIT)
+├── LICENSE                       (GPL-3.0)
 ├── docs/
 │   ├── DESIGN.md                 (this file)
 │   ├── BUILD.md                  (build + flash guide)
@@ -548,8 +553,9 @@ void loop() {
 
 ## 13. License & attribution
 
-**MIT.** Match the user's existing projects (`Cardputer-CSI-Human-Detector`,
-`M5PORKCHOP_DualScreen`). Full text in `LICENSE`.
+**GPL-3.0.** Full text in `LICENSE`. (The v1.0 contract said MIT, to match
+`Cardputer-CSI-Human-Detector` and `M5PORKCHOP_DualScreen`; the project
+ships under GPL-3.0.)
 
 Per-section attribution lives in `docs/DETECTIONS.md`:
 
@@ -576,3 +582,6 @@ Per-section attribution lives in `docs/DETECTIONS.md`:
 - No localization (English only)
 
 These can land in v1.1+ if the user wants them.
+
+Several since have: SD card logging, over-the-air updates, and GPS on the
+T-Watch S3 Plus.

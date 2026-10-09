@@ -28,8 +28,8 @@ pio run -e nm-cyd-c5 -t upload
 This environment carries **its own `platform` line**. The ESP32-C5 did not
 exist when Arduino core 2.0.14 was cut, so it builds on Arduino 3.3.12 /
 IDF 5.5.5 while every Xtensa board stays on the pinned espressif32@6.5.0.
-Nothing about any other board changes; `pio run` across all 22 environments is
-the check for that.
+Nothing about any other board changes; building every environment in
+`platformio.ini` is the check for that.
 
 The board has **two USB-C ports**: the ESP32-C5's native USB, and a CH340
 USB-to-UART. Either will flash it, but they are **not** interchangeable for the
@@ -93,22 +93,28 @@ low-power UART on 4/5.
 
 **Cannot: Bluetooth Classic.** The C-series has no Classic radio. Today that
 costs nothing, because `SKIMMER` detection is a BLE advertised-name match on
-every board and BT Classic inquiry is explicitly not enabled in v1.0 (see
+every board and BT Classic inquiry is not switched on anywhere (see
 [DETECTIONS.md](DETECTIONS.md) — it conflicts with NimBLE on a single radio).
-If the v1.1 task ever lands, **this board will not be able to run it.** That is
-silicon, not software.
+If it ever is, **this board will not be able to run it.** That is silicon, not
+software.
 
 **Cannot: an on-device crash backtrace.** RISC-V has no windowed register ABI,
 so a backtrace cannot be walked on the device; the IDF stores a raw stack dump
 for a host to decode instead. The crash screen shows task, PC, cause and fault
 address here, and no frames. Nothing is broken when that section is empty.
 
-**Better, and currently unused: 5 GHz and 802.15.4.** `DetectionEngine` hops
-2.4 GHz channels only, which is all any Xtensa board can do. This chip can also
-see 5 GHz networks and hear Zigbee/Thread traffic. Several things in
-[DETECTIONS.md](DETECTIONS.md) live on 5 GHz that no CYD can currently see.
-That is a real opportunity and deliberately **not** part of this port: the port
-is for parity first.
+**Better: 5 GHz.** Since v1.31.0 (PR #27, by quietradio) this board listens
+on 5 GHz as well, which no Xtensa board can do. The 2.4 GHz sweep is left as it
+was; after each one the board takes a short 5 GHz slice: every 5 GHz channel
+that has been busy lately, plus two quiet ones in turn, so a new access point
+turns up within a few sweeps. A slice never runs past 1.5 s, so 2.4 GHz keeps
+about three quarters of the radio's time. Which 5 GHz channels it may tune is
+up to the radio's country setting, and the boot log says how many it accepted.
+5 GHz channels are shown on screen, and **WIFI BANDS** in Settings switches
+between `2.4+5` (the default) and `2.4`.
+
+**Still unused: 802.15.4.** The chip can hear Zigbee/Thread traffic; nothing in
+the firmware listens for it yet.
 
 ## Validation
 
