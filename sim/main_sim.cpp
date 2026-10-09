@@ -492,6 +492,8 @@ int main(int argc, char** argv) {
         guest.custom = !peerName.empty();
         // SQUACHSIM_PEERAURA=1: the visitor is a Legend with his aura lit.
         guest.aura = getenv("SQUACHSIM_PEERAURA") != nullptr;
+        // SQUACHSIM_PEERPHONE=1: the visitor is a phone, and wears the headset.
+        guest.phone = getenv("SQUACHSIM_PEERPHONE") != nullptr;
         snprintf(guest.name, sizeof(guest.name), "%s", peerName.c_str());
         uiClearSetGuest(&guest);
     }

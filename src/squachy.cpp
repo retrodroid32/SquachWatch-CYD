@@ -2184,6 +2184,11 @@ static void drawBubbleIn(TFT_eSPI& t, int cx, int topY, const char* text,
 static bool s_bubbleHeld = false;
 void holdBubble(bool held) { s_bubbleHeld = held; }
 
+// A cameo's bubble, held back to be drawn on top of whoever comes after it.
+static bool        s_bubbleDefer = false;
+static const char* s_deferLine   = nullptr;
+static int         s_deferCx = 0, s_deferY = 0, s_deferTail = 0;
+
 static void drawBubble(TFT_eSPI& t, int cx, int topY, const char* text,
                        uint32_t now, bool mayRise = false, int tailX = NO_TAIL) {
     if (s_bubbleHeld) return;
@@ -7697,9 +7702,24 @@ void drawWaving(TFT_eSPI& t, int cx, int baseY, uint32_t now, float scale, const
     // render two speech bubbles" looked like from outside. A visitor passes
     // a smaller gap so his bubble sits just above his own head and is
     // visibly his.
-    if (line) drawBubble(t, cx, headTopY - bubbleGap, line, now, false,
-                         bubbleTail ? bodyCx : NO_TAIL);
+    if (line) {
+        if (s_bubbleDefer) {
+            // Kept for drawDeferredBubble(): the caller has somebody still to
+            // draw who would otherwise stand on top of these words.
+            s_deferLine = line; s_deferCx = cx; s_deferY = headTopY - bubbleGap;
+            s_deferTail = bubbleTail ? bodyCx : NO_TAIL;
+        } else {
+            drawBubble(t, cx, headTopY - bubbleGap, line, now, false, bubbleTail ? bodyCx : NO_TAIL);
+        }
+    }
     s_cameo = false;
+}
+
+void deferBubble(bool on) { s_bubbleDefer = on; }
+void drawDeferredBubble(TFT_eSPI& t, uint32_t now) {
+    if (!s_deferLine) return;
+    drawBubble(t, s_deferCx, s_deferY, s_deferLine, now, false, s_deferTail);
+    s_deferLine = nullptr;
 }
 
 // Small filled heart, used by the tap-to-pet flourish.
