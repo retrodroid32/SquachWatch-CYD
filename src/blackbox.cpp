@@ -344,6 +344,12 @@ void noteBoot(BootRecord& r) {
 }
 
 void noteDetection(const Detection& d, bool again) {
+    const bool pos = Gnss::fresh(millis()) && !Gnss::faked();
+    const Gnss::Fix& f = Gnss::fix();
+    noteDetectionAt(d, again, Clock::trusted() ? Clock::nowEpoch() : 0, pos, pos ? f.lat7 : 0, pos ? f.lon7 : 0);
+}
+
+void noteDetectionAt(const Detection& d, bool again, uint32_t epoch, bool hasPos, int32_t lat7, int32_t lon7) {
     if (!s_ready) return;
     DetRecord r;
     memset(&r, 0, sizeof r);
@@ -356,17 +362,16 @@ void noteDetection(const Detection& d, bool again) {
     r.channel = d.channel;
     r.hits    = d.hits;
     r.boot    = s_bootNo;
-    r.epoch   = Clock::trusted() ? Clock::nowEpoch() : 0;
+    r.epoch   = epoch;
     r.upSec   = millis() / 1000u;
     copyText(r.vendor, sizeof r.vendor, vendorText(d));
     memcpy(r.name, d.name, sizeof r.name);
     r.name[sizeof r.name - 1] = '\0';
-    if (Gnss::fresh(millis()) && !Gnss::faked()) {
-        const Gnss::Fix& f = Gnss::fix();
+    if (hasPos) {
         r.flags |= DET_POS;
         r.name[11] = '\0';
-        memcpy(r.name + 12, &f.lat7, 4);
-        memcpy(r.name + 16, &f.lon7, 4);
+        memcpy(r.name + 12, &lat7, 4);
+        memcpy(r.name + 16, &lon7, 4);
     }
     if (s_dets.append((uint8_t*)&r) && s_detKept < 0xFFFF) s_detKept++;
 }

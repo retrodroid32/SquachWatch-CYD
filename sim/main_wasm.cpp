@@ -54,6 +54,9 @@ EM_JS(void, squachsim_nvs_write, (const char* key, const char* val), {
 #include "meshsim.h"
 #include "squachy.h"
 #include "frame_push.h"
+#include "blackbox.h"
+#include "clock.h"
+#include "settings.h"
 
 // Defined by the firmware's main.cpp, which this target compiles. Declared
 // here, outside the extern "C" block below, so they link as the C++ symbols
@@ -184,6 +187,28 @@ EMSCRIPTEN_KEEPALIVE int sw_detect(int profile, int rssi) {
     simMakeDetection(d, kSimProfiles[profile], millis(), rssi, serial++);
     engine.postBle(d);
     return 1;
+}
+
+// A catch the phone app kept, into the LOG without an alert: the app replays
+// its saved catches when the emulator starts, so the band's LOG is the phone's
+// history rather than whatever arrived since. `tail` is the last three bytes of
+// the address, which is all a heads-up carries; the profile supplies the rest.
+EMSCRIPTEN_KEEPALIVE int sw_log_catch(int profile, int rssi, int tail, double epoch,
+                                      int hasPos, double lat, double lon) {
+    if (profile < 0 || (size_t)profile >= kSimProfileCount) return 0;
+    Detection d;
+    simMakeDetection(d, kSimProfiles[profile], millis(), rssi, 0);
+    d.mac[3] = (uint8_t)(tail >> 16); d.mac[4] = (uint8_t)(tail >> 8); d.mac[5] = (uint8_t)tail;
+    BlackBox::noteDetectionAt(d, false, (uint32_t)epoch, hasPos != 0,
+                              (int32_t)(lat * 1e7), (int32_t)(lon * 1e7));
+    return 1;
+}
+
+// The phone's clock and zone (an index into clock.cpp's ZONES, or -1), so the
+// emulator's times -- the LOG's, the desk clock's -- are the phone's.
+EMSCRIPTEN_KEEPALIVE void sw_set_time(double epoch, int zone) {
+    Clock::setEpoch((uint32_t)epoch);
+    if (zone >= 0) Settings::setTimeZone((uint8_t)zone);
 }
 
 // [[index, "TYPE", "label"], ...] -- the page's picker, from the same table.

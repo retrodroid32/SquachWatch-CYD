@@ -557,12 +557,6 @@ ResizableSprite     frame = ResizableSprite(&tft);
 #else
     TFT_eSPI*        canvas = &frame;
 #endif
-// The phone app's emulator changes its panel while it runs (sim/main_wasm.cpp,
-// sw_resize): the band above the lists is the board's own upright screen,
-// the SQUACHY tab is phone-shaped. The sim's sprite re-buffers itself on a
-// resizeInPlace() to a new size, which a board's never could. Only the
-// emulator calls this; on a board it is a few bytes nobody reaches.
-void simResizeFrame(int w, int h) { if (frame.created()) frame.resizeInPlace((int16_t)w, (int16_t)h); }
 XPT2046_Touchscreen touch(TOUCH_CS, TOUCH_IRQ);
 // cyd35's touch bus IS the display's bus, shared via CS rather than a
 // separate peripheral — see the CYD35 touch-init branch in setup(),
@@ -757,6 +751,19 @@ static bool touchCalPlausible(const uint16_t* p) {
 // a board has one, whatever it used before -- see initTouchFit() below.
 // Rotation is applied after the Fit, so one calibration serves all four.
 static TouchFit::Fit s_touchFit = TouchFit::fromRanges(RAW_X_MIN, RAW_X_MAX, RAW_Y_MIN, RAW_Y_MAX, 240, 320);
+
+// The phone app's emulator changes its panel while it runs (sim/main_wasm.cpp,
+// sw_resize): the band above the lists is the board's own upright screen, full
+// screen is phone-shaped. The sim's sprite re-buffers itself on a resizeInPlace()
+// to a new size, which a board's never could. The touch fit is rebuilt for the new
+// panel too: kept from boot, it stretched a tap near the bottom of the 240x320 band
+// past the button bar, so LOG and DESK never answered. Only the emulator calls
+// this; on a board it is a few bytes nobody reaches.
+void simResizeFrame(int w, int h) {
+    if (frame.created()) frame.resizeInPlace((int16_t)w, (int16_t)h);
+    const int n0 = w < h ? w : h, n1 = w < h ? h : w;      // the panel's own upright frame
+    s_touchFit = TouchFit::fromRanges(RAW_X_MIN, RAW_X_MAX, RAW_Y_MIN, RAW_Y_MAX, n0, n1);
+}
 
 // Where s_touchFit came from, for the diagnostics screen and for deciding
 // whether boot has to ask for a calibration.
