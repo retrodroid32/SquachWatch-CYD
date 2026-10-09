@@ -41,7 +41,7 @@ constexpr bool belowPressureFloor(bool meshRx, uint32_t largestBlock) {
 
 // Consulted only when switching AUTO from PASSIVE to ACTIVE. The separate
 // existing 300 adverts/s hard ceiling and heap-pressure recovery are kept.
-constexpr bool mayEnterActive(bool meshRx, uint32_t rate, uint32_t largest) {
+inline bool mayEnterActive(bool meshRx, uint32_t rate, uint32_t largest) {
     if (!meshRx)
         return rate < QUIET_ENTRY_RATE_BELOW &&
                largest >= NORMAL_ENTRY_BYTES;
