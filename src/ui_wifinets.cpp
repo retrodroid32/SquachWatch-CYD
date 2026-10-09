@@ -74,7 +74,8 @@ const char* resultWords(OtaWifi::SavedResult r) {
     switch (r) {
         case OtaWifi::SavedResult::JOINED:       return "joined at the last boot";
         case OtaWifi::SavedResult::BAD_PASSWORD: return "wrong password";
-        case OtaWifi::SavedResult::NOT_FOUND:    return "not found at the last boot";
+        case OtaWifi::SavedResult::NOT_FOUND:    return "network not found";
+        case OtaWifi::SavedResult::FAILED:       return "connection failed";
         default:                                 return "not tried yet";
     }
 }
@@ -84,6 +85,7 @@ uint16_t resultColour(OtaWifi::SavedResult r) {
         case OtaWifi::SavedResult::JOINED:       return Theme::GREEN;
         case OtaWifi::SavedResult::BAD_PASSWORD: return Theme::AMBER;
         case OtaWifi::SavedResult::NOT_FOUND:    return Theme::W95_SHADOW;
+        case OtaWifi::SavedResult::FAILED:       return Theme::AMBER;
         default:                                 return Theme::CYAN;
     }
 }
@@ -145,11 +147,13 @@ void uiWifiNetsTick(TFT_eSPI& t, uint32_t now) {
         const OtaWifi::SavedResult r = OtaWifi::savedResult((uint8_t)i);
         t.setTextColor(resultColour(r), Theme::TASKBAR);
         t.setCursor(14, y + 15);
-        t.print(resultWords(r));
+        t.print(OtaWifi::savedTestState() == OtaWifi::SavedTest::CONNECTING &&
+                i == OtaWifi::savedUse() ? "CONNECTING..." : resultWords(r));
     }
     const bool haveSel = s_selected >= 0 && s_selected < n;
     const bool full    = n >= OtaWifi::SAVED_MAX;
-    Theme::drawWin95Button(t, b.x[0], b.y[0], b.w, BTN_H, "USE",    !haveSel || s_selected == OtaWifi::savedUse());
+    const bool busy = OtaWifi::savedTestState() == OtaWifi::SavedTest::CONNECTING;
+    Theme::drawWin95Button(t, b.x[0], b.y[0], b.w, BTN_H, busy ? "TEST..." : "USE", !haveSel || busy);
     Theme::drawWin95Button(t, b.x[1], b.y[1], b.w, BTN_H, "REMOVE", !haveSel);
     Theme::drawWin95Button(t, b.x[2], b.y[2], b.w, BTN_H, full ? "FULL" : "ADD", full);
     Theme::drawWin95Button(t, b.x[3], b.y[3], b.w, BTN_H, "BACK",   false);

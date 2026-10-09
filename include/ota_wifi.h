@@ -75,7 +75,15 @@ void        forget();
 // there and then -- that would stop detection mid-screen -- so its password is
 // tried at the next boot check, and savedResult() says how that went.
 static const uint8_t SAVED_MAX = 6;
-enum class SavedResult : uint8_t { UNTRIED = 0, JOINED, BAD_PASSWORD, NOT_FOUND };
+enum class SavedResult : uint8_t { UNTRIED = 0, JOINED, BAD_PASSWORD, NOT_FOUND, FAILED };
+// A USE tap performs a temporary, join-only Wi-Fi validation. The background
+// task never downloads/installs firmware; the caller owns pausing/resuming
+// detection while CONNECTING. IDLE means no active or unacknowledged test.
+enum class SavedTest : uint8_t { IDLE, CONNECTING, JOINED, BAD_PASSWORD, NOT_FOUND, FAILED };
+bool       testSavedAt(uint8_t i);
+SavedTest  savedTestState();
+void       clearSavedTest();
+
 uint8_t     savedCount();
 const char* savedSsidAt(uint8_t i);
 uint8_t     savedUse();

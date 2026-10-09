@@ -5598,7 +5598,20 @@ void loop() {
             break;
         }
         case AppState::WIFI_NETS: {
+            const OtaWifi::SavedTest test = OtaWifi::savedTestState();
+            if (test == OtaWifi::SavedTest::CONNECTING) lastTouch = now;
+            else if (test != OtaWifi::SavedTest::IDLE) {
+                OtaWifi::clearSavedTest();
+                engine.stopUpdateRadio();
+                switch (test) {
+                    case OtaWifi::SavedTest::JOINED:       Theme::showToast("WIFI CONNECTED", "Verified; scanning resumed", Theme::GREEN); break;
+                    case OtaWifi::SavedTest::BAD_PASSWORD: Theme::showToast("AUTH FAILED", "Check saved password", Theme::AMBER); break;
+                    case OtaWifi::SavedTest::NOT_FOUND:    Theme::showToast("NETWORK NOT FOUND", nullptr, Theme::AMBER); break;
+                    default:                               Theme::showToast("CONNECTION FAILED", "Try again or move closer", Theme::AMBER); break;
+                }
+            }
             drawTwoBand([&](TFT_eSPI& t, bool) { uiWifiNetsTick(t, now); });
+            if (test == OtaWifi::SavedTest::CONNECTING) break;
             if (touchJustDown) {
                 int row = -1;
                 switch (uiWifiNetsHit(*canvas, tp.x, tp.y, &row)) {
@@ -5606,8 +5619,18 @@ void loop() {
                     case WifiNetsHit::USE: {
                         const int s = uiWifiNetsSelected();
                         if (s >= 0 && s < OtaWifi::savedCount()) {
-                            OtaWifi::useSaved((uint8_t)s);
-                            Theme::showToast("TRIED FIRST", OtaWifi::savedSsidAt((uint8_t)s), Theme::CYAN);
+                            if (Security::locked()) {
+                                Theme::showToast("UNLOCK FIRST", nullptr, Theme::AMBER);
+                            } else {
+                                OtaWifi::useSaved((uint8_t)s);
+                                engine.startUpdateRadio();
+                                if (OtaWifi::testSavedAt((uint8_t)s))
+                                    Theme::showToast("CONNECTING", "Testing saved WiFi only", Theme::CYAN);
+                                else {
+                                    engine.stopUpdateRadio();
+                                    Theme::showToast("WIFI BUSY", "Try again shortly", Theme::AMBER);
+                                }
+                            }
                         }
                         break;
                     }
