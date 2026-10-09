@@ -1197,7 +1197,9 @@ static const uint8_t  SCAN_PRESSED_LIMIT  = 3;       // pressed flushes inside a
 // passive until the room has been quiet for a while, active while it stays
 // quiet, and passive again the moment it gets loud. A passive scan misses
 // only what a device says when asked: some names, and a squad message.
-static const uint32_t SCAN_ACTIVE_BELOW   = 50;      // adverts/s: quiet enough to ask
+// SquachMesh AUTO may also enter with 50–149 adverts/s if at least 10 KB
+// contiguous RAM is free. Non-mesh behavior remains under 50/s; the existing
+// 300/s passive fallback and low-heap protections remain unchanged.
 // Raised from 90 to 300 on 2.x: with the 200 ms reply timeout an active scan
 // costs about 3 KB under a 200-a-second flood (measured, the fake flood plus
 // a Flipper), so a busy room keeps its names and squad messages. Passive is
@@ -1290,7 +1292,7 @@ static bool scanModeTick(uint32_t now, uint32_t largest) {
     else if (s_scanPin == 2) want = true;
     else if (!s_wantPassive && s_advRate > SCAN_PASSIVE_ABOVE) want = true;
     else if (s_wantPassive && now - modeSince >= (modeSince ? SCAN_MODE_DWELL_MS : SCAN_MODE_SETTLE_MS) &&
-             s_advRate < SCAN_ACTIVE_BELOW && largest >= activeFloor) want = false;
+             BleScanPolicy::mayEnterActive(meshRx, s_advRate, largest)) want = false;
     if (want == s_wantPassive) return false;
     s_wantPassive = want;
     modeSince = now;

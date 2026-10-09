@@ -19,5 +19,18 @@ int main() {
     assert(activeEntryFloor(false) == 8192);
     assert(!belowPressureFloor(false, 8192));
     assert(belowPressureFloor(false, 8191));
+
+    // Real 3.2" diagnostics: 112.2 adverts/s over 5s, 11,252 contiguous B
+    // at 43s uptime; AUTO had remained passive despite healthy memory.
+    assert(mayEnterActive(true, 112, 11252));
+    assert(mayEnterActive(true, 49, 8180));  // original photograph
+    assert(!mayEnterActive(true, 112, 8180)); // busy entry needs extra margin
+    assert(!mayEnterActive(true, 112, 10239));
+    assert(mayEnterActive(true, 112, 10240));
+    assert(!mayEnterActive(true, 150, 11252)); // do not enter when too busy
+    assert(!mayEnterActive(true, 300, 20000));
+    assert(!mayEnterActive(false, 112, 11252)); // generic BLE unchanged
+    assert(mayEnterActive(false, 49, 8192));
+    assert(!mayEnterActive(false, 49, 8191));
     std::puts("PASS: mesh receive entry/pressure floors and normal BLE safety");
 }
