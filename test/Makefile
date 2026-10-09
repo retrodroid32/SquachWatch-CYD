@@ -96,6 +96,7 @@ mesh_scan_policy_test_SRCS    :=
 mesh_airtime_test_SRCS        :=
 mesh_tx_policy_test_SRCS      :=
 mesh_appearance_test_SRCS     := $(SRC)/squachmesh.cpp
+mesh_appearance_test_FLAGS    := -DSQUACH_MESH=1
 
 .PHONY: all clean
 all: $(addprefix run-,$(TESTS))
