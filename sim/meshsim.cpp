@@ -267,6 +267,11 @@ bool pickIndex(const char* what, const char* arg, uint8_t n, uint8_t& out) {
 
 namespace Mesh {
 bool advertising() { return onAir; }
+TxStatus txStatus() {
+    size_t len = 0; uint32_t gen = 0;
+    return { onAir, MeshTalk::outgoing(millis(), len, gen) != nullptr,
+             (uint32_t)(onAir ? 1 : 0), 0, 0 };
+}
 void radioTick(uint32_t now) { MeshSim::tick(now); }
 }
 

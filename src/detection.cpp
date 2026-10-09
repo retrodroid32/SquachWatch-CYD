@@ -930,6 +930,7 @@ Stats stats() {
 #include "meshmsg.h"
 #include "meshtalk.h"
 #include "mesh_airtime.h"
+#include "mesh_tx_policy.h"
 
 // SquachMesh's radio half: our advert, our scan response and our own
 // address. Everything that does not touch NimBLE -- who is visiting, the
@@ -942,8 +943,34 @@ static uint32_t        s_advAt      = 0;
 // Which outgoing message the scan response carries right now; 0 is none.
 static uint32_t        s_srGen      = 0;
 static bool            s_macSet     = false;
+static uint32_t        s_txStarts   = 0;
+static uint32_t        s_txFailures = 0;
+static uint32_t        s_txLastTry  = 0;
+static uint8_t         s_txLastError = 0;
+static bool            s_txWasSending = false;
 
-bool advertising() { return s_advOn; }
+// The old s_advOn flag meant "we requested advertising" and was set even
+// when NimBLE failed to start. Never use it to claim that RF is enabled.
+bool advertising() {
+    NimBLEAdvertising* adv = NimBLEDevice::getAdvertising();
+    return adv && adv->isAdvertising();
+}
+TxStatus txStatus() {
+    size_t len = 0; uint32_t gen = 0;
+    const bool sending = MeshTalk::outgoing(millis(), len, gen) != nullptr;
+    return { advertising(), sending, s_txStarts, s_txFailures, s_txLastError };
+}
+static void txFailure(uint8_t code, const char* stage) {
+    s_txFailures++;
+    s_txLastError = code;
+    s_advOn = false;
+    // Frequent failures must not themselves become a memory/logging flood.
+    if (s_txFailures <= 8 || (s_txFailures % 50) == 0)
+        Serial.printf("[mesh-tx] FAILED %s (%u), count=%lu, heap=%lu, largest=%lu\n",
+                      stage, (unsigned)code, (unsigned long)s_txFailures,
+                      (unsigned long)ESP.getFreeHeap(),
+                      (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
+}
 
 // The payload we last handed the stack, so an unchanged one is never handed
 // over twice.
@@ -953,7 +980,11 @@ static size_t  s_lastAdvLen = 0;
 static void setAdvertising(bool on, uint32_t now) {
     NimBLEAdvertising* adv = NimBLEDevice::getAdvertising();
     if (!adv) return;
-    if (!on) { if (s_advOn) adv->stop(); s_advOn = false; return; }
+    if (!on) {
+        if (adv->isAdvertising() && !adv->stop()) txFailure(1, "stop");
+        s_advOn = adv->isAdvertising();
+        return;
+    }
 
     uint8_t buf[SquachMesh::LEN_MAX];
     const size_t n = buildSelf(buf);
@@ -988,8 +1019,16 @@ static void setAdvertising(bool on, uint32_t now) {
 
     NimBLEAdvertisementData d;
     d.setManufacturerData(md);
-    if (s_advOn) adv->stop();
-    adv->setAdvertisementData(d);
+    // If the library fails any stage, keep state uncommitted and retry.
+    // A failure used to be recorded as success, silently swallowing SEND.
+    if (adv->isAdvertising() && !adv->stop()) {
+        txFailure(1, "stop");
+        return;
+    }
+    if (!adv->setAdvertisementData(d)) {
+        txFailure(2, "advert-data");
+        return;
+    }
     // A message goes in the scan response, and turning the scan response ON
     // is also what makes the advert scannable at all: setScanResponseData()
     // alone stores the bytes and leaves the advert non-scannable, so nobody
@@ -1002,10 +1041,16 @@ static void setAdvertising(bool on, uint32_t now) {
         sm.append((const char*)out, outLen);
         NimBLEAdvertisementData r;
         r.setManufacturerData(sm);
-        adv->setScanResponseData(r);
+        if (!adv->setScanResponseData(r)) {
+            txFailure(3, "scan-response-data");
+            return;
+        }
         adv->enableScanResponse(true);
         // Scannable: a peer's scan request is how the message travels.
-        adv->setDiscoverableMode(BLE_GAP_DISC_MODE_GEN);
+        if (!adv->setDiscoverableMode(BLE_GAP_DISC_MODE_GEN)) {
+            txFailure(4, "scannable-mode");
+            return;
+        }
     } else {
         // 2.x pushes scan-response data to the controller the moment it is
         // set and enableScanResponse(false) only clears a flag, so the last
@@ -1017,11 +1062,17 @@ static void setAdvertising(bool on, uint32_t now) {
         // fresh reply data before the advert turns scannable again. (Not
         // cleared with empty data: the library takes &payload[0] of it.)
         adv->enableScanResponse(false);
-        adv->setDiscoverableMode(BLE_GAP_DISC_MODE_NON);
+        if (!adv->setDiscoverableMode(BLE_GAP_DISC_MODE_NON)) {
+            txFailure(4, "non-discoverable-mode");
+            return;
+        }
     }
     // Never connectable. Update mode's server shares this advertiser, and a
     // stack with the peripheral role compiled in defaults to connectable.
-    adv->setConnectableMode(BLE_GAP_CONN_MODE_NON);
+    if (!adv->setConnectableMode(BLE_GAP_CONN_MODE_NON)) {
+        txFailure(4, "non-connectable-mode");
+        return;
+    }
     // Message frames live in legacy scan responses. Formerly the 1.5s
     // advertising interval was almost as long as each 1.6s frame dwell:
     // every part could miss its only beacon after a stop/restart, leaving
@@ -1031,8 +1082,17 @@ static void setAdvertising(bool on, uint32_t now) {
                                : MeshAirtime::IDLE_ADVERTISING_MS;
     adv->setMinInterval((uint16_t)(advMs * 8 / 5));
     adv->setMaxInterval((uint16_t)(advMs * 8 / 5 + 16));
-    adv->start();
-
+    if (!adv->start() || !adv->isAdvertising()) {
+        txFailure(5, "start");
+        return;
+    }
+    s_txStarts++;
+    if (out && !s_txWasSending) {
+        Serial.printf("[mesh-tx] controller advertising MESSAGE/INVITE (%u-byte frame), heap=%lu, largest=%lu\n",
+                      (unsigned)outLen, (unsigned long)ESP.getFreeHeap(),
+                      (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
+    }
+    s_txWasSending = out != nullptr;
     memcpy(s_lastAdv, buf, n);
     s_lastAdvLen = n;
     s_advOn = true;
@@ -1062,11 +1122,18 @@ void radioTick(uint32_t now) {
     size_t   ol = 0;
     uint32_t og = 0;
     MeshTalk::outgoing(now, ol, og);
-    if (want && (!s_advOn || (now - s_advAt) > 10000 || og != s_srGen)) {
+    const bool live = advertising();
+    const bool needUpdate = !s_advOn || !live || (now - s_advAt) > 10000 || og != s_srGen;
+    // A message can be fully queued while the controller refuses the start;
+    // retry with a short backoff, including a single-part message whose
+    // outgoing generation would otherwise remain unchanged for 30 seconds.
+    if (MeshTxPolicy::attempt(want, needUpdate, now, s_txLastTry)) {
+        s_txLastTry = now;
         setAdvertising(true, now);
         s_advAt = now;
     }
-    if (!want && s_advOn) setAdvertising(false, now);
+    if (!want && live) setAdvertising(false, now);
+    if (!want) s_txWasSending = false;
 }
 
 void stopAdvertisingForUpdate() { setAdvertising(false, 0); }
