@@ -931,6 +931,7 @@ Stats stats() {
 #include "meshtalk.h"
 #include "mesh_airtime.h"
 #include "mesh_tx_policy.h"
+#include "mesh_appearance_policy.h"
 
 // SquachMesh's radio half: our advert, our scan response and our own
 // address. Everything that does not touch NimBLE -- who is visiting, the
@@ -1007,7 +1008,7 @@ static void setAdvertising(bool on, uint32_t now) {
     size_t   outLen = 0;
     uint32_t outGen = 0;
     const uint8_t* out = MeshTalk::outgoing(now, outLen, outGen);
-    const bool same = (n == s_lastAdvLen) && (memcmp(buf, s_lastAdv, n) == 0) &&
+    const bool same = !MeshAppearancePolicy::changed(buf, n, s_lastAdv, s_lastAdvLen) &&
                       outGen == s_srGen;
     if (same && s_advOn) return;
 
@@ -1114,16 +1115,29 @@ void radioTick(uint32_t now) {
     }
 
     const bool want = Settings::meshTransmit();
-    // Polled rather than event-driven, but setAdvertising() now returns on a
-    // memcmp when nothing changed, so this costs one comparison every ten
-    // seconds instead of rebuilding the advert 360 times an hour. A message
-    // starting or expiring is checked every tick, though: nobody should wait
-    // ten seconds for "On my way." to go out.
     size_t   ol = 0;
     uint32_t og = 0;
     MeshTalk::outgoing(now, ol, og);
     const bool live = advertising();
-    const bool needUpdate = !s_advOn || !live || (now - s_advAt) > 10000 || og != s_srGen;
+
+    // An outfit, shades or name can change while both SquachWatches are
+    // already in range. Previously the radio did not *look* for that change
+    // until the 10-second housekeeping pass. The receiver displays the new
+    // outfit as soon as its next advert arrives; comparing the compact
+    // eight/twenty-byte payload here lets it reach them on the next loop.
+    //
+    // This is strictly a read: it does not allocate, touch NVS, or stop
+    // NimBLE unless the appearance actually differs. Keep the existing
+    // periodic check and transmit-consent gate as well.
+    bool appearanceChanged = false;
+    if (want && live && s_advOn) {
+        uint8_t current[SquachMesh::LEN_MAX];
+        const size_t n = buildSelf(current);
+        appearanceChanged = MeshAppearancePolicy::changed(
+            current, n, s_lastAdv, s_lastAdvLen);
+    }
+    const bool needUpdate = !s_advOn || !live || appearanceChanged ||
+                            (now - s_advAt) > 10000 || og != s_srGen;
     // A message can be fully queued while the controller refuses the start;
     // retry with a short backoff, including a single-part message whose
     // outgoing generation would otherwise remain unchanged for 30 seconds.
