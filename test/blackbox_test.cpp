@@ -9,6 +9,8 @@
 #include "test_util.h"
 #include "blackbox.h"
 #include "clock.h"
+#include "gnss.h"
+#include <Arduino.h>     // millis(), as blackbox.cpp reads it
 #include <cstring>
 #include <cstdlib>
 
@@ -112,6 +114,34 @@ int main() {
         BlackBox::noteDetection(det(6003), false);
         s = walkDets();
         ck("the next write lands after it", s.n == 3 && s.first == 6003);
+    }
+
+    suite("A sighting with a fresh position keeps it");
+    {
+        Gnss::reset();
+        BlackBox::noteDetection(det(6100), false);
+        Gnss::phone(417687000, -723059900, 5, Clock::g_epoch, millis());
+        Detection longName = det(6101);
+        snprintf(longName.name, sizeof longName.name, "A NAME OF NINETEEN!");
+        BlackBox::noteDetection(longName, false);
+        BlackBox::noteDetection(det(6100), false);
+        struct P { int n; bool pos[3]; int32_t la, lo; char name[20]; } p = { 0, {}, 0, 0, "" };
+        BlackBox::forEachDetection([](const BlackBox::DetRecord& r, void* c) {
+            P& p = *(P*)c;
+            int32_t la, lo;
+            p.pos[p.n] = BlackBox::detPosition(r, la, lo);
+            if (p.n == 1) { p.la = la; p.lo = lo; memcpy(p.name, r.name, sizeof p.name); }
+            return ++p.n < 3;
+        }, &p);
+        ck("the two noted with a fix have a position", p.pos[0] && p.pos[1]);
+        ck("the one noted before it has none", !p.pos[2]);
+        ck("the position survives, west negative", p.la == 417687000 && p.lo == -723059900);
+        ck("the name is cut to eleven to make room", strcmp(p.name, "A NAME OF N") == 0);
+        int32_t la = 0, lo = 0;
+        ck("lastPosition finds the device", BlackBox::lastPosition(det(6100).mac, (uint8_t)DetectionType::AIRTAG, la, lo) &&
+                                            la == 417687000 && lo == -723059900);
+        ck("and nothing for one never seen with a fix", !BlackBox::lastPosition(det(9999).mac, (uint8_t)DetectionType::AIRTAG, la, lo));
+        Gnss::reset();
     }
 
     suite("Crashes");

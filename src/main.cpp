@@ -6507,6 +6507,11 @@ void loop() {
                         const char* lbl = d->name[0] ? d->name : vendorText(*d);
                         strncpy(s_confirmLabel, lbl, sizeof(s_confirmLabel) - 1);
                         s_confirmLabel[sizeof(s_confirmLabel) - 1] = 0;
+                        {
+                            int32_t la = 0, lo = 0;
+                            const bool has = BlackBox::lastPosition(d->mac, (uint8_t)d->type, la, lo);
+                            uiLogSetConfirmWhere(has, la, lo);
+                        }
                         s_confirmPending = true;
                         s_confirmArmed   = false;
                     }

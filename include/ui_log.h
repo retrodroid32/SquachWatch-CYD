@@ -39,6 +39,10 @@ void uiLogScroll(int delta);          // positive = scroll down (older)
 // flash is carried in a buffer of this screen's, so the pointer is good until
 // the next call -- draw it or copy it, do not keep it.
 const Detection* uiLogRow(const DetectionEngine& eng, int idx);
+// Where the long-pressed device was last seen, from the black box (a position
+// a GPS or a phone gave it). Shown on the confirm panel in place of its
+// question; `has` false clears it. Set when the panel opens.
+void uiLogSetConfirmWhere(bool has, int32_t lat7, int32_t lon7);
 uint16_t         uiLogRowCount(const DetectionEngine& eng);
 
 // Row index (0 = topmost visible, already adjusted for scroll) a tap

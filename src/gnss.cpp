@@ -5,6 +5,8 @@
 
 namespace Gnss {
 
+static bool s_phone = false;   // the fix came from a phone's FIX frame, not the UART
+
 namespace {
 
 Fix      s_fix;
@@ -86,10 +88,12 @@ void onGga(char** f, uint8_t n, uint32_t nowMs) {
     if (n < 10) return;
     const int q = atoi(f[6]);
     s_fix.used = (uint8_t)atoi(f[7]);
-    if (q <= 0) { s_fix.valid = s_faked && s_fix.valid; return; }
+    // No fix from the module: keep a fake or a phone's position rather than drop it.
+    if (q <= 0) { s_fix.valid = (s_faked || s_phone) && s_fix.valid; return; }
     int32_t la, lo;
     if (!coord(f[2], f[3], la) || !coord(f[4], f[5], lo)) return;
     s_faked = false;
+    s_phone = false;
     s_fix.valid = true;
     s_fix.lat7 = la; s_fix.lon7 = lo;
     s_fix.altM = (int16_t)atof(f[9]);
@@ -181,12 +185,13 @@ uint32_t utcEpoch() { return s_rmcEpoch; }
 uint32_t good() { return s_good; }
 uint32_t bad()  { return s_bad; }
 
-bool fresh(uint32_t nowMs) { return s_fix.valid && nowMs - s_fix.atMs < FRESH_MS; }
+bool fresh(uint32_t nowMs) { return s_fix.valid && nowMs - s_fix.atMs < (s_phone ? PHONE_FRESH_MS : FRESH_MS); }
 
 void reset() {
     s_fix = Fix();
     s_rmcEpoch = s_rmcDay = 0;
     s_faked = false;
+    s_phone = false;
     s_good = s_bad = 0;
     memset(s_viewDone, 0, sizeof s_viewDone);
     memset(s_heardDone, 0, sizeof s_heardDone);
@@ -207,6 +212,7 @@ uint32_t toEpoch(int y, int m, int d, int h, int mi, int s) {
 
 void fake(int32_t lat7, int32_t lon7, uint32_t epoch, uint32_t nowMs) {
     s_faked = true;
+    s_phone = false;
     s_fix.valid = true;
     s_fix.lat7 = lat7; s_fix.lon7 = lon7;
     s_fix.altM = 0; s_fix.accM = 50; s_fix.used = 0;
@@ -214,5 +220,18 @@ void fake(int32_t lat7, int32_t lon7, uint32_t epoch, uint32_t nowMs) {
     s_fix.atMs = nowMs;
 }
 bool faked() { return s_faked && s_fix.valid; }
+
+void phone(int32_t lat7, int32_t lon7, uint8_t accM, uint32_t epoch, uint32_t nowMs) {
+    if (s_fix.valid && !s_phone && !s_faked && nowMs - s_fix.atMs < FRESH_MS) return;   // our own GPS wins
+    s_phone = true;
+    s_faked = false;
+    s_fix.valid = true;
+    s_fix.lat7 = lat7; s_fix.lon7 = lon7;
+    s_fix.altM = 0; s_fix.accM = accM ? accM : 1; s_fix.used = 0;
+    s_fix.epoch = epoch;
+    s_fix.atMs = nowMs;
+}
+
+bool fromPhone() { return s_phone && s_fix.valid; }
 
 }  // namespace Gnss
