@@ -72,7 +72,7 @@ void paragraph(TFT_eSPI& t, int y, uint16_t c, const char* s) {
 
 const char* resultWords(OtaWifi::SavedResult r) {
     switch (r) {
-        case OtaWifi::SavedResult::JOINED:       return "joined at the last boot";
+        case OtaWifi::SavedResult::JOINED:       return "last connection verified";
         case OtaWifi::SavedResult::BAD_PASSWORD: return "wrong password";
         case OtaWifi::SavedResult::NOT_FOUND:    return "network not found";
         case OtaWifi::SavedResult::FAILED:       return "connection failed";
