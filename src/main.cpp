@@ -1477,14 +1477,14 @@ static bool s_radiosResting = false;   // the duty cycle's state; see twatchRadi
 #endif
 #if defined(TWATCH_S3) || SQW_BOOT_BTN
 // A crown press (or the CYDs' BOOT button) with the screen on turns it off
-// at once, cable or not. It stays off until the next touch, press or alert:
-// lastTouch moving past this moment is what ends it.
+// at once, cable or not. It stays off until the next touch or press:
+// lastTouch moving past this moment is what ends it. An alert only borrows
+// the screen (see the power saver in loop()).
 static bool     s_crownDark   = false;
 static uint32_t s_crownDarkAt = 0;
-// After an alert lights a button-darkened screen, it stays lit until this
-// moment -- the screen timeout, counted from the alert's end -- then goes
-// dark again. 0 = no alert has lit it.
-static uint32_t s_crownLitUntil = 0;
+// When the button was pressed: an alert already on screen then is one the
+// press was meant to put out, so only alerts after it light the screen.
+static uint32_t s_crownPressAt = 0;
 #endif
 
 static void applyCpuClock();
@@ -3398,8 +3398,7 @@ static void twatchCrownTick(uint32_t now) {
     if (s_pmu.isPekeyShortPressIrq()) {
         if (!s_screenDimmed) {
             s_crownDark = true;
-            s_crownDarkAt = now;
-            s_crownLitUntil = 0;
+            s_crownDarkAt = s_crownPressAt = now;
             Serial.println("[crown] screen off");
         } else {
             s_crownDark = false;
@@ -4852,7 +4851,7 @@ static void bootButtonTick(uint32_t now) {
     if (!down && was && !longDone && now - downAt >= 30) {
         Serial.println("[button] short press");
         if (s_chargeMode) exitChargeMode();
-        else if (!s_screenDimmed) { s_crownDark = true; s_crownDarkAt = now; s_crownLitUntil = 0; }
+        else if (!s_screenDimmed) { s_crownDark = true; s_crownDarkAt = s_crownPressAt = now; }
         else { s_crownDark = false; lastTouch = now; }
     }
     was = down;
@@ -8202,36 +8201,36 @@ void loop() {
 #endif
 #if defined(TWATCH_S3) || SQW_BOOT_BTN
         // The crown, which beats the cable, the desk and a timeout of NEVER.
-        // A touch since the press, or an alert that wants the screen, ends it.
+        // A touch or press since then ends it.
         //
-        // An alert lights it without ending it: once the alert is over the
-        // screen goes dark again after the screen timeout (30 s when that is
-        // NEVER), the way it would on battery. Taps on the alert card -- the
-        // one that dismisses it above all -- do not count as the touch that
-        // ends crown mode; a touch after that does.
+        // An alert borrows the screen without ending it: lit for as long as
+        // an alert card is up on its own (ten seconds; a WATCH card, which
+        // waits for a tap, goes dark with the card still on it), and dark
+        // the moment that is over -- no Squachy after it. It used to stay lit
+        // for the whole screen timeout, which read as the button undone.
+        // Taps on the alert card -- the one that dismisses it above all -- do
+        // not count as the touch that ends crown mode; a touch after that,
+        // including the one that wakes a dark WATCH card, does.
         {
-            static bool wasAlerting = false;
+            const uint32_t shownAt = state == AppState::WATCH_ALERT ? watchAlertStart : alertStart;
+            const bool alertLit = alerting && Settings::wakeOnAlert() &&
+                                  (int32_t)(now - shownAt) < (int32_t)ALERT_AUTO_DISMISS_MS &&
+                                  (int32_t)(shownAt - s_crownPressAt) > 0;
+            static bool wasLit = false;
             if (s_crownDark) {
-                if (alerting || wasAlerting) s_crownDarkAt = now;
-                if (wasAlerting && !alerting) {
-                    uint32_t t = Settings::screenTimeoutSecRaw();
-                    if (!t) t = 30;
-                    s_crownLitUntil = now + t * 1000UL;
-                    if (!s_crownLitUntil) s_crownLitUntil = 1;
-                }
+                if (alertLit || wasLit) s_crownDarkAt = now;
                 if ((int32_t)(lastTouch - s_crownDarkAt) > 0) s_crownDark = false;
             }
-            wasAlerting = alerting;
-        }
-        if (s_crownDark) {
-            const bool alertWants = Settings::wakeOnAlert() && alerting;
-            const bool lit = s_crownLitUntil && (int32_t)(s_crownLitUntil - now) > 0;
-            wantDim = !alertWants && !lit;
+            wasLit = alertLit;
+            if (s_crownDark) wantDim = !alertLit;
         }
 #endif
         if (wantDim != s_screenDimmed) {
             s_screenDimmed = wantDim;
             applyBrightness();
+#if defined(TWATCH_S3) || SQW_BOOT_BTN
+            if (s_crownDark) Serial.println(wantDim ? "[button] screen dark" : "[button] screen lit by an alert");
+#endif
         }
 
         // Auto-lock, on the saver's idle clock: after N idle minutes, or the
