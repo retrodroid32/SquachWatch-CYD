@@ -94,7 +94,7 @@ ble_adv_utils_test_SRCS       :=
 uifit_test_SRCS               :=
 
 .PHONY: all clean
-all: $(addprefix run-,$(TESTS))
+all: $(addprefix run-,$(TESTS)) run-time-zone-test
 
 $(OUT):
 	@mkdir -p $(OUT)
@@ -141,3 +141,8 @@ $(OUT)/meshcrypto_test: $(CRYPTO_OBJS)
 	$(CXX) -o $@ $^ -lmbedcrypto
 
 -include $(CRYPTO_OBJS:.o=.d)
+
+# Validate the real firmware zone table/order without Arduino hardware.
+.PHONY: run-time-zone-test
+run-time-zone-test:
+	@python3 time_zone_test.py
