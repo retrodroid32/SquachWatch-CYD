@@ -792,6 +792,13 @@ void pollSerial() {
         } else if (strncasecmp(line, "UPDATE STOP", 11) == 0) {
             g_benchUpdateStop = true;
             Serial.println("[bench] cancelling the update");
+        } else if (strncasecmp(line, "REMOTE UPDATE", 13) == 0) {
+            // SECURITY > REMOTE UPDATE, for a squad update sent to a board nobody is at.
+            const char* a = line + 13;
+            while (*a == ' ') a++;
+            const bool want = strcasecmp(a, "OFF") != 0;
+            if (Settings::remoteUpdate() != want) Settings::toggleRemoteUpdate();
+            Serial.printf("[bench] remote update %s\n", Settings::remoteUpdate() ? "on" : "off");
 #if SQUACH_MESH
         } else if (strncasecmp(line, "SQUAD JOIN ", 11) == 0) {
             // Everything the SQUACHMESH pages would switch on, and a phrase,
