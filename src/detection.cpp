@@ -1029,29 +1029,34 @@ static void setAdvertising(bool on, uint32_t now) {
     md.append((const char*)payload, payloadLen);
 
     NimBLEAdvertisementData d;
-    d.setManufacturerData(md);
+    if (!d.setManufacturerData(md)) {
+        txFailure(2, "manufacturer-size");
+        return;
+    }
     // If the library fails any stage, keep state uncommitted and retry.
-    // A failure used to be recorded as success, silently swallowing SEND.
     if (adv->isAdvertising() && !adv->stop()) {
         txFailure(1, "stop");
         return;
     }
-    if (!adv->setAdvertisementData(d)) {
-        txFailure(2, "advert-data");
-        return;
-    }
-    // Universal passive-compatible radio: messages AND presence travel in
-    // primary non-scannable advertisements. NimBLE 2.x can retain an old
-    // scan-response buffer, so disable that path explicitly.
+    // IMPORTANT with NimBLE-Arduino 2.5.1:
+    // setDiscoverableMode() adds FLAGS to the stored advertisement, and
+    // enableScanResponse() clears its cached-data flag. If either runs
+    // after setAdvertisementData(), start() may re-submit 31 bytes PLUS
+    // 3 bytes of FLAGS and reject the entire primary message. Configure
+    // all modes first; publish the exact complete manufacturer AD *last*.
     adv->enableScanResponse(false);
     if (!adv->setDiscoverableMode(BLE_GAP_DISC_MODE_NON)) {
         txFailure(4, "non-discoverable-mode");
         return;
     }
-    // Never connectable. Update mode's server shares this advertiser, and a
-    // stack with the peripheral role compiled in defaults to connectable.
+    // Never connectable. The BLE OTA update server shares this advertiser;
+    // its ownership logic above remains the same.
     if (!adv->setConnectableMode(BLE_GAP_CONN_MODE_NON)) {
         txFailure(4, "non-connectable-mode");
+        return;
+    }
+    if (!adv->setAdvertisementData(d)) {
+        txFailure(2, "advert-data");
         return;
     }
     // Message frames live in legacy scan responses. Formerly the 1.5s
