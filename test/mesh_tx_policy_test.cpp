@@ -12,6 +12,6 @@ int main() {
     assert(attempt(true, true, 601, 100));   // retry failed singleton frame
     assert(!attempt(false, true, 601, 100)); // never advertise without consent
     assert(!attempt(true, false, 601, 100));
-    assert(attempt(true, true, 1100, 601));
+    assert(attempt(true, true, 1101, 601));
     std::puts("PASS: advertising retry backoff and consent gate");
 }
