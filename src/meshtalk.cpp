@@ -4,6 +4,7 @@
 
 #if SQUACH_MESH
 #include "meshcrypto.h"
+#include "mesh_airtime.h"
 #include "settings.h"
 #include "clock.h"
 #include "ota_core.h"
@@ -34,11 +35,10 @@ MeshMsg::Assembly s_asm;
 // message, short enough that the device stops announcing it has something to
 // say.
 constexpr uint32_t SEND_MS = 30000;
-// How long each part of a typed message holds the scan response before the
-// next takes over. Just over one advert interval (1500 ms), so every part is
-// on the air for at least one advert per turn; three parts come round every
-// 4.8 s, six times in the thirty.
-constexpr uint32_t PART_MS = 1600;
+// How long each part holds the scan response. The message advertiser uses
+// a much shorter interval than this dwell, giving each frame several on-air
+// opportunities after every NimBLE advertising restart. See mesh_airtime.h.
+constexpr uint32_t PART_MS = MeshAirtime::FRAME_DWELL_MS;
 constexpr uint32_t EMOTE_MS = 9000;
 // A nudge and its WiFi parts: up to seven frames taking turns, so each is
 // on the air far less often than a message's three. A full minute.
