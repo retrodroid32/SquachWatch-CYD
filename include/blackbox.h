@@ -132,6 +132,10 @@ uint16_t bootNumber();
 void noteBoot(BootRecord& r);
 
 void noteDetection(const Detection& d, bool again);
+// The same, with the time and place given rather than read now: for the phone
+// app's emulator, which replays the phone's saved catches into its LOG when it
+// starts (sim/main_wasm.cpp, sw_log_catch). Nothing on a board calls it.
+void noteDetectionAt(const Detection& d, bool again, uint32_t epoch, bool hasPos, int32_t lat7, int32_t lon7);
 // LOG's CLR: a mark, not an erase. What came before it is not shown again,
 // and the ring wears it away like anything else.
 void markCleared();
