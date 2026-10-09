@@ -9,6 +9,7 @@
 #include "regulars.h"
 #include "clock.h"
 #include "ble_adv_utils.h"
+#include "ble_scan_policy.h"
 #include <Arduino.h>
 #include <WiFi.h>
 #include <esp_wifi.h>
@@ -1084,10 +1085,11 @@ static const uint32_t SCAN_FLUSH_MS = 60000;
 // heap is watched too: a flush also goes out the moment the largest free
 // block falls under this, no more than once every few seconds.
 static const uint32_t SCAN_FLUSH_MIN_MS   = 4000;
-// Measured on the bench: a healthy 2.8" board has 12 KB in a piece with
-// Bluetooth up, and a board under real pressure sat at 5 KB and below, so
-// the bar goes between them. At 20 KB it fired every four seconds at rest.
-static const uint32_t SCAN_FLUSH_BLOCK_B  = 8192;
+// The 8 KB legacy pressure threshold stays unchanged for normal BLE scanning.
+// While SquachMesh messaging is enabled, use the paired floor from
+// ble_scan_policy.h so healthy 3.2" boards close to 8 KB are not repeatedly
+// flushed into passive mode after making room for scan-response reception.
+// The mesh pressure floor stays above the 5 KB failing-memory observation.
 // A breath after the radios come up, no more: the same user's board, with
 // fifteen seconds here, was dead at two seconds up.
 static const uint32_t SCAN_FLUSH_SETTLE_MS = 1000;
@@ -1113,10 +1115,19 @@ static const uint32_t SCAN_ACTIVE_BELOW   = 50;      // adverts/s: quiet enough 
 // a Flipper), so a busy room keeps its names and squad messages. Passive is
 // still the net above this, and heap pressure still forces it regardless.
 static const uint32_t SCAN_PASSIVE_ABOVE  = 300;     // adverts/s: too loud to keep asking
-// The block an active scan needs to spare before it starts. Measured on the
-// bench: a 2.8" board has 12 KB in a piece once Bluetooth is up, and ran
-// active scans on that for a year, so the bar sits under it.
-static const uint32_t SCAN_ACTIVE_BLOCK_B = 8192;
+// The normal active-scan entry floor remains 8 KB. SquachMesh's messages
+// and invitation replies are carried in scan responses, so a board that
+// is just under 8 KB can *send* but cannot *receive* messages. A slightly
+// lower entry floor is allowed only when mesh reception is enabled; its
+// pressure floor remains conservative and independent of the 1.5 KB
+// callback guard. See ble_scan_policy.h and mesh_scan_policy_test.cpp.
+static bool meshNeedsScanResponses() {
+#if SQUACH_MESH
+    return Settings::meshDetect() && Settings::messagesOn();
+#else
+    return false;
+#endif
+}
 static const uint32_t SCAN_MODE_SETTLE_MS = 5000;    // listen this long before the first change
 static const uint32_t SCAN_MODE_DWELL_MS  = 30000;   // and this long between changes
 static volatile bool  s_wantPassive = true;          // the loop task's decision, read on the host task
@@ -1171,24 +1182,27 @@ static bool scanModeTick(uint32_t now, uint32_t largest) {
     lastRaw = raw;
     lastAt  = now;
     const bool pressedWindow = s_passiveUntil && (int32_t)(s_passiveUntil - now) > 0;
+    const bool meshRx = meshNeedsScanResponses();
+    const uint32_t activeFloor = BleScanPolicy::activeEntryFloor(meshRx);
     bool want = s_wantPassive;
     // Heap pressure first: the bench may pin the scan active to watch it
     // suffer, but a board that is out of room goes passive whatever the pin
     // says, since the pin ships in every build and the abort is real. That
     // is the pressed window (three early flushes in a minute) and the same
     // block bar that gates going active in AUTO.
-    if (pressedWindow)       want = true;
+    if (pressedWindow || (meshRx && BleScanPolicy::belowPressureFloor(meshRx, largest)))
+        want = true; // even a pinned-active bench must yield when mesh memory is low
     else if (s_scanPin == 1) {
         // Pinned active, while there is room: under the bar it goes passive
         // at once, and comes back only after the same dwell AUTO keeps, or
         // a flood that hovers at the bar would restart the scan every second.
-        if (largest < SCAN_ACTIVE_BLOCK_B) want = true;
+        if (largest < activeFloor) want = true;
         else if (!s_wantPassive || now - modeSince >= (modeSince ? SCAN_MODE_DWELL_MS : SCAN_MODE_SETTLE_MS)) want = false;
     }
     else if (s_scanPin == 2) want = true;
     else if (!s_wantPassive && s_advRate > SCAN_PASSIVE_ABOVE) want = true;
     else if (s_wantPassive && now - modeSince >= (modeSince ? SCAN_MODE_DWELL_MS : SCAN_MODE_SETTLE_MS) &&
-             s_advRate < SCAN_ACTIVE_BELOW && largest >= SCAN_ACTIVE_BLOCK_B) want = false;
+             s_advRate < SCAN_ACTIVE_BELOW && largest >= activeFloor) want = false;
     if (want == s_wantPassive) return false;
     s_wantPassive = want;
     modeSince = now;
@@ -1218,7 +1232,9 @@ static void scanFlushTick() {
     if (s_windowPending) { s_windowPending = false; modeChanged = true; Serial.printf("[scan] window %u from the next restart\n", (unsigned)s_windowReq); }
     // A passive scan holds nothing between flushes, so heap pressure there
     // is somebody else's and a restart would not help.
-    const bool pressed = !s_passiveNow && largest < SCAN_FLUSH_BLOCK_B && now > SCAN_FLUSH_SETTLE_MS &&
+    const bool pressed = !s_passiveNow &&
+                         BleScanPolicy::belowPressureFloor(meshNeedsScanResponses(), largest) &&
+                         now > SCAN_FLUSH_SETTLE_MS &&
                          now - s_lastFlush >= SCAN_FLUSH_MIN_MS;
     if (!pressed && !modeChanged && now - s_lastFlush < SCAN_FLUSH_MS) return;
     if (pressed) {
