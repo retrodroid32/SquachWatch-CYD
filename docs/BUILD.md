@@ -69,6 +69,24 @@ pio run -t upload
 pio run -e cyd32-st7798 -t upload
 ```
 
+**Optional GPS variants** use UART2 at 115200 baud. The 2.8" profiles use
+GPS TX → GPIO35 and GPS RX → GPIO22. The 3.2" E32R32P profiles use the
+board's 4-pin UART connector: GPS TX → RXD (GPIO3), GPS RX → TXD (GPIO1).
+GPS is independent of the display clock:
+```sh
+# 3.2" normal display clock + GPS
+pio run -e cyd32-st7798-gps -t upload
+
+# 3.2" 80MHz display + GPS
+pio run -e cyd32-st7798-fast-gps -t upload
+
+# 2.8" ST7789 examples
+pio run -e cyd-gps -t upload
+pio run -e cyd-fast-gps -t upload
+```
+The ILI9341 equivalents are `cyd-ili9341-gps` and
+`cyd-ili9341-fast-gps`.
+
 On Windows you can also run `build_cyd32_st7798.bat` and
 `flash_cyd32_st7798.bat`. The flash helper lists detected serial ports and
 asks which COM port to use before uploading.
