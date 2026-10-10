@@ -1,5 +1,9 @@
 // SquachWatch-CYD — firmware updates over WiFi. See include/ota_wifi.h.
 #include "ota_wifi.h"
+#if defined(CROWPANEL7)
+#include "crowpanel7_backlight.h"
+#include "settings.h"
+#endif
 #include "security.h"
 #include "clock.h"
 #include <Arduino.h>
@@ -504,6 +508,11 @@ bool begin() {
     s_cancel = s_install = s_downloadStarted = false;
     s_rx = s_size = 0;
     WiFi.mode(WIFI_STA);
+#if defined(CROWPANEL7)
+    // The 7-inch backlight plus full Wi-Fi TX can brown out marginal USB power.
+    CrowBL::set(24);
+    WiFi.setTxPower(WIFI_POWER_8_5dBm);
+#endif
     // A saved network is used straight away. The list only appears when there
     // is nothing saved, or through TRY AGAIN when the saved one cannot be
     // joined -- which is also how somebody who has moved picks a new one.
@@ -520,6 +529,9 @@ bool end() {
     s_cancel = true;
     WiFi.scanDelete();
     s_state = State::OFF;
+#if defined(CROWPANEL7)
+    CrowBL::set(Settings::brightness());
+#endif
     Serial.println("[ota] wifi update mode off");
     return false;
 }
@@ -678,6 +690,10 @@ bool bootCheck(uint32_t budgetMs) {
     if (!s_n) return false;
     const uint32_t t0 = millis();
     WiFi.mode(WIFI_STA);
+#if defined(CROWPANEL7)
+    // CrowPanel boot check uses the same reduced TX load as interactive OTA.
+    WiFi.setTxPower(WIFI_POWER_8_5dBm);
+#endif
     // More than one network saved: a quick scan says which are here, and the
     // one marked USE wins when it is, else the strongest of the rest. One
     // network: join it blind, as before, and keep the scan's two seconds.
