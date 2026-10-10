@@ -9,7 +9,9 @@
 // pins, and nothing else on the Phantom's build uses 4, 16 or 17. The AWOK
 // and the 3.5" are unverified and get nothing -- see the header for why that
 // is a rule and not a shortcut.
-#if defined(ESP32) && !defined(CYD35) && !defined(AWOK) && !defined(TWATCH_S3)
+#if defined(FREENOVE_S3)
+#define STATUS_LIGHT_HW 2
+#elif defined(ESP32) && !defined(CYD35) && !defined(AWOK) && !defined(TWATCH_S3)
 #define STATUS_LIGHT_HW 1
 #else
 #define STATUS_LIGHT_HW 0
@@ -25,6 +27,9 @@ static const int     PIN_R = 22, PIN_G = 16, PIN_B = 17;
 static const int     PIN_R = 4, PIN_G = 16, PIN_B = 17;
 #endif
 static const uint8_t CH_R  = 3, CH_G  = 4,  CH_B  = 5;
+#if STATUS_LIGHT_HW == 2
+static const uint8_t PIN_WS2812 = 42;
+#endif
 
 static const uint32_t TICK_MS        = 20;
 static const uint32_t BOOT_SWEEP_MS  = 600;
@@ -91,8 +96,21 @@ static uint16_t s_outR = PWM_MAX, s_outG = PWM_MAX, s_outB = PWM_MAX;   // last 
 
 bool available() { return STATUS_LIGHT_HW != 0; }
 
+#if STATUS_LIGHT_HW == 2
+static uint16_t s_pixR = 0xFFFF, s_pixG = 0xFFFF, s_pixB = 0xFFFF;
+static inline uint8_t to8(uint16_t v) {
+    const uint32_t q = ((uint32_t)v * 255 + PWM_MAX / 2) / PWM_MAX;
+    return (uint8_t)(v && !q ? 1 : q);
+}
+#endif
+
 static void write(uint16_t r, uint16_t g, uint16_t b) {
-#if STATUS_LIGHT_HW
+#if STATUS_LIGHT_HW == 2
+    const uint8_t pr = to8(r), pg = to8(g), pb = to8(b);
+    if (pr == s_pixR && pg == s_pixG && pb == s_pixB) return;
+    neopixelWrite(PIN_WS2812, pr, pg, pb);
+    s_pixR = pr; s_pixG = pg; s_pixB = pb;
+#elif STATUS_LIGHT_HW
     // Common anode: full duty is off. Only touch the peripheral when a value
     // actually changes, which during a steady alert is never.
     const uint16_t ir = PWM_MAX - r, ig = PWM_MAX - g, ib = PWM_MAX - b;
@@ -105,7 +123,9 @@ static void write(uint16_t r, uint16_t g, uint16_t b) {
 }
 
 void begin() {
-#if STATUS_LIGHT_HW
+#if STATUS_LIGHT_HW == 2
+    write(0, 0, 0);
+#elif STATUS_LIGHT_HW
     ledcSetup(CH_R, 5000, PWM_BITS); ledcAttachPin(PIN_R, CH_R);
     ledcSetup(CH_G, 5000, PWM_BITS); ledcAttachPin(PIN_G, CH_G);
     ledcSetup(CH_B, 5000, PWM_BITS); ledcAttachPin(PIN_B, CH_B);

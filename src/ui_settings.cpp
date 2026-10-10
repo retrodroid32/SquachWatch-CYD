@@ -49,6 +49,9 @@ static uint8_t s_dexCaught = 0;
 // has turned off) are filtered out by visibleRows() below rather than
 // removed here, so their SettingsRow values stay stable regardless of
 // which mode is active.
+#if defined(FREENOVE_S3)
+void boardBatteryLine(char* out, size_t n);
+#endif
 #if defined(TWATCH_S3)
 void twatchBatteryLine(char* out, size_t n);   // main.cpp, where the power chip lives
 bool twatchRadioResetArmed();                  // main.cpp: the first tap of two
@@ -121,6 +124,9 @@ static const uint8_t WATCH_ROWS_N = sizeof(WATCH_ROWS) / sizeof(WATCH_ROWS[0]);
 
 // The SYSTEM page: the rarely-needed machinery, off the main list.
 static const SettingsRow SYSTEM_ROWS[] = {
+#if defined(FREENOVE_S3)
+    SettingsRow::BOARD_BATTERY,
+#endif
     SettingsRow::PRIVACY,
     SettingsRow::CALIBRATE, SettingsRow::CHECK_COLORS,
     SettingsRow::DIAGNOSTICS, SettingsRow::UPDATE_FIRMWARE, SettingsRow::UPDATE_CHECK, SettingsRow::WIFI_NETWORKS,
@@ -199,6 +205,8 @@ static RowGroupId groupFor(SettingsRow r) {
             return RowGroupId::WATCH;
         // TIME ZONE sat on the SYSTEM page too, the same setting twice. Only
         // the clock reads it, so it lives with the clock.
+        case SettingsRow::BOARD_BATTERY:
+            return RowGroupId::SYSTEM;
         case SettingsRow::TIME_ZONE:
         case SettingsRow::DESK_OPEN:
         case SettingsRow::DESK_BACKGROUND:
@@ -841,6 +849,11 @@ static void rowContent(SettingsRow r, const DetectionEngine& eng, char* valBuf, 
             snprintf(valBuf, valBufN, "%u", (unsigned)IgnoreList::count());
             value = valBuf;
             break;
+#if defined(FREENOVE_S3)
+        case SettingsRow::BOARD_BATTERY:
+            label = "BATTERY"; boardBatteryLine(valBuf, valBufN); value = valBuf;
+            break;
+#endif
 #if defined(TWATCH_S3)
         case SettingsRow::WATCH_BATTERY:
             label = "BATTERY"; twatchBatteryLine(valBuf, valBufN); value = valBuf;
