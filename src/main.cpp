@@ -396,7 +396,10 @@ static void drawCrashCard(TFT_eSPI& t) {
 // relative to it. File-scope (not local to setup()) so the Settings >
 // INVERT row handler in loop() can use the same XOR instead of
 // clobbering this baseline with an absolute call.
-#if defined(TWATCH_S3)
+#if defined(FREENOVE_S3)
+// Freenove's ILI9341 setup specifies inversion on.
+constexpr bool PANEL_NEEDS_INVERSION = true;
+#elif defined(TWATCH_S3)
 // Confirmed on the watch 2026-09-22: the ST7789 wants inversion on (as
 // LilyGo's own setup says); false showed every colour inverted.
 constexpr bool PANEL_NEEDS_INVERSION = true;
@@ -1176,7 +1179,7 @@ static bool    s_confirmArmed = false;
 // The compiled-in ranges are a 2.8" board's. Anywhere else -- the digitisers
 // on the display's own bus -- they put taps nowhere near the finger, so a
 // board with nothing better has no SKIP to offer.
-#if defined(TOUCH_SHARES_DISPLAY_BUS) || defined(CYD35) || defined(TWATCH_S3)
+#if defined(TOUCH_SHARES_DISPLAY_BUS) || defined(CYD35) || defined(TWATCH_S3) || defined(FREENOVE_S3)
 static const bool DEFAULT_TOUCH_USABLE = false;
 #else
 static const bool DEFAULT_TOUCH_USABLE = true;
@@ -2087,6 +2090,38 @@ static void twatchPowerUp() {
 }
 #endif
 
+#if defined(FREENOVE_S3)
+// One-cell LiPo through the board's 200K/200K divider to ADC1 GPIO9.
+// There is no fuel-gauge IC and the charger status is not wired to the ESP32,
+// so this is explicitly a voltage-derived estimate, never a charging claim.
+static uint16_t freenoveS3BatteryMv() {
+    uint32_t sum = 0;
+    for (int i = 0; i < 8; i++) sum += analogReadMilliVolts(9);
+    return (uint16_t)(sum / 8 * 2);
+}
+static uint8_t freenoveS3BatteryPct(uint16_t mv) {
+    static const uint16_t MV[]  = {3300,3500,3600,3700,3750,3800,3850,3900,4000,4100,4200};
+    static const uint8_t  PCT[] = {0,5,10,20,30,40,50,60,75,90,100};
+    if (mv <= MV[0]) return 0;
+    for (uint8_t i = 1; i < sizeof(MV)/sizeof(MV[0]); i++)
+        if (mv <= MV[i]) return (uint8_t)(PCT[i-1] + (uint32_t)(PCT[i]-PCT[i-1]) * (mv-MV[i-1]) / (MV[i]-MV[i-1]));
+    return 100;
+}
+void boardBatteryLine(char* out, size_t n) {
+    static uint32_t at = 0;
+    static char line[16] = "";
+    const uint32_t now = millis();
+    if (!line[0] || now - at >= 2000u) {
+        at = now ? now : 1;
+        const uint16_t mv = freenoveS3BatteryMv();
+        if (mv < 2500) snprintf(line, sizeof line, "NONE");
+        else snprintf(line, sizeof line, "%u%% %u.%02uV", (unsigned)freenoveS3BatteryPct(mv),
+                      (unsigned)(mv/1000), (unsigned)(mv%1000/10));
+    }
+    snprintf(out, n, "%s", line);
+}
+#endif
+
 #if defined(TWATCH_S3)
 // One battery sample into the black box. See BattRecord for what it holds
 // and why. Printed too, so a bench run shows the same line the ring keeps.
@@ -2774,7 +2809,7 @@ void setup() {
     // while it is still the previous life's, not this one's.
     crashReportInit();
     Serial.begin(SERIAL_BAUD);
-#if defined(TWATCH_S3)
+#if defined(TWATCH_S3) || defined(FREENOVE_S3)
     // Native USB: with nothing reading the port, every print would otherwise
     // wait its full timeout for a host, and after the chatty first-boot
     // calibration the loop crawled so slowly the screen looked frozen black.
@@ -2811,12 +2846,11 @@ void setup() {
 // Not on AWOK (TOUCH_CS there) and not on either RL Phantom, where GPIO21 is
 // the capacitive controller's INTERRUPT line. Driving it high at boot is the
 // same mistake as the LEDC attach further down, just earlier.
-#if !defined(AWOK) && !defined(RLPHANTOM) && !defined(RLPHANTOM_R) && !defined(TWATCH_S3)
+#if !defined(AWOK) && !defined(RLPHANTOM) && !defined(RLPHANTOM_R) && !defined(TWATCH_S3) && !defined(FREENOVE_S3)
     pinMode(21, OUTPUT); digitalWrite(21, HIGH);
 #endif
-#if defined(TWATCH_S3)
-    // GPIO27 and GPIO32 are the S3's PSRAM lines: touching either hangs the
-    // chip until the watchdog reboots it. The watch's backlight is GPIO45.
+#if defined(TWATCH_S3) || defined(FREENOVE_S3)
+    // S3 board: use its dedicated GPIO45 backlight and leave legacy CYD pins alone.
     pinMode(45, OUTPUT); digitalWrite(45, HIGH);
 #else
     pinMode(27, OUTPUT); digitalWrite(27, HIGH);
@@ -2879,7 +2913,7 @@ void setup() {
 // TOUCH_CS on AWOK, and the capacitive controller's INTERRUPT line on the RL
 // Phantom. Driving a 5 kHz PWM onto either is the kind of fault that looks
 // like dead touch, which is exactly how it presented on the Phantom.
-#if defined(TWATCH_S3)
+#if defined(TWATCH_S3) || defined(FREENOVE_S3)
     // One backlight, GPIO45, on the first channel. The CYD pins below are
     // flash/PSRAM lines and the power chip's interrupt on an S3.
     ledcSetup(BL_CH_ORIG, 5000, 8);
@@ -3019,6 +3053,14 @@ void setup() {
     usingCapTouch = CapTouch::probe();
     Serial.println(usingCapTouch ? "T-Watch S3 -- FT6336 capacitive touch answered."
                                  : "T-Watch S3 -- FT6336 did not answer; no touch.");
+#elif defined(FREENOVE_S3)
+    // FNK0104B: FT6336 at 0x38 on SDA16/SCL15 with reset on GPIO18.
+    // FNK0104A has no touch controller and safely continues without touch.
+    CapTouch::begin(16, 15, 18, 0x38);
+    usingCapTouch = CapTouch::probe();
+    Serial.println(usingCapTouch ? "Freenove S3 -- FT6336 capacitive touch answered."
+                                 : "Freenove S3 -- FT6336 did not answer; no touch (FNK0104A?).");
+    { char b[16]; boardBatteryLine(b, sizeof b); Serial.printf("[batt] %s\n", b); }
 #elif defined(TOUCH_ON_DISPLAY_BUS)
     // AWOK's XPT2046 sits on the display's own shared VSPI bus (TOUCH_CS=21,
     // already armed by TFT_eSPI itself once awok_user_setup.h's #define
@@ -3118,9 +3160,14 @@ void setup() {
     }
 #endif
 
-    // Seed the PRNG so the digital rain starts in a fresh-looking state
-    // on every boot. Analog read on a floating pin is plenty.
+    // Seed the PRNG so the digital rain starts in a fresh-looking state.
+#if defined(FREENOVE_S3)
+    // Avoid guessing which S3 pins are safe ADC inputs around OPI PSRAM.
+    randomSeed(esp_random());
+#else
+    // Analog read on a floating pin is plenty on the classic ESP32 boards.
     randomSeed(analogRead(34));
+#endif
 
     // The backlight goes down while the radios come up, and back to your
     // setting once they are running.
@@ -6364,7 +6411,9 @@ void loop() {
                 info.calB0 = (int16_t)lroundf(b0); info.calB1 = (int16_t)lroundf(b1);
             }
             info.usingCapTouch = usingCapTouch;
-#if defined(FREENOVE32)
+#if defined(FREENOVE_S3)
+            info.boardName = "Freenove S3 2.8";
+#elif defined(FREENOVE32)
             info.boardName = "Freenove 3.2";
 #elif defined(CYD32)
             info.boardName = "CYD 3.2";
