@@ -746,6 +746,11 @@
       <button id="clockBtn" class="identify-btn">[ SET TIME &amp; ZONE ]</button>
       <div class="identify-result" id="clockResult"></div>
     </div>
+    <div class="identify-row">
+      <button id="wigleBtn" class="identify-btn">[ DOWNLOAD WIGLE FILE ]</button>
+      <div class="identify-result" id="wigleResult"></div>
+    </div>
+    <p class="browser-note"><strong>Download WiGLE File</strong> is for a T-Watch S3 Plus with WARDRIVE on (WATCH SETTINGS): it saves every network and device the watch logged, with where, as a WiGLE file you can upload at <a href="https://wigle.net/uploads" target="_blank" rel="noopener">wigle.net/uploads</a>. The log stays on the watch until you clear it.</p>
     <p class="browser-note">After flashing, <strong>Set Time &amp; Zone</strong> tells the board this computer's clock and time zone over the same cable. The zone is kept for good; the clock lasts until the board is unplugged, and a saved WiFi network puts it back at every boot. A T-Watch has its clock set for it after installing, and keeps the time from then on, even through a flat battery.</p>
   </div>
 
@@ -1637,6 +1642,16 @@
   // had time to boot, and the boot-time update check with it.
   var clockBtn = document.getElementById('clockBtn');
   var clockResult = document.getElementById('clockResult');
+  var wigleBtn = document.getElementById('wigleBtn');
+  var wigleResult = document.getElementById('wigleResult');
+  if (wigleBtn) {
+    if (!('serial' in navigator)) {
+      wigleBtn.disabled = true;
+      wigleBtn.textContent = '[ DOWNLOAD WIGLE FILE ] (needs a desktop browser)';
+    } else {
+      wigleBtn.addEventListener('click', downloadWigle);
+    }
+  }
   if (clockBtn) {
     if (!('serial' in navigator)) {
       clockBtn.disabled = true;
@@ -1788,6 +1803,87 @@
       try { if (port) await port.close(); } catch (e4) {}
     } finally {
       clockBtn.disabled = false;
+    }
+  }
+
+  async function downloadWigle() {
+    wigleBtn.disabled = true;
+    wigleResult.className = 'identify-result';
+    var port, writer, reader;
+    try {
+      wigleResult.textContent = 'Pick the watch’s port...';
+      port = await navigator.serial.requestPort({ filters: [{ usbVendorId: 0x303A }] });
+      await port.open({ baudRate: 115200, bufferSize: 65536 });
+      try { await port.setSignals({ requestToSend: false }); } catch (e) {}
+      try { await port.setSignals({ dataTerminalReady: false }); } catch (e) {}
+      var enc = new TextEncoder(), dec = new TextDecoder();
+      reader = port.readable.getReader();
+      var text = '', started = false, ended = null, sentAt = 0, asked = 0, t0 = Date.now(), lastData = Date.now();
+      async function ask() {
+        writer = port.writable.getWriter();
+        // A blank line first: the first byte after an open can go missing.
+        await writer.write(enc.encode('\nWIGLE\n'));
+        writer.releaseLock(); writer = null;
+        sentAt = Date.now(); asked++;
+      }
+      await ask();
+      while (!ended) {
+        var chunk = await Promise.race([reader.read(), new Promise(function (r) { setTimeout(function () { r({ done: false, value: null }); }, 400); })]);
+        if (chunk.done) break;
+        if (chunk.value) { text += dec.decode(chunk.value, { stream: true }); lastData = Date.now(); }
+        if (!started && text.indexOf('=== WIGLE BEGIN') >= 0) started = true;
+        var m = /=== WIGLE END (\d+) rows \((\d+) bench rows left out\)( INCOMPLETE)? ===/.exec(text);
+        if (m) { ended = m; break; }
+        if (started) {
+          var rows = (text.match(/\n[0-9a-f]{2}(:[0-9a-f]{2}){5},/g) || []).length;
+          wigleResult.textContent = 'Receiving... ' + rows + ' rows';
+          if (Date.now() - lastData > 10000) throw new Error('the watch stopped sending part-way');
+        } else {
+          // Opening the port can restart the watch. If nothing answers, wait
+          // for its main screen and ask again.
+          if (text.indexOf('[frame]') >= 0 && Date.now() - sentAt > 4000 && asked < 3) { text = ''; await ask(); }
+          if (Date.now() - t0 > 60000) throw new Error('the watch did not answer. Is it a T-Watch S3 Plus on this firmware?');
+          if (!started) wigleResult.textContent = 'Asking the watch for its log...';
+        }
+        if (text.length > 40000000) throw new Error('far more came back than a wardrive log holds');
+      }
+      await reader.cancel(); reader.releaseLock(); reader = null;
+      await port.close(); port = null;
+      if (!ended) throw new Error('the export did not finish');
+      if (ended[3]) throw new Error('the watch says the export was cut short');
+      var body = text.slice(text.indexOf('=== WIGLE BEGIN'), text.indexOf('=== WIGLE END')).split(/\r?\n/);
+      var pre = null, cols = null, keep = [], noise = 0;
+      var macRe = /^[0-9a-f]{2}(:[0-9a-f]{2}){5},/;
+      body.forEach(function (l) {
+        if (!pre && l.indexOf('WigleWifi-1.6,') === 0) { pre = l; return; }
+        if (!cols && l.indexOf('MAC,SSID,AuthMode,') === 0) { cols = l; return; }
+        if (macRe.test(l)) keep.push(l); else if (l && l.indexOf('=== WIGLE') !== 0) noise++;
+      });
+      if (!pre || !cols) throw new Error('no WiGLE header came back');
+      if (!keep.length) {
+        wigleResult.textContent = 'The watch has no wardrive rows yet' + (ended[2] !== '0' ? ' (' + ended[2] + ' bench rows are left out)' : '') +
+          '. Turn WARDRIVE on under WATCH SETTINGS and go for a walk.';
+        return;
+      }
+      var d = new Date(), pad = function (n) { return (n < 10 ? '0' : '') + n; };
+      var name = 'squachwatch-wigle-' + d.getFullYear() + pad(d.getMonth() + 1) + pad(d.getDate()) + '-' + pad(d.getHours()) + pad(d.getMinutes()) + '.csv';
+      var blob = new Blob([[pre, cols].concat(keep).join('\n') + '\n'], { type: 'text/csv' });
+      var a = document.createElement('a');
+      a.href = URL.createObjectURL(blob); a.download = name;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(function () { URL.revokeObjectURL(a.href); }, 5000);
+      var sent = +ended[1];
+      wigleResult.textContent = 'SAVED ' + keep.length + ' rows as ' + name + (sent !== keep.length ? ' (the watch sent ' + sent + '; ' + (sent - keep.length) + ' arrived damaged and were left out)' : '') +
+        '. Upload it at wigle.net/uploads.';
+      say('Every network I heard, and where. WiGLE is going to love this.', 7600);
+    } catch (err) {
+      wigleResult.className = 'identify-result err';
+      wigleResult.textContent = 'Couldn’t download it: ' + (err && err.message ? err.message : 'unknown error');
+      try { if (writer) writer.releaseLock(); } catch (e2) {}
+      try { if (reader) { await reader.cancel(); reader.releaseLock(); } } catch (e3) {}
+      try { if (port) await port.close(); } catch (e4) {}
+    } finally {
+      wigleBtn.disabled = false;
     }
   }
 
