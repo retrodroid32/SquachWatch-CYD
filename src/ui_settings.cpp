@@ -1,5 +1,6 @@
 // SquachWatch-CYD — settings screen implementation
 #include "ui_settings.h"
+#include "wardrive.h"
 #include "ota_core.h"
 #include "ota_wifi.h"
 #include "theme.h"
@@ -52,6 +53,7 @@ static uint8_t s_dexCaught = 0;
 #if defined(TWATCH_S3)
 void twatchBatteryLine(char* out, size_t n);   // main.cpp, where the power chip lives
 bool twatchRadioResetArmed();                  // main.cpp: the first tap of two
+uint8_t twatchGpsState();                      // main.cpp: 0 off, 1 starting, 2 no fix, 3 fix
 int  twatchChipC();                            // main.cpp: the chip's temperature, cached
 void twatchXtalLine(char* out, size_t n);      // main.cpp: CLOCK CHECK's state or result
 #endif
@@ -111,7 +113,7 @@ static const SettingsRow APPEARANCE_ROWS[] = {
 // The WATCH SETTINGS page: battery first, then power/radio behavior,
 // haptics, and the watch-only tools.
 static const SettingsRow WATCH_ROWS[] = {
-    SettingsRow::WATCH_BATTERY, SettingsRow::WATCH_RADIO, SettingsRow::WATCH_LISTEN,
+    SettingsRow::WATCH_BATTERY, SettingsRow::WATCH_WARDRIVE, SettingsRow::WATCH_RADIO, SettingsRow::WATCH_LISTEN,
     SettingsRow::WATCH_IDLE_CPU, SettingsRow::WATCH_BUZZ,
     SettingsRow::WATCH_RADIO_RESET, SettingsRow::WATCH_STEADY, SettingsRow::WATCH_TEMP,
     SettingsRow::WATCH_XTAL,
@@ -196,6 +198,7 @@ static RowGroupId groupFor(SettingsRow r) {
         case SettingsRow::WATCH_STEADY:
         case SettingsRow::WATCH_TEMP:
         case SettingsRow::WATCH_XTAL:
+        case SettingsRow::WATCH_WARDRIVE:
             return RowGroupId::WATCH;
         // TIME ZONE sat on the SYSTEM page too, the same setting twice. Only
         // the clock reads it, so it lives with the clock.
@@ -872,6 +875,15 @@ static void rowContent(SettingsRow r, const DetectionEngine& eng, char* valBuf, 
         case SettingsRow::WATCH_XTAL:
             label = "CLOCK CHECK"; twatchXtalLine(valBuf, valBufN); value = valBuf;
             break;
+        case SettingsRow::WATCH_WARDRIVE: {
+            label = "WARDRIVE";
+            const uint8_t g = twatchGpsState();
+            if (!Wardrive::enabled()) value = "OFF";
+            else if (g <= 1)          value = "GPS STARTING";
+            else if (g == 2)          value = "NO FIX YET";
+            else { snprintf(valBuf, valBufN, "ON  %lu", (unsigned long)Wardrive::count()); value = valBuf; }
+            break;
+        }
 #endif
         case SettingsRow::PRIVACY:
             label = "PRIVACY MODE"; value = Settings::privacyMode() ? "ON" : "OFF";
