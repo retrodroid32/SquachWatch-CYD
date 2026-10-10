@@ -205,9 +205,14 @@ otherwise see all week. It is one tap away in `DETECTION FILTER`.
 
 The web flasher also offers optional 80 MHz display-clock variants for the
 2.8" CYD and 3.2" CYD. Those are separate experimental performance profiles,
-not different physical boards. The RL Phantom capacitive profile is compile-only,
-and the 3.5" ST7796 profile remains excluded from release/CI while its hardware
-issue is unresolved.
+not different physical boards. The CYD profiles also offer an independent
+**GPS / GNSS firmware** option, so GPS can be used with either the normal or
+80 MHz display profile. On supported 2.8" and 3.2" CYDs, connect receiver
+**TX → GPIO35**; GPS RX can be left disconnected. On the 3.2" E32R32P, do not
+use the board's RXD/TXD UART0 pair for GPS because it is shared with the
+onboard CH340C USB serial bridge. The RL Phantom capacitive profile is
+compile-only, and the 3.5" ST7796 profile remains excluded from release/CI
+while its hardware issue is unresolved.
 
 Most CYD installations need no add-on hardware: no GPS, buzzer, or external
 radio module is required.
@@ -275,6 +280,31 @@ plug in, click Connect & Install, done. A T-Watch has its clock set after instal
 
 If a microSD card is present, every detection is also appended to
 `squachwatch-<day>.log` (CSV: `ts,type,rssi,mac,channel,vendor,ssid`).
+On a GPS firmware build, the same row appends
+`gps_epoch,lat,lon,alt_m,sats,hdop,gps_age_ms`; unavailable values stay blank.
+
+### Optional GPS / GNSS
+
+GPS is a firmware choice in the web flasher, independent of the 80 MHz
+display option. Connect the receiver's **TX → GPIO35** and leave GPS RX
+disconnected unless a future feature explicitly needs commands sent back to
+the receiver. On the 3.2" E32R32P, GPIO35 is exposed at JP3; do not use the
+board's RXD/TXD UART0 pair because it is shared with the CH340C USB serial
+bridge.
+
+The GPS build listens at 115200 baud and accepts both standard NMEA and the
+UBX NAV-PVT/NAV-DOP output used by FlightMesh-configured receivers. It uses
+valid GNSS UTC to establish the board clock when it does not already have
+trusted time, shows fix status under **System Properties → Board**, and
+geotags SD detection rows. A compact green GPS-lock icon appears at the
+upper right only while the receiver has a fresh fix.
+
+The 3.2" CYD includes an IP5306 charger/boost. Firmware probes its optional
+I2C telemetry interface at boot; on revisions that expose it, the upper-right
+status area shows the IP5306's coarse battery level (100/75/50/25/0%) and a
+lightning bolt while actively charging. Revisions whose IP5306 does not
+expose readable telemetry show no battery value rather than a guessed
+percentage. The fixed-size BlackBox record is deliberately unchanged.
 
 ### v1.21 controls at a glance
 
@@ -289,9 +319,10 @@ For implementation history of the detection-intelligence stages, see [v1.21.0 de
 
 ### The clock
 
-There is no GPS, and the board never joins a network to scan. But it does
-join one for the update check at boot, and for UPDATE OVER WIFI, and the
-clock rides along: one NTP round trip while the radio is up anyway, about a
+On a normal build there is no GPS, and the board never joins a network to
+scan. A GPS build can establish UTC from the receiver. Otherwise the board
+does join one for the update check at boot, and for UPDATE OVER WIFI, and
+the clock rides along: one NTP round trip while the radio is up anyway, about a
 second. The zone is yours to pick, and there are three ways: the web
 flasher's **Set Time & Zone** button sends this computer's clock and zone
 down the same cable right after flashing; the first time the clock is set
