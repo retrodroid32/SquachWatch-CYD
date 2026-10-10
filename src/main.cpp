@@ -1063,12 +1063,26 @@ static bool freshAlertCandidate(const Detection& d, uint32_t now) {
 }
 
 static bool alertMayInterrupt(const Detection& d) {
+    const bool watched = engine.isWatched(d.mac, true) || engine.isWatched(d.mac, false);
+    const bool always  = IgnoreList::alwaysAlert(d.mac);
+#if defined(TWATCH_S3)
+    // Per-device ALWAYS ALERT is explicit intent and overrides quiet tracking.
+    if (!watched && !always && Settings::quietTrackers()) {
+        switch (d.type) {
+            case DetectionType::AIRTAG:
+            case DetectionType::TILE:
+            case DetectionType::SAMSUNG_TAG:
+            case DetectionType::GOOGLE_TAG:
+            case DetectionType::RING:
+                return false;
+            default: break;
+        }
+    }
+#endif
     // WATCH keeps its v1.20.1 meaning: it bypasses AUTO SNOOZE only. ALWAYS
     // ALERT is stronger direct per-device intent: it bypasses per-type alert
     // rules, confidence/repeats/cooldown and device snooze, but still cannot
     // resurrect a disabled detection type or override lock-screen security.
-    const bool watched = engine.isWatched(d.mac, true) || engine.isWatched(d.mac, false);
-    const bool always  = IgnoreList::alwaysAlert(d.mac);
     s_alertSpam = false;
 
     if (!always) {
@@ -5279,6 +5293,10 @@ void loop() {
                         case SettingsRow::WATCH_XTAL: twatchXtalStart(); break;
                         case SettingsRow::WATCH_SETTINGS:
                             uiSettingsOpenPage(SettingsPage::WATCH);
+                            break;
+                        case SettingsRow::WATCH_QUIET_TAGS:
+                            Settings::toggleQuietTrackers();
+                            Theme::showToast("TAGS + RINGS", Settings::quietTrackers() ? "Logged, no wake or buzz" : "Alert like the rest", Theme::CYAN);
                             break;
                         case SettingsRow::WATCH_BUZZ:
                             Settings::cycleBuzz();
