@@ -15,7 +15,12 @@
       "cyd28": true,
       "fast_env": "cyd-fast",
       "fast_manifest": "manifest-cyd-fast.json",
-      "note": "The 2.8\" CYD ships with more than one panel controller. If this gives a solid white screen, flash the ILI9341 option instead."
+      "note": "The 2.8\" CYD ships with more than one panel controller. If this gives a solid white screen, flash the ILI9341 option instead.",
+      "group": "Cheap Yellow Displays (CYD)",
+      "codes": [
+        "ESP32-2432S028R",
+        "JC2432W328C"
+      ]
     },
     {
       "id": "cyd-ili9341",
@@ -31,7 +36,14 @@
       "cyd28": true,
       "fast_env": "cyd-ili9341-fast",
       "fast_manifest": "manifest-cyd-ili9341-fast.json",
-      "note": "Use this 2.8\" profile if the ST7789 option boots to a solid white screen."
+      "note": "Use this 2.8\" profile if the ST7789 option boots to a solid white screen.",
+      "group": "Cheap Yellow Displays (CYD)",
+      "codes": [
+        "ESP32-2432S028R",
+        "JC2432W328C",
+        "E32R28T",
+        "E32R28"
+      ]
     },
     {
       "id": "cyd32-st7798",
@@ -47,7 +59,12 @@
       "cyd28": false,
       "note": "For ESP32-2432S032R / E32R32P resistive boards: 240×320 panel, GPIO27 backlight, XPT2046 touch sharing LCD SPI with touch CS on GPIO33. The optional 80MHz build overclocks only the display transactions; touch remains at 2.5MHz.",
       "fast_env": "cyd32-st7798-fast",
-      "fast_manifest": "manifest-cyd32-st7798-fast.json"
+      "fast_manifest": "manifest-cyd32-st7798-fast.json",
+      "group": "Cheap Yellow Displays (CYD)",
+      "codes": [
+        "ESP32-2432S032R",
+        "E32R32P"
+      ]
     },
     {
       "id": "freenove32",
@@ -61,7 +78,12 @@
       "merged": true,
       "lab": true,
       "cyd28": false,
-      "note": "For Freenove FNK0103L/FNK0114L 3.2\" boards: ST7789, resistive XPT2046 on shared HSPI, GPIO27 backlight, and the Freenove RGB/status-light pinout. This is a separate hardware profile from the ESP32-2432S032R / E32R32P 3.2\" CYD."
+      "note": "For Freenove FNK0103L/FNK0114L 3.2\" boards: ST7789, resistive XPT2046 on shared HSPI, GPIO27 backlight, and the Freenove RGB/status-light pinout. This is a separate hardware profile from the ESP32-2432S032R / E32R32P 3.2\" CYD.",
+      "group": "Cheap Yellow Displays (CYD)",
+      "codes": [
+        "FNK0103",
+        "FNK0114"
+      ]
     },
     {
       "id": "awok",
@@ -75,7 +97,12 @@
       "merged": true,
       "lab": false,
       "cyd28": false,
-      "note": "AWOK / Marauder V6.1 profile with resistive XPT2046 touch sharing the display SPI bus."
+      "note": "AWOK / Marauder V6.1 profile with resistive XPT2046 touch sharing the display SPI bus.",
+      "group": "Other ESP32 boards",
+      "codes": [
+        "AWOK",
+        "MARAUDER"
+      ]
     },
     {
       "id": "rlphantom-r",
@@ -89,7 +116,11 @@
       "merged": true,
       "lab": true,
       "cyd28": false,
-      "note": "RL Phantom resistive-touch profile (ESP32-2432S024R)."
+      "note": "RL Phantom resistive-touch profile (ESP32-2432S024R).",
+      "group": "Other ESP32 boards",
+      "codes": [
+        "ESP32-2432S024R"
+      ]
     },
     {
       "id": "cyd32-st7798-fast",
@@ -156,7 +187,12 @@
       "merged": true,
       "lab": true,
       "cyd28": false,
-      "note": "Beta T-Watch S3 profile with native USB, 240x240 ST7789 display, capacitive touch, battery support and RTC."
+      "note": "Beta T-Watch S3 profile with native USB, 240x240 ST7789 display, capacitive touch, battery support and RTC.",
+      "group": "Watches",
+      "codes": [
+        "T-WATCH",
+        "TWATCH"
+      ]
     },
     {
       "id": "rlphantom",
@@ -169,21 +205,29 @@
       "shared_esp32": true,
       "merged": false,
       "lab": false,
-      "cyd28": false
+      "cyd28": false,
+      "group": "Other ESP32 boards",
+      "codes": [
+        "ESP32-2432S024C"
+      ]
     },
     {
       "id": "cyd32c",
-      "label": "3.2\" CYD capacitive — ESP32-2432S032C (compile-only)",
-      "manifest": null,
-      "visible": false,
+      "label": "3.2\" CYD · capacitive — ESP32-2432S032C",
+      "manifest": "manifest-cyd32c.json",
+      "visible": true,
       "ci": true,
-      "release": false,
-      "sign": false,
+      "release": true,
+      "sign": true,
       "shared_esp32": true,
       "merged": false,
-      "lab": false,
+      "lab": true,
       "cyd28": false,
-      "note": "Compile-validation profile for the Sunton ESP32-2432S032C with ST7789 IPS and GT911 capacitive touch. Publication is handled in a separate follow-up PR."
+      "note": "Sunton ESP32-2432S032C: ST7789 IPS with GT911 capacitive touch. This is not the resistive ESP32-2432S032R profile.",
+      "group": "Cheap Yellow Displays (CYD)",
+      "codes": [
+        "ESP32-2432S032C"
+      ]
     }
   ]
 }
