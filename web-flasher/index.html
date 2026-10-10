@@ -1528,6 +1528,20 @@
         codeOut.className = 'board-code-answer';
         if (raw.length < 4) { codeOut.textContent = ''; return; }
 
+        // ESP32-32E covers different panel sizes. Never pick a firmware from
+        // that generic marking alone; the 3.5-inch resistive build is hidden.
+        if (/^(?:ESP32-?)?32E$/.test(raw)) {
+          codeOut.className = 'board-code-answer warn';
+          codeOut.textContent = 'ESP32-32E comes in 2.8-inch and 3.5-inch versions. Enter E32R28T/E32R35T, or the size/resolution.';
+          return;
+        }
+        if (/E32R35|32E.*320X480|32E.*3\.5|3\.5.*32E/.test(raw)) {
+          codeOut.className = 'board-code-answer warn';
+          codeOut.textContent = '3.5-inch ESP32-32E identified. Its resistive BETA firmware is not in the public board picker; do not choose a 2.8-inch image.';
+          return;
+        }
+        if (/32E.*240X320|32E.*2\.8|2\.8.*32E/.test(raw)) raw = 'E32R28T';
+
         var hits = [];
         Object.keys(boardMatrix).forEach(function (id) {
           var b = boardMatrix[id];
@@ -1559,6 +1573,8 @@
         }
         codeOut.textContent = chosen.id === 'cyd'
           ? '2.8" CYD selected. If it boots white, use the ILI9341 option.'
+          : chosen.id === 'cyd-ili9341'
+          ? '2.8" ESP32-32E / E32R28T: ILI9341 selected. Leave the 80MHz option unchecked.'
           : ((chosen.label || chosen.id) + ' selected.');
       });
     });
