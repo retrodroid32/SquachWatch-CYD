@@ -40,6 +40,10 @@ bool SdLog::begin() {
 #if defined(TWATCH_S3)
     return false;   // no card slot; GPIO19/20 are the S3's USB pins
 #endif
+#if defined(LCDWIKI_ES3C28P)
+    // Card-bus pins are not hardware-validated for this profile yet.
+    return false;
+#endif
     Serial.printf("[sd] mounting: heap %lu, largest block %lu\n", (unsigned long)ESP.getFreeHeap(), (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
 #if defined(CYD35)
     // (The RL Phantom used to land here too, and its SD card never worked as

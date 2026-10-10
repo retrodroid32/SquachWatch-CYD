@@ -188,6 +188,12 @@ jobs:
         run: |
           set -euo pipefail
           pio run $(python tools/board_matrix.py pio-args release)
+          if [ "${{ steps.ver.outputs.is_lab }}" = "true" ]; then
+            # Lab-only boards are intentionally not release=true, so they must
+            # be compiled explicitly for a lab run. Duplicate release envs are
+            # harmless; PlatformIO reuses their completed build output.
+            pio run $(python tools/board_matrix.py pio-args lab)
+          fi
           # Compile-only capacitive Phantom: CI/source coverage, never published.
           pio run -e rlphantom
 
@@ -295,6 +301,15 @@ jobs:
           for v in $(python tools/board_matrix.py list release); do
             cp ".pio/build/$v/firmware.bin" "$v-firmware.bin"
           done
+          if [ "${{ steps.ver.outputs.is_lab }}" = "true" ]; then
+            for v in $(python tools/board_matrix.py list lab); do
+              cp ".pio/build/$v/firmware.bin" "$v-firmware.bin"
+            done
+            for v in $(python -c 'import json; d=json.load(open("web-flasher/boards.json")); print(" ".join(b["id"] for b in d["boards"] if b.get("lab") and not b.get("release") and not b.get("shared_esp32")))'); do
+              cp ".pio/build/$v/bootloader.bin" "$v-bootloader.bin"
+              cp ".pio/build/$v/partitions.bin" "$v-partitions.bin"
+            done
+          fi
 
       - name: Sign firmware for OTA updates
         env:
@@ -480,6 +495,23 @@ jobs:
                       shutil.copy(part["path"], "_site/lab-" + part["path"])
                       part["path"] = "lab-" + part["path"]
               json.dump(m, open("_site/manifest-lab-" + board + ".json", "w"), indent=2)
+          # The released page deliberately has a short hard-coded lab manifest
+          # list. A brand-new lab-only board is not in that released HTML yet,
+          # so extend ONLY the mirrored lab deployment's list. The normal page
+          # never executes addLabOptions() unless ?lab=1 is present.
+          extra = [cfg["id"] for cfg in matrix["boards"] if cfg.get("lab") and not cfg.get("release")]
+          if extra:
+              index_path = "_site/index.html"
+              html = open(index_path, encoding="utf-8").read()
+              marker = "'./manifest-lab-twatch-s3.json']"
+              if marker not in html:
+                  raise SystemExit("could not locate released lab manifest list in mirrored index.html")
+              insert = "'./manifest-lab-twatch-s3.json'" + "".join(
+                  ",\n         './manifest-lab-%s.json'" % board for board in extra
+              ) + "]"
+              html = html.replace(marker, insert, 1)
+              open(index_path, "w", encoding="utf-8").write(html)
+              print("lab-only picker entries added:", ", ".join(extra))
           print("lab boards added:", label, ver)
           PY
             echo "live production root preserved; added lab build ${{ steps.ver.outputs.version }}"
@@ -662,7 +694,31 @@ jobs:
               raise SystemExit("missing/empty Pages artifact targets:\n" + "\n".join(sorted(set(missing))))
           PY
 
-          if [ "${{ steps.ver.outputs.is_lab }}" != "true" ]; then
+          if [ "${{ steps.ver.outputs.is_lab }}" = "true" ]; then
+            python - <<'PY'
+          import json
+          from pathlib import Path
+          site = Path("_site")
+          matrix = json.load(open("web-flasher/boards.json", encoding="utf-8"))
+          missing = []
+          for board in matrix["boards"]:
+              if not board.get("lab"):
+                  continue
+              mp = site / ("manifest-lab-" + board["id"] + ".json")
+              if not mp.is_file():
+                  missing.append(str(mp))
+                  continue
+              manifest = json.loads(mp.read_text(encoding="utf-8"))
+              for build in manifest.get("builds", []):
+                  for part in build.get("parts", []):
+                      target = site / part["path"]
+                      if not target.is_file() or target.stat().st_size == 0:
+                          missing.append(str(target))
+          if missing:
+              raise SystemExit("missing/empty LAB artifact targets:\n" + "\n".join(sorted(set(missing))))
+          print("validated lab manifests:", sum(1 for b in matrix["boards"] if b.get("lab")))
+          PY
+          else
             for board in $(python tools/board_matrix.py list sign); do
               test -s "$board-firmware.sig"
               test -s "_site/$board-firmware.sig"

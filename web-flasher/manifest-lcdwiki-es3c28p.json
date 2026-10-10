@@ -1,0 +1,17 @@
+{
+  "name": "SquachWatch-CYD (LCDWiki ES3C28P LAB)",
+  "version": "0.0.0",
+  "funding_url": "https://talkingsasquach.com",
+  "new_install_prompt_erase": true,
+  "builds": [
+    {
+      "chipFamily": "ESP32-S3",
+      "parts": [
+        { "path": "lcdwiki-es3c28p-bootloader.bin", "offset": 0 },
+        { "path": "lcdwiki-es3c28p-partitions.bin", "offset": 32768 },
+        { "path": "esp32-otadata.bin", "offset": 57344 },
+        { "path": "lcdwiki-es3c28p-firmware.bin", "offset": 65536 }
+      ]
+    }
+  ]
+}
