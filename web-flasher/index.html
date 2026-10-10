@@ -431,6 +431,8 @@
     color:#a89bc4;
     margin-top:2px;
   }
+  .gps-row{ border-color:rgba(0,255,245,0.5); background:rgba(0,255,245,0.04); }
+  .gps-row .oc-title{ color:var(--cyan); }
 
   .install-btn{
     display:block;
@@ -690,9 +692,9 @@
 
     <label class="board-picker-label" for="boardSelect">Select your board:</label>
     <select class="board-select" id="boardSelect" aria-label="Board select">
-      <option value="./manifest-cyd.json" data-cyd28="1" data-fast="./manifest-cyd-fast.json" selected>2.8&quot; CYD &mdash; ST7789 (default)</option>
-      <option value="./manifest-cyd-ili9341.json" data-cyd28="1" data-fast="./manifest-cyd-ili9341-fast.json">2.8&quot; CYD &mdash; ILI9341 (older)</option>
-      <option value="./manifest-cyd32-st7798.json" data-fast="./manifest-cyd32-st7798-fast.json">3.2&quot; CYD &mdash; ST7798 / ST7789 compatible</option>
+      <option value="./manifest-cyd.json" data-cyd28="1" data-fast="./manifest-cyd-fast.json" data-gps="./manifest-cyd-gps.json" data-gps-fast="./manifest-cyd-fast-gps.json" selected>2.8&quot; CYD &mdash; ST7789 (default)</option>
+      <option value="./manifest-cyd-ili9341.json" data-cyd28="1" data-fast="./manifest-cyd-ili9341-fast.json" data-gps="./manifest-cyd-ili9341-gps.json" data-gps-fast="./manifest-cyd-ili9341-fast-gps.json">2.8&quot; CYD &mdash; ILI9341 (older)</option>
+      <option value="./manifest-cyd32-st7798.json" data-fast="./manifest-cyd32-st7798-fast.json" data-gps="./manifest-cyd32-st7798-gps.json" data-gps-fast="./manifest-cyd32-st7798-fast-gps.json">3.2&quot; CYD &mdash; ST7798 / ST7789 compatible</option>
       <option value="./manifest-freenove32.json">Freenove 3.2&quot; &mdash; ST7789</option>
       <option value="./manifest-awok.json">AWOK 2.4&quot;</option>
       <option value="./manifest-rlphantom-r.json">RL Phantom 2.4&quot;</option>
@@ -713,6 +715,17 @@
           Runs the screen at twice the rated clock, which you will notice everywhere.
           Not every panel takes it. If the screen stays white or shows torn lines,
           reflash with this unchecked.
+        </span>
+      </span>
+    </label>
+
+    <label class="overclock-row gps-row" id="gpsRow">
+      <input type="checkbox" id="gpsChk">
+      <span>
+        <span class="oc-title">Optional: external GPS / GNSS</span>
+        <span class="oc-desc" id="gpsDesc">
+          Adds UART GPS time and geotagging. Wiring is board-specific; the selected board description
+          below shows the correct connector/pins. Works independently of the 80MHz option.
         </span>
       </span>
     </label>
@@ -1414,6 +1427,9 @@
     var ocRow = document.getElementById('overclockRow');
     var ocChk = document.getElementById('overclockChk');
     var ocDesc = document.getElementById('overclockDesc');
+    var gpsRow = document.getElementById('gpsRow');
+    var gpsChk = document.getElementById('gpsChk');
+    var gpsDesc = document.getElementById('gpsDesc');
     if (!select || !installBtn) return;
 
     // ---- Unlisted lab build ---------------------------------------------
@@ -1423,18 +1439,35 @@
     function addLabOptions() {
       try {
         if (!/(?:^|[?&])lab=1(?:&|$)/.test(window.location.search)) return;
-        ['./manifest-lab-cyd.json', './manifest-lab-cyd-fast.json',
-         './manifest-lab-cyd-ili9341.json', './manifest-lab-cyd-ili9341-fast.json',
-         './manifest-lab-cyd32-st7798.json', './manifest-lab-cyd32-st7798-fast.json',
-         './manifest-lab-freenove32.json', './manifest-lab-rlphantom-r.json',
-         './manifest-lab-twatch-s3.json'].forEach(function (path) {
-          fetch(path, { cache: 'no-store' })
+
+        // Lab builds are firmware dimensions of a board, not separate boards.
+        // Add one LAB option per physical profile and attach its fast/GPS
+        // manifests as data attributes, exactly like the production picker.
+        // The previous implementation appended every lab manifest as a
+        // standalone option. Selecting "LAB ... 3.2 CYD" therefore selected
+        // the NON-GPS manifest and left the GPS checkbox disabled, even though
+        // a lab GPS binary existed. That made a fresh GPS lab build look as if
+        // GPS_SUPPORT had disappeared from the firmware.
+        [
+          { base:'cyd', fast:'cyd-fast', gps:'cyd-gps', gpsFast:'cyd-fast-gps', cyd28:true },
+          { base:'cyd-ili9341', fast:'cyd-ili9341-fast', gps:'cyd-ili9341-gps', gpsFast:'cyd-ili9341-fast-gps', cyd28:true },
+          { base:'cyd32-st7798', fast:'cyd32-st7798-fast', gps:'cyd32-st7798-gps', gpsFast:'cyd32-st7798-fast-gps' },
+          { base:'freenove32' },
+          { base:'rlphantom-r' },
+          { base:'twatch-s3' }
+        ].forEach(function (cfg) {
+          var basePath = './manifest-lab-' + cfg.base + '.json';
+          fetch(basePath, { cache: 'no-store' })
             .then(function (r) { return r.ok ? r.json() : null; })
             .then(function (m) {
               if (!m) return;
               var o = document.createElement('option');
-              o.value = path;
+              o.value = basePath;
               o.textContent = (m.name || 'LAB — development build') + (m.version ? '  (' + m.version + ')' : '');
+              if (cfg.cyd28) o.dataset.cyd28 = '1';
+              if (cfg.fast)    o.dataset.fast = './manifest-lab-' + cfg.fast + '.json';
+              if (cfg.gps)     o.dataset.gps = './manifest-lab-' + cfg.gps + '.json';
+              if (cfg.gpsFast) o.dataset.gpsFast = './manifest-lab-' + cfg.gpsFast + '.json';
               select.appendChild(o);
             })
             .catch(function () { /* not deployed; nothing to add */ });
@@ -1464,6 +1497,8 @@
             o.textContent = b.label || b.id;
             if (b.cyd28) o.dataset.cyd28 = '1';
             if (b.fast_manifest) o.dataset.fast = './' + b.fast_manifest;
+            if (b.gps_manifest) o.dataset.gps = './' + b.gps_manifest;
+            if (b.gps_fast_manifest) o.dataset.gpsFast = './' + b.gps_fast_manifest;
             if (b.note) o.dataset.ocnote = b.note;
             if (b.id === previous || (!previous && b.id === 'cyd')) o.selected = true;
             select.appendChild(o);
@@ -1551,6 +1586,16 @@
       "this board does not publish a separate 80MHz display build.";
     var OVERCLOCK_LINE =
       "Overclock, huh. If it comes up white or torn, that panel said no — flash again with the box unticked.";
+    var GPS_DESC_ON =
+      "UART GPS/GNSS: module TX → GPIO35, module RX → GPIO22. Adds GPS UTC and position fields to SD detections.";
+    var GPS_DESC_CYD32 =
+      "UART GPS/GNSS: use the 4-pin 5V/GND/TXD/RXD connector. GPS TX → RXD/GPIO3; GPS RX → TXD/GPIO1.";
+    var GPS_DESC_OFF =
+      "GPS firmware is not published for this board profile.";
+    var GPS_LINE =
+      "GPS build selected. It works with or without the 80MHz display option.";
+    var GPS_LINE_CYD32 =
+      "GPS build selected. On this 3.2-inch board use the 4-pin UART: GPS TX → RXD, GPS RX → TXD.";
 
     // Which release directory the manifest lives in. "" is the latest,
     // which sits at the site root; older ones are in <tag>/ subdirectories
@@ -1583,6 +1628,8 @@
     function applySelection(announce) {
       var opt = select.options[select.selectedIndex];
       var fast = opt.dataset.fast;
+      var gps = opt.dataset.gps;
+      var gpsFast = opt.dataset.gpsFast;
       if (ocRow) {
         ocRow.classList.toggle('disabled', !fast);
         if (ocChk) ocChk.disabled = !fast;
@@ -1591,17 +1638,41 @@
         if (ocDesc) ocDesc.textContent = fast ? OC_DESC_ON
                                               : (opt.dataset.ocnote || OC_DESC_OFF);
       }
+      if (gpsRow) {
+        gpsRow.classList.toggle('disabled', !gps);
+        if (gpsChk) gpsChk.disabled = !gps;
+        if (gpsDesc) {
+          var isCyd32Gps = /cyd32-st7798/.test((opt.value || "") + " " + (gps || ""));
+          gpsDesc.textContent = gps ? (isCyd32Gps ? GPS_DESC_CYD32 : GPS_DESC_ON) : GPS_DESC_OFF;
+        }
+      }
       var useFast = !!fast && !!(ocChk && ocChk.checked && !ocChk.disabled);
-      // Board and overclock choose WHICH manifest; the version picker
-      // chooses which release's copy of it. The manifest's own relative
-      // paths then resolve to the binaries beside it.
-      var manifest = './' + verDir + (useFast ? fast : opt.value).replace(/^\.\//, '');
+      var useGps = !!gps && !!(gpsChk && gpsChk.checked && !gpsChk.disabled);
+      // GPS and overclock are independent firmware dimensions. Boards that
+      // publish both provide all four combinations.
+      var chosen = opt.value;
+      if (useGps && useFast) chosen = gpsFast || gps;
+      else if (useGps)       chosen = gps;
+      else if (useFast)      chosen = fast;
+      // Always hand esp-web-tools an absolute manifest URL. The lab flasher
+      // lives under /lab/ and uses <base href="../">; browsers resolve normal
+      // fetch() calls against that base, but esp-web-tools may resolve its
+      // manifest attribute against window.location instead. That turned
+      // "manifest-lab-..." into /lab/manifest-lab-... and produced
+      // "Failed to download manifest" even though the manifest existed at
+      // the Pages root.
+      var manifestRel = verDir + chosen.replace(/^\.\//, '');
+      var manifest = new URL(manifestRel, document.baseURI).href;
       installBtn.setAttribute('manifest', manifest);
       var isCyd28 = opt.dataset.cyd28 === '1';
       if (note) note.hidden = !isCyd28;
       updateCompatibility(opt);
       if (announce === 'board' && isCyd28) say(WHITE_SCREEN_LINE, 8000);
       if (announce === 'overclock' && useFast) say(OVERCLOCK_LINE, 8000);
+      if (announce === 'gps' && useGps) {
+        var cyd32Selected = /cyd32-st7798/.test((opt.value || "") + " " + (gps || ""));
+        say(cyd32Selected ? GPS_LINE_CYD32 : GPS_LINE, 8000);
+      }
       if (announce === 'version' && verDir) {
         say("Rolling back. If that one behaves, tell me which build broke it.", 8000);
       }
@@ -1610,6 +1681,7 @@
 
     select.addEventListener('change', function () { applySelection('board'); });
     if (ocChk) ocChk.addEventListener('change', function () { applySelection('overclock'); });
+    if (gpsChk) gpsChk.addEventListener('change', function () { applySelection('gps'); });
     applySelection(null);
   })();
 
