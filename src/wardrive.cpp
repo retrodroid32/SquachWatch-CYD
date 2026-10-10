@@ -5,6 +5,7 @@
 #include <Preferences.h>
 #include <string.h>
 #include <math.h>
+#include <new> // std::nothrow: allocation failure must not enable wardriving
 
 #if __has_include(<esp_flash.h>) && defined(TWATCH_S3)
 #include <esp_flash.h>
@@ -174,7 +175,10 @@ struct Q {
         return true;
     }
 };
-Q s_wifiQ, s_bleQ;
+// Allocate only on the watch that explicitly starts wardriving.
+// Static queues reserved approximately 3 KB on every board, even non-GNSS CYDs.
+Q* s_wifiQ = nullptr;
+Q* s_bleQ  = nullptr;
 
 // ---- not the same thing twice from the same place ------------------------------
 // A network heard ten times a second while you stand still is one row, not
@@ -231,6 +235,15 @@ bool begin() {
         s_used = slotsUsed((uint32_t)s_head);
         s_full = valid ? valid - 1 : 0;
     }
+    // Publish readiness only after both radio queues exist. The scan tasks
+    // check s_ready before using them. Preserve the first queue if the
+    // second allocation fails so a later begin() can safely retry.
+    if (!s_wifiQ) s_wifiQ = new (std::nothrow) Q();
+    if (!s_bleQ)  s_bleQ  = new (std::nothrow) Q();
+    if (!s_wifiQ || !s_bleQ) {
+        Serial.println("[wardrive] off: insufficient RAM for capture queues");
+        return false;
+    }
     s_ready = true;
     if (s_prefs.begin("wardrive", false)) { s_on = s_prefs.getBool("on", false); s_prefs.end(); }
     Serial.printf("[wardrive] %lu records kept of %lu, %s\n", (unsigned long)count(), (unsigned long)capacity(), s_on ? "ON" : "off");
@@ -251,7 +264,7 @@ void noteWifi(const uint8_t* bssid, const char* ssid, uint16_t auth, uint8_t cha
     memcpy(p.mac, bssid, 6);
     p.rssi = rssi; p.channel = channel; p.auth = auth;
     if (ssid) { size_t n = strnlen(ssid, 32); memcpy(p.name, ssid, n); p.nameLen = (uint8_t)n; }
-    if (!s_wifiQ.push(p)) s_dropped++;
+    if (!s_wifiQ->push(p)) s_dropped++;
 }
 
 void noteBle(const uint8_t* mac, const char* name, int8_t rssi, bool haveMfgr, uint16_t mfgr) {
@@ -263,10 +276,12 @@ void noteBle(const uint8_t* mac, const char* name, int8_t rssi, bool haveMfgr, u
     p.rssi = rssi;
     if (haveMfgr) { p.flags |= F_HAS_MFGR; p.auth = mfgr; }
     if (name) { size_t n = strnlen(name, 32); memcpy(p.name, name, n); p.nameLen = (uint8_t)n; }
-    if (!s_bleQ.push(p)) s_dropped++;
+    if (!s_bleQ->push(p)) s_dropped++;
 }
 
 void tick(uint32_t nowMs) {
+    // Safe on non-wardriving boards where begin() was never called.
+    if (!s_wifiQ || !s_bleQ) return;
     Pending p;
     // Emptied either way, so a queue filled while there was no fix does not
     // turn into rows stamped with the first fix that arrives later.
@@ -274,7 +289,7 @@ void tick(uint32_t nowMs) {
     const Gnss::Fix& f = Gnss::fix();
     const uint32_t epoch = f.epoch ? f.epoch + (nowMs - f.atMs) / 1000u : 0;
     for (int n = 0; n < 2 * QN; n++) {
-        const bool got = s_wifiQ.pop(p) || s_bleQ.pop(p);
+        const bool got = s_wifiQ->pop(p) || s_bleQ->pop(p);
         if (!got) break;
         if (!fix || !epoch) continue;
         if (!worthWriting(p, f, epoch)) { s_skipped++; continue; }

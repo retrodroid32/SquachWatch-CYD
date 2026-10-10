@@ -22,6 +22,14 @@ int main() {
     const uint32_t T0 = 1790553600u;             // 2026-09-28 00:00 UTC
     uint8_t m[6];
 
+    suite("No queues allocated before begin");
+    ck("not ready before begin", !Wardrive::ready());
+    mac(m, 0);
+    Wardrive::noteWifi(m, "BeforeBegin", 0, 6, -50);
+    Wardrive::noteBle(m, "BeforeBegin", -60, false, 0);
+    Wardrive::tick(100);
+    ck("pre-init attempts do not capture or crash", !Wardrive::ready() && Wardrive::count() == 0);
+
     suite("Nothing without the switch, nothing without a fix");
     ck("mounts", Wardrive::begin());
     ck("starts empty", Wardrive::count() == 0);
