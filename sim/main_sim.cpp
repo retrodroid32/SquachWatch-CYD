@@ -588,10 +588,15 @@ int main(int argc, char** argv) {
     if (!noSeed) seedDetections(engine);
     // Regression aid: put every seeded device on IGNORE while leaving the
     // counters populated, so CLEAR can verify that NEARBY disappears.
-    if (getenv("SQUACHSIM_IGNOREALL")) {
+    if (getenv("SQUACHSIM_IGNOREALL") || getenv("SQUACHSIM_SNOOZEALL")) {
         IgnoreList::begin();
-        for (uint8_t i = 0; i < engine.logCount(); i++)
-            if (const Detection* d = engine.logAt(i)) IgnoreList::add(d->mac, d->type);
+        const bool snooze = getenv("SQUACHSIM_SNOOZEALL") != nullptr;
+        for (uint8_t i = 0; i < engine.logCount(); i++) {
+            if (const Detection* d = engine.logAt(i)) {
+                if (snooze) IgnoreList::snooze(d->mac);
+                else        IgnoreList::add(d->mac, d->type);
+            }
+        }
     }
 
     if (onboard) Squachy::trigger(Squachy::Event::BOOTED);

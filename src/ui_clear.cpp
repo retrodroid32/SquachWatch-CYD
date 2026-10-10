@@ -3035,10 +3035,10 @@ void uiClearTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool adv
     for (uint8_t i = 0; i < (uint8_t)DetectionType::COUNT; i++) {
         if (eng.countByType((DetectionType)i) > 0) { anyActive = true; break; }
     }
-    // IGNORE is an alert-policy choice, not a counter filter: ignored devices
-    // still contribute to the live counters but should not keep the NEARBY
-    // headline permanently active. A deauth flood has no device MAC of its
-    // own to ignore, so it still qualifies. Cache the 64x64 scan for 250 ms.
+    // IGNORE and SNOOZE are alert-policy choices, not counter filters. They
+    // suppress NEARBY while leaving counters unchanged. TRUSTED keeps its
+    // existing #88 behavior; ALWAYS ALERT bypasses SNOOZE. A deauth flood
+    // has no device MAC to silence and still qualifies. Cache for 250 ms.
     if (anyActive) {
         static uint32_t s_nearbyUnignoredAt = 0;
         static bool     s_nearbyHasUnignored = true;
@@ -3047,7 +3047,12 @@ void uiClearTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool adv
             s_nearbyHasUnignored = eng.countByType(DetectionType::DEAUTH) > 0;
             for (uint8_t i = 0; !s_nearbyHasUnignored && i < eng.logCount(); i++) {
                 const Detection* d = eng.logAt(i);
-                if (d && d->active && !IgnoreList::contains(d->mac)) s_nearbyHasUnignored = true;
+                if (!d || !d->active) continue;
+                // Preserve #88's TRUSTED behavior. Only IGNORE and SNOOZE
+                // suppress NEARBY, and ALWAYS ALERT overrides SNOOZE.
+                const bool ignored = IgnoreList::contains(d->mac);
+                const bool snoozed = IgnoreList::snoozed(d->mac) && !IgnoreList::alwaysAlert(d->mac);
+                if (!ignored && !snoozed) s_nearbyHasUnignored = true;
             }
         }
         anyActive = s_nearbyHasUnignored;
