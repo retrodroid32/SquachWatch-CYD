@@ -421,6 +421,12 @@ DetectionType lookupUuid(uint16_t uuid16) {
     return DetectionType::UNKNOWN;
 }
 
+bool isBareSerialName(const char* name) {
+    if (!name) return false;
+    for (int i = 0; i < 10; i++) if (name[i] < '0' || name[i] > '9') return false;
+    return name[10] == '\0';
+}
+
 DetectionType lookupBtName(const char* name) {
     if (!name) return DetectionType::UNKNOWN;
     for (uint16_t i = 0; i < kBtClassicCount; i++) {
@@ -439,12 +445,9 @@ DetectionType lookupBtName(const char* name) {
             if (name[i] < '0' || name[i] > '9') { digits = false; break; }
         if (digits) return DetectionType::FLOCK;
     }
-    if (strlen(name) == 10) {
-        bool digits = true;
-        for (uint8_t i = 0; i < 10; i++)
-            if (name[i] < '0' || name[i] > '9') { digits = false; break; }
-        if (digits) return DetectionType::FLOCK;
-    }
+    // Keep the production classifier on the same exact-length helper tested
+    // by signatures_test, rather than maintaining a second digits loop.
+    if (isBareSerialName(name)) return DetectionType::FLOCK;
     if (strcasestr(name, "Pigvision")) return DetectionType::FLOCK;
     if (strcasestr(name, "Axon"))     return DetectionType::AXON;
     // A Flipper advertises "Flipper " followed by the unit's name. The
@@ -458,6 +461,9 @@ DetectionType lookupBtName(const char* name) {
 
 DetectionType lookupSsid(const char* ssid) {
     if (!ssid) return DetectionType::UNKNOWN;
+    // Exact bare SSID from provisioned Flock cameras. Do not use a prefix:
+    // that would turn ordinary names such as "Flockhart Family WiFi" into hits.
+    if (strcasecmp(ssid, "Flock") == 0) return DetectionType::FLOCK;
     for (uint16_t i = 0; i < kSsidCount; i++) {
         size_t n = strlen(kSsidPrefixes[i].prefix);
         if (strncasecmp(ssid, kSsidPrefixes[i].prefix, n) == 0) {
