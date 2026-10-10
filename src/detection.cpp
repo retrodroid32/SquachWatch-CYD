@@ -932,6 +932,7 @@ Stats stats() {
 #include "mesh_airtime.h"
 #include "mesh_tx_policy.h"
 #include "mesh_appearance_policy.h"
+#include "mesh_primary_transport.h"
 
 // SquachMesh's radio half: our advert, our scan response and our own
 // address. Everything that does not touch NimBLE -- who is visiting, the
@@ -958,7 +959,7 @@ bool advertising() {
 }
 TxStatus txStatus() {
     size_t len = 0; uint32_t gen = 0;
-    const bool sending = MeshTalk::outgoing(millis(), len, gen) != nullptr;
+    const bool sending = MeshTalk::sending(millis());
     return { advertising(), sending, s_txStarts, s_txFailures, s_txLastError };
 }
 static void txFailure(uint8_t code, const char* stage) {
@@ -1003,8 +1004,7 @@ static void setAdvertising(bool on, uint32_t now) {
     // propagate without a reboot. Comparing gets that for one memcmp and
     // no allocation at all on the pass where nothing changed, which is
     // every pass but the rare one.
-    // The scan response counts as part of "the advert" here: a message
-    // starting or expiring is a change, and nothing else is.
+    // A frame, presence slot or end-of-message changes the primary payload.
     size_t   outLen = 0;
     uint32_t outGen = 0;
     const uint8_t* out = MeshTalk::outgoing(now, outLen, outGen);
@@ -1012,66 +1012,51 @@ static void setAdvertising(bool on, uint32_t now) {
                       outGen == s_srGen;
     if (same && s_advOn) return;
 
+    // Never put both identity and message in one 31-byte legacy ADV.
+    // The existing frame (max 27 B) plus manufacturer ID (2 B) and
+    // AD header (2 B) fits a PRIMARY non-scannable advertisement.
+    const uint8_t* payload = out ? out : buf;
+    const size_t payloadLen = out ? outLen : n;
+    if ((out && !MeshPrimaryTransport::fitsPrimary(outLen)) ||
+        (!out && (n < SquachMesh::LEN_INDEXED || n > SquachMesh::LEN_MAX))) {
+        txFailure(6, "primary-size");
+        return;
+    }
     std::string md;
-    md.reserve(n + 2);
+    md.reserve(payloadLen + 2);
     md.push_back((char)(SquachMesh::COMPANY_ID & 0xFF));
     md.push_back((char)(SquachMesh::COMPANY_ID >> 8));
-    md.append((const char*)buf, n);
+    md.append((const char*)payload, payloadLen);
 
     NimBLEAdvertisementData d;
-    d.setManufacturerData(md);
+    if (!d.setManufacturerData(md)) {
+        txFailure(2, "manufacturer-size");
+        return;
+    }
     // If the library fails any stage, keep state uncommitted and retry.
-    // A failure used to be recorded as success, silently swallowing SEND.
     if (adv->isAdvertising() && !adv->stop()) {
         txFailure(1, "stop");
         return;
     }
-    if (!adv->setAdvertisementData(d)) {
-        txFailure(2, "advert-data");
+    // IMPORTANT with NimBLE-Arduino 2.5.1:
+    // setDiscoverableMode() adds FLAGS to the stored advertisement, and
+    // enableScanResponse() clears its cached-data flag. If either runs
+    // after setAdvertisementData(), start() may re-submit 31 bytes PLUS
+    // 3 bytes of FLAGS and reject the entire primary message. Configure
+    // all modes first; publish the exact complete manufacturer AD *last*.
+    adv->enableScanResponse(false);
+    if (!adv->setDiscoverableMode(BLE_GAP_DISC_MODE_NON)) {
+        txFailure(4, "non-discoverable-mode");
         return;
     }
-    // A message goes in the scan response, and turning the scan response ON
-    // is also what makes the advert scannable at all: setScanResponseData()
-    // alone stores the bytes and leaves the advert non-scannable, so nobody
-    // would ever ask for them. Off again the moment the message expires.
-    if (out) {
-        std::string sm;
-        sm.reserve(outLen + 2);
-        sm.push_back((char)(SquachMesh::COMPANY_ID & 0xFF));
-        sm.push_back((char)(SquachMesh::COMPANY_ID >> 8));
-        sm.append((const char*)out, outLen);
-        NimBLEAdvertisementData r;
-        r.setManufacturerData(sm);
-        if (!adv->setScanResponseData(r)) {
-            txFailure(3, "scan-response-data");
-            return;
-        }
-        adv->enableScanResponse(true);
-        // Scannable: a peer's scan request is how the message travels.
-        if (!adv->setDiscoverableMode(BLE_GAP_DISC_MODE_GEN)) {
-            txFailure(4, "scannable-mode");
-            return;
-        }
-    } else {
-        // 2.x pushes scan-response data to the controller the moment it is
-        // set and enableScanResponse(false) only clears a flag, so the last
-        // message would go on being served to anyone who asked. So the
-        // advert goes non-scannable (non-connectable and non-discoverable
-        // is ADV_NONCONN_IND): the controller answers no scan request in
-        // that mode, so the stale reply is never sent, and no scanner pays
-        // for a request that has nothing behind it. The next message sets
-        // fresh reply data before the advert turns scannable again. (Not
-        // cleared with empty data: the library takes &payload[0] of it.)
-        adv->enableScanResponse(false);
-        if (!adv->setDiscoverableMode(BLE_GAP_DISC_MODE_NON)) {
-            txFailure(4, "non-discoverable-mode");
-            return;
-        }
-    }
-    // Never connectable. Update mode's server shares this advertiser, and a
-    // stack with the peripheral role compiled in defaults to connectable.
+    // Never connectable. The BLE OTA update server shares this advertiser;
+    // its ownership logic above remains the same.
     if (!adv->setConnectableMode(BLE_GAP_CONN_MODE_NON)) {
         txFailure(4, "non-connectable-mode");
+        return;
+    }
+    if (!adv->setAdvertisementData(d)) {
+        txFailure(2, "advert-data");
         return;
     }
     // Message frames live in legacy scan responses. Formerly the 1.5s
@@ -1079,8 +1064,10 @@ static void setAdvertising(bool on, uint32_t now) {
     // every part could miss its only beacon after a stop/restart, leaving
     // the invitee with a code but the inviter without one. Increase the
     // beacon cadence *only while a frame is present*. Idle stays 1.5s.
-    const uint16_t advMs = out ? MeshAirtime::MESSAGE_ADVERTISING_MS
-                               : MeshAirtime::IDLE_ADVERTISING_MS;
+    // Presence slots during an outgoing message must also use 400ms
+    // beacons; the 1.6s slot would otherwise provide only one chance.
+    const uint16_t advMs = MeshTalk::sending(now) ? MeshAirtime::MESSAGE_ADVERTISING_MS
+                                                  : MeshAirtime::IDLE_ADVERTISING_MS;
     adv->setMinInterval((uint16_t)(advMs * 8 / 5));
     adv->setMaxInterval((uint16_t)(advMs * 8 / 5 + 16));
     if (!adv->start() || !adv->isAdvertising()) {
@@ -1089,11 +1076,11 @@ static void setAdvertising(bool on, uint32_t now) {
     }
     s_txStarts++;
     if (out && !s_txWasSending) {
-        Serial.printf("[mesh-tx] controller advertising MESSAGE/INVITE (%u-byte frame), heap=%lu, largest=%lu\n",
+        Serial.printf("[mesh-tx] controller advertising PRIMARY MESSAGE/INVITE (%u-byte frame), heap=%lu, largest=%lu\n",
                       (unsigned)outLen, (unsigned long)ESP.getFreeHeap(),
                       (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
     }
-    s_txWasSending = out != nullptr;
+    s_txWasSending = MeshTalk::sending(now);
     memcpy(s_lastAdv, buf, n);
     s_lastAdvLen = n;
     s_advOn = true;
