@@ -27,6 +27,9 @@ BOARDS = {
     # that nobody means to flash.
     "a4:f0:0f:8e:3a:88": ("cyd35-fast", "3.5in, 80MHz, two-band drawing"),
     "a0:f2:62:e1:29:10": ("twatch-s3",  "LilyGo T-Watch S3, native USB (COM13 is allowed for THIS MAC only)"),
+    # Sunton ESP32-2432S032C: 3.2in ST7789 IPS with GT911 capacitive touch.
+    "14:33:5c:6c:20:b8": ("cyd32c",     "Sunton ESP32-2432S032C, 3.2in ST7789 IPS, GT911 capacitive touch"),
+    "14:33:5c:6d:22:84": ("cyd32c",     "Sunton ESP32-2432S032C, second validated unit"),
     # 88:57:21:2e:e6:e0 runs SquachEmit, not this firmware. It is the only
     # CAPACITIVE 2.8in; to test capacitive touch, list it here as cyd-fast
     # for the test and comment it out again after (done 2026-09-21).
