@@ -191,6 +191,11 @@ WASM_FLAGS := -std=c++17 -Os -I$(SIM_DIR) -I$(INC) -DSQUACH_MESH=1 \
               -sENVIRONMENT=web,node \
               --closure 0
 
+# Embed a real version in the browser emulator. Releases pass their tag's
+# version; developer builds use the current git describe when available.
+WASM_VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo unknown)
+WASM_FLAGS   += -DFIRMWARE_VERSION='"$(WASM_VERSION)"'
+
 BIN      := squachsim
 LIVE_BIN := squachsim-live
 
