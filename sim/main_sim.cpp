@@ -24,6 +24,7 @@
 #include "settings.h"
 #include "squachy.h"
 #include "detection.h"
+#include "ignore_list.h"
 #include "detection_info.h"
 #include "ui_clear.h"
 #include "ui_log.h"
@@ -585,6 +586,13 @@ int main(int argc, char** argv) {
     DetectionEngine engine;
     engine.init();
     if (!noSeed) seedDetections(engine);
+    // Regression aid: put every seeded device on IGNORE while leaving the
+    // counters populated, so CLEAR can verify that NEARBY disappears.
+    if (getenv("SQUACHSIM_IGNOREALL")) {
+        IgnoreList::begin();
+        for (uint8_t i = 0; i < engine.logCount(); i++)
+            if (const Detection* d = engine.logAt(i)) IgnoreList::add(d->mac, d->type);
+    }
 
     if (onboard) Squachy::trigger(Squachy::Event::BOOTED);
     // Runs every pose he has back to back, which is the only way to see
