@@ -910,7 +910,8 @@ static void rowContent(SettingsRow r, const DetectionEngine& eng, char* valBuf, 
             else value = "NONE >";
             break;
         case SettingsRow::TIME_ZONE:
-            label = "TIME ZONE"; value = Settings::timeZoneName();
+            // The row itself is two-sided: tap left to go west, right to go east.
+            label = "ZONE <  >"; value = Settings::timeZoneName();
             break;
         case SettingsRow::REPLAY_INTRO:
             label = "REPLAY INTRO";
