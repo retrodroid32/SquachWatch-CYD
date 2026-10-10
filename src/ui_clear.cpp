@@ -14,6 +14,7 @@
 #include "meshtutor.h"
 #include "squachy.h"
 #include "detection.h"
+#include "ignore_list.h"
 #include "emote_script.h"
 #include <esp_system.h>
 #include "crowd_bench.h"
@@ -3033,6 +3034,28 @@ void uiClearTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool adv
     bool anyActive = false;
     for (uint8_t i = 0; i < (uint8_t)DetectionType::COUNT; i++) {
         if (eng.countByType((DetectionType)i) > 0) { anyActive = true; break; }
+    }
+    // IGNORE and SNOOZE are alert-policy choices, not counter filters. They
+    // suppress NEARBY while leaving counters unchanged. TRUSTED keeps its
+    // existing #88 behavior; ALWAYS ALERT bypasses SNOOZE. A deauth flood
+    // has no device MAC to silence and still qualifies. Cache for 250 ms.
+    if (anyActive) {
+        static uint32_t s_nearbyUnignoredAt = 0;
+        static bool     s_nearbyHasUnignored = true;
+        if (!s_nearbyUnignoredAt || now - s_nearbyUnignoredAt >= 250) {
+            s_nearbyUnignoredAt = now ? now : 1;
+            s_nearbyHasUnignored = eng.countByType(DetectionType::DEAUTH) > 0;
+            for (uint8_t i = 0; !s_nearbyHasUnignored && i < eng.logCount(); i++) {
+                const Detection* d = eng.logAt(i);
+                if (!d || !d->active) continue;
+                // Preserve #88's TRUSTED behavior. Only IGNORE and SNOOZE
+                // suppress NEARBY, and ALWAYS ALERT overrides SNOOZE.
+                const bool ignored = IgnoreList::contains(d->mac);
+                const bool snoozed = IgnoreList::snoozed(d->mac) && !IgnoreList::alwaysAlert(d->mac);
+                if (!ignored && !snoozed) s_nearbyHasUnignored = true;
+            }
+        }
+        anyActive = s_nearbyHasUnignored;
     }
     s_nearbyOn = false;           // set again below only if it is drawn
     // Its ARRIVAL is the event, so the glitch fires on the edge rather than
