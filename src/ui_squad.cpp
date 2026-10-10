@@ -34,6 +34,7 @@ uint8_t  s_unreadAtOpen = 0;   // how many to mark as new, counted before readin
 Rect     s_prev = { 0, 0, 0, 0 }, s_next = { 0, 0, 0, 0 };
 Rect     s_invite = { 0, 0, 0, 0 }, s_add = { 0, 0, 0, 0 }, s_back = { 0, 0, 0, 0 };
 Rect     s_forget = { 0, 0, 0, 0 }, s_hunt = { 0, 0, 0, 0 };
+Rect     s_send = { 0, 0, 0, 0 };
 Rect     s_rows[ROWS_MAX];
 uint8_t  s_rowN = 0;
 
@@ -265,10 +266,19 @@ void uiSquadTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool adv
 
     s_back = { 4, (int16_t)(h - BH - 6), BW, BH };
     Theme::drawButton(t, s_back.x, s_back.y, s_back.w, s_back.h, "[ BACK ]", false);
+    // SEND, bottom right under the inbox: write to the squad from here,
+    // rather than only by tapping a message to reply to it. The in-range
+    // page only; the roster is for managing members, not talking to them.
+    s_send = { 0, 0, 0, 0 };
+    if (!s_roster) {
+        s_send = { (int16_t)(w - BW - 4), (int16_t)(h - BH - 6), BW, BH };
+        Theme::drawButton(t, s_send.x, s_send.y, s_send.w, s_send.h, "[ SEND ]", false);
+    }
 }
 
 SquadHit uiSquadTouch(int x, int y, uint32_t now) {
     if (in(s_back, x, y)) return SquadHit::BACK;
+    if (s_send.w && in(s_send, x, y)) return SquadHit::SEND;
     if (s_n > 1 && in(s_prev, x, y)) { select((uint8_t)((s_sel + s_n - 1) % s_n)); return SquadHit::NONE; }
     if (s_n > 1 && in(s_next, x, y)) { select((uint8_t)((s_sel + 1) % s_n)); return SquadHit::NONE; }
     if (s_n && s_invite.w && in(s_invite, x, y) && !visiting(s_members[s_sel].mac)) {
