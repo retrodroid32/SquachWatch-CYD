@@ -4670,10 +4670,10 @@ void loop() {
                     engine.deactivateWatch();
                 }
                 enterClear();
-            } else if ((now - watchAlertStart) > ALERT_AUTO_DISMISS_MS) {
-                engine.deactivateWatch();
-                enterClear();
             }
+            // WATCH alerts are explicit acknowledgements: do not auto-dismiss.
+            // A tap outside REMOVE closes only this alert and leaves the target
+            // selected; REMOVE deletes only the active target from the watch list.
             break;
         }
         case AppState::WATCH_LIST: {
