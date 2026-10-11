@@ -1133,6 +1133,16 @@ int8_t uiSettingsBrightnessDeltaForTap(TFT_eSPI& t, int x, int screenW, int scre
     return x < splitX ? -16 : 16;
 }
 
+int8_t uiSettingsTimeZoneStepForTap(TFT_eSPI& t, int x, int screenW, int screenH) {
+    // The label is drawn by drawRow() at x=8 and is left-aligned.
+    // Both arrows are well left of screenW/2 on either CYD, so the old
+    // half-screen split classified both arrow taps as "east".
+    // Match drawRow()'s portrait/landscape font sizing exactly.
+    t.setTextSize(screenH > screenW ? 1 : Theme::uiMenuTextSize(t));
+    const int splitX = 8 + t.textWidth("ZONE < ");
+    return x < splitX ? -1 : 1;
+}
+
 SettingsRow uiSettingsHitTest(TFT_eSPI& t, int x, int y, int screenW, int screenH) {
     (void)x; (void)screenW;
     int top, bodyBottom, rowH, headerH, tallH;
