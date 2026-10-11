@@ -1,6 +1,7 @@
 // SquachWatch-CYD — SD log implementation
 #include "sd_log.h"
 #include "clock.h"
+#include "sd_timestamp.h"
 #include <time.h>
 #include <SD.h>
 #include <stdio.h>
@@ -162,7 +163,10 @@ void SdLog::logEvent(const Detection& d) {
     if (!_ready) return;
     if (_filename[0] == '\0') openDaily();
 
-    char line[96];
+    char line[128];
+    char timestamp[28];
+    SdTimestamp::format(timestamp, sizeof timestamp, Clock::trusted(),
+                        Clock::nowEpoch(), millis());
     char mac[18];
     snprintf(mac, sizeof(mac), "%02X:%02X:%02X:%02X:%02X:%02X",
              d.mac[0], d.mac[1], d.mac[2], d.mac[3], d.mac[4], d.mac[5]);
@@ -174,8 +178,8 @@ void SdLog::logEvent(const Detection& d) {
     for (char* p = nameSafe;   *p; p++) if (*p == ',') *p = '.';
 
     const int n = snprintf(line, sizeof(line),
-                           "%lu,%s,%d,%s,%u,%s,%s\n",
-                           (unsigned long)millis(),
+                           "%s,%s,%d,%s,%u,%s,%s\n",
+                           timestamp,
                            detectionTypeName(d.type),
                            d.rssi,
                            mac,
