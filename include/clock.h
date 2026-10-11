@@ -90,6 +90,7 @@ void formatTime(char* out, size_t n, bool twelveHour, bool* pm = nullptr);
 // ---- the zone ---------------------------------------------------------
 uint8_t     zoneCount();
 const char* zoneName(uint8_t i);
+uint8_t     zoneStep(uint8_t i, int dir);   // previous/next display zone, west to east
 void        applyZone(uint8_t i);   // Settings calls this at boot and on change
 
 // ---- network time -----------------------------------------------------

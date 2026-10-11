@@ -113,6 +113,11 @@ SettingsRow uiSettingsHitTest(TFT_eSPI& t, int x, int y, int screenW, int screen
 // as the row, so the touch split follows the glyphs in either orientation.
 int8_t uiSettingsBrightnessDeltaForTap(TFT_eSPI& t, int x, int screenW, int screenH);
 
+// ZONE <  > draws both arrows beside the left-aligned label. Return the
+// west/east step based on the *visible arrow gap*, not half the screen,
+// just as BRIGHT follows its own '-' and '+' glyphs in both orientations.
+int8_t uiSettingsTimeZoneStepForTap(TFT_eSPI& t, int x, int screenW, int screenH);
+
 // ---- confirmation panel ---------------------------------------------------
 // Two rows here cannot be taken back by tapping them again: CALIBRATE TOUCH
 // throws away a working calibration before it knows the new one is any good,

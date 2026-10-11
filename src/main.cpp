@@ -5236,7 +5236,13 @@ void loop() {
                         case SettingsRow::BACKGROUND: Settings::cycleBackground(); break;
                         case SettingsRow::BACKGROUND_LOCK: Settings::toggleBackgroundLocked(); break;
                         case SettingsRow::UPDATE_CHECK:    Settings::toggleUpdateCheck();     break;
-                        case SettingsRow::TIME_ZONE:       Settings::cycleTimeZone();         break;
+                        case SettingsRow::TIME_ZONE:
+                            // The arrows both live inside the left-aligned label.
+                            // Match their rendered positions, not the screen midpoint.
+                            Settings::stepTimeZone(uiSettingsTimeZoneStepForTap(
+                                tft, gestureStartX, tft.width(), tft.height()));
+                            Settings::markTimeZoneChosen();
+                            break;
                         case SettingsRow::INVERT:
                             Settings::toggleInvert();
                             // XOR against the panel's own baseline, not an
