@@ -5322,6 +5322,25 @@ void loop() {
                         case SettingsRow::STATUS_LIGHT: enterLight(); break;
                         case SettingsRow::SECURITY:    enterSecurity(); break;
                         case SettingsRow::IGNORED_DEVICES:  enterIgnoreList(); break;
+                        case SettingsRow::SNOOZE_MANAGER:
+                            uiSettingsOpenPage(SettingsPage::SNOOZES);
+                            break;
+                        case SettingsRow::SNOOZE_ENTRY: {
+                            // The Settings renderer and hit-test share row geometry
+                            // and scroll position. Use a copied MAC because removal
+                            // compacts the list before the next frame.
+                            const int index = uiSettingsSnoozeIndexAt(tft, gestureStartX,
+                                gestureStartY, tft.width(), tft.height());
+                            uint8_t mac[6]; uint32_t remaining = 0; bool always = false;
+                            if (index >= 0 && IgnoreList::snoozeInfo((uint8_t)index, mac, remaining, always)) {
+                                if (IgnoreList::unsnooze(mac))
+                                    Theme::showToast("UNSNOOZED", "Alerts restored for this device", Theme::CYAN);
+                                else
+                                    Theme::showToast("UNSNOOZE FAILED", "Could not save change", Theme::RED);
+                            }
+                            break;
+                        }
+                        case SettingsRow::SNOOZE_EMPTY: break;
 #if SQUACH_MESH
                         case SettingsRow::SQUACHMESH:
                             // Asked once. After that the row opens the menu
