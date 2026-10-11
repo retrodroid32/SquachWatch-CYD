@@ -5348,6 +5348,12 @@ void loop() {
                         case SettingsRow::CONFIDENCE: Settings::cycleMinConfidence(); break;
                         case SettingsRow::AUTO_QUIET:  Settings::cycleAutoQuiet(); break;
                         case SettingsRow::ALERT_RULES: enterAlertRules(); break;
+#if SQW_WIFI_5G
+                        case SettingsRow::WIFI_BANDS:
+                            Settings::setWifi5(!Settings::wifi5());
+                            setWifi5Enabled(Settings::wifi5());
+                            break;
+#endif
                         case SettingsRow::DETECTION_FILTER: enterDetFilter(); break;
                         case SettingsRow::POWER_SAVER: enterPower(); break;
                         case SettingsRow::PRIVACY:
