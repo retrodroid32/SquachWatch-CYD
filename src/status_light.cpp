@@ -9,7 +9,10 @@
 // pins, and nothing else on the Phantom's build uses 4, 16 or 17. The AWOK
 // and the 3.5" are unverified and get nothing -- see the header for why that
 // is a rule and not a shortcut.
-#if defined(ESP32) && !defined(CYD35) && !defined(AWOK) && !defined(TWATCH_S3)
+// The 3.5-inch capacitive CYD35C has a physical common-anode RGB LED on
+// GPIO4/16/17, verified in upstream PR #35 on real CYD35C hardware.
+// Keep the older resistive CYD35 gated off until separately verified.
+#if defined(ESP32) && (!defined(CYD35) || defined(CYD35C)) && !defined(AWOK) && !defined(TWATCH_S3)
 #define STATUS_LIGHT_HW 1
 #else
 #define STATUS_LIGHT_HW 0
