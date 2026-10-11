@@ -33,7 +33,7 @@ int main() {
     ck("update to ALWAYS ALERT", IgnoreList::setPolicy(B, DetectionType::RING, IgnoreList::Policy::ALWAYS_ALERT));
     ck("record size unchanged on update", bytesOnDisk() == 16);
     ck("always-alert helper", IgnoreList::alwaysAlert(B));
-    IgnoreList::snooze(B);
+    IgnoreList::snooze(B, IgnoreList::SnoozeDuration::MIN_10);
     ck("always-alert bypasses snooze", !IgnoreList::silenced(B));
 
     suite("Removal persists");
