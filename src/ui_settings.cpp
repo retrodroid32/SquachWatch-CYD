@@ -62,7 +62,11 @@ static const SettingsRow ALL_ROWS[] = {
     SettingsRow::WATCH_SETTINGS,
 #endif
     SettingsRow::BORING_MODE, SettingsRow::CONFIDENCE, SettingsRow::AUTO_QUIET,
-    SettingsRow::ALERT_RULES, SettingsRow::DETECTION_FILTER,
+    SettingsRow::ALERT_RULES,
+#if SQW_WIFI_5G
+    SettingsRow::WIFI_BANDS,
+#endif
+    SettingsRow::DETECTION_FILTER,
     SettingsRow::IGNORED_DEVICES,
     // APPEARANCE opens the display page -- see APPEARANCE_ROWS. It sat at the
     // very top of this list, which put it under the first thumb that opened
@@ -232,6 +236,9 @@ static RowGroupId groupFor(SettingsRow r) {
         case SettingsRow::CONFIDENCE:
         case SettingsRow::AUTO_QUIET:
         case SettingsRow::ALERT_RULES:
+#if SQW_WIFI_5G
+        case SettingsRow::WIFI_BANDS:
+#endif
         case SettingsRow::DETECTION_FILTER:
         case SettingsRow::IGNORED_DEVICES:
             return RowGroupId::BEHAVIOR;
@@ -876,6 +883,11 @@ static void rowContent(SettingsRow r, const DetectionEngine& eng, char* valBuf, 
         case SettingsRow::PRIVACY:
             label = "PRIVACY MODE"; value = Settings::privacyMode() ? "ON" : "OFF";
             break;
+#if SQW_WIFI_5G
+        case SettingsRow::WIFI_BANDS:
+            label = "WIFI BANDS"; value = Settings::wifi5() ? "2.4+5" : "2.4";
+            break;
+#endif
         case SettingsRow::POWER_SAVER:
             label = "POWER SAVER"; value = Settings::powerSaver() ? "ON" : "OFF";
             break;
