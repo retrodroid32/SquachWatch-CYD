@@ -16,6 +16,9 @@ enum class SettingsRow : uint8_t {
     CONFIDENCE,
     AUTO_QUIET,     // "AUTO SNOOZE": how often one device may interrupt
     ALERT_RULES,    // per-type alert/log-only/confidence/repeats/cooldown/wake
+#if SQW_WIFI_5G
+    WIFI_BANDS,
+#endif
     DETECTION_FILTER,
     IGNORED_DEVICES,
     POWER_SAVER,
