@@ -4,6 +4,7 @@
 #include "settings.h"
 #include "ota_core.h"
 #include "detection.h"
+#include "gps.h"
 #include <Arduino.h>
 #include <esp_heap_caps.h>
 #include <stdio.h>
@@ -277,6 +278,12 @@ void drawBoardTab(TFT_eSPI& t, const Geom& g) {
     uptimeText(buf, sizeof buf, millis());
     row(t, g, y, "Up", buf);
     y += LINE;
+
+#if defined(GPS_SUPPORT)
+    Gps::formatStatus(buf, sizeof buf);
+    row(t, g, y, "GPS", buf);
+    y += LINE;
+#endif
 
     snprintf(buf, sizeof buf, "%lu KB free", (unsigned long)(ESP.getFreeHeap() / 1024));
     row(t, g, y, "Memory", buf);

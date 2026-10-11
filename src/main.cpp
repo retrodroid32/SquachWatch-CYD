@@ -43,6 +43,7 @@
 #include "theme.h"            // the crash card on the splash
 #include "privacy.h"
 #include "clock.h"
+#include "gps.h"
 
 // Written every second, read once on the next boot. RTC_NOINIT_ATTR is the
 // point: it survives a software reset WITHOUT being zeroed on the way back
@@ -405,8 +406,12 @@ constexpr bool PANEL_NEEDS_INVERSION = true;
 // that baseline on real FNK0103L/FNK0114L hardware.
 constexpr bool PANEL_NEEDS_INVERSION = true;
 #elif defined(CYD32)
-// E32R32P/ST7789P3 baseline: BGR colour order, no inversion.
-constexpr bool PANEL_NEEDS_INVERSION = false;
+// Real 3.2-inch ESP32-32E/E32R32P hardware validation (2026-09-28):
+// orientation and touch are correct with this profile, but a fresh install
+// boots with panel colours inverted until the user toggles INVERT. Treat
+// inversion-on as the panel baseline so first boot is correct; the user's
+// Settings > INVERT option still XORs against this baseline as before.
+constexpr bool PANEL_NEEDS_INVERSION = true;
 #elif defined(CYD35)
 // UNCONFIRMED on real hardware post-fix: the original port's "true"
 // guess predates discovering the override bug above, so whatever
@@ -2834,6 +2839,7 @@ void setup() {
     // saved rotation instead of always starting from the board default.
     Settings::load();
     Clock::begin();   // after Settings: the zone is applied there, the history here
+    Gps::begin();      // no-op in ordinary builds; UART2 only exists in GPS variants
 #if defined(TWATCH_S3)
     twatchRtcBegin();      // after Clock::begin(): a real time beats the note's guess
     twatchHapticBegin();
@@ -2885,7 +2891,7 @@ void setup() {
     ledcSetup(BL_CH_ORIG, 5000, 8);
     ledcAttachPin(BL_PIN_TWATCH, BL_CH_ORIG);
 #else
-#if !defined(AWOK) && !defined(RLPHANTOM) && !defined(RLPHANTOM_R)
+#if !defined(AWOK) && !defined(RLPHANTOM) && !defined(RLPHANTOM_R) && !defined(CYD32)
     ledcSetup(BL_CH_ORIG, 5000, 8);
     ledcAttachPin(BL_PIN_ORIG, BL_CH_ORIG);
 #endif
@@ -3052,6 +3058,7 @@ void setup() {
         touch.setRotation(0);
     }
 #endif
+
 
     // Recovery escape hatch: hold touch ANYWHERE for ~1s right here to
     // wipe a saved calibration back to defaults. A bad calibration can
@@ -3529,6 +3536,7 @@ void loop() {
         }, nullptr);
     }
 #endif
+    Gps::tick(now);     // bounded UART/NMEA work; may establish UTC once per boot
     Clock::tick(now);   // the note to self, when it is due
 #if SQUACH_MESH && defined(BENCH_TOOLS)
     if (g_benchUpdateNow && (state == AppState::CLEAR || state == AppState::DESK)) {
