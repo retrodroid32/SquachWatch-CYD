@@ -158,6 +158,8 @@ static SimSaved s_list[SAVED_MAX] = {
     { "Coffee Shop", SavedResult::UNTRIED },
 };
 static uint8_t s_n = 3, s_use = 0;
+static SavedTest s_test = SavedTest::IDLE;
+static uint32_t s_testAt = 0;
 bool        hasSaved()  { return s_saved && s_n > 0; }
 bool        bootCheck(uint32_t) { return false; }
 bool        savedPassAt(uint8_t i, char* out, size_t cap) { if (i >= savedCount() || !cap) return false; snprintf(out, cap, "hunter2"); return true; }
@@ -187,6 +189,22 @@ void        removeSaved(uint8_t i) {
     if (s_use == i) s_use = 0; else if (s_use > i) s_use--;
 }
 void        useSaved(uint8_t i) { if (i < s_n) s_use = i; }
+bool        testSavedAt(uint8_t i) {
+    if (i >= s_n || s_test != SavedTest::IDLE) return false;
+    s_use = i;
+    s_test = SavedTest::CONNECTING;
+    s_testAt = millis();
+    return true;
+}
+SavedTest   savedTestState() {
+    if (s_test == SavedTest::CONNECTING && millis() - s_testAt >= 1500) {
+        const bool fail = !strcmp(s_list[s_use].ssid, "WrongPassword");
+        s_list[s_use].result = fail ? SavedResult::BAD_PASSWORD : SavedResult::JOINED;
+        s_test = fail ? SavedTest::BAD_PASSWORD : SavedTest::JOINED;
+    }
+    return s_test;
+}
+void        clearSavedTest() { if (s_test != SavedTest::CONNECTING) s_test = SavedTest::IDLE; }
 void        printSaved() {}
 void        connectSavedAt(uint8_t i) { connect(i < s_n ? s_list[i].ssid : "SquachNet", "", false); }
 

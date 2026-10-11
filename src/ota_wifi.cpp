@@ -51,6 +51,13 @@ uint8_t s_sig[80];
 uint8_t s_sigLen = 0;
 
 TaskHandle_t s_task       = nullptr;
+// Dedicated join-only test: does not enter OTA mode or touch OtaCore.
+TaskHandle_t s_testTask = nullptr;
+volatile SavedTest s_testState = SavedTest::IDLE;
+volatile uint8_t s_testDropReason = 0;
+uint8_t s_testIndex = 0;
+char s_testSsid[33] = "";
+char s_testPass[65] = "";
 
 void key(char* out, const char* k, uint8_t i) { snprintf(out, 4, "%s%u", k, (unsigned)i); }
 
@@ -637,6 +644,77 @@ void useSaved(uint8_t i) {
     if (i >= s_n) return;
     s_use = i;
     writeList();
+}
+
+// Runs in its own task so the saved-networks screen can show CONNECTING and
+// still redraw. Wi-Fi detection/BLE scanning must already have been paused
+// by the caller before this task starts; neither firmware downloads nor NTP
+// /HTTPS checks occur here. The radio is handed back before publishing a
+// terminal result to the UI.
+static void testSavedTask(void*) {
+    WiFi.scanDelete();
+    Clock::syncStop();
+    WiFi.disconnect(false, false);
+    delay(100);
+    s_testDropReason = 0;
+    const wifi_event_id_t dropEv = WiFi.onEvent(
+        [](arduino_event_id_t, arduino_event_info_t info) {
+            s_testDropReason = info.wifi_sta_disconnected.reason;
+        }, ARDUINO_EVENT_WIFI_STA_DISCONNECTED);
+    WiFi.mode(WIFI_STA);
+    Serial.printf("[wifi] testing saved network %s\n", s_testSsid);
+    WiFi.begin(s_testSsid, s_testPass[0] ? s_testPass : nullptr);
+    const uint32_t started = millis();
+    wl_status_t st = WiFi.status();
+    while (st != WL_CONNECTED && millis() - started < 9000) {
+        if (st == WL_NO_SSID_AVAIL || st == WL_CONNECT_FAILED) break;
+        delay(100);
+        st = WiFi.status();
+    }
+    const uint8_t reason = s_testDropReason;
+    SavedResult result = SavedResult::FAILED;
+    if (st == WL_CONNECTED) result = SavedResult::JOINED;
+    else if (st == WL_NO_SSID_AVAIL || reason == 201) result = SavedResult::NOT_FOUND;
+    // 15 = four-way handshake timeout, 202 = authentication failure,
+    // 204 = handshake timeout. An ordinary timeout isn't proof of a bad key.
+    else if (st == WL_CONNECT_FAILED || reason == 15 || reason == 202 || reason == 204)
+        result = SavedResult::BAD_PASSWORD;
+    setResult((int8_t)s_testIndex, result);
+    Serial.printf("[wifi] test %s: status=%d drop=%u result=%u\n",
+                  s_testSsid, (int)st, (unsigned)reason, (unsigned)result);
+    WiFi.removeEvent(dropEv);
+    WiFi.disconnect(false, false); // do not stop the driver; detection uses it
+    memset(s_testPass, 0, sizeof s_testPass);
+    s_testTask = nullptr;
+    s_testState = result == SavedResult::JOINED ? SavedTest::JOINED :
+                  result == SavedResult::NOT_FOUND ? SavedTest::NOT_FOUND :
+                  result == SavedResult::BAD_PASSWORD ? SavedTest::BAD_PASSWORD :
+                                                        SavedTest::FAILED;
+    vTaskDelete(nullptr);
+}
+
+SavedTest savedTestState() { return s_testState; }
+void clearSavedTest() {
+    if (s_testState != SavedTest::CONNECTING && !s_testTask)
+        s_testState = SavedTest::IDLE;
+}
+bool testSavedAt(uint8_t i) {
+    readSaved();
+    if (i >= s_n || s_task || s_testTask || s_testState != SavedTest::IDLE ||
+        s_state != State::OFF || Security::locked()) return false;
+    if (!passAt(i, s_testPass, sizeof s_testPass)) return false;
+    strncpy(s_testSsid, s_list[i].ssid, sizeof s_testSsid - 1);
+    s_testSsid[sizeof s_testSsid - 1] = '\0';
+    s_testIndex = i;
+    s_testState = SavedTest::CONNECTING;
+    if (xTaskCreatePinnedToCore(testSavedTask, "wifi-test", 6144,
+                                nullptr, 1, &s_testTask, 1) != pdPASS) {
+        s_testTask = nullptr;
+        s_testState = SavedTest::IDLE;
+        memset(s_testPass, 0, sizeof s_testPass);
+        return false;
+    }
+    return true;
 }
 
 // The best saved network in the last scan: USE when it is there, else the
