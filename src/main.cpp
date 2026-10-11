@@ -5237,8 +5237,10 @@ void loop() {
                         case SettingsRow::BACKGROUND_LOCK: Settings::toggleBackgroundLocked(); break;
                         case SettingsRow::UPDATE_CHECK:    Settings::toggleUpdateCheck();     break;
                         case SettingsRow::TIME_ZONE:
-                            // Left half steps west, right half east.
-                            Settings::stepTimeZone(gestureStartX < tft.width() / 2 ? -1 : 1);
+                            // The arrows both live inside the left-aligned label.
+                            // Match their rendered positions, not the screen midpoint.
+                            Settings::stepTimeZone(uiSettingsTimeZoneStepForTap(
+                                tft, gestureStartX, tft.width(), tft.height()));
                             Settings::markTimeZoneChosen();
                             break;
                         case SettingsRow::INVERT:
