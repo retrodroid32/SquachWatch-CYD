@@ -10,6 +10,9 @@
 
 static Detection s_last;
 static bool s_touched = false;
+static bool s_snoozePrompt = false;
+void uiAlertSetSnoozePrompt(bool enabled) { s_snoozePrompt = enabled; }
+bool uiAlertSnoozePrompt() { return s_snoozePrompt; }
 static bool s_redacted = false;
 void uiAlertSetRedacted(bool r) { s_redacted = r; }
 
@@ -140,6 +143,7 @@ void uiAlertInit(TFT_eSPI& t, const Detection& d) {
     s_spam = false;
     s_spamIdentities = 0;
     s_touched = false;
+    s_snoozePrompt = false;
     s_alertStart = millis();
     s_glitchStep = 0;
     // fillScreen() relies on TFT_eSPI's base-class width/height, which
@@ -272,6 +276,32 @@ bool uiAlertHitSnooze(int x, int y, int screenW, int screenH) {
     snoozeBtnRect(screenW, screenH, bx, by, bw, bh);
     return x >= bx && x <= bx + bw && y >= by && y <= by + bh;
 }
+
+static void snoozePickerRect(int w, int h, int& x, int& y) {
+    x = (w - 232) / 2;
+    y = (h - 174) / 2;
+}
+
+AlertSnoozeChoice uiAlertHitSnoozeChoice(int tx, int ty, int w, int h) {
+    if (!s_snoozePrompt) return AlertSnoozeChoice::NONE;
+    int x, y;
+    snoozePickerRect(w, h, x, y);
+    if (tx < x || tx >= x + 232 || ty < y || ty >= y + 174)
+        return AlertSnoozeChoice::NONE;
+    // Match the four drawn buttons and the bottom cancel button.
+    if (ty >= y + 38 && ty < y + 70) {
+        if (tx >= x + 10 && tx < x + 110) return AlertSnoozeChoice::MIN_10;
+        if (tx >= x + 122 && tx < x + 222) return AlertSnoozeChoice::MIN_30;
+    }
+    if (ty >= y + 78 && ty < y + 110) {
+        if (tx >= x + 10 && tx < x + 110) return AlertSnoozeChoice::HOUR_1;
+        if (tx >= x + 122 && tx < x + 222) return AlertSnoozeChoice::ALWAYS;
+    }
+    if (tx >= x + 10 && tx < x + 222 && ty >= y + 125 && ty < y + 157)
+        return AlertSnoozeChoice::CANCEL;
+    return AlertSnoozeChoice::NONE;
+}
+
 
 bool uiAlertHitHunt(int x, int y, int screenW, int screenH) {
     int bx, by, bw, bh;
@@ -655,7 +685,7 @@ void uiAlertTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng,
         t.setCursor(bx + (bw - hw) / 2, by + (bh - t.fontHeight()) / 2);
         t.print("HUNT");
     }
-    // SNOOZE between the two: this device, quiet until the board restarts.
+    // SNOOZE between the two: opens a 10m/30m/1h/always picker.
     {
         int bx, by, bw, bh;
         snoozeBtnRect(w, h, bx, by, bw, bh);
@@ -679,6 +709,28 @@ void uiAlertTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng,
     // a screen that keeps rendering underneath" pattern LOG's confirm/
     // info panels use.
     if (infoPending) Theme::drawInfoPanel(t, w, h, now, infoTypeName, infoText);
+    if (s_snoozePrompt) {
+        int x, y;
+        snoozePickerRect(w, h, x, y);
+        t.fillRoundRect(x, y, 232, 174, 6, Theme::BG);
+        t.drawRoundRect(x, y, 232, 174, 6, Theme::CYAN);
+        t.setTextSize(1);
+        t.setTextWrap(false);
+        t.setTextColor(Theme::CYAN, Theme::BG);
+        const char* title = "SNOOZE THIS DEVICE FOR:";
+        t.setCursor(x + (232 - t.textWidth(title)) / 2, y + 12);
+        t.print(title);
+        Theme::drawButton(t, x + 10,  y + 38, 100, 32, "10 MIN", false);
+        Theme::drawButton(t, x + 122, y + 38, 100, 32, "30 MIN", false);
+        Theme::drawButton(t, x + 10,  y + 78, 100, 32, "1 HOUR", false);
+        Theme::drawButton(t, x + 122, y + 78, 100, 32, "ALWAYS", false);
+        Theme::drawButton(t, x + 10,  y + 125, 212, 32, "CANCEL", false);
+        t.setTextSize(1);
+        const char* tip = "Always: until manually removed";
+        t.setTextColor(Theme::AMBER, Theme::BG);
+        t.setCursor(x + (232 - t.textWidth(tip)) / 2, y + 163);
+        t.print(tip);
+    }
 }
 
 bool uiAlertTouched() {

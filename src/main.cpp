@@ -4521,6 +4521,37 @@ void loop() {
             // gate LOG's info panel uses, applied here too -- MORE INFO
             // appears on the exact tap that opened it, so without this
             // the still-held finger could instantly dismiss it.
+            // The snooze duration picker owns all touches while visible.
+            // Keep the alert from auto-dismissing until a choice or CANCEL.
+            if (uiAlertSnoozePrompt()) {
+                if (tp.valid && (now - lastTouch) > TOUCH_DEBOUNCE_MS) {
+                    const AlertSnoozeChoice choice =
+                        uiAlertHitSnoozeChoice(tp.x, tp.y, tft.width(), tft.height());
+                    if (choice != AlertSnoozeChoice::NONE) {
+                        lastTouch = now;
+                        if (choice == AlertSnoozeChoice::CANCEL) {
+                            uiAlertSetSnoozePrompt(false);
+                            alertStart = now;  // give time to reconsider
+                        } else {
+                            const IgnoreList::SnoozeDuration duration =
+                                choice == AlertSnoozeChoice::MIN_10 ? IgnoreList::SnoozeDuration::MIN_10 :
+                                choice == AlertSnoozeChoice::MIN_30 ? IgnoreList::SnoozeDuration::MIN_30 :
+                                choice == AlertSnoozeChoice::HOUR_1 ? IgnoreList::SnoozeDuration::HOUR_1 :
+                                                                       IgnoreList::SnoozeDuration::ALWAYS;
+                            if (IgnoreList::snooze(s_alertMac, duration)) {
+                                uiAlertSetSnoozePrompt(false);
+                                Theme::showToast("SNOOZED", choice == AlertSnoozeChoice::ALWAYS
+                                    ? "Until you unsnooze" : "Expires automatically", Theme::AMBER);
+                                squachyCatch(lastAlertType, s_alertMac, lastAlertHits, lastAlertRssi, lastAlertConf);
+                                enterClear();
+                            } else {
+                                Theme::showToast("SNOOZE FAILED", "List full or save failed", Theme::RED);
+                            }
+                        }
+                    }
+                }
+                break;
+            }
             if (s_infoPending) {
                 if (!s_infoArmed) {
                     if (!tp.valid) s_infoArmed = true;
@@ -4579,16 +4610,11 @@ void loop() {
                     squachyCatch(lastAlertType, s_alertMac, lastAlertHits, lastAlertRssi, lastAlertConf);
                     enterClear();
                 } else if (uiAlertHitSnooze(tp.x, tp.y, tft.width(), tft.height())) {
-                    // This device, until the board restarts: no more alerts
-                    // from it, while it goes on being scanned, counted and
-                    // logged like anything IGNOREd. Acknowledges the alert
-                    // like IGNORE does. See IgnoreList::snooze for why it
-                    // is no longer the whole type for an hour.
+                    // Ask how long rather than silently snoozing until restart.
+                    // Do not count/dismiss this alert until the user selects
+                    // a duration; CANCEL leaves all policies unchanged.
                     lastTouch = now;
-                    IgnoreList::snooze(s_alertMac);
-                    Theme::showToast("SNOOZED", "This one, until restart", Theme::AMBER);
-                    squachyCatch(lastAlertType, s_alertMac, lastAlertHits, lastAlertRssi, lastAlertConf);
-                    enterClear();
+                    uiAlertSetSnoozePrompt(true);
                 } else if (uiAlertHitHunt(tp.x, tp.y, tft.width(), tft.height())) {
                     // Same call pair LOG's confirm panel makes. The
                     // DETECTION trigger fires here too: leaving via HUNT
@@ -5302,6 +5328,25 @@ void loop() {
                         case SettingsRow::STATUS_LIGHT: enterLight(); break;
                         case SettingsRow::SECURITY:    enterSecurity(); break;
                         case SettingsRow::IGNORED_DEVICES:  enterIgnoreList(); break;
+                        case SettingsRow::SNOOZE_MANAGER:
+                            uiSettingsOpenPage(SettingsPage::SNOOZES);
+                            break;
+                        case SettingsRow::SNOOZE_ENTRY: {
+                            // The Settings renderer and hit-test share row geometry
+                            // and scroll position. Use a copied MAC because removal
+                            // compacts the list before the next frame.
+                            const int index = uiSettingsSnoozeIndexAt(tft, gestureStartX,
+                                gestureStartY, tft.width(), tft.height());
+                            uint8_t mac[6]; uint32_t remaining = 0; bool always = false;
+                            if (index >= 0 && IgnoreList::snoozeInfo((uint8_t)index, mac, remaining, always)) {
+                                if (IgnoreList::unsnooze(mac))
+                                    Theme::showToast("UNSNOOZED", "Alerts restored for this device", Theme::CYAN);
+                                else
+                                    Theme::showToast("UNSNOOZE FAILED", "Could not save change", Theme::RED);
+                            }
+                            break;
+                        }
+                        case SettingsRow::SNOOZE_EMPTY: break;
 #if SQUACH_MESH
                         case SettingsRow::SQUACHMESH:
                             // Asked once. After that the row opens the menu

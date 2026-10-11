@@ -66,6 +66,9 @@ enum class SettingsRow : uint8_t {
     WATCH_TEMP,      // the T-Watch only: the chip's temperature, a reading, under WATCH
     WATCH_XTAL,      // the T-Watch only: CLOCK CHECK, the ESP32's crystal against the clock chip's
     PRIVACY,         // screen-only masking of addresses and device/network names
+    SNOOZE_MANAGER,  // main Settings: opens the current per-device snooze list
+    SNOOZE_ENTRY,    // dynamic entry on the snooze page: tap to unsnooze
+    SNOOZE_EMPTY,    // no active snoozes
     BACK,
     COUNT,
     NONE = 255
@@ -82,7 +85,7 @@ void uiSettingsScroll(int delta);     // positive = scroll down
 // Each page keeps its OWN scroll position, so leaving a page and coming back
 // puts you where you were instead of at the top -- the list is long enough
 // that losing your place was the most-felt annoyance on this screen.
-enum class SettingsPage : uint8_t { MAIN = 0, APPEARANCE = 1, SYSTEM = 2, DESK = 3, WATCH = 4 };
+enum class SettingsPage : uint8_t { MAIN = 0, APPEARANCE = 1, SYSTEM = 2, DESK = 3, WATCH = 4, SNOOZES = 5 };
 void         uiSettingsOpenPage(SettingsPage p);
 SettingsPage uiSettingsCurrentPage();
 
@@ -107,6 +110,8 @@ bool uiSettingsTapPinnedOk(int x, int y, int screenW, int screenH);
 // just the screen dimensions) since row height now depends on actual
 // font metrics -- same reasoning as ui_rawscan.cpp's uiRawScanRowAt().
 SettingsRow uiSettingsHitTest(TFT_eSPI& t, int x, int y, int screenW, int screenH);
+// For SNOOZES page entries only: the exact entry index at the touched row.
+int uiSettingsSnoozeIndexAt(TFT_eSPI& t, int x, int y, int screenW, int screenH);
 
 // BRIGHT draws its own visible "-" and "+" controls inside the row. Return
 // the matching -16/+16 step for a tap x coordinate using the same font sizing

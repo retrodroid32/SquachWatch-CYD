@@ -593,7 +593,7 @@ int main(int argc, char** argv) {
         const bool snooze = getenv("SQUACHSIM_SNOOZEALL") != nullptr;
         for (uint8_t i = 0; i < engine.logCount(); i++) {
             if (const Detection* d = engine.logAt(i)) {
-                if (snooze) IgnoreList::snooze(d->mac);
+                if (snooze) IgnoreList::snooze(d->mac, IgnoreList::SnoozeDuration::HOUR_1);
                 else        IgnoreList::add(d->mac, d->type);
             }
         }
