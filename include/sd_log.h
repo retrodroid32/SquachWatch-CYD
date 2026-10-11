@@ -12,6 +12,9 @@ public:
     bool begin();              // returns true if card mounted
     bool ready() const { return _ready; }
     void logEvent(const Detection& d);
+    // Optional per-device detection-event evidence for selected WATCH/HUNT
+    // targets and confirmed EVIL TWIN events. Never called from radio ISRs.
+    void logTargetEvidence(const Detection& d, bool watched, bool hunted);
     void tick();               // buffered flush / housekeeping (called from loop)
     // Deletes every squachwatch log file on the card. For the security wipe --
     // the phrase and the ignore list live in NVS, but the detection history a
