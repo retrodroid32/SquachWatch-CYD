@@ -15,6 +15,10 @@ public:
     // Optional per-device detection-event evidence for selected WATCH/HUNT
     // targets and confirmed EVIL TWIN events. Never called from radio ISRs.
     void logTargetEvidence(const Detection& d, bool watched, bool hunted);
+    // Record bounded raw BLE advertising data for deliberately watched targets.
+    // Queued by radio callbacks, written only by the loop task.
+    void logWatchAdvertisement(const uint8_t mac[6], const uint8_t* bytes,
+                               uint8_t len, uint16_t originalLen, int8_t rssi);
     void tick();               // buffered flush / housekeeping (called from loop)
     // Deletes every squachwatch log file on the card. For the security wipe --
     // the phrase and the ignore list live in NVS, but the detection history a
