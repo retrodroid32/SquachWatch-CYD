@@ -4262,6 +4262,9 @@ void drawToast(TFT_eSPI& t, uint32_t now) {
     if (bw > maxW) bw = maxW;
     const int bh = n ? 48 + (n - 1) * TOAST_SUB_LINE_H : 34;
     const int bx = (w - bw) / 2, by = (h - bh) / 2;
+    // CYD35C draws into separate top/bottom half-height sprite bands.
+    // Avoid overlay work that falls wholly outside the current band.
+    if (!DrawBand::has(by, by + bh)) return;
 
     t.fillRect(bx, by, bw, bh, BG);
     t.drawRect(bx, by, bw, bh, s_toastAccent);
