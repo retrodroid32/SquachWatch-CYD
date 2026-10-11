@@ -402,6 +402,13 @@ switch (Settings::background()) {
             const uint8_t* bssid = eng.rawWifiBssid(idx);
             const bool ignored = bssid && IgnoreList::contains(bssid);
             char line[32];
+#if SQW_WIFI_5G
+            if (eng.rawWifiChannel(idx) > 14)
+                snprintf(line, sizeof(line), "5G CH%u  %s",
+                         (unsigned)eng.rawWifiChannel(idx),
+                         eng.rawWifiOpen(idx) ? "OPEN" : "LOCKED");
+            else
+#endif
             snprintf(line, sizeof(line), "CH%u  %s",
                      (unsigned)eng.rawWifiChannel(idx),
                      eng.rawWifiOpen(idx) ? "OPEN" : "LOCKED");
