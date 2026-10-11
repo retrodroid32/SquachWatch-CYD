@@ -907,9 +907,14 @@ static void applyBrightness() {
         applyCpuClock();   // back to CPU CLOCK
     }
 #endif
+#if defined(NM_CYD_C5)
+    // Arduino-ESP32 3.x takes the physical pin, not an LEDC channel.
+    ledcWrite(TFT_BL, duty);
+#else
     ledcWrite(BL_CH_ORIG, duty);
     ledcWrite(BL_CH_CAP,  duty);
     ledcWrite(BL_CH_AWOK, duty);
+#endif
 }
 
 // 240, 160 or 80 MHz. Never lower: the radio needs an 80 MHz APB clock, and
@@ -2957,7 +2962,10 @@ void setup() {
 // TOUCH_CS on AWOK, and the capacitive controller's INTERRUPT line on the RL
 // Phantom. Driving a 5 kHz PWM onto either is the kind of fault that looks
 // like dead touch, which is exactly how it presented on the Phantom.
-#if defined(TWATCH_S3)
+#if defined(NM_CYD_C5)
+    // Core 3.x LEDC API; never attach legacy CYD GPIOs on the ESP32-C5.
+    ledcAttach(TFT_BL, 5000, 8);
+#elif defined(TWATCH_S3)
     // One backlight, GPIO45, on the first channel. The CYD pins below are
     // flash/PSRAM lines and the power chip's interrupt on an S3.
     ledcSetup(BL_CH_ORIG, 5000, 8);
@@ -3198,7 +3206,12 @@ void setup() {
 
     // Seed the PRNG so the digital rain starts in a fresh-looking state
     // on every boot. Analog read on a floating pin is plenty.
+#if defined(NM_CYD_C5)
+    // GPIO34 does not exist on C5; use the hardware entropy source.
+    randomSeed(esp_random());
+#else
     randomSeed(analogRead(34));
+#endif
 
     // The backlight goes down while the radios come up, and back to your
     // setting once they are running.
