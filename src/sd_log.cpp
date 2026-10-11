@@ -257,7 +257,7 @@ void SdLog::logTargetEvidence(const Detection& d, bool watched, bool hunted) {
     const char* mode = rogue ? "EVILTWIN" : watched && hunted ? "WATCH+HUNT"
                       : watched ? "WATCH" : "HUNT";
     char row[160];
-    const int n = snprintf(row, sizeof row, "%s,%s,%s,%s,%d,%u,%s\\n",
+    const int n = snprintf(row, sizeof row, "%s,%s,%s,%s,%d,%u,%s\n",
                            timestamp, mode, detectionTypeName(d.type), mac,
                            (int)d.rssi, (unsigned)d.channel, safe);
     if (n <= 0 || (size_t)n >= sizeof row) return;
@@ -268,7 +268,7 @@ void SdLog::logTargetEvidence(const Detection& d, bool watched, bool hunted) {
     File out = SD.open(filename, FILE_APPEND);
     if (!out) return;
     if (!existed) {
-        static const char hdr[] = "timestamp,mode,type,mac,rssi,channel,name\\n";
+        static const char hdr[] = "timestamp,mode,type,mac,rssi,channel,name\n";
         out.write((const uint8_t*)hdr, sizeof hdr - 1);
     }
     const size_t written = out.write((const uint8_t*)row, (size_t)n);
