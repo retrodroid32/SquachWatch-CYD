@@ -41,6 +41,52 @@ static DetectionEngine* g_engine = nullptr;
 // into DetectionEngine's fixed mailbox and applied by loop(); this mux protects
 // only the tiny head/tail/copy operation, never log processing or flash I/O.
 static portMUX_TYPE s_bleQMutex = portMUX_INITIALIZER_UNLOCKED;
+ 
+// Best-effort bounded record of *raw* advertising fields for explicitly
+// WATCHed BLE targets (upstream issue #49). Never write to SD on NimBLE's
+// host task, and never capture SquachMesh's encrypted manufacturer data.
+// This 8-entry mailbox costs under 700 bytes, with no heap allocation.
+struct WatchAdvRecord {
+    uint8_t mac[6];
+    int8_t rssi;
+    uint8_t len;
+    uint16_t total;
+    uint8_t bytes[64];
+};
+static WatchAdvRecord s_watchAdv[8] = {};
+static uint8_t s_watchAdvHead = 0, s_watchAdvTail = 0;
+static portMUX_TYPE s_watchAdvMutex = portMUX_INITIALIZER_UNLOCKED;
+
+static void enqueueWatchAdvert(const uint8_t* mac,
+                               const std::vector<uint8_t>& payload, int8_t rssi) {
+    if (!mac || payload.empty()) return;
+    WatchAdvRecord rec = {};
+    memcpy(rec.mac, mac, 6);
+    rec.rssi = rssi;
+    rec.total = (uint16_t)(payload.size() > 65535u ? 65535u : payload.size());
+    rec.len = (uint8_t)(payload.size() > sizeof(rec.bytes) ? sizeof(rec.bytes) : payload.size());
+    memcpy(rec.bytes, payload.data(), rec.len);
+    portENTER_CRITICAL(&s_watchAdvMutex);
+    const uint8_t next = (uint8_t)((s_watchAdvHead + 1) % 8);
+    if (next != s_watchAdvTail) {
+        s_watchAdv[s_watchAdvHead] = rec;
+        s_watchAdvHead = next;
+    }
+    portEXIT_CRITICAL(&s_watchAdvMutex);
+}
+
+static bool dequeueWatchAdvert(WatchAdvRecord& out) {
+    bool got = false;
+    portENTER_CRITICAL(&s_watchAdvMutex);
+    if (s_watchAdvTail != s_watchAdvHead) {
+        out = s_watchAdv[s_watchAdvTail];
+        s_watchAdvTail = (uint8_t)((s_watchAdvTail + 1) % 8);
+        got = true;
+    }
+    portEXIT_CRITICAL(&s_watchAdvMutex);
+    return got;
+}
+
 
 // -------- manual raw scanner state (see startRawBleScan/startRawWifiScan) --------
 // NONE = normal continuous signature-matched scanning (the default).
@@ -376,6 +422,10 @@ class BleScanCallbacks : public NimBLEScanCallbacks {
         int8_t rssi = (int8_t)adv->getRSSI();
         g_engine->checkWatchBle(mac, rssi);
         g_engine->checkHuntBle(mac, rssi);
+        // Opt-in via the existing WATCH selection, excluding mesh peers
+        // (they already returned above). Copy at most 64 payload bytes.
+        if (g_engine->isWatched(mac, true))
+            enqueueWatchAdvert(mac, payload, rssi);
         // The radio is dedicated to a WiFi sweep or a firmware update right now.
         if (g_rawMode == RawScanMode::WIFI || g_rawMode == RawScanMode::UPDATE) return;
         if (g_rawMode == RawScanMode::BLE) {
@@ -1399,6 +1449,10 @@ void DetectionEngine::loop() {
             _sd.logTargetEvidence(event, watched, hunted);
         _sdQTail = (uint8_t)((_sdQTail + 1) % SD_Q_CAP);
     }
+    WatchAdvRecord watched = {};
+    if (dequeueWatchAdvert(watched))
+        _sd.logWatchAdvertisement(watched.mac, watched.bytes,
+                                  watched.len, watched.total, watched.rssi);
     _sd.tick();
 }
 

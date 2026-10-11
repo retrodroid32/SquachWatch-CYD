@@ -276,6 +276,52 @@ void SdLog::logTargetEvidence(const Detection& d, bool watched, bool hunted) {
     if (written == (size_t)n) { slot = {key, now, true}; }
 }
 
+// Best-effort watched BLE advertising evidence. Not a PCAP or link-layer
+// sniffer: NimBLE provides only the AD payload bytes from received adverts.
+void SdLog::logWatchAdvertisement(const uint8_t mac[6], const uint8_t* bytes,
+                                  uint8_t len, uint16_t originalLen, int8_t rssi) {
+    if (!_ready || !mac || !bytes || !len || len > 64) return;
+    const uint32_t now = millis();
+    // Repeated identical bytes are throttled; a changed payload is kept.
+    static struct { uint32_t hash, at; bool used; } last[8] = {};
+    uint32_t hash = 2166136261u;
+    for (uint8_t i = 0; i < 6; ++i) hash = (hash ^ mac[i]) * 16777619u;
+    for (uint8_t i = 0; i < len; ++i) hash = (hash ^ bytes[i]) * 16777619u;
+    auto& slot = last[hash % 8];
+    if (slot.used && slot.hash == hash && now - slot.at < 5000) return;
+
+    char path[40];
+    snprintf(path, sizeof path, "/watchadv-%02X%02X%02X%02X%02X%02X.log",
+             mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+    char timestamp[28];
+    SdTimestamp::format(timestamp, sizeof timestamp, Clock::trusted(),
+                        Clock::nowEpoch(), now);
+
+    char hex[129];
+    static const char kHex[] = "0123456789ABCDEF";
+    for (uint8_t i = 0; i < len; ++i) {
+        hex[2 * i] = kHex[bytes[i] >> 4];
+        hex[2 * i + 1] = kHex[bytes[i] & 0x0F];
+    }
+    hex[2 * len] = '\0';
+    char row[210];
+    const int n = snprintf(row, sizeof row, "%s,%d,%u,%u,%s\n",
+                           timestamp, (int)rssi, (unsigned)originalLen,
+                           (unsigned)len, hex);
+    if (n <= 0 || (size_t)n >= sizeof row) return;
+    const bool existed = SD.exists(path);
+    File out = SD.open(path, FILE_APPEND);
+    if (!out) return;
+    bool ok = true;
+    if (!existed) {
+        static const char hdr[] = "timestamp,rssi,original_bytes,captured_bytes,ad_hex\n";
+        ok = out.write((const uint8_t*)hdr, sizeof hdr - 1) == sizeof hdr - 1;
+    }
+    if (ok) ok = out.write((const uint8_t*)row, (size_t)n) == (size_t)n;
+    out.close();
+    if (ok) slot = {hash, now, true};
+}
+
 // Only wipe files matching the exact application-owned evidence format.
 // A generic user file named scan-notes.log must never be removed.
 static bool isOwnedEvidenceFilename(const char* name, const char* prefix) {
@@ -318,7 +364,8 @@ void SdLog::wipe() {
             for (const char* p = nm; *p; p++) if (*p == '/') base = p + 1;
             if (strncmp(base, "squachwatch-", 12) == 0 ||
                 isOwnedEvidenceFilename(base, "scan-") ||
-                isOwnedEvidenceFilename(base, "evilportal-")) {
+                isOwnedEvidenceFilename(base, "evilportal-") ||
+                isOwnedEvidenceFilename(base, "watchadv-")) {
                 snprintf(victims[n], sizeof victims[n], "/%s", base);
                 n++;
             }
