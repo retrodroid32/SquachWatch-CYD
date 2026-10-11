@@ -1093,7 +1093,7 @@ switch (Settings::background()) {
     else if (s_page == SettingsPage::SYSTEM) pageTitle = ">> SYSTEM <<";
     else if (s_page == SettingsPage::DESK)   pageTitle = ">> DESK MODE <<";
     else if (s_page == SettingsPage::WATCH)  pageTitle = ">> WATCH SETTINGS <<";
-    else if (s_page == SettingsPage::SNOOZES) pageTitle = ">> SNOOZED DEVICES <<";
+    else if (s_page == SettingsPage::SNOOZES) pageTitle = ">> SNOOZES <<";
     Theme::drawTitleBar(t, pageTitle);
 
     // +6, not +4: four group headers plus the two tracking rows.
@@ -1140,7 +1140,7 @@ switch (Settings::background()) {
                                items[idx].row == SettingsRow::DESK_BACKGROUND);
             } else {
                 drawRow(t, w, y, itemH, label, value, danger, groupColor(items[idx].group),
-                        h > w);
+                        h > w || items[idx].row == SettingsRow::SNOOZE_MANAGER);
             }
         }
         y += itemH;
