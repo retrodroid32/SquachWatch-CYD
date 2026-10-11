@@ -215,6 +215,67 @@ void SdLog::logEvent(const Detection& d) {
     }
 }
 
+// Record *detection events* for selected targets and evil-twin alerts.
+// This is not a raw packet/PCAP capture: the engine has already classified
+// and compacted the radio event before it reaches this loop-task API.
+void SdLog::logTargetEvidence(const Detection& d, bool watched, bool hunted) {
+    if (!_ready) return;
+    const bool rogue = d.type == DetectionType::EVILTWIN;
+    if (!watched && !hunted && !rogue) return;
+
+    const uint32_t now = millis();
+    // Bound disk writes if a chatty target repeatedly triggers detection.
+    struct Recent { uint32_t key, at; bool used; };
+    static Recent recent[8] = {};
+    uint32_t key = (uint32_t)d.type ^ (rogue ? 0xEEu : watched ? 0x57u : 0x48u);
+    for (unsigned i = 0; i < 6; ++i) key = (key ^ d.mac[i]) * 16777619u;
+    Recent& slot = recent[key % 8];
+    if (slot.used && slot.key == key && now - slot.at < 5000) return;
+
+    char filename[40];
+    snprintf(filename, sizeof filename,
+             rogue ? "/evilportal-%02X%02X%02X%02X%02X%02X.log"
+                   : "/scan-%02X%02X%02X%02X%02X%02X.log",
+             d.mac[0], d.mac[1], d.mac[2], d.mac[3], d.mac[4], d.mac[5]);
+
+    char timestamp[28];
+    SdTimestamp::format(timestamp, sizeof timestamp, Clock::trusted(),
+                        Clock::nowEpoch(), now);
+    char safe[sizeof d.name] = {};
+    size_t i = 0;
+    for (; i + 1 < sizeof safe && d.name[i]; ++i) {
+        const unsigned char c = (unsigned char)d.name[i];
+        safe[i] = c < 32 || c > 126 || c == ',' || c == '"' ? '.' : (char)c;
+    }
+    // Don't emit spreadsheet formulae when logs are opened as CSV.
+    if (safe[0] == '=' || safe[0] == '+' || safe[0] == '-' || safe[0] == '@')
+        safe[0] = '_';
+
+    char mac[18];
+    snprintf(mac, sizeof mac, "%02X:%02X:%02X:%02X:%02X:%02X",
+             d.mac[0], d.mac[1], d.mac[2], d.mac[3], d.mac[4], d.mac[5]);
+    const char* mode = rogue ? "EVILTWIN" : watched && hunted ? "WATCH+HUNT"
+                      : watched ? "WATCH" : "HUNT";
+    char row[160];
+    const int n = snprintf(row, sizeof row, "%s,%s,%s,%s,%d,%u,%s\\n",
+                           timestamp, mode, detectionTypeName(d.type), mac,
+                           (int)d.rssi, (unsigned)d.channel, safe);
+    if (n <= 0 || (size_t)n >= sizeof row) return;
+
+    // Determine creation before opening: core 2.0.14 has returned stale
+    // size() on a newly-created FILE_APPEND in prior hardware testing.
+    const bool existed = SD.exists(filename);
+    File out = SD.open(filename, FILE_APPEND);
+    if (!out) return;
+    if (!existed) {
+        static const char hdr[] = "timestamp,mode,type,mac,rssi,channel,name\\n";
+        out.write((const uint8_t*)hdr, sizeof hdr - 1);
+    }
+    const size_t written = out.write((const uint8_t*)row, (size_t)n);
+    out.close();
+    if (written == (size_t)n) { slot = {key, now, true}; }
+}
+
 void SdLog::wipe() {
     if (!_ready) return;
 
@@ -243,7 +304,9 @@ void SdLog::wipe() {
             const char* nm = f.name();
             const char* base = nm;
             for (const char* p = nm; *p; p++) if (*p == '/') base = p + 1;
-            if (strncmp(base, "squachwatch-", 12) == 0) {
+            if (strncmp(base, "squachwatch-", 12) == 0 ||
+                strncmp(base, "scan-", 5) == 0 ||
+                strncmp(base, "evilportal-", 11) == 0) {
                 snprintf(victims[n], sizeof victims[n], "/%s", base);
                 n++;
             }
