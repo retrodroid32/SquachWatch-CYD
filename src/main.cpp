@@ -4128,6 +4128,10 @@ void loop() {
                     DrawBand::set(0, halfH);
                     frame.setViewport(0, 0, tft.width(), tft.height(), true);
                     uiClearTick(frame, now, engine, true, s_scanPickerOpen);
+                    // Draw transient and persistent overlays into the *same*
+                    // band as the background, before that band's push.
+                    if (uiZoneCardWanted()) uiZoneCardDraw(frame, now);
+                    Theme::drawToast(frame, now);
                     s_bandUs[0] = micros() - tBand;
                     pushFrame(0, 0);
 
@@ -4135,6 +4139,8 @@ void loop() {
                     DrawBand::set(halfH, tft.height());
                     frame.setViewport(0, -halfH, tft.width(), tft.height(), true);
                     uiClearTick(frame, now, engine, false, s_scanPickerOpen);
+                    if (uiZoneCardWanted()) uiZoneCardDraw(frame, now);
+                    Theme::drawToast(frame, now);
                     s_bandUs[1] = micros() - tBand;
                     pushFrame(0, halfH);
                     DrawBand::all();
@@ -4151,8 +4157,17 @@ void loop() {
                 // clearShouldRender() keeps rendering until it expires. The
                 // zone card is persistent UI; a short-lived toast is the
                 // immediate answer to the user's action, so it draws last.
+#if defined(CYD35)
+                // Half-frame overlays were already painted before each push.
+                // Only render here on the direct-TFT allocation fallback.
+                if (!frameBufferOk) {
+                    if (uiZoneCardWanted()) uiZoneCardDraw(*canvas, now);
+                    Theme::drawToast(*canvas, now);
+                }
+#else
                 if (uiZoneCardWanted()) uiZoneCardDraw(*canvas, now);
                 Theme::drawToast(*canvas, now);
+#endif
 
 #if CROWD_BENCH
                 if (CrowdBench::active()) CrowdBench::drawOver(*canvas, now);
