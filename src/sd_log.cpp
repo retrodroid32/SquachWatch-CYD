@@ -276,6 +276,18 @@ void SdLog::logTargetEvidence(const Detection& d, bool watched, bool hunted) {
     if (written == (size_t)n) { slot = {key, now, true}; }
 }
 
+// Only wipe files matching the exact application-owned evidence format.
+// A generic user file named scan-notes.log must never be removed.
+static bool isOwnedEvidenceFilename(const char* name, const char* prefix) {
+    const size_t p = strlen(prefix);
+    if (strncmp(name, prefix, p) != 0 || strlen(name) != p + 12 + 4) return false;
+    for (size_t i = 0; i < 12; ++i) {
+        const char c = name[p + i];
+        if (!((c >= '0' && c <= '9') || (c >= 'A' && c <= 'F'))) return false;
+    }
+    return strcmp(name + p + 12, ".log") == 0;
+}
+
 void SdLog::wipe() {
     if (!_ready) return;
 
@@ -305,8 +317,8 @@ void SdLog::wipe() {
             const char* base = nm;
             for (const char* p = nm; *p; p++) if (*p == '/') base = p + 1;
             if (strncmp(base, "squachwatch-", 12) == 0 ||
-                strncmp(base, "scan-", 5) == 0 ||
-                strncmp(base, "evilportal-", 11) == 0) {
+                isOwnedEvidenceFilename(base, "scan-") ||
+                isOwnedEvidenceFilename(base, "evilportal-")) {
                 snprintf(victims[n], sizeof victims[n], "/%s", base);
                 n++;
             }
