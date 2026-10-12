@@ -2312,11 +2312,15 @@ bool DetectionEngine::watchHitPending() {
     int8_t best = -1;
     uint32_t newest = 0;
     for (uint8_t i = 0; i < _watchTargetCount; i++) {
-        const WatchEntry& e = _watchTargets[i];
+        WatchEntry& e = _watchTargets[i];
+        // Explicit SNOOZE removes old notices too; otherwise an alert
+        // minimized yesterday can reappear when a timed snooze expires.
+        if (IgnoreList::snoozed(e.mac) && !IgnoreList::alwaysAlert(e.mac)) {
+            e.pending = false;
+            e.unacknowledged = false;
+            continue;
+        }
         if (!e.pending || e.unacknowledged) continue;
-        // Manual per-device SNOOZE is stronger than being WATCHED. A
-        // snoozed target stays selected, logged and RSSI-tracked.
-        if (IgnoreList::snoozed(e.mac) && !IgnoreList::alwaysAlert(e.mac)) continue;
         if (best < 0 || (int32_t)(e.lastSeenMs - newest) > 0) {
             best = (int8_t)i;
             newest = e.lastSeenMs;
