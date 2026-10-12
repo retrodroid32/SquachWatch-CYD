@@ -1769,7 +1769,7 @@ static void drawTargetPills(TFT_eSPI& t, int screenW, int counterTextTop,
     t.setTextSize(1);
     const bool watching = watchCount > 0;
     const bool hunting = huntCount > 0;
-    char watchText[12], huntText[12];
+    char watchText[16], huntText[12];
     snprintf(watchText, sizeof watchText, "WATCH %u", (unsigned)watchCount);
     snprintf(huntText, sizeof huntText, "HUNT %u", (unsigned)huntCount);
 
@@ -3188,6 +3188,14 @@ void uiClearTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool adv
         if ((watching || hunting) &&
             DrawBand::has(counterTextTop - 24, counterTextTop)) {
             drawTargetPills(t, w, counterTextTop, watching, hunting);
+            // A minimized WATCH alert remains discoverable without holding
+            // the entire display hostage. The warning dot belongs to WATCH,
+            // not HUNT, and survives screen rotation.
+            if (eng.watchUnacknowledgedCount() && s_watchPillOn) {
+                const int cx = s_wpX + s_wpW - 5;
+                const int cy = s_wpY + 2;
+                t.fillCircle(cx, cy, 3, Theme::AMBER);
+            }
         }
     }
 

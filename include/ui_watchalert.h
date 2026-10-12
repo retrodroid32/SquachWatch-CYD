@@ -7,7 +7,7 @@
 #include <stdint.h>
 #include "detection.h"
 
-void uiWatchAlertInit(TFT_eSPI& t);
+void uiWatchAlertInit(TFT_eSPI& t, bool resetRosterScroll = true);
 // advance: see Squachy::tick()'s header comment -- gates state
 // mutation for boards that render in multiple physical bands per
 // logical frame. Defaults to true (unchanged behavior for single-pass
@@ -22,7 +22,14 @@ void uiWatchListTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng);
 // you can act on it without finding it in a scan again.
 bool uiWatchAlertHitRemove(TFT_eSPI& t, int x, int y);
 
-// WATCH pill roster helpers. The roster is deliberately read-only: selection
-// and removal remain on LOG/raw scan, while actual sightings open the alert.
+// WATCH pill roster: a tap does not change state. Holding a row opens an
+// action modal; its selection is identified by stable MAC+kind (not row index,
+// which may reorder as RSSI changes). UI and hit-testing share row geometry.
 bool uiWatchAlertListHitBack(int x, int y, int screenW, int screenH);
+bool uiWatchAlertListTargetAt(TFT_eSPI& t, int x, int y,
+                              const DetectionEngine& eng,
+                              DetectionEngine::WatchTargetInfo& target);
 void uiWatchAlertListScroll(int delta);
+enum class WatchListAction : uint8_t { NONE, OPEN_ALERT, REMOVE, CANCEL };
+void uiWatchAlertListActionMenu(TFT_eSPI& t, const char* label);
+WatchListAction uiWatchAlertListActionHit(int x, int y, int w, int h);

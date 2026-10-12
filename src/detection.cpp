@@ -3,6 +3,7 @@
 #include "serial_flush.h"
 #include "signatures.h"
 #include "settings.h"
+#include "ignore_list.h"
 #include "blackbox.h"
 #include "bingo.h"
 #include "dex.h"
@@ -2186,6 +2187,7 @@ bool DetectionEngine::watchTargetInfo(uint8_t idx, WatchTargetInfo& out) const {
     out.samples = e.rssiCount;
     out.lastSeenMs = e.lastSeenMs;
     out.seen = e.rssiCount > 0;
+    out.needsAcknowledgement = e.unacknowledged;
     if (e.rssiCount) {
         out.rssi = watchEntryRssiAt(e, (uint8_t)(e.rssiCount - 1));
         out.previousRssi = e.rssiCount >= 2
@@ -2211,6 +2213,25 @@ void DetectionEngine::deactivateWatch() {
     _watchKind = WatchKind::NONE;
     memset(_watchMac, 0, sizeof _watchMac);
     _watchLabel[0] = 0;
+}
+
+void DetectionEngine::acknowledgeWatch() {
+    const int8_t idx = findWatchTarget(_watchMac, _watchKind);
+    if (idx >= 0) {
+        _watchTargets[(uint8_t)idx].unacknowledged = false;
+        _watchTargets[(uint8_t)idx].pending = false;
+    }
+    deactivateWatch();
+}
+
+uint8_t DetectionEngine::watchUnacknowledgedCount() const {
+    uint8_t count = 0;
+    for (uint8_t i = 0; i < _watchTargetCount; i++) {
+        const WatchEntry& e = _watchTargets[i];
+        if (e.unacknowledged && (!IgnoreList::snoozed(e.mac) || IgnoreList::alwaysAlert(e.mac)))
+            count++;
+    }
+    return count;
 }
 
 void DetectionEngine::clearWatch() {
@@ -2267,7 +2288,9 @@ void DetectionEngine::checkWatchBle(const uint8_t* mac, int8_t rssi) {
         noteWatchRssi(e, rssi);
         if (e.lastHitMs && now - e.lastHitMs < WATCH_COOLDOWN_MS) return;
         e.lastHitMs = now;
-        e.pending = true;
+        // A minimized but unacknowledged hit already has a visible WATCH
+        // pill notice. Avoid repeatedly reopening its card every cooldown.
+        if (!e.unacknowledged) e.pending = true;
         return;
     }
 }
@@ -2280,7 +2303,7 @@ void DetectionEngine::checkWatchWifi(const uint8_t* mac, int8_t rssi) {
         noteWatchRssi(e, rssi);
         if (e.lastHitMs && now - e.lastHitMs < WATCH_COOLDOWN_MS) return;
         e.lastHitMs = now;
-        e.pending = true;
+        if (!e.unacknowledged) e.pending = true;
         return;
     }
 }
@@ -2289,8 +2312,15 @@ bool DetectionEngine::watchHitPending() {
     int8_t best = -1;
     uint32_t newest = 0;
     for (uint8_t i = 0; i < _watchTargetCount; i++) {
-        const WatchEntry& e = _watchTargets[i];
-        if (!e.pending) continue;
+        WatchEntry& e = _watchTargets[i];
+        // Explicit SNOOZE removes old notices too; otherwise an alert
+        // minimized yesterday can reappear when a timed snooze expires.
+        if (IgnoreList::snoozed(e.mac) && !IgnoreList::alwaysAlert(e.mac)) {
+            e.pending = false;
+            e.unacknowledged = false;
+            continue;
+        }
+        if (!e.pending || e.unacknowledged) continue;
         if (best < 0 || (int32_t)(e.lastSeenMs - newest) > 0) {
             best = (int8_t)i;
             newest = e.lastSeenMs;
@@ -2298,6 +2328,7 @@ bool DetectionEngine::watchHitPending() {
     }
     if (best < 0) return false;
     _watchTargets[(uint8_t)best].pending = false;
+    _watchTargets[(uint8_t)best].unacknowledged = true;
     return activateWatchTarget((uint8_t)best);
 }
 
