@@ -7,7 +7,7 @@
 #include <stdint.h>
 #include "detection.h"
 
-void uiWatchAlertInit(TFT_eSPI& t);
+void uiWatchAlertInit(TFT_eSPI& t, bool resetRosterScroll = true);
 // advance: see Squachy::tick()'s header comment -- gates state
 // mutation for boards that render in multiple physical bands per
 // logical frame. Defaults to true (unchanged behavior for single-pass
