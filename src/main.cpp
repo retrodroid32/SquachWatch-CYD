@@ -228,6 +228,7 @@ static void drawCrashCard(TFT_eSPI& t) {
 #include "ui_log.h"
 #include "ui_rawscan.h"
 #include "ui_watchalert.h"
+#include "watch_alert_actions.h"
 #include "ui_settings.h"
 #include "ui_diagnostics.h"
 #include "ui_hunt.h"
@@ -1755,8 +1756,10 @@ static void enterWatchList(bool preserveScroll = false) {
 static void leaveWatchAlert() {
     const bool backToRoster = s_watchAlertFromRoster;
     s_watchAlertFromRoster = false;
-    if (backToRoster) enterWatchList(true);
-    else              enterClear();
+    if (WatchAlertActions::returnPage(backToRoster) == WatchAlertActions::ReturnPage::ROSTER)
+        enterWatchList(true);
+    else
+        enterClear();
 }
 
 // true when reached via the first-boot flow (DONE -> CLEAR, straight
@@ -4638,20 +4641,14 @@ void loop() {
                     // against toggleWatch*() removing an existing target:
                     // WATCHED remains selected until explicitly un-watched
                     // from WATCH TARGETS, LOG, or raw scan.
-                    const bool already = engine.isWatched(s_alertMac, s_alertIsBle);
-                    if (already) {
+                    const WatchAlertActions::AddResult result =
+                        WatchAlertActions::addOnly(engine, s_alertMac, s_alertLabel, s_alertIsBle);
+                    if (result == WatchAlertActions::AddResult::ADDED)
+                        Theme::showToast("ADDED TO WATCH", s_alertLabel, Theme::CYAN);
+                    else if (result == WatchAlertActions::AddResult::ALREADY_WATCHED)
                         Theme::showToast("ALREADY WATCHING", s_alertLabel, Theme::CYAN);
-                    } else {
-                        const DetectionEngine::WatchToggle result = s_alertIsBle
-                            ? engine.toggleWatchBle(s_alertMac, s_alertLabel)
-                            : engine.toggleWatchWifi(s_alertMac, s_alertLabel);
-                        if (result == DetectionEngine::WatchToggle::ADDED)
-                            Theme::showToast("ADDED TO WATCH", s_alertLabel, Theme::CYAN);
-                        else if (result == DetectionEngine::WatchToggle::FULL)
-                            Theme::showToast("WATCH LIST FULL", "Maximum 8 targets", Theme::AMBER);
-                        else
-                            Theme::showToast("WATCH UNCHANGED", s_alertLabel, Theme::AMBER);
-                    }
+                    else
+                        Theme::showToast("WATCH LIST FULL", "Maximum 8 targets", Theme::AMBER);
                     squachyCatch(lastAlertType, s_alertMac, lastAlertHits, lastAlertRssi, lastAlertConf);
                     enterClear();
                 } else if (uiAlertHitHunt(tp.x, tp.y, tft.width(), tft.height())) {
