@@ -126,7 +126,10 @@ void DetectionEngine::pushLog(const Detection& d) {
 // Radio-fed entry points: inert here, nothing calls them in the sim.
 void DetectionEngine::postWiFi(const uint8_t*, int8_t, uint8_t, const char*, bool, bool, bool, bool) {}
 void DetectionEngine::postDeauth(const uint8_t*, int8_t, uint8_t) {}
-void DetectionEngine::postBle(Detection d) { pushLog(d); }
+void DetectionEngine::postBle(Detection d) {
+    pushLog(d);
+    checkWatchBle(d.mac, d.rssi);
+}
 
 // Not a stub. Everything else in this file is inert because it would need
 // a radio, but the Remote ID decoder is pure arithmetic over a byte
@@ -214,7 +217,14 @@ void DetectionEngine::watchWifi(const uint8_t* mac,const char* name){ int8_t i=f
 void DetectionEngine::noteWatchRssi(WatchEntry& e,int8_t rssi){ e.lastSeenMs=millis(); e.rssiHist[e.rssiHead]=rssi; e.rssiHead=(uint8_t)((e.rssiHead+1)%WATCH_RSSI_CAP); if(e.rssiCount<WATCH_RSSI_CAP)e.rssiCount++; }
 void DetectionEngine::checkWatchBle(const uint8_t* mac,int8_t rssi){ for(uint8_t i=0;i<_watchTargetCount;i++){ WatchEntry&e=_watchTargets[i]; if(e.kind==WatchKind::BLE&&memcmp(e.mac,mac,6)==0){ noteWatchRssi(e,rssi); if(!e.unacknowledged)e.pending=true; return; } } }
 void DetectionEngine::checkWatchWifi(const uint8_t* mac,int8_t rssi){ for(uint8_t i=0;i<_watchTargetCount;i++){ WatchEntry&e=_watchTargets[i]; if(e.kind==WatchKind::WIFI&&memcmp(e.mac,mac,6)==0){ noteWatchRssi(e,rssi); if(!e.unacknowledged)e.pending=true; return; } } }
-bool DetectionEngine::watchHitPending(){ for(uint8_t i=0;i<_watchTargetCount;i++) if(_watchTargets[i].pending&&!_watchTargets[i].unacknowledged){ WatchEntry& e=_watchTargets[i]; if(IgnoreList::snoozed(e.mac)&&!IgnoreList::alwaysAlert(e.mac))continue; e.pending=false; e.unacknowledged=true; return activateWatchTarget(i); } return false; }
+bool DetectionEngine::watchHitPending(){
+    for(uint8_t i=0;i<_watchTargetCount;i++){
+        WatchEntry& e=_watchTargets[i];
+        if(IgnoreList::snoozed(e.mac)&&!IgnoreList::alwaysAlert(e.mac)){e.pending=false;e.unacknowledged=false;continue;}
+        if(e.pending&&!e.unacknowledged){e.pending=false;e.unacknowledged=true;return activateWatchTarget(i);}
+    }
+    return false;
+}
 uint8_t DetectionEngine::watchRssiCount() const { int8_t f=findWatchTarget(_watchMac,_watchKind); return f>=0?_watchTargets[(uint8_t)f].rssiCount:0; }
 int8_t DetectionEngine::watchRssiAt(uint8_t idx) const { int8_t f=findWatchTarget(_watchMac,_watchKind); return f>=0?watchEntryRssiAt(_watchTargets[(uint8_t)f],idx):0; }
 
