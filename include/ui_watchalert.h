@@ -21,7 +21,6 @@ void uiWatchListTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng);
 // is the one place the target is ever named on screen, so it is the one place
 // you can act on it without finding it in a scan again.
 bool uiWatchAlertHitRemove(TFT_eSPI& t, int x, int y);
-bool uiWatchAlertHitMinimize(TFT_eSPI& t, int x, int y);
 
 // WATCH pill roster: a tap does not change state. Holding a row opens an
 // action modal; its selection is identified by stable MAC+kind (not row index,
