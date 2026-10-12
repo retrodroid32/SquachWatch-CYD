@@ -36,12 +36,13 @@ int main() {
     e.postBle(sighting(B,-67));
     ck("first pending WATCH hit", e.watchHitPending());
     ck("first target stays selected and unacknowledged", e.watchTargetCount()==2 && e.watchUnacknowledgedCount()==1);
-    e.deactivateWatch(); // minimize without acknowledgment
-    ck("minimize preserves notice", e.watchUnacknowledgedCount()==1);
+    // Simulate the unattended 10-second return to the main screen.
+    e.deactivateWatch();
+    ck("automatic exit preserves unread notice", e.watchUnacknowledgedCount()==1);
     ck("second target queues separately", e.watchHitPending());
     ck("two outstanding notices", e.watchUnacknowledgedCount()==2);
-    e.acknowledgeWatch();
-    ck("ACK removes only second notice, not its watched target", e.watchTargetCount()==2 && e.watchUnacknowledgedCount()==1);
+    e.acknowledgeWatch(); // the only manual dismiss action
+    ck("manual dismiss ACKs only this notice, not its WATCH target", e.watchTargetCount()==2 && e.watchUnacknowledgedCount()==1);
     ck("no duplicate of first unacknowledged event", !e.watchHitPending());
     ck("open target A by identity", e.activateWatchTarget(0));
     e.acknowledgeWatch();
