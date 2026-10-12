@@ -10,9 +10,6 @@
 // every other panel here follows. Full width minus a margin: it is the only
 // control on the screen, so there is nothing for it to crowd.
 static const int REMOVE_H = 26;
-static void minimizeRect(TFT_eSPI& t, int& x, int& y, int& w, int& h) {
-    w = 84; h = 24; x = t.width() - w - 6; y = 6;
-}
 static bool s_alertReactionFired = false;
 static uint8_t s_watchOrder[DetectionEngine::WATCH_TARGET_CAP] = {0};
 static uint8_t s_watchCount = 0;
@@ -331,10 +328,6 @@ void uiWatchAlertTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, boo
     int bx, by, bw, bh;
     removeRect(t, bx, by, bw, bh);
     Theme::drawButton(t, bx, by, bw, bh, removeLabel(t, bw), false);
-    // Leave the alert unacknowledged on the WATCH pill rather than
-    // trapping other detections behind a full-screen modal.
-    minimizeRect(t,bx,by,bw,bh);
-    Theme::drawButton(t,bx,by,bw,bh,"MINIMIZE",false);
 }
 
 bool uiWatchAlertHitRemove(TFT_eSPI& t, int x, int y) {
@@ -343,7 +336,3 @@ bool uiWatchAlertHitRemove(TFT_eSPI& t, int x, int y) {
     return x >= bx && x <= bx + bw && y >= by && y < t.height();
 }
 
-bool uiWatchAlertHitMinimize(TFT_eSPI& t, int x, int y) {
-    int bx,by,bw,bh; minimizeRect(t,bx,by,bw,bh);
-    return x>=bx && x<bx+bw && y>=by && y<by+bh;
-}
