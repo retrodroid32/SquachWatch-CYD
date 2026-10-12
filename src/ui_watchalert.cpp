@@ -10,6 +10,9 @@
 // every other panel here follows. Full width minus a margin: it is the only
 // control on the screen, so there is nothing for it to crowd.
 static const int REMOVE_H = 26;
+static void minimizeRect(TFT_eSPI& t, int& x, int& y, int& w, int& h) {
+    w = 84; h = 24; x = t.width() - w - 6; y = 6;
+}
 static bool s_alertReactionFired = false;
 static uint8_t s_watchOrder[DetectionEngine::WATCH_TARGET_CAP] = {0};
 static uint8_t s_watchCount = 0;
@@ -127,6 +130,53 @@ bool uiWatchAlertListHitBack(int x,int y,int screenW,int screenH){
     const int bw=120,bx=(screenW-bw)/2;
     return x>=bx&&x<=bx+bw&&y>=bar.y&&y<screenH;
 }
+
+bool uiWatchAlertListTargetAt(TFT_eSPI& t, int x, int y,
+                              const DetectionEngine& eng,
+                              DetectionEngine::WatchTargetInfo& target) {
+    int top, bottom, rowH, visible;
+    watchListGeom(t, t.width(), t.height(), top, bottom, rowH, visible);
+    if (x < 6 || x >= t.width() - 6 || y < top || y >= bottom) return false;
+    const int row = (y - top) / rowH;
+    if (row < 0 || row >= visible) return false;
+    // The index ordering comes from the most recently drawn frame. A copy
+    // of the selected MAC+radio kind is kept when the long press starts.
+    const int idx = (int)s_watchScroll + row;
+    if (idx >= s_watchCount) return false;
+    return eng.watchTargetInfo(s_watchOrder[idx], target);
+}
+
+static void watchMenuRect(int w, int h, int& x, int& y) {
+    x = (w - 214) / 2;
+    y = (h - 168) / 2;
+}
+void uiWatchAlertListActionMenu(TFT_eSPI& t, const char* name) {
+    const int w=t.width(), h=t.height();
+    int x,y; watchMenuRect(w,h,x,y);
+    t.fillRoundRect(x,y,214,168,5,Theme::BG);
+    t.drawRoundRect(x,y,214,168,5,Theme::CYAN);
+    t.setTextSize(1); t.setTextWrap(false);
+    t.setTextColor(Theme::CYAN,Theme::BG);
+    const char* title="WATCH DEVICE";
+    t.setCursor(x+(214-t.textWidth(title))/2,y+8); t.print(title);
+    char label[25];
+    snprintf(label,sizeof label,"%s",name?name:"");
+    while(label[0] && t.textWidth(label)>202) label[strlen(label)-1]=0;
+    t.setTextColor(Theme::WHITE,Theme::BG);
+    t.setCursor(x+(214-t.textWidth(label))/2,y+23); t.print(label);
+    Theme::drawButton(t,x+9,y+40,196,32,"OPEN ALERT",false);
+    Theme::drawButton(t,x+9,y+80,196,32,"REMOVE FROM WATCH",false);
+    Theme::drawButton(t,x+9,y+120,196,32,"CANCEL",false);
+}
+WatchListAction uiWatchAlertListActionHit(int tx,int ty,int w,int h) {
+    int x,y; watchMenuRect(w,h,x,y);
+    if (tx<x+9 || tx>=x+205) return WatchListAction::NONE;
+    if (ty>=y+40 && ty<y+72) return WatchListAction::OPEN_ALERT;
+    if (ty>=y+80 && ty<y+112) return WatchListAction::REMOVE;
+    if (ty>=y+120 && ty<y+152) return WatchListAction::CANCEL;
+    return WatchListAction::NONE;
+}
+
 void uiWatchAlertListScroll(int delta){
     int n=(int)s_watchScroll+delta; if(n<0)n=0; if(n>=s_watchCount)n=s_watchCount?s_watchCount-1:0; s_watchScroll=(uint8_t)n;
 }
@@ -264,7 +314,7 @@ void uiWatchAlertTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, boo
     // and draw downward from the cursor, so the old -14 put the text's own
     // rows 4px inside the button and it read as half-erased. The button's top
     // is at h - REMOVE_H - 10, so clear it by the font height plus a gap.
-    const char* tapMsg = "tap anywhere to dismiss";
+    const char* tapMsg = "TAP TO ACKNOWLEDGE";
     t.setTextSize(1);
     t.setTextColor(Theme::WHITE, bg);
     int tmw = t.textWidth(tapMsg);
@@ -274,10 +324,19 @@ void uiWatchAlertTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, boo
     int bx, by, bw, bh;
     removeRect(t, bx, by, bw, bh);
     Theme::drawButton(t, bx, by, bw, bh, removeLabel(t, bw), false);
+    // Leave the alert unacknowledged on the WATCH pill rather than
+    // trapping other detections behind a full-screen modal.
+    minimizeRect(t,bx,by,bw,bh);
+    Theme::drawButton(t,bx,by,bw,bh,"MINIMIZE",false);
 }
 
 bool uiWatchAlertHitRemove(TFT_eSPI& t, int x, int y) {
     int bx, by, bw, bh;
     removeRect(t, bx, by, bw, bh);
     return x >= bx && x <= bx + bw && y >= by && y < t.height();
+}
+
+bool uiWatchAlertHitMinimize(TFT_eSPI& t, int x, int y) {
+    int bx,by,bw,bh; minimizeRect(t,bx,by,bw,bh);
+    return x>=bx && x<bx+bw && y>=by && y<by+bh;
 }
