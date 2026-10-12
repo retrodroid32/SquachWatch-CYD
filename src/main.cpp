@@ -507,6 +507,7 @@ uint32_t            bootStart = 0;
 uint32_t            alertStart= 0;
 uint32_t            watchAlertStart = 0;
 static bool         s_watchAlertArmed = false; // opening touch must lift before alert actions
+static bool         s_watchAlertFromRoster = false; // route the alert back to its opening screen
 uint32_t            lastTouch = 0;
 bool                prevTouchValid = false; // last frame's tp.valid, for true press/release edge detection (see loop())
 DetectionType       lastAlertType = DetectionType::UNKNOWN;
@@ -1388,7 +1389,8 @@ static void enterAlert(const Detection& d) {
 #endif
 }
 
-static void enterWatchAlert() {
+static void enterWatchAlert(bool fromRoster = false) {
+    s_watchAlertFromRoster = fromRoster;
     state = AppState::WATCH_ALERT;
 #if defined(TWATCH_S3)
     twatchBuzz(Buzz::WATCH);
@@ -1736,11 +1738,25 @@ static void enterHuntList() {
     uiHuntInit(*canvas);
 }
 
-static void enterWatchList() {
+static void enterWatchList(bool preserveScroll = false) {
     engine.deactivateWatch();
     state = AppState::WATCH_LIST;
     transitionStart = millis();
-    uiWatchAlertInit(*canvas);
+    // When returning from a manually opened alert, the roster will
+    // repaint itself on the first frame. Do not reset the scroll
+    // position via uiWatchAlertInit(): the user should land on the row
+    // they just inspected, including after ACK, REMOVE, or timeout.
+    if (!preserveScroll) uiWatchAlertInit(*canvas);
+}
+
+// The same WATCH card can be opened automatically or via WATCH TARGETS.
+// Only the latter returns to the roster. Reset the origin flag before
+// transitioning so later background alerts always return to CLEAR.
+static void leaveWatchAlert() {
+    const bool backToRoster = s_watchAlertFromRoster;
+    s_watchAlertFromRoster = false;
+    if (backToRoster) enterWatchList(true);
+    else              enterClear();
 }
 
 // true when reached via the first-boot flow (DONE -> CLEAR, straight
@@ -4700,7 +4716,7 @@ void loop() {
             if (Security::locked()) {
                 if (touchJustDown || (now-watchAlertStart)>ALERT_AUTO_DISMISS_MS) {
                     engine.deactivateWatch();
-                    enterClear();
+                    leaveWatchAlert();
                 }
                 break;
             }
@@ -4714,14 +4730,14 @@ void loop() {
                     // WATCH alert. The target remains on the WATCH list.
                     engine.acknowledgeWatch();
                 }
-                enterClear();
+                leaveWatchAlert();
             } else if ((now - watchAlertStart) > ALERT_AUTO_DISMISS_MS) {
                 // An unattended alert returns home after 10 seconds,
                 // leaving its unread WATCH marker intact. This permits other
                 // WATCH and ordinary alerts and normal screen/lock timeouts,
                 // with no separate manual MINIMIZE control.
                 engine.deactivateWatch();
-                enterClear();
+                leaveWatchAlert();
             }
             break;
         }
@@ -4778,7 +4794,7 @@ void loop() {
                             if (match>=0) {
                                 if (action==WatchListAction::OPEN_ALERT) {
                                     if (engine.activateWatchTarget((uint8_t)match))
-                                        enterWatchAlert();
+                                        enterWatchAlert(true);
                                 } else {
                                     if (wlTarget.kind==DetectionEngine::WatchKind::BLE)
                                         engine.toggleWatchBle(wlTarget.mac,wlTarget.label);
