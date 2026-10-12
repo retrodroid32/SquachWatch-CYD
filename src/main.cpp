@@ -4695,8 +4695,8 @@ void loop() {
                 if (!tp.valid) s_watchAlertArmed = true;
                 else break;
             }
-            // Viewing an allowed alert on a PIN-locked screen must never
-            // permit REMOVE/ACK without unlocking. Touch minimizes only.
+            // A PIN-locked screen must never allow WATCH removal or
+            // acknowledgement. Exit the alert with unread state intact.
             if (Security::locked()) {
                 if (touchJustDown || (now-watchAlertStart)>ALERT_AUTO_DISMISS_MS) {
                     engine.deactivateWatch();
@@ -4709,19 +4709,17 @@ void loop() {
                 if (uiWatchAlertHitRemove(*canvas, tp.x, tp.y)) {
                     engine.clearWatch(); // only the target of the active card
                     Theme::showToast("REMOVED FROM WATCH", nullptr, Theme::CYAN);
-                } else if (uiWatchAlertHitMinimize(*canvas, tp.x, tp.y)) {
-                    // Leave the current target's unacknowledged indicator on
-                    // the WATCH pill, retaining every other selected target.
-                    engine.deactivateWatch();
                 } else {
-                    engine.acknowledgeWatch();  // no removal from WATCH
+                    // A tap anywhere outside REMOVE acknowledges this
+                    // WATCH alert. The target remains on the WATCH list.
+                    engine.acknowledgeWatch();
                 }
                 enterClear();
             } else if ((now - watchAlertStart) > ALERT_AUTO_DISMISS_MS) {
-                // Automatic MINIMIZE, not automatic ACK: alert evidence is
-                // still represented by the amber WATCH pill dot. Returning
-                // home lets other pending targets/ordinary detections through,
-                // and restores normal screen timeout and PIN autolock.
+                // An unattended alert returns home after 10 seconds,
+                // leaving its unread WATCH marker intact. This permits other
+                // WATCH and ordinary alerts and normal screen/lock timeouts,
+                // with no separate manual MINIMIZE control.
                 engine.deactivateWatch();
                 enterClear();
             }
