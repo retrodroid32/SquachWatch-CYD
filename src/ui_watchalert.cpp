@@ -120,6 +120,13 @@ static void drawWatchList(TFT_eSPI& t,uint32_t now,const DetectionEngine& eng){
         t.print(info.kind==DetectionEngine::WatchKind::BLE?"BLE":"WIFI");
         if(info.seen){ const uint32_t age=(now-info.lastSeenMs)/1000; t.printf("   seen %lus ago",(unsigned long)age); }
         else t.print("   waiting for signal");
+        // The pill dot can represent several devices. Identify each
+        // unacknowledged target without sacrificing its RSSI reading.
+        if (info.needsAcknowledgement) {
+            t.setTextColor(Theme::AMBER,Theme::BG);
+            t.setCursor(w-15,y+18);
+            t.print("!");
+        }
     }
     Theme::ButtonBarGeom bar=Theme::computeButtonBar(w,h);
     const int bw=120,bx=(w-bw)/2; Theme::drawButton(t,bx,bar.y,bw,bar.h,"[ BACK ]",false);
