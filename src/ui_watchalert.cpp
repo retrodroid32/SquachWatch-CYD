@@ -38,10 +38,10 @@ static const char* removeLabel(TFT_eSPI& t, int w) {
     return fits ? full : "UNWATCH";
 }
 
-void uiWatchAlertInit(TFT_eSPI& t) {
+void uiWatchAlertInit(TFT_eSPI& t, bool resetRosterScroll) {
     t.fillRect(0, 0, t.width(), t.height(), Theme::BLACK);
     s_alertReactionFired = false;
-    s_watchScroll = 0;
+    if (resetRosterScroll) s_watchScroll = 0;
 }
 
 static void watchListGeom(TFT_eSPI& t, int w, int h, int& top, int& bottom, int& rowH, int& visible) {
