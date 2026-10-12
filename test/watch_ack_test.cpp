@@ -2,6 +2,7 @@
 // manual acknowledgment, stable roster identity and removal.
 #include "detection.h"
 #include "ignore_list.h"
+#include "watch_alert_actions.h"
 #include "test_util.h"
 #include <Arduino.h>
 #include <cstring>
@@ -30,8 +31,17 @@ int main() {
     ck("engine initializes", e.init());
     const uint8_t A[6] = {0x10,0x20,0x30,0x40,0x50,0x60};
     const uint8_t B[6] = {0x11,0x21,0x31,0x41,0x51,0x61};
-    ck("add BLE target A", e.toggleWatchBle(A,"Target A") == DetectionEngine::WatchToggle::ADDED);
-    ck("add BLE target B", e.toggleWatchBle(B,"Target B") == DetectionEngine::WatchToggle::ADDED);
+    ck("automatic WATCH alert returns home",
+       WatchAlertActions::returnPage(false)==WatchAlertActions::ReturnPage::HOME);
+    ck("roster-opened WATCH alert returns to roster",
+       WatchAlertActions::returnPage(true)==WatchAlertActions::ReturnPage::ROSTER);
+    ck("normal ALERT WATCH adds BLE target A",
+       WatchAlertActions::addOnly(e,A,"Target A",true)==WatchAlertActions::AddResult::ADDED);
+    ck("normal ALERT WATCH is idempotent (never removes A)",
+       WatchAlertActions::addOnly(e,A,"Target A",true)==WatchAlertActions::AddResult::ALREADY_WATCHED
+       && e.watchTargetCount()==1 && e.isWatched(A,true));
+    ck("add BLE target B",
+       WatchAlertActions::addOnly(e,B,"Target B",true)==WatchAlertActions::AddResult::ADDED);
     e.postBle(sighting(A,-55));
     e.postBle(sighting(B,-67));
     ck("first pending WATCH hit", e.watchHitPending());
@@ -63,6 +73,25 @@ int main() {
     ck("remove clears notice", e.watchUnacknowledgedCount()==0);
     e.clearWatches();
     ck("clear watches leaves none", e.watchTargetCount()==0 && !e.watchHitPending());
+    suite("One-tap WATCH capacity and Wi-Fi identity");
+    const uint8_t WIFI[6]={0xE0,0xE1,0xE2,0xE3,0xE4,0xE5};
+    ck("normal ALERT can add a Wi-Fi WATCH",
+       WatchAlertActions::addOnly(e,WIFI,"AP",false)==WatchAlertActions::AddResult::ADDED);
+    ck("same MAC, Wi-Fi and BLE are distinct targets",
+       WatchAlertActions::addOnly(e,WIFI,"BLE",true)==WatchAlertActions::AddResult::ADDED);
+    ck("Wi-Fi add does not remove BLE selection",
+       WatchAlertActions::addOnly(e,WIFI,"AP",false)==WatchAlertActions::AddResult::ALREADY_WATCHED
+       && e.isWatched(WIFI,true) && e.isWatched(WIFI,false));
+    for (uint8_t i=0; i<6; i++) {
+        const uint8_t mac[6]={0x90,0x91,0x92,0x93,0x94,i};
+        WatchAlertActions::addOnly(e,mac,"test",true);
+    }
+    ck("WATCH list reaches capacity", e.watchTargetCount()==DetectionEngine::WATCH_TARGET_CAP);
+    const uint8_t overflow[6]={0xAB,0xBC,0xCD,0xDE,0xEF,0x12};
+    ck("full WATCH list refuses new target without changing any",
+       WatchAlertActions::addOnly(e,overflow,"extra",true)==WatchAlertActions::AddResult::FULL
+       && e.watchTargetCount()==DetectionEngine::WATCH_TARGET_CAP);
+
     std::filesystem::remove_all(dir);
     return report();
 }
