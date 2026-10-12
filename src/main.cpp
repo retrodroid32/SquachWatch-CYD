@@ -4595,7 +4595,7 @@ void loop() {
             }
 
             // Locked: an alert is for looking at, not acting on. MORE INFO,
-            // IGNORE and HUNT would all change the device without the PIN, so
+            // IGNORE, WATCH and HUNT would change the device without PIN, so
             // any tap -- or the timeout -- goes back to the lock screen.
             if (Security::locked()) {
                 if ((tp.valid && (now - lastTouch) > TOUCH_DEBOUNCE_MS) ||
@@ -4633,6 +4633,27 @@ void loop() {
                     // a duration; CANCEL leaves all policies unchanged.
                     lastTouch = now;
                     uiAlertSetSnoozePrompt(true);
+                } else if (uiAlertHitWatch(tp.x, tp.y, tft.width(), tft.height())) {
+                    // One-tap WATCH from an ordinary detection alert. Guard
+                    // against toggleWatch*() removing an existing target:
+                    // WATCHED remains selected until explicitly un-watched
+                    // from WATCH TARGETS, LOG, or raw scan.
+                    const bool already = engine.isWatched(s_alertMac, s_alertIsBle);
+                    if (already) {
+                        Theme::showToast("ALREADY WATCHING", s_alertLabel, Theme::CYAN);
+                    } else {
+                        const DetectionEngine::WatchToggle result = s_alertIsBle
+                            ? engine.toggleWatchBle(s_alertMac, s_alertLabel)
+                            : engine.toggleWatchWifi(s_alertMac, s_alertLabel);
+                        if (result == DetectionEngine::WatchToggle::ADDED)
+                            Theme::showToast("ADDED TO WATCH", s_alertLabel, Theme::CYAN);
+                        else if (result == DetectionEngine::WatchToggle::FULL)
+                            Theme::showToast("WATCH LIST FULL", "Maximum 8 targets", Theme::AMBER);
+                        else
+                            Theme::showToast("WATCH UNCHANGED", s_alertLabel, Theme::AMBER);
+                    }
+                    squachyCatch(lastAlertType, s_alertMac, lastAlertHits, lastAlertRssi, lastAlertConf);
+                    enterClear();
                 } else if (uiAlertHitHunt(tp.x, tp.y, tft.width(), tft.height())) {
                     // Same call pair LOG's confirm panel makes. The
                     // DETECTION trigger fires here too: leaving via HUNT
