@@ -5153,10 +5153,42 @@ void loop() {
             break;
         }
         case AppState::SETTINGS: {
-            // Nothing on this screen moves by the call -- no background, no
-            // mascot -- so both passes are the same picture and the row
-            // hashes find nothing to send once it has settled.
-            drawTwoBand([&](TFT_eSPI& t, bool) { uiSettingsTick(t, now, engine); });
+            if (frameBufferOk) {
+                // Buffered path: animations and unchanged-row suppression
+                // behave as normal.
+                drawTwoBand([&](TFT_eSPI& t, bool) { uiSettingsTick(t, now, engine); });
+            } else {
+                // When WiFi OTA leaves too little contiguous RAM to restore
+                // the full-screen sprite, drawing every loop straight to
+                // the LCD produces the rapid full-screen flicker. Keep the
+                // menu usable without forcing a reboot: render a still
+                // background only on entry, navigation, touch/scroll, and an
+                // occasional refresh of dynamic counters/snooze durations.
+                static uint32_t paintedScene = UINT32_MAX;
+                static uint32_t paintedAt = 0;
+                static SettingsPage paintedPage = SettingsPage::MAIN;
+                static int prevX = -1, prevY = -1;
+                static bool paintNext = false;
+                const SettingsPage page = uiSettingsCurrentPage();
+                const bool moved = tp.valid && prevX >= 0 &&
+                                   (abs(tp.x - prevX) > 3 || abs(tp.y - prevY) > 3);
+                const bool first = paintedScene != transitionStart || paintedPage != page;
+                const bool input = touchJustDown || touchJustUp || paintNext;
+                const bool slowRefresh = (uint32_t)(now - paintedAt) >= 30000UL;
+                // Limit costly direct draws during a drag; taps and page
+                // changes always refresh immediately.
+                if (first || input || slowRefresh || (moved && (uint32_t)(now - paintedAt) >= 120UL)) {
+                    uiSettingsTick(*canvas, now, engine, true);
+                    paintedScene = transitionStart;
+                    paintedPage = page;
+                    paintedAt = now;
+                }
+                // Settings commits taps after this drawing step. Schedule
+                // one more pass to show the new value on the next loop.
+                paintNext = touchJustUp;
+                prevX = tp.valid ? tp.x : -1;
+                prevY = tp.valid ? tp.y : -1;
+            }
             // Row taps commit on release, not on press, and only if
             // the touch never moved past the scroll threshold -- same
             // fix as LOG/raw-scan: firing on press meant a swipe that
