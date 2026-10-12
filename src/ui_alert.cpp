@@ -271,6 +271,23 @@ static void snoozeBtnRect(int screenW, int screenH, int& bx, int& by, int& bw, i
     by = screenH - bh - 4;
 }
 
+// WATCH is a deliberate one-tap add above SNOOZE; neither box overlaps
+// HUNT/MORE INFO along the bottom. Shared geometry prevents draw/hit drift.
+static void watchBtnRect(int screenW, int screenH, int& bx, int& by, int& bw, int& bh) {
+    int sx, sy, sw, sh;
+    snoozeBtnRect(screenW, screenH, sx, sy, sw, sh);
+    bw = sw;
+    bh = wideAlert(screenW) ? 32 : 24;
+    bx = sx;
+    by = sy - bh - 6;
+}
+
+bool uiAlertHitWatch(int x, int y, int screenW, int screenH) {
+    int bx, by, bw, bh;
+    watchBtnRect(screenW, screenH, bx, by, bw, bh);
+    return x >= bx && x < bx + bw && y >= by && y < by + bh;
+}
+
 bool uiAlertHitSnooze(int x, int y, int screenW, int screenH) {
     int bx, by, bw, bh;
     snoozeBtnRect(screenW, screenH, bx, by, bw, bh);
@@ -590,7 +607,9 @@ void uiAlertTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng,
         // pixels into the strip -- the plate starts 12 rows below the strip,
         // so a circle centred on the plate is not centred on the gap.
         const int ceilY  = stripHOf(w) + 4;
-        const int floorY = h - 56;
+        // Leave a clear strip for the WATCH button stacked over SNOOZE.
+        // On 480px landscape the radar otherwise reaches into that button.
+        const int floorY = h - ((wide && wideAlert(w)) ? 90 : 56);
         const int gx = wide ? (PLATE_X + PLATE_W + (w - PLATE_X - PLATE_W) / 2)
                             : (w / 2);
         const int gy = wide ? ((ceilY + floorY) / 2)
@@ -684,6 +703,16 @@ void uiAlertTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng,
         int hw = t.textWidth("HUNT");
         t.setCursor(bx + (bw - hw) / 2, by + (bh - t.fontHeight()) / 2);
         t.print("HUNT");
+    }
+    // WATCH: one-tap add straight from the detection alert. Once watched,
+    // the same button reads WATCHED and stays non-destructive: removal is
+    // available in WATCH TARGETS or the normal LOG/raw-scan controls.
+    {
+        int bx, by, bw, bh;
+        watchBtnRect(w, h, bx, by, bw, bh);
+        const bool watched = eng.isWatched(s_last.mac, s_last.channel == 0);
+        Theme::drawButton(t, bx, by, bw, bh,
+                          watched ? "WATCHED" : "WATCH", watched);
     }
     // SNOOZE between the two: opens a 10m/30m/1h/always picker.
     {
