@@ -1025,7 +1025,7 @@ static void rowContent(SettingsRow r, const DetectionEngine& eng, char* valBuf, 
     }
 }
 
-void uiSettingsTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng) {
+void uiSettingsTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool staticBackground) {
     int w = t.width(), h = t.height();
 
     // buildDisplayList() has no engine of its own and is called by the hit test
@@ -1062,6 +1062,12 @@ void uiSettingsTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng) {
     // blending the shared palette toward BG, not per-pixel alpha,
     // which TFT_eSPI can't do cheaply). 179/256 =~ 70% toward BG, i.e.
     // the effect reads at roughly 30% of its normal strength.
+    // When the 8-bit framebuffer could not be reclaimed after WiFi OTA,
+    // redraws go straight to the display. Do not animate/clear an entire
+    // background on each touch frame; the caller only repaints on changes.
+    if (staticBackground) {
+        t.fillRect(0, 0, w, bodyBottom, Theme::BG);
+    } else {
     Theme::Palette saved = Theme::dimPaletteForOverlay(179);
         // The background starts at the TOP OF THE SCREEN, not at the body's own
     // top. Those first sixteen rows used to be the title bar's; nothing owns
@@ -1088,6 +1094,7 @@ switch (Settings::background()) {
         default:                               Theme::drawDigitalRain(t, now, bgTop, bodyBottom, true); break;
     }
     Theme::restorePalette(saved);
+    }
 
     const char* pageTitle = ">> SETTINGS <<";
     if (s_page == SettingsPage::APPEARANCE) pageTitle = ">> APPEARANCE <<";
