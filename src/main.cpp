@@ -4690,55 +4690,115 @@ void loop() {
             if (tp.valid && (now - lastTouch) > TOUCH_DEBOUNCE_MS) {
                 lastTouch = now;
                 if (uiWatchAlertHitRemove(*canvas, tp.x, tp.y)) {
-                    engine.clearWatch(); // only the device whose alert is open
+                    engine.clearWatch(); // only the target of the active card
                     Theme::showToast("REMOVED FROM WATCH", nullptr, Theme::CYAN);
-                } else {
+                } else if (uiWatchAlertHitMinimize(*canvas, tp.x, tp.y)) {
+                    // Leave the current target's unacknowledged indicator on
+                    // the WATCH pill, retaining every other selected target.
                     engine.deactivateWatch();
+                } else {
+                    engine.acknowledgeWatch();  // no removal from WATCH
                 }
                 enterClear();
             } else if ((now - watchAlertStart) > ALERT_AUTO_DISMISS_MS) {
+                // Automatic MINIMIZE, not automatic ACK: alert evidence is
+                // still represented by the amber WATCH pill dot. Returning
+                // home lets other pending targets/ordinary detections through,
+                // and restores normal screen timeout and PIN autolock.
                 engine.deactivateWatch();
                 enterClear();
             }
             break;
         }
         case AppState::WATCH_LIST: {
-            // Retained roster: the underlying WATCH RSSI history samples at
-            // ~2 s, so repainting/pushing this static list every main-loop
-            // pass only creates unnecessary panel traffic. Draw immediately
-            // on entry/touch, then at the same 2 s cadence as the data.
-            static uint32_t wlLastDrawAt = 0, wlEntryAt = 0;
+            // Long-press a roster target for OPEN ALERT / REMOVE / CANCEL.
+            // Keep an identity snapshot, never a sorted row number: the order
+            // can change during the hold as incoming RSSI samples update.
+            static bool wlGesture=false, wlMoved=false, wlTargetValid=false;
+            static bool wlMenuOpen=false;
+            static int wlStartX=0, wlStartY=0, wlLastY=-1;
+            static uint32_t wlDownAt=0;
+            static DetectionEngine::WatchTargetInfo wlTarget = {};
+            static uint32_t wlLastDrawAt=0, wlEntryAt=0;
             const bool wlNewEntry = wlEntryAt != transitionStart;
+            if (wlNewEntry) {
+                wlMenuOpen=false; wlGesture=false; wlMoved=false;
+                wlTargetValid=false; wlEntryAt=transitionStart;
+            }
             const bool wlNeedsDraw = wlNewEntry || touchJustDown || touchJustUp ||
-                                     tp.valid || (now - wlLastDrawAt >= 2000);
+                                     tp.valid || wlMenuOpen || (now-wlLastDrawAt>=2000);
             if (wlNeedsDraw) {
-                wlEntryAt = transitionStart;
-                wlLastDrawAt = now;
+                wlLastDrawAt=now;
                 drawTwoBand([&](TFT_eSPI& t, bool) {
                     uiWatchListTick(t, now, engine);
+                    if (wlMenuOpen) {
+                        char pv[40];
+                        uiWatchAlertListActionMenu(t, Privacy::name(wlTarget.label, pv, sizeof pv));
+                    }
                 });
             } else {
-                renderedThisLoop = false;
+                renderedThisLoop=false;
             }
 
-            static bool wlGesture=false, wlMoved=false;
-            static int wlStartX=0, wlStartY=0, wlLastY=-1;
-            if(touchJustDown){
+            // While the menu is open it owns the entire touch surface.
+            // It is first drawn on a RELEASE, so the gesture that opened
+            // it cannot accidentally select a destructive action.
+            if (wlMenuOpen) {
+                if (touchJustDown && (now-lastTouch)>TOUCH_DEBOUNCE_MS) {
+                    lastTouch=now;
+                    const WatchListAction action=uiWatchAlertListActionHit(
+                        tp.x,tp.y,tft.width(),tft.height());
+                    if (action!=WatchListAction::NONE) {
+                        wlMenuOpen=false;
+                        if (action==WatchListAction::REMOVE || action==WatchListAction::OPEN_ALERT) {
+                            // The selected row may have disappeared while
+                            // the modal was up; never toggle/add a stale MAC.
+                            int match=-1;
+                            for (uint8_t i=0;i<engine.watchTargetCount();i++) {
+                                DetectionEngine::WatchTargetInfo info;
+                                if (engine.watchTargetInfo(i,info) &&
+                                    info.kind==wlTarget.kind &&
+                                    memcmp(info.mac,wlTarget.mac,6)==0) { match=i; break; }
+                            }
+                            if (match>=0) {
+                                if (action==WatchListAction::OPEN_ALERT) {
+                                    if (engine.activateWatchTarget((uint8_t)match))
+                                        enterWatchAlert();
+                                } else {
+                                    if (wlTarget.kind==DetectionEngine::WatchKind::BLE)
+                                        engine.toggleWatchBle(wlTarget.mac,wlTarget.label);
+                                    else
+                                        engine.toggleWatchWifi(wlTarget.mac,wlTarget.label);
+                                }
+                            }
+                        }
+                    }
+                }
+                break;
+            }
+            if (touchJustDown) {
                 wlGesture=true; wlMoved=false;
                 wlStartX=tp.x; wlStartY=tp.y; wlLastY=tp.y;
+                wlDownAt=now;
+                wlTargetValid=uiWatchAlertListTargetAt(tft,wlStartX,wlStartY,engine,wlTarget);
             }
-            if(tp.valid&&wlGesture){
+            if (tp.valid && wlGesture) {
                 const int dy=tp.y-wlLastY;
-                if(abs(dy)>10){
+                if (abs(dy)>10) {
                     wlMoved=true;
                     uiWatchAlertListScroll(dy>0?-1:1);
                     wlLastY=tp.y;
                 }
+                if (abs(tp.x-wlStartX)>22 || abs(tp.y-wlStartY)>24) wlMoved=true;
             }
-            if(touchJustUp&&wlGesture){
-                if(!wlMoved && uiWatchAlertListHitBack(wlStartX,wlStartY,tft.width(),tft.height())){
+            if (touchJustUp && wlGesture) {
+                if (!wlMoved && uiWatchAlertListHitBack(
+                        wlStartX,wlStartY,tft.width(),tft.height())) {
                     lastTouch=now;
                     enterClear();
+                } else if (!wlMoved && wlTargetValid && now-wlDownAt>=650) {
+                    wlMenuOpen=true;
+                    lastTouch=now;
                 }
                 wlGesture=false;
             }
