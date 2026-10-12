@@ -1398,7 +1398,7 @@ static void enterWatchAlert(bool fromRoster = false) {
     watchAlertStart = millis();
     s_watchAlertArmed = false;
     transitionStart = watchAlertStart;
-    uiWatchAlertInit(*canvas);
+    uiWatchAlertInit(*canvas, !fromRoster); // preserve roster position on manual OPEN ALERT
 #if defined(CYD35)
     clearSharedFrameBuffer();
 #endif
