@@ -506,6 +506,7 @@ AppState            state     = AppState::BOOT;
 uint32_t            bootStart = 0;
 uint32_t            alertStart= 0;
 uint32_t            watchAlertStart = 0;
+static bool         s_watchAlertArmed = false; // opening touch must lift before alert actions
 uint32_t            lastTouch = 0;
 bool                prevTouchValid = false; // last frame's tp.valid, for true press/release edge detection (see loop())
 DetectionType       lastAlertType = DetectionType::UNKNOWN;
@@ -1393,6 +1394,7 @@ static void enterWatchAlert() {
     twatchBuzz(Buzz::WATCH);
 #endif
     watchAlertStart = millis();
+    s_watchAlertArmed = false;
     transitionStart = watchAlertStart;
     uiWatchAlertInit(*canvas);
 #if defined(CYD35)
@@ -4687,6 +4689,21 @@ void loop() {
 #else
             uiWatchAlertTick(*canvas, now, engine, true);
 #endif
+            // A held touch from the roster's OPEN ALERT action must not
+            // instantly acknowledge the card it just opened.
+            if (!s_watchAlertArmed) {
+                if (!tp.valid) s_watchAlertArmed = true;
+                else break;
+            }
+            // Viewing an allowed alert on a PIN-locked screen must never
+            // permit REMOVE/ACK without unlocking. Touch minimizes only.
+            if (Security::locked()) {
+                if (touchJustDown || (now-watchAlertStart)>ALERT_AUTO_DISMISS_MS) {
+                    engine.deactivateWatch();
+                    enterClear();
+                }
+                break;
+            }
             if (tp.valid && (now - lastTouch) > TOUCH_DEBOUNCE_MS) {
                 lastTouch = now;
                 if (uiWatchAlertHitRemove(*canvas, tp.x, tp.y)) {
