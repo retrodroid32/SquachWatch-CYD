@@ -1667,17 +1667,32 @@ static void lendFrameToDownload() {
 }
 static void restoreFrameBuffer() {
     if (!s_frameLent) return;
+#if defined(CYD35)
+    // CYD35 keeps its half-screen sprite during OTA: nothing to allocate.
     s_frameLent = false;
-#if !defined(CYD35)
-    if (frameBufferOk) return;
+#else
+    if (frameBufferOk) { s_frameLent = false; return; }
+    // end() puts OTA in OFF immediately, but its worker may still be
+    // unwinding an HTTPS request and holding the heap we need for 320x240.
+    if (OtaWifi::state() != OtaWifi::State::OFF || OtaWifi::taskActive()) return;
+    // Keep the loan outstanding after an allocation failure. The worker's
+    // last TLS allocations may take time to unwind, and we can recover
+    // without rebooting once a contiguous block becomes available.
+    static uint32_t nextAttempt = 0;
+    const uint32_t now = millis();
+    if (nextAttempt && (int32_t)(now - nextAttempt) < 0) return;
+    nextAttempt = now + 2000;
     frame.setColorDepth(8);
     if (frame.createSprite(tft.width(), tft.height())) {
         frame.setTextSize(1);
         frameBufferOk = true;
         canvas = &frame;
-        Serial.println("[ota] frame buffer back");
+        s_frameLent = false;
+        nextAttempt = 0;
+        FramePush::invalidate();
+        Serial.println("[ota] frame buffer restored after WiFi cleanup");
     } else {
-        Serial.printf("[ota] frame buffer could not come back (largest block %lu); unbuffered until restart\n",
+        Serial.printf("[ota] frame buffer still unavailable (largest block %lu); will retry\n",
                       (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
     }
 #endif
@@ -3623,6 +3638,11 @@ void loop() {
     OtaCore::tick(now);
     OtaBle::tick(now);
     OtaWifi::tick(now);
+    // A cancelled WiFi check can leave Settings before the HTTPS task has
+    // finished. Retry the framebuffer loan after that task releases memory,
+    // rather than permanently leaving all ordinary screens unbuffered.
+    if (s_frameLent && state != AppState::UPDATE && state != AppState::WIFI_PASS)
+        restoreFrameBuffer();
     if (state == AppState::CLEAR) {
         const char* sub = nullptr;
         bool good = false;
