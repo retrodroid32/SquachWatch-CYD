@@ -1083,7 +1083,10 @@ void drawDigitalRain(TFT_eSPI& t, uint32_t now, int yStart, int yEnd, bool advan
         }
         for (int j = 0; j < len; j++) {
             const int16_t ry = (int16_t)(yPos[i] - j * 8);
-            if (ry < yStart || ry >= yEnd) continue;
+            if (ry < yStart || ry >= yEnd || !DrawBand::has(ry, ry + 8)) continue;
+            // A recovered sprite shows only one vertical strip at a time.
+            // Skip off-band glyphs before costly alpha/blend/text operations.
+            // State still advances once per logical frame in the loop above.
             // Near drops lean further than far ones, so a gust reads with
             // depth instead of shunting the whole screen at once.
             int x = xBase + sqPush;
@@ -1165,13 +1168,15 @@ void drawDigitalRain(TFT_eSPI& t, uint32_t now, int yStart, int yEnd, bool advan
         if (!popAge[k]) continue;
         const uint8_t age = popAge[k];
         const uint8_t sz  = (age < 5) ? 1 : (age < 10 ? 2 : 3);
+        const int py = (int)popY[k] - age - (sz - 1) * 4;
+        if (!DrawBand::has(py, py + 8 * sz)) continue;
         const uint16_t a  = (uint16_t)(235u - (uint16_t)age * 15u);
         const char pb[2] = { GLYPHS[popCh[k]], 0 };
         t.setTextSize(sz);
         t.setTextColor(blend(BG, HUES[popHue[k]], a));
         // Re-centre as it grows so it swells about its own middle rather
         // than expanding down and to the right off its anchor.
-        t.setCursor((int)popX[k] - (sz - 1) * 3, (int)popY[k] - age - (sz - 1) * 4);
+        t.setCursor((int)popX[k] - (sz - 1) * 3, py);
         t.print(pb);
     }
     t.setTextSize(1);
@@ -1185,6 +1190,7 @@ void drawDigitalRain(TFT_eSPI& t, uint32_t now, int yStart, int yEnd, bool advan
     for (uint8_t k = 0; k < 6; k++) {
         if (!splashAge[k]) continue;
         const uint8_t  age  = splashAge[k];
+        if (!DrawBand::has(yEnd - 2, yEnd - 1)) continue;
         const int      sp   = age * 2;
         const uint16_t a    = (uint16_t)(200u - (uint16_t)age * 24u);
         const uint16_t col  = blend(BG, HUES[splashHue[k]], a);
