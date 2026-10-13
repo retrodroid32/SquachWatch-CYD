@@ -1660,24 +1660,67 @@ static void releaseFrameBuffer(const char* who) {
 // heap will not give a 77 KB block again, draws unbuffered until a restart
 // (the same fallback a failed rotate takes).
 static bool s_frameLent = false;
+// Number of vertical sprite bands in ordinary (non-CYD35) builds. Normal
+// operation uses a full frame (1). After an OTA check, fragmented ESP32 heap
+// can make 76.8 KB / 38.4 KB contiguous allocations impossible. Recover
+// with the smallest power-of-two band count that fits: 2, 4, 8, or 16.
+// Every supported 240x320 / 320x240 rotation divides evenly by those counts.
+static uint8_t s_recoveryBands = 1;
 static void lendFrameToDownload() {
     if (!frameBufferOk) return;
     releaseFrameBuffer("ota");
+    s_recoveryBands = 1;
     s_frameLent = true;
 }
 static void restoreFrameBuffer() {
     if (!s_frameLent) return;
+#if defined(CYD35)
+    // CYD35 keeps its half-screen sprite during OTA: nothing to allocate.
     s_frameLent = false;
-#if !defined(CYD35)
-    if (frameBufferOk) return;
+#else
+    if (frameBufferOk) { s_frameLent = false; return; }
+    // end() puts OTA in OFF immediately, but its worker may still be
+    // unwinding an HTTPS request and holding the heap we need for 320x240.
+    if (OtaWifi::state() != OtaWifi::State::OFF || OtaWifi::taskActive()) return;
+    // Keep the loan outstanding after an allocation failure. The worker's
+    // last TLS allocations may take time to unwind, and we can recover
+    // without rebooting once a contiguous block becomes available.
+    static uint32_t nextAttempt = 0;
+    const uint32_t now = millis();
+    if (nextAttempt && (int32_t)(now - nextAttempt) < 0) return;
+    nextAttempt = now + 2000;
     frame.setColorDepth(8);
-    if (frame.createSprite(tft.width(), tft.height())) {
+    bool recovered = false;
+    // The first Wi-Fi check on tested hardware leaves only a 51 KB largest
+    // block: 2 bands of 38.4 KB work. A *second* check can leave only 32 KB,
+    // so the 2-band retry fails forever unless we can step down to 4+ bands.
+    // All drawing stays buffered: the same sprite is reused one band at a
+    // time and the framebuffer never writes erase-then-redraw directly to
+    // the display. 16 bands needs just 4,800 bytes on 320x240 CYDs.
+    for (uint8_t bands = 1; bands <= 16; bands <<= 1) {
+        if (tft.height() % bands != 0) continue;
+        const int bandHeight = tft.height() / bands;
+        if (!frame.createSprite(tft.width(), bandHeight)) continue;
         frame.setTextSize(1);
         frameBufferOk = true;
-        canvas = &frame;
-        Serial.println("[ota] frame buffer back");
-    } else {
-        Serial.printf("[ota] frame buffer could not come back (largest block %lu); unbuffered until restart\n",
+        s_recoveryBands = bands;
+        canvas = (bands == 1) ? (TFT_eSPI*)&frame : &tft;
+        s_frameLent = false;
+        nextAttempt = 0;
+        FramePush::invalidate();
+        if (bands == 1) {
+            Serial.println("[ota] frame buffer restored after WiFi cleanup");
+        } else {
+            Serial.printf("[ota] recovered %u-band frame buffer (%lu bytes; largest free %lu)\n",
+                          (unsigned)bands,
+                          (unsigned long)(tft.width() * bandHeight),
+                          (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
+        }
+        recovered = true;
+        break;
+    }
+    if (!recovered) {
+        Serial.printf("[ota] frame buffer still unavailable (largest block %lu); will retry\n",
                       (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
     }
 #endif
@@ -3462,6 +3505,26 @@ static inline void drawTwoBand(F&& draw) {
         frame.resetViewport();
         return;
     }
+#else
+    if (s_recoveryBands > 1 && frameBufferOk) {
+        // Reuse the CYD35 clipping hints as well as its viewport technique.
+        // Previously we rendered EVERY background cell/menu row for EVERY
+        // band; the viewport discarded most pixels only after expensive
+        // colour blends, text layout, and graphics work had already run.
+        const int bandH = tft.height() / s_recoveryBands;
+        DrawBand::setEnabled(true);
+        for (int b = 0; b < s_recoveryBands; ++b) {
+            const int y = b * bandH;
+            DrawBand::set(y, y + bandH);
+            frame.setViewport(0, -y, tft.width(), tft.height(), true);
+            draw((TFT_eSPI&)frame, b == 0);
+            pushFrame(0, y);
+        }
+        frame.resetViewport();
+        DrawBand::all();
+        DrawBand::setEnabled(false);
+        return;
+    }
 #endif
     draw(*canvas, true);
 }
@@ -3623,6 +3686,11 @@ void loop() {
     OtaCore::tick(now);
     OtaBle::tick(now);
     OtaWifi::tick(now);
+    // A cancelled WiFi check can leave Settings before the HTTPS task has
+    // finished. Retry the framebuffer loan after that task releases memory,
+    // rather than permanently leaving all ordinary screens unbuffered.
+    if (s_frameLent && state != AppState::UPDATE && state != AppState::WIFI_PASS)
+        restoreFrameBuffer();
     if (state == AppState::CLEAR) {
         const char* sub = nullptr;
         bool good = false;
@@ -3828,7 +3896,7 @@ void loop() {
 #if defined(CYD35)
             frame.resizeInPlace(tft.width(), tft.height() / 2);
 #else
-            frame.resizeInPlace(tft.width(), tft.height());
+            frame.resizeInPlace(tft.width(), tft.height() / s_recoveryBands);
 #endif
         } else if (frameBufferOk) {
             // Never got its one-time boot-time allocation in the first
@@ -4102,20 +4170,39 @@ void loop() {
                     uiClearTick(tft, now, engine, true, s_scanPickerOpen);
                 }
 #else
-                uiClearTick(*canvas, now, engine, true, s_scanPickerOpen);
+                if (s_recoveryBands > 1) {
+                    // Draw all overlays INSIDE each buffered half before it
+                    // is pushed; drawing them later via canvas=&tft would
+                    // resurrect the direct-to-panel flicker.
+                    drawTwoBand([&](TFT_eSPI& t, bool advance) {
+                        uiClearTick(t, now, engine, advance, s_scanPickerOpen);
+                        if (uiZoneCardWanted()) uiZoneCardDraw(t, now);
+                        Theme::drawToast(t, now);
+#if CROWD_BENCH
+                        if (CrowdBench::active()) CrowdBench::drawOver(t, now);
+#endif
+                    });
+                } else {
+                    uiClearTick(*canvas, now, engine, true, s_scanPickerOpen);
+                }
 #endif
                 FrameProf::lap(FrameProf::CHROME);
 
-                // Overlays are part of the retained frame: when one is live,
-                // clearShouldRender() keeps rendering until it expires. The
-                // zone card is persistent UI; a short-lived toast is the
-                // immediate answer to the user's action, so it draws last.
-                if (uiZoneCardWanted()) uiZoneCardDraw(*canvas, now);
-                Theme::drawToast(*canvas, now);
-
-#if CROWD_BENCH
-                if (CrowdBench::active()) CrowdBench::drawOver(*canvas, now);
+                if (
+#if !defined(CYD35)
+                    s_recoveryBands == 1
+#else
+                    true
 #endif
+                ) {
+                    // For ordinary full-screen frames, overlays are part of
+                    // the retained frame and pushed at the end of loop().
+                    if (uiZoneCardWanted()) uiZoneCardDraw(*canvas, now);
+                    Theme::drawToast(*canvas, now);
+#if CROWD_BENCH
+                    if (CrowdBench::active()) CrowdBench::drawOver(*canvas, now);
+#endif
+                }
             } else {
                 renderedThisLoop = false;
             }
@@ -4507,7 +4594,9 @@ void loop() {
                 uiAlertTick(tft, now, engine, s_infoPending, alertInfoTypeName, alertInfoText);
             }
 #else
-            uiAlertTick(*canvas, now, engine, s_infoPending, alertInfoTypeName, alertInfoText);
+            drawTwoBand([&](TFT_eSPI& t, bool) {
+                uiAlertTick(t, now, engine, s_infoPending, alertInfoTypeName, alertInfoText);
+            });
 #endif
             // The finger that opened the card has to lift before the card
             // listens: see s_alertArmed. The auto-dismiss timer below still
@@ -4657,7 +4746,7 @@ void loop() {
                 uiOutfitUnlockTick(tft, now, engine);
             }
 #else
-            uiOutfitUnlockTick(*canvas, now, engine);
+            drawTwoBand([&](TFT_eSPI& t, bool) { uiOutfitUnlockTick(t, now, engine); });
 #endif
             const bool timedOut = (now - outfitUnlockStart) > OUTFIT_UNLOCK_AUTO_MS;
             const bool tapped   = tp.valid && (now - lastTouch) > TOUCH_DEBOUNCE_MS &&
@@ -4685,7 +4774,7 @@ void loop() {
                 uiWatchAlertTick(tft, now, engine, true);
             }
 #else
-            uiWatchAlertTick(*canvas, now, engine, true);
+            drawTwoBand([&](TFT_eSPI& t, bool advance) { uiWatchAlertTick(t, now, engine, advance); });
 #endif
             if (tp.valid && (now - lastTouch) > TOUCH_DEBOUNCE_MS) {
                 lastTouch = now;
@@ -5133,10 +5222,42 @@ void loop() {
             break;
         }
         case AppState::SETTINGS: {
-            // Nothing on this screen moves by the call -- no background, no
-            // mascot -- so both passes are the same picture and the row
-            // hashes find nothing to send once it has settled.
-            drawTwoBand([&](TFT_eSPI& t, bool) { uiSettingsTick(t, now, engine); });
+            if (frameBufferOk) {
+                // Buffered path: animations and unchanged-row suppression
+                // behave as normal.
+                drawTwoBand([&](TFT_eSPI& t, bool advance) { uiSettingsTick(t, now, engine, false, advance); });
+            } else {
+                // When WiFi OTA leaves too little contiguous RAM to restore
+                // the full-screen sprite, drawing every loop straight to
+                // the LCD produces the rapid full-screen flicker. Keep the
+                // menu usable without forcing a reboot: render a still
+                // background only on entry, navigation, touch/scroll, and an
+                // occasional refresh of dynamic counters/snooze durations.
+                static uint32_t paintedScene = UINT32_MAX;
+                static uint32_t paintedAt = 0;
+                static SettingsPage paintedPage = SettingsPage::MAIN;
+                static int prevX = -1, prevY = -1;
+                static bool paintNext = false;
+                const SettingsPage page = uiSettingsCurrentPage();
+                const bool moved = tp.valid && prevX >= 0 &&
+                                   (abs(tp.x - prevX) > 3 || abs(tp.y - prevY) > 3);
+                const bool first = paintedScene != transitionStart || paintedPage != page;
+                const bool input = touchJustDown || touchJustUp || paintNext;
+                const bool slowRefresh = (uint32_t)(now - paintedAt) >= 30000UL;
+                // Limit costly direct draws during a drag; taps and page
+                // changes always refresh immediately.
+                if (first || input || slowRefresh || (moved && (uint32_t)(now - paintedAt) >= 120UL)) {
+                    uiSettingsTick(*canvas, now, engine, true);
+                    paintedScene = transitionStart;
+                    paintedPage = page;
+                    paintedAt = now;
+                }
+                // Settings commits taps after this drawing step. Schedule
+                // one more pass to show the new value on the next loop.
+                paintNext = touchJustUp;
+                prevX = tp.valid ? tp.x : -1;
+                prevY = tp.valid ? tp.y : -1;
+            }
             // Row taps commit on release, not on press, and only if
             // the touch never moved past the scroll threshold -- same
             // fix as LOG/raw-scan: firing on press meant a swipe that
@@ -6595,7 +6716,7 @@ void loop() {
     // straight at tft and every draw this frame already landed on the
     // real screen -- pushing `frame` here would just paint stale data
     // from the sprite we stopped using back over the top of it.
-    if (frameBufferOk && renderedThisLoop) {
+    if (frameBufferOk && s_recoveryBands == 1 && renderedThisLoop) {
         const bool targetRoster =
             state == AppState::HUNT_LIST || state == AppState::WATCH_LIST;
         if (!targetRoster && now - transitionStart < TRANSITION_MS) {
