@@ -3498,6 +3498,20 @@ static inline void drawTwoBand(F&& draw) {
         frame.resetViewport();
         return;
     }
+#else
+    if (s_recoveryHalfFrame && frameBufferOk) {
+        // Exactly the CYD35 two-pass renderer, activated dynamically only
+        // after WiFi has fragmented the heap below a full-sprite allocation.
+        const int halfH = tft.height() / 2;
+        frame.setViewport(0, 0, tft.width(), tft.height(), true);
+        draw((TFT_eSPI&)frame, true);
+        pushFrame(0, 0);
+        frame.setViewport(0, -halfH, tft.width(), tft.height(), true);
+        draw((TFT_eSPI&)frame, false);
+        pushFrame(0, halfH);
+        frame.resetViewport();
+        return;
+    }
 #endif
     draw(*canvas, true);
 }
@@ -3869,7 +3883,7 @@ void loop() {
 #if defined(CYD35)
             frame.resizeInPlace(tft.width(), tft.height() / 2);
 #else
-            frame.resizeInPlace(tft.width(), tft.height());
+            frame.resizeInPlace(tft.width(), s_recoveryHalfFrame ? tft.height() / 2 : tft.height());
 #endif
         } else if (frameBufferOk) {
             // Never got its one-time boot-time allocation in the first
@@ -6668,7 +6682,7 @@ void loop() {
     // straight at tft and every draw this frame already landed on the
     // real screen -- pushing `frame` here would just paint stale data
     // from the sprite we stopped using back over the top of it.
-    if (frameBufferOk && renderedThisLoop) {
+    if (frameBufferOk && !s_recoveryHalfFrame && renderedThisLoop) {
         const bool targetRoster =
             state == AppState::HUNT_LIST || state == AppState::WATCH_LIST;
         if (!targetRoster && now - transitionStart < TRANSITION_MS) {
