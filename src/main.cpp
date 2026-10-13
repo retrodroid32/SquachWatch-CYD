@@ -4581,7 +4581,9 @@ void loop() {
                 uiAlertTick(tft, now, engine, s_infoPending, alertInfoTypeName, alertInfoText);
             }
 #else
-            uiAlertTick(*canvas, now, engine, s_infoPending, alertInfoTypeName, alertInfoText);
+            drawTwoBand([&](TFT_eSPI& t, bool) {
+                uiAlertTick(t, now, engine, s_infoPending, alertInfoTypeName, alertInfoText);
+            });
 #endif
             // The finger that opened the card has to lift before the card
             // listens: see s_alertArmed. The auto-dismiss timer below still
@@ -4731,7 +4733,7 @@ void loop() {
                 uiOutfitUnlockTick(tft, now, engine);
             }
 #else
-            uiOutfitUnlockTick(*canvas, now, engine);
+            drawTwoBand([&](TFT_eSPI& t, bool) { uiOutfitUnlockTick(t, now, engine); });
 #endif
             const bool timedOut = (now - outfitUnlockStart) > OUTFIT_UNLOCK_AUTO_MS;
             const bool tapped   = tp.valid && (now - lastTouch) > TOUCH_DEBOUNCE_MS &&
@@ -4759,7 +4761,7 @@ void loop() {
                 uiWatchAlertTick(tft, now, engine, true);
             }
 #else
-            uiWatchAlertTick(*canvas, now, engine, true);
+            drawTwoBand([&](TFT_eSPI& t, bool advance) { uiWatchAlertTick(t, now, engine, advance); });
 #endif
             if (tp.valid && (now - lastTouch) > TOUCH_DEBOUNCE_MS) {
                 lastTouch = now;
