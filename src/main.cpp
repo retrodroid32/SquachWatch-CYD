@@ -1660,9 +1660,14 @@ static void releaseFrameBuffer(const char* who) {
 // heap will not give a 77 KB block again, draws unbuffered until a restart
 // (the same fallback a failed rotate takes).
 static bool s_frameLent = false;
+// When the full 76.8 KB sprite cannot be reclaimed after WiFi, use the
+// existing CYD35-style two-pass rendering with a 38.4 KB half-height sprite.
+// No reboot, and no direct erase/redraw flicker on ordinary screens.
+static bool s_recoveryHalfFrame = false;
 static void lendFrameToDownload() {
     if (!frameBufferOk) return;
     releaseFrameBuffer("ota");
+    s_recoveryHalfFrame = false;
     s_frameLent = true;
 }
 static void restoreFrameBuffer() {
@@ -1686,11 +1691,27 @@ static void restoreFrameBuffer() {
     if (frame.createSprite(tft.width(), tft.height())) {
         frame.setTextSize(1);
         frameBufferOk = true;
+        s_recoveryHalfFrame = false;
         canvas = &frame;
         s_frameLent = false;
         nextAttempt = 0;
         FramePush::invalidate();
         Serial.println("[ota] frame buffer restored after WiFi cleanup");
+    } else if (frame.createSprite(tft.width(), tft.height() / 2)) {
+        // A complete framebuffer needs 76,800 contiguous bytes at 320x240,
+        // which the WiFi/BT heap frequently cannot provide after a check.
+        // A half-height buffer requires only 38,400 and can be rendered in
+        // two passes without drawing intermediate primitives to the glass.
+        frame.setTextSize(1);
+        frameBufferOk = true;
+        s_recoveryHalfFrame = true;
+        canvas = &tft;  // viewport dimensions on a half-sprite are not panel dimensions
+        s_frameLent = false;
+        nextAttempt = 0;
+        FramePush::invalidate();
+        Serial.printf("[ota] recovered HALF frame buffer (%lu bytes; largest free %lu)\n",
+                      (unsigned long)(tft.width() * (tft.height() / 2)),
+                      (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
     } else {
         Serial.printf("[ota] frame buffer still unavailable (largest block %lu); will retry\n",
                       (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
