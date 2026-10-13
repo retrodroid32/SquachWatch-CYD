@@ -1660,14 +1660,16 @@ static void releaseFrameBuffer(const char* who) {
 // heap will not give a 77 KB block again, draws unbuffered until a restart
 // (the same fallback a failed rotate takes).
 static bool s_frameLent = false;
-// When the full 76.8 KB sprite cannot be reclaimed after WiFi, use the
-// existing CYD35-style two-pass rendering with a 38.4 KB half-height sprite.
-// No reboot, and no direct erase/redraw flicker on ordinary screens.
-static bool s_recoveryHalfFrame = false;
+// Number of vertical sprite bands in ordinary (non-CYD35) builds. Normal
+// operation uses a full frame (1). After an OTA check, fragmented ESP32 heap
+// can make 76.8 KB / 38.4 KB contiguous allocations impossible. Recover
+// with the smallest power-of-two band count that fits: 2, 4, 8, or 16.
+// Every supported 240x320 / 320x240 rotation divides evenly by those counts.
+static uint8_t s_recoveryBands = 1;
 static void lendFrameToDownload() {
     if (!frameBufferOk) return;
     releaseFrameBuffer("ota");
-    s_recoveryHalfFrame = false;
+    s_recoveryBands = 1;
     s_frameLent = true;
 }
 static void restoreFrameBuffer() {
@@ -1688,31 +1690,36 @@ static void restoreFrameBuffer() {
     if (nextAttempt && (int32_t)(now - nextAttempt) < 0) return;
     nextAttempt = now + 2000;
     frame.setColorDepth(8);
-    if (frame.createSprite(tft.width(), tft.height())) {
+    bool recovered = false;
+    // The first Wi-Fi check on tested hardware leaves only a 51 KB largest
+    // block: 2 bands of 38.4 KB work. A *second* check can leave only 32 KB,
+    // so the 2-band retry fails forever unless we can step down to 4+ bands.
+    // All drawing stays buffered: the same sprite is reused one band at a
+    // time and the framebuffer never writes erase-then-redraw directly to
+    // the display. 16 bands needs just 4,800 bytes on 320x240 CYDs.
+    for (uint8_t bands = 1; bands <= 16; bands <<= 1) {
+        if (tft.height() % bands != 0) continue;
+        const int bandHeight = tft.height() / bands;
+        if (!frame.createSprite(tft.width(), bandHeight)) continue;
         frame.setTextSize(1);
         frameBufferOk = true;
-        s_recoveryHalfFrame = false;
-        canvas = &frame;
+        s_recoveryBands = bands;
+        canvas = (bands == 1) ? (TFT_eSPI*)&frame : &tft;
         s_frameLent = false;
         nextAttempt = 0;
         FramePush::invalidate();
-        Serial.println("[ota] frame buffer restored after WiFi cleanup");
-    } else if (frame.createSprite(tft.width(), tft.height() / 2)) {
-        // A complete framebuffer needs 76,800 contiguous bytes at 320x240,
-        // which the WiFi/BT heap frequently cannot provide after a check.
-        // A half-height buffer requires only 38,400 and can be rendered in
-        // two passes without drawing intermediate primitives to the glass.
-        frame.setTextSize(1);
-        frameBufferOk = true;
-        s_recoveryHalfFrame = true;
-        canvas = &tft;  // viewport dimensions on a half-sprite are not panel dimensions
-        s_frameLent = false;
-        nextAttempt = 0;
-        FramePush::invalidate();
-        Serial.printf("[ota] recovered HALF frame buffer (%lu bytes; largest free %lu)\n",
-                      (unsigned long)(tft.width() * (tft.height() / 2)),
-                      (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
-    } else {
+        if (bands == 1) {
+            Serial.println("[ota] frame buffer restored after WiFi cleanup");
+        } else {
+            Serial.printf("[ota] recovered %u-band frame buffer (%lu bytes; largest free %lu)\n",
+                          (unsigned)bands,
+                          (unsigned long)(tft.width() * bandHeight),
+                          (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
+        }
+        recovered = true;
+        break;
+    }
+    if (!recovered) {
         Serial.printf("[ota] frame buffer still unavailable (largest block %lu); will retry\n",
                       (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
     }
@@ -3499,16 +3506,17 @@ static inline void drawTwoBand(F&& draw) {
         return;
     }
 #else
-    if (s_recoveryHalfFrame && frameBufferOk) {
-        // Exactly the CYD35 two-pass renderer, activated dynamically only
-        // after WiFi has fragmented the heap below a full-sprite allocation.
-        const int halfH = tft.height() / 2;
-        frame.setViewport(0, 0, tft.width(), tft.height(), true);
-        draw((TFT_eSPI&)frame, true);
-        pushFrame(0, 0);
-        frame.setViewport(0, -halfH, tft.width(), tft.height(), true);
-        draw((TFT_eSPI&)frame, false);
-        pushFrame(0, halfH);
+    if (s_recoveryBands > 1 && frameBufferOk) {
+        // The CYD35 half-height viewport pattern, generalized to any
+        // power-of-two band count. This also works after a second OTA check
+        // fragments RAM below the 38.4 KB half-sprite requirement.
+        const int bandH = tft.height() / s_recoveryBands;
+        for (int b = 0; b < s_recoveryBands; ++b) {
+            const int y = b * bandH;
+            frame.setViewport(0, -y, tft.width(), tft.height(), true);
+            draw((TFT_eSPI&)frame, b == 0);
+            pushFrame(0, y);
+        }
         frame.resetViewport();
         return;
     }
@@ -3883,7 +3891,7 @@ void loop() {
 #if defined(CYD35)
             frame.resizeInPlace(tft.width(), tft.height() / 2);
 #else
-            frame.resizeInPlace(tft.width(), s_recoveryHalfFrame ? tft.height() / 2 : tft.height());
+            frame.resizeInPlace(tft.width(), tft.height() / s_recoveryBands);
 #endif
         } else if (frameBufferOk) {
             // Never got its one-time boot-time allocation in the first
@@ -4157,7 +4165,7 @@ void loop() {
                     uiClearTick(tft, now, engine, true, s_scanPickerOpen);
                 }
 #else
-                if (s_recoveryHalfFrame) {
+                if (s_recoveryBands > 1) {
                     // Draw all overlays INSIDE each buffered half before it
                     // is pushed; drawing them later via canvas=&tft would
                     // resurrect the direct-to-panel flicker.
@@ -4177,7 +4185,7 @@ void loop() {
 
                 if (
 #if !defined(CYD35)
-                    !s_recoveryHalfFrame
+                    s_recoveryBands == 1
 #else
                     true
 #endif
@@ -6703,7 +6711,7 @@ void loop() {
     // straight at tft and every draw this frame already landed on the
     // real screen -- pushing `frame` here would just paint stale data
     // from the sprite we stopped using back over the top of it.
-    if (frameBufferOk && !s_recoveryHalfFrame && renderedThisLoop) {
+    if (frameBufferOk && s_recoveryBands == 1 && renderedThisLoop) {
         const bool targetRoster =
             state == AppState::HUNT_LIST || state == AppState::WATCH_LIST;
         if (!targetRoster && now - transitionStart < TRANSITION_MS) {
