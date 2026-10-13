@@ -3507,17 +3507,22 @@ static inline void drawTwoBand(F&& draw) {
     }
 #else
     if (s_recoveryBands > 1 && frameBufferOk) {
-        // The CYD35 half-height viewport pattern, generalized to any
-        // power-of-two band count. This also works after a second OTA check
-        // fragments RAM below the 38.4 KB half-sprite requirement.
+        // Reuse the CYD35 clipping hints as well as its viewport technique.
+        // Previously we rendered EVERY background cell/menu row for EVERY
+        // band; the viewport discarded most pixels only after expensive
+        // colour blends, text layout, and graphics work had already run.
         const int bandH = tft.height() / s_recoveryBands;
+        DrawBand::setEnabled(true);
         for (int b = 0; b < s_recoveryBands; ++b) {
             const int y = b * bandH;
+            DrawBand::set(y, y + bandH);
             frame.setViewport(0, -y, tft.width(), tft.height(), true);
             draw((TFT_eSPI&)frame, b == 0);
             pushFrame(0, y);
         }
         frame.resetViewport();
+        DrawBand::all();
+        DrawBand::setEnabled(false);
         return;
     }
 #endif
