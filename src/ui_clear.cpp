@@ -3351,23 +3351,16 @@ void uiClearTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool adv
     // title bar to the counters, which are at the bottom, with NEARBY over
     // his feet.
     const bool xp = Settings::detXp();
-    // XP's tiles start a couple of rows from the very top, in the title
-    // bar between its corner icons, the way a taskbar sits. Not when the
-    // WATCHING / HUNTING pill is up -- that lives in the same middle of the
-    // bar, so they drop under it, and Squachy gives up those rows while it
-    // is set -- and never on the T-Watch, whose clock and badges are there.
-    // The T-Deck's LORA n NEW pill lives in that middle too: while it is up
-    // (unread chats, radio on) the tiles drop under it, and come back up once
-    // the chats are read (asked for 2026-10-13).
+    // XP tiles can again use the title bar while WATCH or HUNT is selected:
+    // both tracking pills now live above the counter/button area, not in
+    // the header. Keep the original T-Watch clock and T-Deck unread LoRa
+    // badge clearance; neither of those moved.
 #if defined(TWATCH_S3)
     const bool tilesLow = true;
+#elif SQUACH_LORA && defined(TDECK_PLUS)
+    const bool tilesLow = uiLoraChatUnread() != 0 && Settings::loraListen() != 0;
 #else
-    const bool tilesLow = eng.watchKind() != DetectionEngine::WatchKind::NONE ||
-                          eng.huntKind()  != DetectionEngine::WatchKind::NONE
-#if SQUACH_LORA && defined(TDECK_PLUS)
-                          || (uiLoraChatUnread() != 0 && Settings::loraListen() != 0)
-#endif
-                          ;
+    const bool tilesLow = false;
 #endif
     const int tilesTop      = tilesLow ? titleBottom + 2 : 2;
     // The 135-pixel boards may borrow a third row on a crowded day (see the
