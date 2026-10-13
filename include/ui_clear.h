@@ -54,11 +54,11 @@ bool uiClearBubbleHit(int x, int y);
 // The "+N" squad badge beside a visitor, which opens the SQUAD screen.
 bool uiClearSquadHit(int x, int y);
 
-// The watch/hunt indicator, bottom left of CLEAR. True when a tap landed on
-// it; main.cpp opens the watch-alert screen, which is where the target is
-// named and where REMOVE FROM WATCH LIST lives. Only ever true while a watch
-// or a hunt is actually set -- the pill is not drawn otherwise.
+// Independent WATCH (left) and HUNT (right) count pills above CLEAR's
+// counter/button area. WATCH opens its alert; HUNT opens its gauge.
+// Hit areas follow the panel rotation and are inactive without a target.
 bool uiClearWatchPillHit(int x, int y);
+bool uiClearHuntPillHit(int x, int y);
 // The counter tiles under Squachy: one per kind of thing in range right now,
 // none when it is quiet. True if a tap landed on one, with the column's type
 // (AIRTAG for the trackers, CAMERA for cameras and doorbells, HACKER for
