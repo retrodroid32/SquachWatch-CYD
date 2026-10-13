@@ -4157,20 +4157,39 @@ void loop() {
                     uiClearTick(tft, now, engine, true, s_scanPickerOpen);
                 }
 #else
-                uiClearTick(*canvas, now, engine, true, s_scanPickerOpen);
+                if (s_recoveryHalfFrame) {
+                    // Draw all overlays INSIDE each buffered half before it
+                    // is pushed; drawing them later via canvas=&tft would
+                    // resurrect the direct-to-panel flicker.
+                    drawTwoBand([&](TFT_eSPI& t, bool advance) {
+                        uiClearTick(t, now, engine, advance, s_scanPickerOpen);
+                        if (uiZoneCardWanted()) uiZoneCardDraw(t, now);
+                        Theme::drawToast(t, now);
+#if CROWD_BENCH
+                        if (CrowdBench::active()) CrowdBench::drawOver(t, now);
+#endif
+                    });
+                } else {
+                    uiClearTick(*canvas, now, engine, true, s_scanPickerOpen);
+                }
 #endif
                 FrameProf::lap(FrameProf::CHROME);
 
-                // Overlays are part of the retained frame: when one is live,
-                // clearShouldRender() keeps rendering until it expires. The
-                // zone card is persistent UI; a short-lived toast is the
-                // immediate answer to the user's action, so it draws last.
-                if (uiZoneCardWanted()) uiZoneCardDraw(*canvas, now);
-                Theme::drawToast(*canvas, now);
-
-#if CROWD_BENCH
-                if (CrowdBench::active()) CrowdBench::drawOver(*canvas, now);
+                if (
+#if !defined(CYD35)
+                    !s_recoveryHalfFrame
+#else
+                    true
 #endif
+                ) {
+                    // For ordinary full-screen frames, overlays are part of
+                    // the retained frame and pushed at the end of loop().
+                    if (uiZoneCardWanted()) uiZoneCardDraw(*canvas, now);
+                    Theme::drawToast(*canvas, now);
+#if CROWD_BENCH
+                    if (CrowdBench::active()) CrowdBench::drawOver(*canvas, now);
+#endif
+                }
             } else {
                 renderedThisLoop = false;
             }
