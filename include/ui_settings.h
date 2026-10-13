@@ -78,7 +78,7 @@ void uiSettingsInit(TFT_eSPI& t);
 // staticBackground is for the low-memory, direct-to-panel fallback after OTA:
 // avoid continuously repainting an animated background without a sprite.
 void uiSettingsTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng,
-                    bool staticBackground = false);
+                    bool staticBackground = false, bool advance = true);
 void uiSettingsScroll(int delta);     // positive = scroll down
 
 // Sub-pages are this same screen with a different list on it, so their rows
