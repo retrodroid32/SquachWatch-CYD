@@ -5225,7 +5225,7 @@ void loop() {
             if (frameBufferOk) {
                 // Buffered path: animations and unchanged-row suppression
                 // behave as normal.
-                drawTwoBand([&](TFT_eSPI& t, bool) { uiSettingsTick(t, now, engine); });
+                drawTwoBand([&](TFT_eSPI& t, bool advance) { uiSettingsTick(t, now, engine, false, advance); });
             } else {
                 // When WiFi OTA leaves too little contiguous RAM to restore
                 // the full-screen sprite, drawing every loop straight to
