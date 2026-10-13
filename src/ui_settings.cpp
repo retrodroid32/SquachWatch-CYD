@@ -1,5 +1,6 @@
 // SquachWatch-CYD — settings screen implementation
 #include "ui_settings.h"
+#include "draw_band.h"
 #include "ota_core.h"
 #include "ota_wifi.h"
 #include "theme.h"
@@ -1025,7 +1026,8 @@ static void rowContent(SettingsRow r, const DetectionEngine& eng, char* valBuf, 
     }
 }
 
-void uiSettingsTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool staticBackground) {
+void uiSettingsTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng,
+                    bool staticBackground, bool advance) {
     int w = t.width(), h = t.height();
 
     // buildDisplayList() has no engine of its own and is called by the hit test
@@ -1091,7 +1093,7 @@ switch (Settings::background()) {
         case Settings::Background::SYNTHWAVE: Theme::drawSynthwave(t, now, bgTop, bodyBottom); break;
         // Fills rather than skips -- see the note in drawActiveBackground.
         case Settings::Background::BLACK:      t.fillRect(0, bgTop, t.width(), bodyBottom - bgTop, Theme::BG); break;
-        default:                               Theme::drawDigitalRain(t, now, bgTop, bodyBottom, true); break;
+        default:                               Theme::drawDigitalRain(t, now, bgTop, bodyBottom, advance); break;
     }
     Theme::restorePalette(saved);
     }
@@ -1118,6 +1120,10 @@ switch (Settings::background()) {
     while (idx < n) {
         int itemH = itemHeight(items[idx], rowH, headerH, tallH);
         if (y + itemH > bodyBottom) break;
+        // Compute geometry/counts for every band, but don't build text,
+        // headers or rows that cannot appear in this viewport. Settings
+        // uses the same full-height layout and hit testing in every pass.
+        if (DrawBand::has(y, y + itemH)) {
         if (items[idx].isHeader) {
             drawHeader(t, w, y, itemH, items[idx].group);
         } else if (items[idx].row == SettingsRow::SNOOZE_ENTRY) {
@@ -1150,6 +1156,7 @@ switch (Settings::background()) {
                 drawRow(t, w, y, itemH, label, value, danger, groupColor(items[idx].group),
                         h > w || items[idx].row == SettingsRow::SNOOZE_MANAGER);
             }
+        }
         }
         y += itemH;
         idx++;
