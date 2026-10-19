@@ -1697,7 +1697,16 @@ static void restoreFrameBuffer() {
     // All drawing stays buffered: the same sprite is reused one band at a
     // time and the framebuffer never writes erase-then-redraw directly to
     // the display. 16 bands needs just 4,800 bytes on 320x240 CYDs.
-    for (uint8_t bands = 1; bands <= 16; bands <<= 1) {
+    // A separate, unmerged LAB test branch builds only cyd-fast with this
+    // flag. Exercise the 4-band renderer deterministically even when the heap
+    // could still fit 2 bands. Never enable it for normal shipping profiles.
+#if defined(SQW_LAB_FORCE_FOUR_BAND_RECOVERY)
+    const uint8_t firstBands = 4;
+    Serial.println("[ota] LAB TEST: forcing >=4-band framebuffer recovery");
+#else
+    const uint8_t firstBands = 1;
+#endif
+    for (uint8_t bands = firstBands; bands <= 16; bands <<= 1) {
         if (tft.height() % bands != 0) continue;
         const int bandHeight = tft.height() / bands;
         if (!frame.createSprite(tft.width(), bandHeight)) continue;
