@@ -7,6 +7,9 @@
 #include <SPI.h>
 #include <Wire.h>
 #include <TFT_eSPI.h>
+#if defined(CYD32C)
+#include "gt911_touch.h"
+#endif
 #include <XPT2046_Touchscreen.h>
 #include <Preferences.h>  // AWOK's own per-rotation touch-cal storage; see the AWOK block below pollTouch()'s globals
 #include <esp_heap_caps.h>   // heap_caps_get_largest_free_block() -- diagnostics screen
@@ -399,6 +402,9 @@ static void drawCrashCard(TFT_eSPI& t) {
 #if defined(TWATCH_S3)
 // Confirmed on the watch 2026-09-22: the ST7789 wants inversion on (as
 // LilyGo's own setup says); false showed every colour inverted.
+constexpr bool PANEL_NEEDS_INVERSION = true;
+#elif defined(CYD32C)
+// Sunton S032C ST7789 IPS baseline from the upstream hardware path.
 constexpr bool PANEL_NEEDS_INVERSION = true;
 #elif defined(FREENOVE32)
 // Freenove's own ST7789 setup specifies inversion on; upstream confirmed
@@ -825,6 +831,13 @@ static bool rawReadFiltered(int16_t& a, int16_t& b) {
 // The one reader pollTouch(), the calibration and the diagnostics screen all
 // use, so what the calibration measures is exactly what touch then reads.
 static bool readTouchRaw(int16_t& a, int16_t& b) {
+#if defined(CYD32C)
+    uint16_t x, y;
+    if (!Gt911::read(x, y)) return false;
+    a = (int16_t)x;
+    b = (int16_t)y;
+    return true;
+#else
     if (usingCapTouch) return rawReadCap(a, b);
 #if defined(CYD32)
     // The 3.2-inch board uses pressure-gated raw samples; TouchCal smooths them.
@@ -833,6 +846,7 @@ static bool readTouchRaw(int16_t& a, int16_t& b) {
     return rawReadFiltered(a, b);
 #else
     return rawReadResistive(a, b);
+#endif
 #endif
 }
 
@@ -2811,7 +2825,7 @@ void setup() {
 // Not on AWOK (TOUCH_CS there) and not on either RL Phantom, where GPIO21 is
 // the capacitive controller's INTERRUPT line. Driving it high at boot is the
 // same mistake as the LEDC attach further down, just earlier.
-#if !defined(AWOK) && !defined(RLPHANTOM) && !defined(RLPHANTOM_R) && !defined(TWATCH_S3)
+#if !defined(AWOK) && !defined(RLPHANTOM) && !defined(RLPHANTOM_R) && !defined(TWATCH_S3) && !defined(CYD32C)
     pinMode(21, OUTPUT); digitalWrite(21, HIGH);
 #endif
 #if defined(TWATCH_S3)
@@ -2820,7 +2834,7 @@ void setup() {
     pinMode(45, OUTPUT); digitalWrite(45, HIGH);
 #else
     pinMode(27, OUTPUT); digitalWrite(27, HIGH);
-#if !defined(FREENOVE32)
+#if !defined(FREENOVE32) && !defined(CYD32C)
     pinMode(32, OUTPUT); digitalWrite(32, HIGH);  // AWOK's real BL pin; not a known-spare Freenove GPIO
 #endif
 #endif
@@ -2885,13 +2899,13 @@ void setup() {
     ledcSetup(BL_CH_ORIG, 5000, 8);
     ledcAttachPin(BL_PIN_TWATCH, BL_CH_ORIG);
 #else
-#if !defined(AWOK) && !defined(RLPHANTOM) && !defined(RLPHANTOM_R)
+#if !defined(AWOK) && !defined(RLPHANTOM) && !defined(RLPHANTOM_R) && !defined(CYD32C)
     ledcSetup(BL_CH_ORIG, 5000, 8);
     ledcAttachPin(BL_PIN_ORIG, BL_CH_ORIG);
 #endif
     ledcSetup(BL_CH_CAP, 5000, 8);
     ledcAttachPin(BL_PIN_CAP, BL_CH_CAP);
-#if !defined(FREENOVE32)
+#if !defined(FREENOVE32) && !defined(CYD32C)
     ledcSetup(BL_CH_AWOK, 5000, 8);
     ledcAttachPin(BL_PIN_AWOK, BL_CH_AWOK);
 #endif
@@ -3012,6 +3026,10 @@ void setup() {
 #else
     Serial.println("RL Phantom (resistive) -- XPT2046 on shared bus, raw reads + rotation maths.");
 #endif
+#elif defined(CYD32C)
+    usingCapTouch = Gt911::begin();
+    Serial.println(usingCapTouch ? "ESP32-2432S032C -- GT911 capacitive touch answered."
+                                 : "ESP32-2432S032C -- GT911 did not answer; no touch.");
 #elif defined(TWATCH_S3)
     // The T-Watch's FT6336, on I2C SDA 39 / SCL 40 at 0x38. No reset line;
     // the AXP2101 powers it (ALDO3) in twatchPowerUp(), before this runs.
@@ -3068,7 +3086,11 @@ void setup() {
         uint32_t windowStart = millis();
         while (millis() - windowStart < 1200) {
             int16_t a, b;
+#if defined(CYD32C)
+            bool down = readTouchRaw(a, b);
+#else
             bool down = usingCapTouch ? rawReadCap(a, b) : rawReadResistive(a, b);
+#endif
             if (down) {
                 if (holdStart == 0) holdStart = millis();
                 else if (millis() - holdStart > 800) {
