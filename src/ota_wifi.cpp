@@ -483,6 +483,11 @@ void run(void*) {
     // rather than the board.
     WiFi.removeEvent(dropEv);
     WiFi.disconnect(false, false);
+    // The OTA task is finished using HTTPS. Free the reusable TLS client
+    // before marking the worker idle so the UI can reclaim its framebuffer.
+    // Keeping it alive fragmented the heap after a check-only attempt.
+    delete s_tls;
+    s_tls = nullptr;
     Serial.printf("[ota] update task stack: %u of %u bytes never used\n",
                   (unsigned)(uxTaskGetStackHighWaterMark(nullptr) * sizeof(StackType_t)), (unsigned)TASK_STACK);
     s_task = nullptr;
@@ -548,6 +553,7 @@ void rescan() {
 }
 
 State      state()    { return s_state; }
+bool       taskActive() { return s_task != nullptr; }
 uint8_t    netCount() { return s_netN; }
 const Net* net(uint8_t i) { return i < s_netN ? &s_nets[i] : nullptr; }
 

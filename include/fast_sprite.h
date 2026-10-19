@@ -44,8 +44,10 @@ public:
     // here or it reads straight off the end -- a LoadStoreError panic, found
     // on that board on 2026-09-20 and the reason FramePush::push() takes a
     // buffer and a size rather than a sprite.
-#if defined(CYD35)
-    // The window-write guard. TFT_eSprite::setWindow() clamps the window it
+#if defined(CYD35) || (defined(ARDUINO_ARCH_ESP32) && !defined(TWATCH_S3))
+    // The window-write guard. Also required by the ordinary CYD after an
+    // OTA check: its recovery half-sprite uses a full-screen viewport.
+    // Clipping against buffer bounds is safe for full-screen sprites too. TFT_eSprite::setWindow() clamps the window it
     // is handed to width()/height(), and those report the VIEWPORT, not the
     // buffer -- so on a 480x160 buffer under a 480x320 viewport it will
     // happily accept row 319 and let pushColor() store at _img8[319*480],
