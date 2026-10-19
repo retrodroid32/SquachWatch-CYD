@@ -210,6 +210,8 @@ namespace Settings {
     // worse than useless.
     bool       wakeOnAlert();
     void       toggleWakeOnAlert();
+    bool       quietTrackers();
+    void       toggleQuietTrackers();
     bool       privacyMode();
     void       togglePrivacyMode();
     // The T-Watch's buzz on an alert (the DRV2605 haptic motor). Kept on
