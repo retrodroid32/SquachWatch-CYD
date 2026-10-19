@@ -3547,7 +3547,7 @@ static inline void drawTwoBand(F&& draw) {
         const uint32_t diagNow = millis();
         if (state == AppState::CLEAR && diagNow - lastBandDiagMs >= 5000) {
             lastBandDiagMs = diagNow;
-            Serial.printf("[bands] n=%u draw=%lu us push=%lu us slow-draw=%u:%lu slow-push=%u:%lu\\n",
+            Serial.printf("[bands] n=%u draw=%lu us push=%lu us slow-draw=%u:%lu slow-push=%u:%lu\n",
                           (unsigned)s_recoveryBands,
                           (unsigned long)totalDrawUs,
                           (unsigned long)totalPushUs,
