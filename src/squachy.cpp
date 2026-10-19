@@ -6492,7 +6492,9 @@ void tick(TFT_eSPI& t, int cx, int topY, int availHeight, uint32_t now,
     // bubble from this very frame and black it out.
     static int16_t ownX = 0, ownY = 0, ownW = 0, ownH = 0;
     bool showBubble = bubbleText && now < bubbleUntil;
-    if (hadBubble) {
+    // Erase only when the bubble disappears. Redrawing an active pointed bubble
+    // after erasing left a black stripe below the box outside its narrow tail.
+    if (hadBubble && !showBubble) {
         t.fillRect(ownX, ownY, ownW, ownH, Theme::BG);
     }
     if (showBubble) {
