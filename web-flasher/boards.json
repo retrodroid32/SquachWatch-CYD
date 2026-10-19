@@ -15,7 +15,11 @@
       "cyd28": true,
       "fast_env": "cyd-fast",
       "fast_manifest": "manifest-cyd-fast.json",
-      "note": "The 2.8\" CYD ships with more than one panel controller. If this gives a solid white screen, flash the ILI9341 option instead."
+      "note": "The 2.8\" CYD ships with more than one panel controller. If this gives a solid white screen, flash the ILI9341 option instead.",
+      "gps_env": "cyd-gps",
+      "gps_manifest": "manifest-cyd-gps.json",
+      "gps_fast_env": "cyd-fast-gps",
+      "gps_fast_manifest": "manifest-cyd-fast-gps.json"
     },
     {
       "id": "cyd-ili9341",
@@ -31,7 +35,11 @@
       "cyd28": true,
       "fast_env": "cyd-ili9341-fast",
       "fast_manifest": "manifest-cyd-ili9341-fast.json",
-      "note": "Use this 2.8\" profile if the ST7789 option boots to a solid white screen."
+      "note": "Use this 2.8\" profile if the ST7789 option boots to a solid white screen.",
+      "gps_env": "cyd-ili9341-gps",
+      "gps_manifest": "manifest-cyd-ili9341-gps.json",
+      "gps_fast_env": "cyd-ili9341-fast-gps",
+      "gps_fast_manifest": "manifest-cyd-ili9341-fast-gps.json"
     },
     {
       "id": "cyd32-st7798",
@@ -45,9 +53,13 @@
       "merged": true,
       "lab": true,
       "cyd28": false,
-      "note": "For ESP32-2432S032R / E32R32P resistive boards: 240×320 panel, GPIO27 backlight, XPT2046 touch sharing LCD SPI with touch CS on GPIO33. The optional 80MHz build overclocks only the display transactions; touch remains at 2.5MHz.",
+      "note": "For ESP32-2432S032R / E32R32P resistive boards: 240×320 panel, GPIO27 backlight, XPT2046 touch sharing LCD SPI with touch CS on GPIO33. The optional 80MHz build overclocks only the display transactions; touch remains at 2.5MHz. Optional GPS firmware avoids the shared USB UART: connect GPS TX to exposed GPIO35/JP3, leave GPS RX disconnected, and use suitable board power/GND.",
       "fast_env": "cyd32-st7798-fast",
-      "fast_manifest": "manifest-cyd32-st7798-fast.json"
+      "fast_manifest": "manifest-cyd32-st7798-fast.json",
+      "gps_env": "cyd32-st7798-gps",
+      "gps_manifest": "manifest-cyd32-st7798-gps.json",
+      "gps_fast_env": "cyd32-st7798-fast-gps",
+      "gps_fast_manifest": "manifest-cyd32-st7798-fast-gps.json"
     },
     {
       "id": "freenove32",
@@ -121,6 +133,84 @@
       "id": "cyd-ili9341-fast",
       "label": "2.8\" CYD — ILI9341 80MHz",
       "manifest": "manifest-cyd-ili9341-fast.json",
+      "visible": false,
+      "ci": true,
+      "release": true,
+      "sign": true,
+      "shared_esp32": true,
+      "merged": false,
+      "lab": true,
+      "cyd28": false
+    },
+    {
+      "id": "cyd-gps",
+      "label": "2.8\" CYD — ST7789 + GPS",
+      "manifest": "manifest-cyd-gps.json",
+      "visible": false,
+      "ci": true,
+      "release": true,
+      "sign": true,
+      "shared_esp32": true,
+      "merged": false,
+      "lab": true,
+      "cyd28": true
+    },
+    {
+      "id": "cyd-fast-gps",
+      "label": "2.8\" CYD — ST7789 80MHz + GPS",
+      "manifest": "manifest-cyd-fast-gps.json",
+      "visible": false,
+      "ci": true,
+      "release": true,
+      "sign": true,
+      "shared_esp32": true,
+      "merged": false,
+      "lab": true,
+      "cyd28": true
+    },
+    {
+      "id": "cyd-ili9341-gps",
+      "label": "2.8\" CYD — ILI9341 + GPS",
+      "manifest": "manifest-cyd-ili9341-gps.json",
+      "visible": false,
+      "ci": true,
+      "release": true,
+      "sign": true,
+      "shared_esp32": true,
+      "merged": false,
+      "lab": true,
+      "cyd28": true
+    },
+    {
+      "id": "cyd-ili9341-fast-gps",
+      "label": "2.8\" CYD — ILI9341 80MHz + GPS",
+      "manifest": "manifest-cyd-ili9341-fast-gps.json",
+      "visible": false,
+      "ci": true,
+      "release": true,
+      "sign": true,
+      "shared_esp32": true,
+      "merged": false,
+      "lab": true,
+      "cyd28": true
+    },
+    {
+      "id": "cyd32-st7798-gps",
+      "label": "3.2\" CYD — ST7798/ST7789 + GPS",
+      "manifest": "manifest-cyd32-st7798-gps.json",
+      "visible": false,
+      "ci": true,
+      "release": true,
+      "sign": true,
+      "shared_esp32": true,
+      "merged": false,
+      "lab": true,
+      "cyd28": false
+    },
+    {
+      "id": "cyd32-st7798-fast-gps",
+      "label": "3.2\" CYD — ST7798/ST7789 80MHz + GPS",
+      "manifest": "manifest-cyd32-st7798-fast-gps.json",
       "visible": false,
       "ci": true,
       "release": true,

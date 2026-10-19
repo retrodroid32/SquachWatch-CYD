@@ -482,7 +482,25 @@ jobs:
               json.dump(m, open("_site/manifest-lab-" + board + ".json", "w"), indent=2)
           print("lab boards added:", label, ver)
           PY
+            # Keep the public root byte-for-byte from the live production site,
+            # but publish this branch's flasher UI at /lab/ so unfinished UI
+            # features (such as new GPS board dimensions) can actually discover
+            # the lab-only manifests that were just added above.
+            mkdir -p _site/lab
+            python - <<'PY'
+          from pathlib import Path
+          src = Path("web-flasher/index.html").read_text(encoding="utf-8")
+          # Resolve the branch lab page's relative assets/manifests against the
+          # preserved production root. This keeps one set of lab binaries and
+          # manifests while leaving /index.html untouched.
+          if "<head>" in src:
+              src = src.replace("<head>", "<head>\n  <base href=\"../\">", 1)
+          else:
+              raise SystemExit("web-flasher/index.html has no <head> tag")
+          Path("_site/lab/index.html").write_text(src, encoding="utf-8")
+          PY
             echo "live production root preserved; added lab build ${{ steps.ver.outputs.version }}"
+            echo "branch lab flasher published at /lab/?lab=1"
           fi
           # One shared bootloader and partition table (see the build step
           # for why that is safe and how it is enforced), then one app per
