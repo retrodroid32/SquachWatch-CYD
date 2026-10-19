@@ -3512,17 +3512,48 @@ static inline void drawTwoBand(F&& draw) {
         // band; the viewport discarded most pixels only after expensive
         // colour blends, text layout, and graphics work had already run.
         const int bandH = tft.height() / s_recoveryBands;
+        uint32_t totalDrawUs = 0, totalPushUs = 0;
+        uint32_t slowestDrawUs = 0, slowestPushUs = 0;
+        uint8_t slowestDrawBand = 0, slowestPushBand = 0;
         DrawBand::setEnabled(true);
         for (int b = 0; b < s_recoveryBands; ++b) {
             const int y = b * bandH;
             DrawBand::set(y, y + bandH);
             frame.setViewport(0, -y, tft.width(), tft.height(), true);
+            const uint32_t drawStartUs = micros();
             draw((TFT_eSPI&)frame, b == 0);
+            const uint32_t drawUs = micros() - drawStartUs;
+            totalDrawUs += drawUs;
+            if (drawUs > slowestDrawUs) {
+                slowestDrawUs = drawUs;
+                slowestDrawBand = (uint8_t)b;
+            }
+            const uint32_t pushStartUs = micros();
             pushFrame(0, y);
+            const uint32_t pushUs = micros() - pushStartUs;
+            totalPushUs += pushUs;
+            if (pushUs > slowestPushUs) {
+                slowestPushUs = pushUs;
+                slowestPushBand = (uint8_t)b;
+            }
         }
         frame.resetViewport();
         DrawBand::all();
         DrawBand::setEnabled(false);
+        // Diagnostic only; once per five seconds, not on every frame.
+        // Main-screen latency can be caused by expensive paint work OR SPI.
+        // Distinguish the two and identify the physical band responsible.
+        static uint32_t lastBandDiagMs = 0;
+        const uint32_t diagNow = millis();
+        if (state == AppState::CLEAR && diagNow - lastBandDiagMs >= 5000) {
+            lastBandDiagMs = diagNow;
+            Serial.printf("[bands] n=%u draw=%lu us push=%lu us slow-draw=%u:%lu slow-push=%u:%lu\\n",
+                          (unsigned)s_recoveryBands,
+                          (unsigned long)totalDrawUs,
+                          (unsigned long)totalPushUs,
+                          (unsigned)slowestDrawBand, (unsigned long)slowestDrawUs,
+                          (unsigned)slowestPushBand, (unsigned long)slowestPushUs);
+        }
         return;
     }
 #endif
