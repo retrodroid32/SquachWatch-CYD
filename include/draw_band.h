@@ -1,6 +1,6 @@
 // SquachWatch-CYD — which rows are actually being drawn right now.
 //
-// The 3.5" is the only board that cannot hold a whole frame in RAM. It draws
+// The 3.5" and OTA-recovery CYDs cannot always hold a whole frame in RAM. They draw
 // its 480x320 screen as two 480x160 bands: one half-height sprite, filled and
 // pushed at the top of the panel, then filled again and pushed halfway down.
 // Both passes run the entire screen's drawing code. The sprite's viewport
@@ -18,23 +18,21 @@
 // anything else read after the frame are computed either way -- only the
 // painting is skipped.
 //
-// On every other board there is one pass over a full-height sprite, so the
-// band is the whole screen and no block would ever be skipped. Rather than
-// leave a live comparison in those builds' hot loops, has() compiles to
-// `true` there and the guards vanish -- verified by building cyd-fast before
-// and after and byte-comparing the firmware.
+// On ordinary boards, this hint is disabled unless OTA recovery activates
+// multi-band rendering. Full-frame drawing still covers the entire panel.
+// CYD35 keeps the existing always-active band behavior.
 #pragma once
 #include <Arduino.h>
 
 namespace DrawBand {
 
-#if defined(CYD35)
+#if defined(CYD35) || defined(ARDUINO_ARCH_ESP32)
 
 // Panel rows [y0, y1) that this pass can paint.
 extern int16_t g_y0, g_y1;
 extern bool    g_on;
 
-// BAND OFF on the console holds the band open at the whole screen, which is
+// BAND OFF on the console or outside OTA recovery holds the band open at the whole screen, which is
 // exactly what the code did before any of this existed. It is the A/B: the
 // room's radio traffic moves the frame time by more than this change saves,
 // so measuring one build against another an hour apart says nothing, and
