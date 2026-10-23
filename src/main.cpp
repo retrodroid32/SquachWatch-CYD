@@ -4905,6 +4905,18 @@ void loop() {
                 wlTargetValid=false; wlEntryAt=transitionStart;
                 wlDirty=true;
             }
+            // BACK is a dedicated button, not a scrollable row. Handle its
+            // press immediately, before expensive multi-band rendering and
+            // without depending on a later release edge. In landscape the
+            // release can be missed while the display is being pushed.
+            if (!wlMenuOpen && touchJustDown &&
+                (now-lastTouch)>TOUCH_DEBOUNCE_MS &&
+                uiWatchAlertListHitBack(tp.x,tp.y,tft.width(),tft.height())) {
+                lastTouch=now;
+                wlGesture=false;
+                enterClear();
+                break;
+            }
             // In recovery-band mode each roster render is multiple physical
             // passes. Redrawing continuously during a held finger starves
             // touch polling, causing BACK to require repeated taps.
