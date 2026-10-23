@@ -660,6 +660,14 @@ bool DetectionEngine::init() {
     if (SLIM_WIFI) {
         esp_wifi_stop();
         esp_wifi_deinit();
+        // Upstream #10: on ESP32-S3, the WiFi task may still be tearing down
+        // when esp_wifi_deinit() returns. Reinitializing in the same tick can
+        // leave the sniffer transmitting but unable to receive anything.
+        // This gap runs only when the slim WiFi driver is rebuilt, not on
+        // ordinary WiFi joins or the validated SquachMesh advertising path.
+#if defined(CONFIG_IDF_TARGET_ESP32S3)
+        delay(10);
+#endif
         wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
         cfg.static_rx_buf_num  = 2;    // the DMA landing zone; 2 is the floor
         cfg.dynamic_rx_buf_num = 16;
