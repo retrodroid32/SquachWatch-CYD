@@ -1,5 +1,7 @@
 // WATCH notification state regression: multiple targets, explicit snooze,
 // manual acknowledgment, stable roster identity and removal.
+// PR #149 post-integration CI checkpoint: confirm WATCH regression suite compiles
+// alongside adaptive framebuffer recovery; hardware validation remains separate.
 #include "detection.h"
 #include "ignore_list.h"
 #include "watch_alert_actions.h"
