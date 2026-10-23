@@ -1249,6 +1249,8 @@ static bool onRawScanScreen() {
 #endif
         ;
 }
+// Shared with home-screen entry and adaptive OTA framebuffer recovery.
+static uint8_t s_recoveryBands = 1;
 static void enterClear() {
     if (Security::locked()) { enterLocked(); return; }
     restoreFrameBuffer();   // lent to a download that did not end in a restart
@@ -1258,7 +1260,15 @@ static void enterClear() {
     state = AppState::CLEAR;
     transitionStart = millis();
     s_scanPickerOpen = false;
+    // A recovered multi-band sprite renders the entire home screen on its
+    // first draw. Do not blank the physical LCD here: doing so exposes a
+    // dark lower band while the first multi-pass frame is being composed.
+    // The normal full-frame and unbuffered paths retain the old init.
+#if !defined(CYD35)
+    if (!(frameBufferOk && s_recoveryBands > 1)) uiClearInit(*canvas);
+#else
     uiClearInit(*canvas);
+#endif
 #if defined(CYD35)
     clearSharedFrameBuffer();
 #endif
@@ -1670,7 +1680,6 @@ static bool s_frameLent = false;
 // can make 76.8 KB / 38.4 KB contiguous allocations impossible. Recover
 // with the smallest power-of-two band count that fits: 2, 4, 8, or 16.
 // Every supported 240x320 / 320x240 rotation divides evenly by those counts.
-static uint8_t s_recoveryBands = 1;
 static void lendFrameToDownload() {
     if (!frameBufferOk) return;
     releaseFrameBuffer("ota");
@@ -4889,15 +4898,22 @@ void loop() {
             static uint32_t wlDownAt=0;
             static DetectionEngine::WatchTargetInfo wlTarget = {};
             static uint32_t wlLastDrawAt=0, wlEntryAt=0;
+            static bool wlDirty=false;
             const bool wlNewEntry = wlEntryAt != transitionStart;
             if (wlNewEntry) {
                 wlMenuOpen=false; wlGesture=false; wlMoved=false;
                 wlTargetValid=false; wlEntryAt=transitionStart;
+                wlDirty=true;
             }
-            const bool wlNeedsDraw = wlNewEntry || touchJustDown || touchJustUp ||
-                                     tp.valid || wlMenuOpen || (now-wlLastDrawAt>=2000);
+            // In recovery-band mode each roster render is multiple physical
+            // passes. Redrawing continuously during a held finger starves
+            // touch polling, causing BACK to require repeated taps.
+            // Render on state changes, not every loop while touch is held.
+            const bool wlNeedsDraw = wlDirty || wlNewEntry || touchJustDown || touchJustUp ||
+                                     (now-wlLastDrawAt>=2000);
             if (wlNeedsDraw) {
                 wlLastDrawAt=now;
+                wlDirty=false;
                 drawTwoBand([&](TFT_eSPI& t, bool) {
                     uiWatchListTick(t, now, engine);
                     if (wlMenuOpen) {
@@ -4919,6 +4935,7 @@ void loop() {
                         tp.x,tp.y,tft.width(),tft.height());
                     if (action!=WatchListAction::NONE) {
                         wlMenuOpen=false;
+                        wlDirty=true; // Repaint roster after modal removal/cancel.
                         if (action==WatchListAction::REMOVE || action==WatchListAction::OPEN_ALERT) {
                             // The selected row may have disappeared while
                             // the modal was up; never toggle/add a stale MAC.
@@ -4956,6 +4973,7 @@ void loop() {
                 if (abs(dy)>10) {
                     wlMoved=true;
                     uiWatchAlertListScroll(dy>0?-1:1);
+                    wlDirty=true;
                     wlLastY=tp.y;
                 }
                 if (abs(tp.x-wlStartX)>22 || abs(tp.y-wlStartY)>24) wlMoved=true;
@@ -4964,8 +4982,11 @@ void loop() {
                 if (!wlMoved && uiWatchAlertListHitBack(
                         wlStartX,wlStartY,tft.width(),tft.height())) {
                     lastTouch=now;
+                    wlGesture=false;
                     enterClear();
+                    break;
                 } else if (!wlMoved && wlTargetValid && now-wlDownAt>=650) {
+                    wlDirty=true;
                     wlMenuOpen=true;
                     lastTouch=now;
                 }
