@@ -1,3 +1,3 @@
-WATCH149-LANDBACK
-# Experimental LAB build after landscape WATCH BACK touch fix.
-# Triggered only on explicit user hardware regression report.
+WIFI123-USE
+# Experimental PR 123 Wi-Fi USE hardware validation build.
+# Source: refreshed PR #123, commit bbb852ec8634f3617ac9448af39ab27e0de4fe29.
