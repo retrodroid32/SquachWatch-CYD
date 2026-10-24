@@ -1,3 +1,3 @@
-WATCH149-LANDBACK
-# Experimental LAB build after landscape WATCH BACK touch fix.
-# Triggered only on explicit user hardware regression report.
+WIFI123-APFIX
+# Firmware LAB test of PR #123 AP scan, channel/BSSID and false NOT_FOUND fix.
+# Based on PR #123 commit b051675cdb169ac01455fa1e737237e2bf851742.
