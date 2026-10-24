@@ -1,5 +1,6 @@
 // Test the USE-button join-only contract through the deterministic emulator.
 // This is not hardware Wi-Fi validation; firmware builds cover ESP32 symbols.
+// Revalidated against the post-#149 master integration; real RF outcomes need CYD testing.
 #include "ota_wifi.h"
 #include <Arduino.h>
 #include <cassert>
