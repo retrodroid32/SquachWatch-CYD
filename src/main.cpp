@@ -228,6 +228,7 @@ static void drawCrashCard(TFT_eSPI& t) {
 #include "ui_log.h"
 #include "ui_rawscan.h"
 #include "ui_watchalert.h"
+#include "watch_alert_actions.h"
 #include "ui_settings.h"
 #include "ui_diagnostics.h"
 #include "ui_hunt.h"
@@ -506,6 +507,8 @@ AppState            state     = AppState::BOOT;
 uint32_t            bootStart = 0;
 uint32_t            alertStart= 0;
 uint32_t            watchAlertStart = 0;
+static bool         s_watchAlertArmed = false; // opening touch must lift before alert actions
+static bool         s_watchAlertFromRoster = false; // route the alert back to its opening screen
 uint32_t            lastTouch = 0;
 bool                prevTouchValid = false; // last frame's tp.valid, for true press/release edge detection (see loop())
 DetectionType       lastAlertType = DetectionType::UNKNOWN;
@@ -1246,6 +1249,8 @@ static bool onRawScanScreen() {
 #endif
         ;
 }
+// Shared with home-screen entry and adaptive OTA framebuffer recovery.
+static uint8_t s_recoveryBands = 1;
 static void enterClear() {
     if (Security::locked()) { enterLocked(); return; }
     restoreFrameBuffer();   // lent to a download that did not end in a restart
@@ -1255,7 +1260,15 @@ static void enterClear() {
     state = AppState::CLEAR;
     transitionStart = millis();
     s_scanPickerOpen = false;
+    // A recovered multi-band sprite renders the entire home screen on its
+    // first draw. Do not blank the physical LCD here: doing so exposes a
+    // dark lower band while the first multi-pass frame is being composed.
+    // The normal full-frame and unbuffered paths retain the old init.
+#if !defined(CYD35)
+    if (!(frameBufferOk && s_recoveryBands > 1)) uiClearInit(*canvas);
+#else
     uiClearInit(*canvas);
+#endif
 #if defined(CYD35)
     clearSharedFrameBuffer();
 #endif
@@ -1387,14 +1400,16 @@ static void enterAlert(const Detection& d) {
 #endif
 }
 
-static void enterWatchAlert() {
+static void enterWatchAlert(bool fromRoster = false) {
+    s_watchAlertFromRoster = fromRoster;
     state = AppState::WATCH_ALERT;
 #if defined(TWATCH_S3)
     twatchBuzz(Buzz::WATCH);
 #endif
     watchAlertStart = millis();
+    s_watchAlertArmed = false;
     transitionStart = watchAlertStart;
-    uiWatchAlertInit(*canvas);
+    uiWatchAlertInit(*canvas, !fromRoster); // preserve roster position on manual OPEN ALERT
 #if defined(CYD35)
     clearSharedFrameBuffer();
 #endif
@@ -1665,7 +1680,6 @@ static bool s_frameLent = false;
 // can make 76.8 KB / 38.4 KB contiguous allocations impossible. Recover
 // with the smallest power-of-two band count that fits: 2, 4, 8, or 16.
 // Every supported 240x320 / 320x240 rotation divides evenly by those counts.
-static uint8_t s_recoveryBands = 1;
 static void lendFrameToDownload() {
     if (!frameBufferOk) return;
     releaseFrameBuffer("ota");
@@ -1777,11 +1791,27 @@ static void enterHuntList() {
     uiHuntInit(*canvas);
 }
 
-static void enterWatchList() {
+static void enterWatchList(bool preserveScroll = false) {
     engine.deactivateWatch();
     state = AppState::WATCH_LIST;
     transitionStart = millis();
-    uiWatchAlertInit(*canvas);
+    // When returning from a manually opened alert, the roster will
+    // repaint itself on the first frame. Do not reset the scroll
+    // position via uiWatchAlertInit(): the user should land on the row
+    // they just inspected, including after ACK, REMOVE, or timeout.
+    if (!preserveScroll) uiWatchAlertInit(*canvas);
+}
+
+// The same WATCH card can be opened automatically or via WATCH TARGETS.
+// Only the latter returns to the roster. Reset the origin flag before
+// transitioning so later background alerts always return to CLEAR.
+static void leaveWatchAlert() {
+    const bool backToRoster = s_watchAlertFromRoster;
+    s_watchAlertFromRoster = false;
+    if (WatchAlertActions::returnPage(backToRoster) == WatchAlertActions::ReturnPage::ROSTER)
+        enterWatchList(true);
+    else
+        enterClear();
 }
 
 // true when reached via the first-boot flow (DONE -> CLEAR, straight
@@ -4697,7 +4727,7 @@ void loop() {
             }
 
             // Locked: an alert is for looking at, not acting on. MORE INFO,
-            // IGNORE and HUNT would all change the device without the PIN, so
+            // IGNORE, WATCH and HUNT would change the device without PIN, so
             // any tap -- or the timeout -- goes back to the lock screen.
             if (Security::locked()) {
                 if ((tp.valid && (now - lastTouch) > TOUCH_DEBOUNCE_MS) ||
@@ -4735,6 +4765,21 @@ void loop() {
                     // a duration; CANCEL leaves all policies unchanged.
                     lastTouch = now;
                     uiAlertSetSnoozePrompt(true);
+                } else if (uiAlertHitWatch(tp.x, tp.y, tft.width(), tft.height())) {
+                    // One-tap WATCH from an ordinary detection alert. Guard
+                    // against toggleWatch*() removing an existing target:
+                    // WATCHED remains selected until explicitly un-watched
+                    // from WATCH TARGETS, LOG, or raw scan.
+                    const WatchAlertActions::AddResult result =
+                        WatchAlertActions::addOnly(engine, s_alertMac, s_alertLabel, s_alertIsBle);
+                    if (result == WatchAlertActions::AddResult::ADDED)
+                        Theme::showToast("ADDED TO WATCH", s_alertLabel, Theme::CYAN);
+                    else if (result == WatchAlertActions::AddResult::ALREADY_WATCHED)
+                        Theme::showToast("ALREADY WATCHING", s_alertLabel, Theme::CYAN);
+                    else
+                        Theme::showToast("WATCH LIST FULL", "Maximum 8 targets", Theme::AMBER);
+                    squachyCatch(lastAlertType, s_alertMac, lastAlertHits, lastAlertRssi, lastAlertConf);
+                    enterClear();
                 } else if (uiAlertHitHunt(tp.x, tp.y, tft.width(), tft.height())) {
                     // Same call pair LOG's confirm panel makes. The
                     // DETECTION trigger fires here too: leaving via HUNT
@@ -4807,58 +4852,155 @@ void loop() {
 #else
             drawTwoBand([&](TFT_eSPI& t, bool advance) { uiWatchAlertTick(t, now, engine, advance); });
 #endif
+            // A held touch from the roster's OPEN ALERT action must not
+            // instantly acknowledge the card it just opened.
+            if (!s_watchAlertArmed) {
+                if (!tp.valid) s_watchAlertArmed = true;
+                else break;
+            }
+            // A PIN-locked screen must never allow WATCH removal or
+            // acknowledgement. Exit the alert with unread state intact.
+            if (Security::locked()) {
+                if (touchJustDown || (now-watchAlertStart)>ALERT_AUTO_DISMISS_MS) {
+                    engine.deactivateWatch();
+                    leaveWatchAlert();
+                }
+                break;
+            }
             if (tp.valid && (now - lastTouch) > TOUCH_DEBOUNCE_MS) {
                 lastTouch = now;
                 if (uiWatchAlertHitRemove(*canvas, tp.x, tp.y)) {
-                    engine.clearWatch(); // only the device whose alert is open
+                    engine.clearWatch(); // only the target of the active card
                     Theme::showToast("REMOVED FROM WATCH", nullptr, Theme::CYAN);
                 } else {
-                    engine.deactivateWatch();
+                    // A tap anywhere outside REMOVE acknowledges this
+                    // WATCH alert. The target remains on the WATCH list.
+                    engine.acknowledgeWatch();
                 }
-                enterClear();
+                leaveWatchAlert();
             } else if ((now - watchAlertStart) > ALERT_AUTO_DISMISS_MS) {
+                // An unattended alert returns home after 10 seconds,
+                // leaving its unread WATCH marker intact. This permits other
+                // WATCH and ordinary alerts and normal screen/lock timeouts,
+                // with no separate manual MINIMIZE control.
                 engine.deactivateWatch();
-                enterClear();
+                leaveWatchAlert();
             }
             break;
         }
         case AppState::WATCH_LIST: {
-            // Retained roster: the underlying WATCH RSSI history samples at
-            // ~2 s, so repainting/pushing this static list every main-loop
-            // pass only creates unnecessary panel traffic. Draw immediately
-            // on entry/touch, then at the same 2 s cadence as the data.
-            static uint32_t wlLastDrawAt = 0, wlEntryAt = 0;
+            // Long-press a roster target for OPEN ALERT / REMOVE / CANCEL.
+            // Keep an identity snapshot, never a sorted row number: the order
+            // can change during the hold as incoming RSSI samples update.
+            static bool wlGesture=false, wlMoved=false, wlTargetValid=false;
+            static bool wlMenuOpen=false;
+            static int wlStartX=0, wlStartY=0, wlLastY=-1;
+            static uint32_t wlDownAt=0;
+            static DetectionEngine::WatchTargetInfo wlTarget = {};
+            static uint32_t wlLastDrawAt=0, wlEntryAt=0;
+            static bool wlDirty=false;
             const bool wlNewEntry = wlEntryAt != transitionStart;
-            const bool wlNeedsDraw = wlNewEntry || touchJustDown || touchJustUp ||
-                                     tp.valid || (now - wlLastDrawAt >= 2000);
+            if (wlNewEntry) {
+                wlMenuOpen=false; wlGesture=false; wlMoved=false;
+                wlTargetValid=false; wlEntryAt=transitionStart;
+                wlDirty=true;
+            }
+            // BACK is a dedicated button, not a scrollable row. Handle its
+            // press immediately, before expensive multi-band rendering and
+            // without depending on a later release edge. In landscape the
+            // release can be missed while the display is being pushed.
+            if (!wlMenuOpen && touchJustDown &&
+                (now-lastTouch)>TOUCH_DEBOUNCE_MS &&
+                uiWatchAlertListHitBack(tp.x,tp.y,tft.width(),tft.height())) {
+                lastTouch=now;
+                wlGesture=false;
+                enterClear();
+                break;
+            }
+            // In recovery-band mode each roster render is multiple physical
+            // passes. Redrawing continuously during a held finger starves
+            // touch polling, causing BACK to require repeated taps.
+            // Render on state changes, not every loop while touch is held.
+            const bool wlNeedsDraw = wlDirty || wlNewEntry || touchJustDown || touchJustUp ||
+                                     (now-wlLastDrawAt>=2000);
             if (wlNeedsDraw) {
-                wlEntryAt = transitionStart;
-                wlLastDrawAt = now;
+                wlLastDrawAt=now;
+                wlDirty=false;
                 drawTwoBand([&](TFT_eSPI& t, bool) {
                     uiWatchListTick(t, now, engine);
+                    if (wlMenuOpen) {
+                        char pv[40];
+                        uiWatchAlertListActionMenu(t, Privacy::name(wlTarget.label, pv, sizeof pv));
+                    }
                 });
             } else {
-                renderedThisLoop = false;
+                renderedThisLoop=false;
             }
 
-            static bool wlGesture=false, wlMoved=false;
-            static int wlStartX=0, wlStartY=0, wlLastY=-1;
-            if(touchJustDown){
+            // While the menu is open it owns the entire touch surface.
+            // It is first drawn on a RELEASE, so the gesture that opened
+            // it cannot accidentally select a destructive action.
+            if (wlMenuOpen) {
+                if (touchJustDown && (now-lastTouch)>TOUCH_DEBOUNCE_MS) {
+                    lastTouch=now;
+                    const WatchListAction action=uiWatchAlertListActionHit(
+                        tp.x,tp.y,tft.width(),tft.height());
+                    if (action!=WatchListAction::NONE) {
+                        wlMenuOpen=false;
+                        wlDirty=true; // Repaint roster after modal removal/cancel.
+                        if (action==WatchListAction::REMOVE || action==WatchListAction::OPEN_ALERT) {
+                            // The selected row may have disappeared while
+                            // the modal was up; never toggle/add a stale MAC.
+                            int match=-1;
+                            for (uint8_t i=0;i<engine.watchTargetCount();i++) {
+                                DetectionEngine::WatchTargetInfo info;
+                                if (engine.watchTargetInfo(i,info) &&
+                                    info.kind==wlTarget.kind &&
+                                    memcmp(info.mac,wlTarget.mac,6)==0) { match=i; break; }
+                            }
+                            if (match>=0) {
+                                if (action==WatchListAction::OPEN_ALERT) {
+                                    if (engine.activateWatchTarget((uint8_t)match))
+                                        enterWatchAlert(true);
+                                } else {
+                                    if (wlTarget.kind==DetectionEngine::WatchKind::BLE)
+                                        engine.toggleWatchBle(wlTarget.mac,wlTarget.label);
+                                    else
+                                        engine.toggleWatchWifi(wlTarget.mac,wlTarget.label);
+                                }
+                            }
+                        }
+                    }
+                }
+                break;
+            }
+            if (touchJustDown) {
                 wlGesture=true; wlMoved=false;
                 wlStartX=tp.x; wlStartY=tp.y; wlLastY=tp.y;
+                wlDownAt=now;
+                wlTargetValid=uiWatchAlertListTargetAt(tft,wlStartX,wlStartY,engine,wlTarget);
             }
-            if(tp.valid&&wlGesture){
+            if (tp.valid && wlGesture) {
                 const int dy=tp.y-wlLastY;
-                if(abs(dy)>10){
+                if (abs(dy)>10) {
                     wlMoved=true;
                     uiWatchAlertListScroll(dy>0?-1:1);
+                    wlDirty=true;
                     wlLastY=tp.y;
                 }
+                if (abs(tp.x-wlStartX)>22 || abs(tp.y-wlStartY)>24) wlMoved=true;
             }
-            if(touchJustUp&&wlGesture){
-                if(!wlMoved && uiWatchAlertListHitBack(wlStartX,wlStartY,tft.width(),tft.height())){
+            if (touchJustUp && wlGesture) {
+                if (!wlMoved && uiWatchAlertListHitBack(
+                        wlStartX,wlStartY,tft.width(),tft.height())) {
                     lastTouch=now;
+                    wlGesture=false;
                     enterClear();
+                    break;
+                } else if (!wlMoved && wlTargetValid && now-wlDownAt>=650) {
+                    wlDirty=true;
+                    wlMenuOpen=true;
+                    lastTouch=now;
                 }
                 wlGesture=false;
             }

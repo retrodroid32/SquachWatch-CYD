@@ -25,6 +25,9 @@ void uiAlertSetSpam(bool spam, uint16_t identities);
 // SNOOZE starts a modal duration picker. The choice is made only after a
 // separate tap; CANCEL leaves the alert and changes no device policy.
 bool uiAlertHitSnooze(int x, int y, int screenW, int screenH);
+// WATCH button is stacked immediately above SNOOZE, in both orientations.
+// Unlike the LOG toggle, tapping an already watched target never unwatches.
+bool uiAlertHitWatch(int x, int y, int screenW, int screenH);
 void uiAlertSetSnoozePrompt(bool enabled);
 bool uiAlertSnoozePrompt();
 enum class AlertSnoozeChoice : uint8_t { NONE, MIN_10, MIN_30, HOUR_1, ALWAYS, CANCEL };
