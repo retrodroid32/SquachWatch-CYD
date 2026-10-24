@@ -59,6 +59,9 @@ void tick(uint32_t now);
 void rescan();
 
 State       state();
+// True until the WiFi OTA worker has released its HTTP/TLS resources.
+// State::OFF alone is not enough: end() cancels asynchronously.
+bool        taskActive();
 uint8_t     netCount();
 const Net*  net(uint8_t i);
 

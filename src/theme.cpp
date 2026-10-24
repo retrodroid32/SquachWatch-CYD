@@ -1092,9 +1092,18 @@ void drawDigitalRain(TFT_eSPI& t, uint32_t now, int yStart, int yEnd, bool advan
         }
     }
 
+    // The recovered framebuffer may render 2-16 separate bands. Bound the
+    // *drawing* loop to its current physical rows, instead of visiting the
+    // entire trail in each band (4 bands previously visited ~4x the cells).
+    // The animation/state loop above remains full-screen and runs only when
+    // advance=true, so the picture remains identical across bands.
+    const int paintTop = DrawBand::top(yStart);
+    const int paintBottom = DrawBand::bot(yEnd);
     for (int i = 0; i < cols; i++) {
+        const int len = colLen[i];
+        if (yPos[i] - (len - 1) * 8 >= paintBottom ||
+            yPos[i] + 8 <= paintTop) continue;
         const uint16_t hue   = HUES[colHue[i]];
-        const int      len   = colLen[i];
         const bool     surge = colSurge[i];
         // Depth as a brightness ceiling, 170..255. Narrow on purpose.
         const uint16_t deep = (uint16_t)(170u + ((uint16_t)colDepth[i] * 85u) / 255u);
@@ -1117,7 +1126,12 @@ void drawDigitalRain(TFT_eSPI& t, uint32_t now, int yStart, int yEnd, bool advan
         }
         for (int j = 0; j < len; j++) {
             const int16_t ry = (int16_t)(yPos[i] - j * 8);
+            if (ry >= paintBottom) continue;  // still below the visible band
+            if (ry + 8 <= paintTop) break;     // all later glyphs are above it
             if (ry < yStart || ry >= yEnd) continue;
+            // A recovered sprite shows only one vertical strip at a time.
+            // Skip off-band glyphs before costly alpha/blend/text operations.
+            // State still advances once per logical frame in the loop above.
             // Near drops lean further than far ones, so a gust reads with
             // depth instead of shunting the whole screen at once.
             int x = xBase + sqPush;
@@ -1199,13 +1213,15 @@ void drawDigitalRain(TFT_eSPI& t, uint32_t now, int yStart, int yEnd, bool advan
         if (!popAge[k]) continue;
         const uint8_t age = popAge[k];
         const uint8_t sz  = (age < 5) ? 1 : (age < 10 ? 2 : 3);
+        const int py = (int)popY[k] - age - (sz - 1) * 4;
+        if (!DrawBand::has(py, py + 8 * sz)) continue;
         const uint16_t a  = (uint16_t)(235u - (uint16_t)age * 15u);
         const char pb[2] = { GLYPHS[popCh[k]], 0 };
         t.setTextSize(sz);
         t.setTextColor(blend(BG, HUES[popHue[k]], a));
         // Re-centre as it grows so it swells about its own middle rather
         // than expanding down and to the right off its anchor.
-        t.setCursor((int)popX[k] - (sz - 1) * 3, (int)popY[k] - age - (sz - 1) * 4);
+        t.setCursor((int)popX[k] - (sz - 1) * 3, py);
         t.print(pb);
     }
     t.setTextSize(1);
@@ -1219,6 +1235,7 @@ void drawDigitalRain(TFT_eSPI& t, uint32_t now, int yStart, int yEnd, bool advan
     for (uint8_t k = 0; k < 6; k++) {
         if (!splashAge[k]) continue;
         const uint8_t  age  = splashAge[k];
+        if (!DrawBand::has(yEnd - 2, yEnd - 1)) continue;
         const int      sp   = age * 2;
         const uint16_t a    = (uint16_t)(200u - (uint16_t)age * 24u);
         const uint16_t col  = blend(BG, HUES[splashHue[k]], a);

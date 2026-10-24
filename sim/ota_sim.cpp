@@ -149,6 +149,8 @@ void tick(uint32_t now) {
 }
 
 State      state()    { return s_state; }
+// Emulator has no asynchronous HTTPS worker or heap to wait on.
+bool       taskActive() { return false; }
 uint8_t    netCount() { return sizeof NETS / sizeof NETS[0]; }
 const Net* net(uint8_t i) { return i < netCount() ? &NETS[i] : nullptr; }
 struct SimSaved { char ssid[33]; SavedResult result; };

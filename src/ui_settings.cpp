@@ -1,5 +1,6 @@
 // SquachWatch-CYD — settings screen implementation
 #include "ui_settings.h"
+#include "draw_band.h"
 #include "ota_core.h"
 #include "ota_wifi.h"
 #include "theme.h"
@@ -24,7 +25,7 @@ static const int TOP_MARGIN = 32;
 
 // One scroll position per page, not one shared: see SettingsPage in the header.
 static SettingsPage s_page = SettingsPage::MAIN;
-static int g_scrollFor[5] = { 0, 0, 0, 0, 0 };
+static int g_scrollFor[6] = { 0, 0, 0, 0, 0, 0 };
 #define g_scroll (g_scrollFor[(uint8_t)s_page])
 
 // BACK is pinned along the bottom now. Height of that strip, reserved out of
@@ -63,7 +64,7 @@ static const SettingsRow ALL_ROWS[] = {
 #endif
     SettingsRow::BORING_MODE, SettingsRow::CONFIDENCE, SettingsRow::AUTO_QUIET,
     SettingsRow::ALERT_RULES, SettingsRow::DETECTION_FILTER,
-    SettingsRow::IGNORED_DEVICES,
+    SettingsRow::IGNORED_DEVICES, SettingsRow::SNOOZE_MANAGER,
     // APPEARANCE opens the display page -- see APPEARANCE_ROWS. It sat at the
     // very top of this list, which put it under the first thumb that opened
     // the screen and got pressed by accident. Down here with SQUACHMESH it is
@@ -144,7 +145,7 @@ static const uint8_t APPEARANCE_ROWS_N = sizeof(APPEARANCE_ROWS) / sizeof(APPEAR
 // DESK MODE page's is checked against it just below).
 // It used to be the main one, until that list lost its NICKNAME row and
 // the APPEARANCE page outgrew it.
-static const uint8_t LIST_MAX_N = APPEARANCE_ROWS_N > ALL_ROWS_N ? APPEARANCE_ROWS_N : ALL_ROWS_N;
+static const uint8_t LIST_MAX_N = (APPEARANCE_ROWS_N > ALL_ROWS_N ? APPEARANCE_ROWS_N : ALL_ROWS_N) > IgnoreList::SNOOZE_MAX ? (APPEARANCE_ROWS_N > ALL_ROWS_N ? APPEARANCE_ROWS_N : ALL_ROWS_N) : IgnoreList::SNOOZE_MAX;
 static_assert(SYSTEM_ROWS_N <= LIST_MAX_N, "the display list is sized off LIST_MAX_N");
 static_assert(DESK_ROWS_N <= LIST_MAX_N, "the display list is sized off LIST_MAX_N");
 #if defined(TWATCH_S3)
@@ -234,6 +235,9 @@ static RowGroupId groupFor(SettingsRow r) {
         case SettingsRow::ALERT_RULES:
         case SettingsRow::DETECTION_FILTER:
         case SettingsRow::IGNORED_DEVICES:
+        case SettingsRow::SNOOZE_MANAGER:
+        case SettingsRow::SNOOZE_ENTRY:
+        case SettingsRow::SNOOZE_EMPTY:
             return RowGroupId::BEHAVIOR;
         case SettingsRow::SQUACHY_NAME:
         case SettingsRow::APPEARANCE:
@@ -286,9 +290,21 @@ struct DisplayItem {
     bool       isHeader;
     RowGroupId group;
     SettingsRow row;   // only meaningful when !isHeader
+    uint8_t snoozeIndex;
 };
 
 static uint8_t buildDisplayList(DisplayItem* out) {
+    // Rebuild from live entries so expired snoozes disappear from the menu.
+    if (s_page == SettingsPage::SNOOZES) {
+        const uint8_t n = IgnoreList::snoozeCount();
+        if (!n) {
+            out[0] = {false, RowGroupId::BEHAVIOR, SettingsRow::SNOOZE_EMPTY, 0};
+            return 1;
+        }
+        for (uint8_t i = 0; i < n; i++)
+            out[i] = {false, RowGroupId::BEHAVIOR, SettingsRow::SNOOZE_ENTRY, i};
+        return n;
+    }
     SettingsRow rows[LIST_MAX_N + 2];   // + the two tracking rows
     uint8_t n = 0;
     const SettingsRow* src = ALL_ROWS;
@@ -336,6 +352,7 @@ static uint8_t buildDisplayList(DisplayItem* out) {
         if (!headerless && (!haveLastGroup || g != lastGroup)) {
             out[count].isHeader = true;
             out[count].group = g;
+            out[count].snoozeIndex = 0;
             count++;
             lastGroup = g;
             haveLastGroup = true;
@@ -343,6 +360,7 @@ static uint8_t buildDisplayList(DisplayItem* out) {
         out[count].isHeader = false;
         out[count].group = g;
         out[count].row = rows[i];
+        out[count].snoozeIndex = 0;
         count++;
     }
     return count;
@@ -433,7 +451,7 @@ void uiSettingsInit(TFT_eSPI& t) {
     // memory is for moving BETWEEN pages inside one visit -- carrying it
     // across a fresh entry would drop you mid-list with no idea why.
     s_page = SettingsPage::MAIN;
-    for (uint8_t i = 0; i < 5; i++) g_scrollFor[i] = 0;
+    for (uint8_t i = 0; i < 6; i++) g_scrollFor[i] = 0;
     // Any pending question dies with the screen. Coming back to Settings and
     // finding a confirm panel still up from last time would be answering
     // something you no longer remember asking.
@@ -818,6 +836,14 @@ static void rowContent(SettingsRow r, const DetectionEngine& eng, char* valBuf, 
         case SettingsRow::AUTO_QUIET:
             label = "AUTO SNOOZE"; value = Settings::autoQuietLabel();
             break;
+        case SettingsRow::SNOOZE_MANAGER:
+            label = "SNOOZED DEVICES";
+            snprintf(valBuf, valBufN, "%u ACTIVE >", (unsigned)IgnoreList::snoozeCount());
+            value = valBuf;
+            break;
+        case SettingsRow::SNOOZE_EMPTY:
+            label = "NO SNOOZED DEVICES"; value = nullptr;
+            break;
         case SettingsRow::ALERT_RULES:
             label = "ALERT RULES"; value = ">";
             break;
@@ -910,7 +936,8 @@ static void rowContent(SettingsRow r, const DetectionEngine& eng, char* valBuf, 
             else value = "NONE >";
             break;
         case SettingsRow::TIME_ZONE:
-            label = "TIME ZONE"; value = Settings::timeZoneName();
+            // The row itself is two-sided: tap left to go west, right to go east.
+            label = "ZONE <  >"; value = Settings::timeZoneName();
             break;
         case SettingsRow::REPLAY_INTRO:
             label = "REPLAY INTRO";
@@ -999,7 +1026,8 @@ static void rowContent(SettingsRow r, const DetectionEngine& eng, char* valBuf, 
     }
 }
 
-void uiSettingsTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng) {
+void uiSettingsTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng,
+                    bool staticBackground, bool advance) {
     int w = t.width(), h = t.height();
 
     // buildDisplayList() has no engine of its own and is called by the hit test
@@ -1036,6 +1064,12 @@ void uiSettingsTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng) {
     // blending the shared palette toward BG, not per-pixel alpha,
     // which TFT_eSPI can't do cheaply). 179/256 =~ 70% toward BG, i.e.
     // the effect reads at roughly 30% of its normal strength.
+    // When the 8-bit framebuffer could not be reclaimed after WiFi OTA,
+    // redraws go straight to the display. Do not animate/clear an entire
+    // background on each touch frame; the caller only repaints on changes.
+    if (staticBackground) {
+        t.fillRect(0, 0, w, bodyBottom, Theme::BG);
+    } else {
     Theme::Palette saved = Theme::dimPaletteForOverlay(179);
         // The background starts at the TOP OF THE SCREEN, not at the body's own
     // top. Those first sixteen rows used to be the title bar's; nothing owns
@@ -1059,15 +1093,17 @@ switch (Settings::background()) {
         case Settings::Background::SYNTHWAVE: Theme::drawSynthwave(t, now, bgTop, bodyBottom); break;
         // Fills rather than skips -- see the note in drawActiveBackground.
         case Settings::Background::BLACK:      t.fillRect(0, bgTop, t.width(), bodyBottom - bgTop, Theme::BG); break;
-        default:                               Theme::drawDigitalRain(t, now, bgTop, bodyBottom, true); break;
+        default:                               Theme::drawDigitalRain(t, now, bgTop, bodyBottom, advance); break;
     }
     Theme::restorePalette(saved);
+    }
 
     const char* pageTitle = ">> SETTINGS <<";
     if (s_page == SettingsPage::APPEARANCE) pageTitle = ">> APPEARANCE <<";
     else if (s_page == SettingsPage::SYSTEM) pageTitle = ">> SYSTEM <<";
     else if (s_page == SettingsPage::DESK)   pageTitle = ">> DESK MODE <<";
     else if (s_page == SettingsPage::WATCH)  pageTitle = ">> WATCH SETTINGS <<";
+    else if (s_page == SettingsPage::SNOOZES) pageTitle = ">> SNOOZES <<";
     Theme::drawTitleBar(t, pageTitle);
 
     // +6, not +4: four group headers plus the two tracking rows.
@@ -1084,8 +1120,23 @@ switch (Settings::background()) {
     while (idx < n) {
         int itemH = itemHeight(items[idx], rowH, headerH, tallH);
         if (y + itemH > bodyBottom) break;
+        // Compute geometry/counts for every band, but don't build text,
+        // headers or rows that cannot appear in this viewport. Settings
+        // uses the same full-height layout and hit testing in every pass.
+        if (DrawBand::has(y, y + itemH)) {
         if (items[idx].isHeader) {
             drawHeader(t, w, y, itemH, items[idx].group);
+        } else if (items[idx].row == SettingsRow::SNOOZE_ENTRY) {
+            uint8_t mac[6]; uint32_t ms = 0; bool always = false;
+            if (IgnoreList::snoozeInfo(items[idx].snoozeIndex, mac, ms, always)) {
+                char label[24], value[24];
+                Privacy::mac(label, sizeof label, mac);
+                if (always) snprintf(value, sizeof value, "ALWAYS");
+                else snprintf(value, sizeof value, "%lu MIN LEFT",
+                              (unsigned long)((ms + 59999UL) / 60000UL));
+                // Compact on both orientations: full MAC plus timer never overlap.
+                drawRow(t, w, y, itemH, label, value, false, Theme::AMBER, true);
+            }
         } else {
             char valBuf[24];
             const char* label;
@@ -1103,8 +1154,9 @@ switch (Settings::background()) {
                                items[idx].row == SettingsRow::DESK_BACKGROUND);
             } else {
                 drawRow(t, w, y, itemH, label, value, danger, groupColor(items[idx].group),
-                        h > w);
+                        h > w || items[idx].row == SettingsRow::SNOOZE_MANAGER);
             }
+        }
         }
         y += itemH;
         idx++;
@@ -1132,6 +1184,16 @@ int8_t uiSettingsBrightnessDeltaForTap(TFT_eSPI& t, int x, int screenW, int scre
     return x < splitX ? -16 : 16;
 }
 
+int8_t uiSettingsTimeZoneStepForTap(TFT_eSPI& t, int x, int screenW, int screenH) {
+    // The label is drawn by drawRow() at x=8 and is left-aligned.
+    // Both arrows are well left of screenW/2 on either CYD, so the old
+    // half-screen split classified both arrow taps as "east".
+    // Match drawRow()'s portrait/landscape font sizing exactly.
+    t.setTextSize(screenH > screenW ? 1 : Theme::uiMenuTextSize(t));
+    const int splitX = 8 + t.textWidth("ZONE < ");
+    return x < splitX ? -1 : 1;
+}
+
 SettingsRow uiSettingsHitTest(TFT_eSPI& t, int x, int y, int screenW, int screenH) {
     (void)x; (void)screenW;
     int top, bodyBottom, rowH, headerH, tallH;
@@ -1156,4 +1218,25 @@ SettingsRow uiSettingsHitTest(TFT_eSPI& t, int x, int y, int screenW, int screen
         idx++;
     }
     return SettingsRow::NONE;
+}
+ 
+// Exact entry row hit-test: shared display geometry and scroll with drawing.
+int uiSettingsSnoozeIndexAt(TFT_eSPI& t, int x, int y, int screenW, int screenH) {
+    if (s_page != SettingsPage::SNOOZES || x < 0 || x >= screenW) return -1;
+    int top, bodyBottom, rowH, headerH, tallH;
+    computeGeom(t, screenH, top, bodyBottom, rowH, headerH, tallH);
+    if (y < top || y >= bodyBottom) return -1;
+    DisplayItem items[LIST_MAX_N + 7];
+    const uint8_t n = buildDisplayList(items);
+    const int m = maxScroll(items, n, top, bodyBottom, rowH, headerH, tallH);
+    if (g_scroll > m) g_scroll = m;
+    int cy = top;
+    for (int i = g_scroll; i < n; i++) {
+        const int ht = itemHeight(items[i], rowH, headerH, tallH);
+        if (cy + ht > bodyBottom) break;
+        if (y >= cy && y < cy + ht)
+            return items[i].row == SettingsRow::SNOOZE_ENTRY ? items[i].snoozeIndex : -1;
+        cy += ht;
+    }
+    return -1;
 }
