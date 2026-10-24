@@ -658,38 +658,102 @@ void useSaved(uint8_t i) {
 // /HTTPS checks occur here. The radio is handed back before publishing a
 // terminal result to the UI.
 static void testSavedTask(void*) {
+    // The normal CYD scanner hops channels in promiscuous mode. Survey
+    // the saved SSID in station mode before association so an obsolete
+    // sniffer channel or stale NO_SSID event cannot masquerade as a
+    // missing network. This task runs after startUpdateRadio() stops hopping.
     WiFi.scanDelete();
     Clock::syncStop();
     WiFi.disconnect(false, false);
-    delay(100);
+    WiFi.mode(WIFI_STA);
+    delay(180); // Let the asynchronous BLE/update radio handoff settle.
+
+    const int16_t surveyCount = WiFi.scanNetworks(false, false, false, 180);
+    bool apSeen = false;
+    int8_t bestRssi = -127;
+    int32_t apChannel = 0;
+    uint8_t apBssid[6] = {};
+    if (surveyCount >= 0) {
+        for (int i = 0; i < surveyCount; ++i) {
+            if (WiFi.SSID(i) != s_testSsid) continue;
+            if (!apSeen || WiFi.RSSI(i) > bestRssi) {
+                apSeen = true;
+                bestRssi = (int8_t)WiFi.RSSI(i);
+                apChannel = WiFi.channel(i);
+                const uint8_t* bssid = WiFi.BSSID(i);
+                if (bssid) memcpy(apBssid, bssid, sizeof apBssid);
+            }
+        }
+    }
+    WiFi.scanDelete();
+    Serial.printf("[wifi] USE survey: ssid=%s n=%d seen=%u ch=%ld rssi=%d\n",
+                  s_testSsid, (int)surveyCount, (unsigned)apSeen,
+                  (long)apChannel, (int)bestRssi);
+
     s_testDropReason = 0;
     const wifi_event_id_t dropEv = WiFi.onEvent(
         [](arduino_event_id_t, arduino_event_info_t info) {
             s_testDropReason = info.wifi_sta_disconnected.reason;
         }, ARDUINO_EVENT_WIFI_STA_DISCONNECTED);
-    WiFi.mode(WIFI_STA);
-    Serial.printf("[wifi] testing saved network %s\n", s_testSsid);
-    WiFi.begin(s_testSsid, s_testPass[0] ? s_testPass : nullptr);
-    const uint32_t started = millis();
+    const char* pass = s_testPass[0] ? s_testPass : nullptr;
+    // If the survey found the AP, use its channel/BSSID instead of the
+    // scanner's previous hopping channel. If the survey failed or missed
+    // a hidden SSID, still try the saved credentials without a pin.
+    if (apSeen && apChannel > 0) {
+        WiFi.begin(s_testSsid, pass, apChannel, apBssid);
+    } else {
+        WiFi.begin(s_testSsid, pass);
+    }
+    uint32_t started = millis();
     wl_status_t st = WiFi.status();
-    while (st != WL_CONNECTED && millis() - started < 9000) {
-        if (st == WL_NO_SSID_AVAIL || st == WL_CONNECT_FAILED) break;
+    while (st != WL_CONNECTED && millis() - started < 8000) {
+        // Immediately after begin() the Arduino event state may still
+        // describe a previous connection: do not abort prematurely.
+        if (millis() - started > 1800 &&
+            (st == WL_NO_SSID_AVAIL || st == WL_CONNECT_FAILED)) break;
         delay(100);
         st = WiFi.status();
     }
-    const uint8_t reason = s_testDropReason;
+    uint8_t reason = s_testDropReason;
+    // A router can roam to a different channel/BSSID between survey and
+    // association. Retry once without AP pinning rather than declaring
+    // a network we just saw to be unavailable.
+    if (apSeen && st != WL_CONNECTED &&
+        (st == WL_NO_SSID_AVAIL || reason == 201)) {
+        Serial.println("[wifi] USE retry: AP visible, joining without BSSID");
+        WiFi.disconnect(false, false);
+        delay(180);
+        s_testDropReason = 0;
+        WiFi.begin(s_testSsid, pass);
+        started = millis();
+        st = WiFi.status();
+        while (st != WL_CONNECTED && millis() - started < 5000) {
+            if (millis() - started > 1800 &&
+                (st == WL_NO_SSID_AVAIL || st == WL_CONNECT_FAILED)) break;
+            delay(100);
+            st = WiFi.status();
+        }
+        reason = s_testDropReason;
+    }
+    WiFi.removeEvent(dropEv);
+
     SavedResult result = SavedResult::FAILED;
     if (st == WL_CONNECTED) result = SavedResult::JOINED;
-    else if (st == WL_NO_SSID_AVAIL || reason == 201) result = SavedResult::NOT_FOUND;
+    // NOT_FOUND needs corroboration from a *completed station scan*.
+    // A failed association to an AP seen above is not an absent AP.
+    else if (surveyCount >= 0 && !apSeen &&
+             (st == WL_NO_SSID_AVAIL || reason == 201))
+        result = SavedResult::NOT_FOUND;
     // 15 = four-way handshake timeout, 202 = authentication failure,
-    // 204 = handshake timeout. An ordinary timeout isn't proof of a bad key.
-    else if (st == WL_CONNECT_FAILED || reason == 15 || reason == 202 || reason == 204)
-        result = SavedResult::BAD_PASSWORD;
+    // 204 = handshake timeout. A generic timeout is NOT a bad password.
+    else if (reason == 15 || reason == 202 || reason == 204 ||
+             st == WL_CONNECT_FAILED) result = SavedResult::BAD_PASSWORD;
+
     setResult((int8_t)s_testIndex, result);
-    Serial.printf("[wifi] test %s: status=%d drop=%u result=%u\n",
-                  s_testSsid, (int)st, (unsigned)reason, (unsigned)result);
-    WiFi.removeEvent(dropEv);
-    WiFi.disconnect(false, false); // do not stop the driver; detection uses it
+    Serial.printf("[wifi] USE join: status=%d drop=%u scan=%d visible=%u result=%u\n",
+                  (int)st, (unsigned)reason, (int)surveyCount,
+                  (unsigned)apSeen, (unsigned)result);
+    WiFi.disconnect(false, false); // Preserve the driver for detection.
     memset(s_testPass, 0, sizeof s_testPass);
     s_testTask = nullptr;
     s_testState = result == SavedResult::JOINED ? SavedTest::JOINED :
