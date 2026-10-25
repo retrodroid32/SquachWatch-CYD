@@ -1,3 +1,3 @@
-WATCH149-LANDBACK
-# Experimental LAB build after landscape WATCH BACK touch fix.
-# Triggered only on explicit user hardware regression report.
+BUBBLE137-TEST
+# Hardware validation build: PR #137 pointed-bubble black stripe fix.
+# Source: PR #137 1f278fc375de9caf7e334cac73f1d7e3830f82b2.
