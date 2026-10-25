@@ -6479,17 +6479,14 @@ void tick(TFT_eSPI& t, int cx, int topY, int availHeight, uint32_t now,
     s_lastHeadTopY = headTopY;
     s_lastScale = scale;
 
-    // The bubble does need clearing (its width/height changes with the
-    // text, and with which of the two draw functions drew it), but only
-    // its own footprint — erase the previous frame's exact rectangle,
-    // not a fixed-size strip across the whole row. Covers "bubble went
-    // away", "bubble changed to a shorter one", and the walkthrough's
-    // last frame handing back off to the compact one-liner bubble.
+    // The caller already repaints the Squachy region's background each
+    // frame. Only clear the last host bubble when it expires: a redundant
+    // erase while a pointed bubble is still active cuts a black stripe
+    // through the fresh frame outside the bubble's narrow tail.
     //
-    // HIS rectangle, kept apart from lastBubble*: a visitor's bubble drawn
-    // through drawWaving() writes those too, and in a crowd he is drawn
-    // after the visitor -- so this erase used to land on the visitor's
-    // bubble from this very frame and black it out.
+    // Keep the HOST's footprint separate from lastBubble*: a visitor's
+    // bubble drawn through drawWaving() also updates those globals, and
+    // clearing them could damage a visitor bubble already drawn this frame.
     static int16_t ownX = 0, ownY = 0, ownW = 0, ownH = 0;
     bool showBubble = bubbleText && now < bubbleUntil;
     // Only erase when the host bubble disappears. The current frame's
