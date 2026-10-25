@@ -49,6 +49,18 @@ def validate(boards):
         fast_manifest = b.get("fast_manifest")
         if fast_manifest and not (ROOT / "web-flasher" / fast_manifest).is_file():
             errors.append(f"{bid}: missing web-flasher/{fast_manifest}")
+        gps = b.get("gps_env")
+        if gps and gps not in ids:
+            errors.append(f"{bid}: gps_env {gps!r} is not a board profile")
+        gps_fast = b.get("gps_fast_env")
+        if gps_fast and gps_fast not in ids:
+            errors.append(f"{bid}: gps_fast_env {gps_fast!r} is not a board profile")
+        gps_manifest = b.get("gps_manifest")
+        if gps_manifest and not (ROOT / "web-flasher" / gps_manifest).is_file():
+            errors.append(f"{bid}: missing web-flasher/{gps_manifest}")
+        gps_fast_manifest = b.get("gps_fast_manifest")
+        if gps_fast_manifest and not (ROOT / "web-flasher" / gps_fast_manifest).is_file():
+            errors.append(f"{bid}: missing web-flasher/{gps_fast_manifest}")
     version = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
     if not re.fullmatch(r"\d+\.\d+\.\d+", version):
         errors.append(f"VERSION is not semantic x.y.z: {version!r}")
