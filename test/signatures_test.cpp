@@ -125,6 +125,14 @@ int main() {
     ck("random 10-char name does not match",
        lookupBtName("12345abcde") == DetectionType::UNKNOWN);
 
+    ck("bare Flock SSID matches FLOCK",
+       lookupSsid("Flock") == DetectionType::FLOCK);
+    ck("Flock prefix does not overmatch unrelated SSIDs",
+       lookupSsid("Flockhart Family WiFi") != DetectionType::FLOCK);
+    ck("bare serial helper accepts exactly 10 digits", isBareSerialName("1234567890"));
+    ck("bare serial helper rejects non-digits", !isBareSerialName("12345abcde"));
+    ck("bare serial helper rejects wrong length", !isBareSerialName("123456789"));
+
     suite("Flock wildcard-probe corroboration");
 
     const uint8_t qca[6] = {0x00,0x03,0x7F,0x50,0x00,0x01};
