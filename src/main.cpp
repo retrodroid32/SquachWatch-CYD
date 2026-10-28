@@ -6142,7 +6142,12 @@ void loop() {
                                       (unsigned)Settings::meshTransmit());
                         const MeshTalk::Send r = MeshTalk::inviteStart(mac, uiSquadSelectedName(), now);
                         if (r == MeshTalk::Send::OK)            enterInvite();
-                        else if (r == MeshTalk::Send::NOT_READY) Theme::showToast("NO PHRASE TO SHARE", "Set one under SQUACHMESH first", Theme::AMBER);
+                        else if (r == MeshTalk::Send::NOT_READY) {
+                            if (!MeshTalk::selfTestOk())
+                                Theme::showToast("CRYPTO TEST FAILED", "Cannot share a squad phrase", Theme::AMBER);
+                            else
+                                Theme::showToast("NO PHRASE TO SHARE", "Set one under SQUACHMESH first", Theme::AMBER);
+                        }
                         else if (r == MeshTalk::Send::TRANSMIT_OFF) Theme::showToast("CAN'T SEND", "Turn TRANSMIT on in SquachMesh", Theme::AMBER);
                         else                                     Theme::showToast("CAN'T START", "Try again in a moment", Theme::AMBER);
                         break;
