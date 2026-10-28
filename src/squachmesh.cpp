@@ -110,11 +110,11 @@ bool decode(const uint8_t* in, size_t len, Peer& out) {
         p.name[used] = '\0';
     }
 
-    // Clamp last, once the payload is known good. Modulo rather than
-    // rejection: an index this build does not have is a peer running a
-    // newer firmware, and a wrong hat beats refusing to draw them.
+    // A future outfit is not a different, unrelated costume. Decode the
+    // peer, but show plain Squachy until this firmware knows that outfit.
+    // Nicknames and shade palettes retain their historical modulo behavior.
     if (p.nick   >= NICK_N)   p.nick   %= NICK_N;
-    if (p.outfit >= OUTFIT_N) p.outfit %= OUTFIT_N;
+    if (p.outfit >= OUTFIT_N) p.outfit = 0;
     if (p.shade  >= SHADE_N)  p.shade  %= SHADE_N;
 
     out = p;
