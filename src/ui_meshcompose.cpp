@@ -85,7 +85,7 @@ static inline int BHof(TFT_eSPI& t) { return t.width() >= 400 ?  36 : 26; }
 // off the edge -- "you can read, not repl" -- which the emulator caught.
 const char* const NEED_PHRASE  = "Set a phrase: SQUACHMESH > PHRASE.";
 const char* const MESSAGES_OFF = "MESSAGES off: enable in SQUACHMESH.";
-const char* const CRYPTO_FAILED = "Messages unavailable: crypto test failed.";
+const char* const CRYPTO_FAILED = "Crypto test failed: messages off.";
 const char* const TRANSMIT_OFF = "TRANSMIT off: can read, not reply.";
 const char* const SENDING      = "Sending, for thirty seconds.";
 const char* const SEND_FAILED  = "Could not send. Try again.";
@@ -758,8 +758,16 @@ ComposeHit uiMeshComposeTouch(int x, int y, uint32_t now) {
             s_fillOn  = false;
             return ComposeHit::TYPE;
         }
-        if (const char* why = cannotSend()) { s_sel = -1; s_status = why; s_statusCol = Theme::AMBER; }
-        else                                { s_sel = (int8_t)s_lineIdx[i]; s_status = nullptr; }
+        if (const char* why = cannotSend()) {
+            Serial.printf("[mesh-ui] line selection blocked: %s\n", why);
+            s_sel = -1;
+            s_status = why;
+            s_statusCol = Theme::AMBER;
+        } else {
+            Serial.printf("[mesh-ui] line selected: %u\n", (unsigned)s_lineIdx[i]);
+            s_sel = (int8_t)s_lineIdx[i];
+            s_status = nullptr;
+        }
         return ComposeHit::NONE;
     }
     return ComposeHit::NONE;
