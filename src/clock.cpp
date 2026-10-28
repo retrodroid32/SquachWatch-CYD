@@ -305,11 +305,46 @@ static const Zone ZONES[] = {
     { "AUS EASTERN", "AEST-10AEDT,M10.1.0,M4.1.0/3" },
     { "AUS WESTERN", "AWST-8" },
     { "NEW ZEALAND", "NZST-12NZDT,M9.5.0,M4.1.0/3" },
+    // Appended rather than inserted because the persisted value is an index.
+    { "MEXICO",      "CST6" },
+    { "COLOMBIA",    "<-05>5" },
+    { "CHILE",       "<-04>4<-03>,M9.1.6/24,M4.1.6/24" },
+    { "ARGENTINA",   "<-03>3" },
+    { "W AFRICA",    "WAT-1" },
+    { "S AFRICA",    "SAST-2" },
+    { "E AFRICA",    "EAT-3" },
+    { "PALESTINE",   "IST-2IDT,M3.4.4/26,M10.5.0" },
+    { "TURKEY",      "<+03>-3" },
+    { "GULF",        "<+04>-4" },
+    { "PAKISTAN",    "PKT-5" },
+    { "BANGLADESH",  "<+06>-6" },
+    { "SE ASIA",     "<+07>-7" },
+    { "SINGAPORE",   "<+08>-8" },
+    { "KOREA",       "KST-9" },
+    { "QUEENSLAND",  "AEST-10" },
+    { "AUS CENTRAL", "ACST-9:30ACDT,M10.1.0,M4.1.0/3" },
+    { "DARWIN",      "ACST-9:30" },
 };
 static const uint8_t ZONES_N = sizeof(ZONES) / sizeof(ZONES[0]);
 
+// Display order for PREV/NEXT: west to east while preserving stored indices.
+static const uint8_t ORDER[] = {
+    6, 5, 4, 2, 3, 1, 21, 0, 22,
+    23, 7, 8, 9, 24, 10, 11,
+    25, 12, 26, 13, 28, 27, 29, 14,
+    30, 31, 15, 32, 33,
+    16, 34, 19, 35, 17,
+    38, 37, 36, 18, 20,
+};
+static_assert(sizeof(ORDER) == ZONES_N, "every zone once in ORDER");
+
 uint8_t     zoneCount()        { return ZONES_N; }
 const char* zoneName(uint8_t i){ return ZONES[i < ZONES_N ? i : 0].name; }
+uint8_t zoneStep(uint8_t i, int dir) {
+    uint8_t at = 0;
+    for (uint8_t k = 0; k < ZONES_N; k++) if (ORDER[k] == i) { at = k; break; }
+    return ORDER[(at + ZONES_N + (dir < 0 ? -1 : 1)) % ZONES_N];
+}
 void applyZone(uint8_t i) {
     setenv("TZ", ZONES[i < ZONES_N ? i : 0].rule, 1);
     tzset();
