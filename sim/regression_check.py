@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Render key UI screens and catch blank or wrong-size regressions."""
-import struct, subprocess, tempfile, zlib
+import re, struct, subprocess, tempfile, zlib
 from pathlib import Path
 HERE=Path(__file__).resolve().parent
 BIN=HERE/"squachsim"
@@ -16,6 +16,23 @@ CASES=[
  ("colorcheck","colorcheck",[],(320,240)),
  ("camera-alert-portrait","alert",["--alert","9","--portrait","--frames","6"],(240,320)),
 ]
+# Every costume is a separate smoke case in portrait and landscape.
+# The count is read from firmware source rather than copied as a constant,
+# so adding a 21st costume automatically extends this regression gate.
+source = (HERE.parent / "src" / "squachy.cpp").read_text(encoding="utf-8")
+start = source.index("static const OutfitDef OUTFITS[]")
+block = source[start:source.index("};", start)]
+outfit_names = re.findall(r'^\\s*\\{\\s*"([^"]+)"\\s*,', block, re.MULTILINE)
+assert len(outfit_names) >= 20, "PR #121 must retain all 20 costumes"
+for i, name in enumerate(outfit_names):
+    for portrait in (False, True):
+        variant = "portrait" if portrait else "landscape"
+        options = ["--bg", "7", "--outfit", str(i), "--frames", "6"]
+        if portrait:
+            options.append("--portrait")
+        CASES.append((f"costume-{i:02d}-{variant}", "clear", options,
+                      (240, 320) if portrait else (320, 240)))
+
 def stats(path):
     d=path.read_bytes()
     assert d[:8]==b"\x89PNG\r\n\x1a\n", f"{path}: not PNG"
