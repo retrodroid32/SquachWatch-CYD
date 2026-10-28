@@ -2500,6 +2500,25 @@ bool shamblerUnlocked() {
     return outfitUnlocked((uint8_t)OutfitId::SHAMBLER);
 }
 
+bool th3Unlocked() {
+    ensurePrefsLoaded();
+    return outfitUnlocked((uint8_t)OutfitId::TH3_0N3);
+}
+
+void unlockTh3() {
+    ensurePrefsLoaded();
+    mood = Mood::BOUNCE;
+    moodUntil = millis() + tempo(2000);
+    if (s_th3Unlocked) {
+        say("Whoa. Deja vu.", 3000);
+        return;
+    }
+    s_th3Unlocked = true;
+    s_petPrefs.putBool("th3", true);
+    refreshOutfitUnlocks();
+    say("Whoa. I know kung fu.", 4000);
+}
+
 void unlockShambler() {
     ensurePrefsLoaded();
     mood      = Mood::BOUNCE;
