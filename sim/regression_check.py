@@ -22,7 +22,7 @@ CASES=[
 source = (HERE.parent / "src" / "squachy.cpp").read_text(encoding="utf-8")
 start = source.index("static const OutfitDef OUTFITS[]")
 block = source[start:source.index("};", start)]
-outfit_names = re.findall(r'^\\s*\\{\\s*"([^"]+)"\\s*,', block, re.MULTILINE)
+outfit_names = re.findall(r'^\s*\{\s*"([^"]+)"\s*,', block, re.MULTILINE)
 assert len(outfit_names) >= 20, "PR #121 must retain all 20 costumes"
 for i, name in enumerate(outfit_names):
     for portrait in (False, True):
