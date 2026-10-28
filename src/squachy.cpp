@@ -3829,11 +3829,12 @@ static void yzRobe(TFT_eSPI& t, int cx2, int hy, float scale) {
     for (int k = 0; k < 2; k++) {
         const int sg  = k == 0 ? -1 : 1;
         const int out = (k == 0) ? fx[k] + S(1) : fx[k] + S(12) - S(1);
-        inked(TFT_BLACK, YZ_DARK, [&](int ox, int oy, uint16_t c) {
-            t.fillRoundRect(fx[k] + ox, fy[k] + oy, S(12), S(6), 2, c);
-            t.fillTriangle(out + ox, fy[k] + S(1) + oy, out + ox, fy[k] + S(6) - 1 + oy,
-                           out + sg * S(5) + ox, fy[k] + S(4) + oy, c);
-        });
+        // One copy a pixel bigger for the outline, like the robe.
+        t.fillRoundRect(fx[k] - 1, fy[k] - 1, S(12) + 2, S(6) + 2, 3, TFT_BLACK);
+        t.fillTriangle(out, fy[k] + S(1) - 1, out, fy[k] + S(6), out + sg * (S(5) + 1), fy[k] + S(4), TFT_BLACK);
+        t.fillRect(out + sg * S(5), fy[k] + S(4) - 1, 1, 3, TFT_BLACK);
+        t.fillRoundRect(fx[k], fy[k], S(12), S(6), 2, YZ_DARK);
+        t.fillTriangle(out, fy[k] + S(1), out, fy[k] + S(6) - 1, out + sg * S(5), fy[k] + S(4), YZ_DARK);
     }
 }
 
@@ -3859,9 +3860,8 @@ static void yzBehindHead(TFT_eSPI& t, int cx2, int hh, float scale) {
     // Gold epaulettes, with a fringe.
     for (int8_t sg = -1; sg <= 1; sg += 2) {
         const int ex = cx2 + sg * S(14);
-        inked(TFT_BLACK, YZ_GOLD, [&](int ox, int oy, uint16_t c) {
-            t.fillEllipse(ex + ox, s_yzHy + S(23) + oy, S(6), S(2), c);
-        });
+        t.fillEllipse(ex, s_yzHy + S(23), S(6) + 1, S(2) + 1, TFT_BLACK);
+        t.fillEllipse(ex, s_yzHy + S(23), S(6), S(2), YZ_GOLD);
         for (int k = -1; k <= 1; k++)
             t.fillRect(ex + k * S(3) - 1, s_yzHy + S(24), 2, S(3), YZ_GOLD);
     }
@@ -3869,11 +3869,13 @@ static void yzBehindHead(TFT_eSPI& t, int cx2, int hh, float scale) {
 
 // The hat's cone: base to shoulder to tip. cut > 0 keeps only the right-hand
 // part of it, which is the shade.
-static void yzCone(TFT_eSPI& t, int cx, int hh, float scale, int ox, int oy, uint16_t c, int cut = 0) {
+// g > 0 is the same cone g pixels bigger all round, for its outline.
+static void yzCone(TFT_eSPI& t, int cx, int hh, float scale, int ox, int oy, uint16_t c, int cut = 0, int g = 0) {
     static const int8_t SP[3][2] = { {0, 11}, {-13, 5}, {-24, 0} };     // y, half-width
+    if (g) t.drawFastVLine(cx + ox, hh + (int)(SP[2][0] * scale) + oy - g, g, c);
     for (uint8_t i = 0; i < 2; i++) {
         const int ay = hh + (int)(SP[i][0] * scale) + oy, by = hh + (int)(SP[i + 1][0] * scale) + oy;
-        const int aw = (int)(SP[i][1] * scale), bw = (int)(SP[i + 1][1] * scale);
+        const int aw = (int)(SP[i][1] * scale) + g, bw = (int)(SP[i + 1][1] * scale) + g;
         const int al = cx + ox - aw + (2 * aw * cut) / 100, bl = cx + ox - bw + (2 * bw * cut) / 100;
         t.fillTriangle(al, ay, cx + ox + aw, ay, cx + ox + bw, by, c);
         t.fillTriangle(al, ay, cx + ox + bw, by, bl, by, c);
@@ -3914,17 +3916,20 @@ static void yzFront(TFT_eSPI& t, int cx2, int hh, uint32_t now, Mood m, float sc
     t.drawLine(cx2 - S(7), hh + S(27), cx2 - S(6), hh + S(35), YZ_BEARDSH);
     t.drawLine(cx2 + S(7), hh + S(27), cx2 + S(6), hh + S(35), YZ_BEARDSH);
     // The moustache, over the top of his mouth.
-    inked(ink, YZ_BEARD, [&](int ox, int oy, uint16_t c) {
-        wideLine(t, cx2 - S(1) + ox, hh + S(15) + oy, cx2 - S(9) + ox, hh + S(17) + oy, S(3), c);
-        wideLine(t, cx2 + S(1) + ox, hh + S(15) + oy, cx2 + S(9) + ox, hh + S(17) + oy, S(3), c);
-    });
+    wideLine(t, cx2 - S(1), hh + S(15), cx2 - S(9), hh + S(17), S(3) + 2, ink);
+    wideLine(t, cx2 + S(1), hh + S(15), cx2 + S(9), hh + S(17), S(3) + 2, ink);
+    wideLine(t, cx2 - S(1), hh + S(15), cx2 - S(9), hh + S(17), S(3), YZ_BEARD);
+    wideLine(t, cx2 + S(1), hh + S(15), cx2 + S(9), hh + S(17), S(3), YZ_BEARD);
 
     // The hat: brim, cone, a shade down the right, gold bands.
     const int brimY = hh + S(1), brimRx = S(18), brimRy = S(3);
-    inked(ink, YZ_ROBE, [&](int ox, int oy, uint16_t c) {
-        t.fillEllipse(cx2 + ox, brimY + oy, brimRx, brimRy, c);
-        yzCone(t, cx2, hh, scale, ox, oy, c);
-    });
+    // Outlined by one copy a pixel bigger, like the robe and the beard: the
+    // hat is the biggest thing on his head, and four shifted copies of it
+    // under the real one was a tenth of everything he drew.
+    t.fillEllipse(cx2, brimY, brimRx + 1, brimRy + 1, ink);
+    yzCone(t, cx2, hh, scale, 0, 0, ink, 0, 1);
+    t.fillEllipse(cx2, brimY, brimRx, brimRy, YZ_ROBE);
+    yzCone(t, cx2, hh, scale, 0, 0, YZ_ROBE);
     yzCone(t, cx2, hh, scale, 0, 0, YZ_DARK, 62);
     // Half-width of the cone at yu units above its base.
     auto coneW = [&](float yu) {
@@ -4085,23 +4090,31 @@ static void o9BehindHead(TFT_eSPI& t, int cx2, int hh, float scale) {
         ty[i] = hh + S(O9_HAIR[i][5]) + (int)(cosf(ph) * 1.0f);
     }
     // Outlined by one copy of each spike pushed a pixel out from its middle.
-    for (uint8_t pass = 0; pass < 2; pass++) {
-        for (uint8_t i = 0; i < 8; i++) {
-            int vx[3] = { cx2 + S(O9_HAIR[i][0]), cx2 + S(O9_HAIR[i][2]), tx[i] };
-            int vy[3] = { hh + S(O9_HAIR[i][1]), hh + S(O9_HAIR[i][3]), ty[i] };
-            if (pass == 0) {
-                const int mx = (vx[0] + vx[1] + vx[2]) / 3, my = (vy[0] + vy[1] + vy[2]) / 3;
-                for (uint8_t k = 0; k < 3; k++) {
-                    vx[k] += (vx[k] > mx) - (vx[k] < mx);
-                    vy[k] += (vy[k] > my) - (vy[k] < my);
-                }
-                vy[2] -= 1;
-            }
-            t.fillTriangle(vx[0], vy[0], vx[1], vy[1], vx[2], vy[2], pass == 0 ? TFT_BLACK : O9_GOLD);
+    for (uint8_t i = 0; i < 8; i++) {
+        int vx[3] = { cx2 + S(O9_HAIR[i][0]), cx2 + S(O9_HAIR[i][2]), tx[i] };
+        int vy[3] = { hh + S(O9_HAIR[i][1]), hh + S(O9_HAIR[i][3]), ty[i] };
+        const int mx = (vx[0] + vx[1] + vx[2]) / 3, my = (vy[0] + vy[1] + vy[2]) / 3;
+        for (uint8_t k = 0; k < 3; k++) {
+            vx[k] += (vx[k] > mx) - (vx[k] < mx);
+            vy[k] += (vy[k] > my) - (vy[k] < my);
         }
+        t.fillTriangle(vx[0], vy[0], vx[1], vy[1], vx[2], vy[2] - 1, TFT_BLACK);
     }
-    // Shaded down the right of each spike so it reads as a sheaf, a light
-    // line up the middle, and a glint running up one spike at a time.
+    // Each spike is gold down its left and a darker gold down its right, so
+    // it reads as a sheaf. The two halves are filled once each -- the left,
+    // the sliver along the base that rounding the middle leaves, and then the
+    // right -- where the whole spike used to be filled gold and half of it
+    // filled again. All the lefts go on before any right, as the whole spikes
+    // did, so a spike's shade is never under its neighbour's gold.
+    for (uint8_t i = 0; i < 8; i++) {
+        const int ax = cx2 + S(O9_HAIR[i][0]), ay = hh + S(O9_HAIR[i][1]);
+        const int bx = cx2 + S(O9_HAIR[i][2]), by = hh + S(O9_HAIR[i][3]);
+        const int mx = cx2 + S((O9_HAIR[i][0] + O9_HAIR[i][2]) / 2), my = hh + S((O9_HAIR[i][1] + O9_HAIR[i][3]) / 2);
+        t.fillTriangle(ax, ay, mx, my, tx[i], ty[i], O9_GOLD);
+        t.fillTriangle(ax, ay, bx, by, mx, my, O9_GOLD);
+    }
+    // The right halves, a light line up the middle, and a glint running up
+    // one spike at a time.
     for (uint8_t i = 0; i < 8; i++) {
         const int mx = cx2 + S((O9_HAIR[i][0] + O9_HAIR[i][2]) / 2), my = hh + S((O9_HAIR[i][1] + O9_HAIR[i][3]) / 2);
         t.fillTriangle(mx, my, cx2 + S(O9_HAIR[i][2]), hh + S(O9_HAIR[i][3]), tx[i], ty[i], O9_GOLDDK);
@@ -6078,6 +6091,39 @@ static void drawBody(TFT_eSPI& t, int cx, int hy, int headTopY, uint32_t now, Mo
     // ground is where his soles are, which a crouch leaves put while hy sinks.
     if (aura) auraBack(t, cx2, hy, hy + S(55) - crouch, now, m, scale);
     const int kb = (S(1) < 1) ? 1 : S(1);          // rim thickness, min 1px
+
+    // ---- what a costume hides is not drawn ------------------------------
+    // He is drawn back to front and a costume goes on over him, so some of
+    // him was being painted only to be painted over: a torso under a robe, a
+    // foot under a boot. Each piece skipped below is skipped only where the
+    // thing that covers it is known to cover all of it, and the test of that
+    // was not the reasoning but the emulator: every outfit through every move
+    // he has, rendered both ways, without one pixel different.
+    const bool yz = (outfitNow == OutfitId::YZZERD), o9 = (outfitNow == OutfitId::OVER9000);
+    // YZZERD's robe: the first row below its outline, which ends a row under
+    // its hem (see yzRobe(), which works the hem out the same way). Carried
+    // by the scruff his legs kick sideways, so there nothing is assumed.
+    int robeEnd = -30000;
+    if (yz && !s_dangle) {
+        int hem = hy + S(48);
+        if (m != Mood::WALK && hem > hy + S(49) - crouch) hem = hy + S(49) - crouch;
+        robeEnd = hem + 2;
+    }
+    // His feet, under YZZERD's slippers (the same shape) and OVER 9000's boots.
+    const bool feetHidden = yz || o9;
+    // His torso, under the robe, the gi, or a garment drawn as the very same
+    // rounded box in another colour.
+    const bool torsoHidden = o9 || robeEnd >= hy + S(23) + S(18) ||
+                             outfitNow == OutfitId::SPACE || outfitNow == OutfitId::PLUMBER ||
+                             outfitNow == OutfitId::TALLBRO || outfitNow == OutfitId::CAPTAIN;
+    // A leg and its outline, from robeEnd down.
+    auto legKey = [&](int x, int y, int w, int h) {
+        if (!SQUACHY_KEYLINE) return;
+        int y0 = y - kb;
+        const int y1 = y + h + kb;
+        if (y0 < robeEnd) y0 = robeEnd;
+        if (y1 > y0) t.fillRect(x - kb, y0, w + 2 * kb, y1 - y0, keyCol);
+    };
     auto keyRR = [&](int x, int y, int w, int h, int r) {
         if (SQUACHY_KEYLINE) t.fillRoundRect(x - kb, y - kb, w + 2 * kb, h + 2 * kb, r, keyCol);
     };
@@ -6132,7 +6178,8 @@ static void drawBody(TFT_eSPI& t, int cx, int hy, int headTopY, uint32_t now, Mo
             // left at the base position showed as a black cap above a bowed
             // head.
             t.fillRoundRect(cx2 - S(16), hy + s_headDrop + actHead - S(1), S(32), S(26), S(8), keyCol);
-        t.fillRoundRect(cx2 - S(torsoHalf() + 1), hy + S(22), S(2 * torsoHalf() + 2), S(20), S(6), keyCol);
+        if (robeEnd < hy + S(22) + S(20))
+            t.fillRoundRect(cx2 - S(torsoHalf() + 1), hy + S(22), S(2 * torsoHalf() + 2), S(20), S(6), keyCol);
     }
 
     // ---- shadow ------------------------------------------------------
@@ -6216,6 +6263,12 @@ static void drawBody(TFT_eSPI& t, int cx, int hy, int headTopY, uint32_t now, Mo
     const bool bros = (outfitNow == OutfitId::PLUMBER || outfitNow == OutfitId::TALLBRO);
     const uint16_t legCol = bros ? t.color565(36, 73, 170)
                           : (outfitNow == OutfitId::SPACE) ? t.color565(219, 219, 255) : furMain;
+    auto legFill = [&](int x, int y, int w, int h) {
+        int y0 = y;
+        const int y1 = y + h;
+        if (y0 < robeEnd) y0 = robeEnd;
+        if (y1 > y0) t.fillRect(x, y0, w, y1 - y0, legCol);
+    };
 
     // Legs + big bigfoot feet — a simple alternating step lift while
     // walking (TFT_eSPI has no canvas-style transforms to pivot a real
@@ -6236,8 +6289,10 @@ static void drawBody(TFT_eSPI& t, int cx, int hy, int headTopY, uint32_t now, Mo
         t.fillRect(cx2 + S(2) + kR,  hy + S(40), S(8), S(12), legCol);
         s_footLx = cx2 - S(13) + kL; s_footLy = hy + S(51);
         s_footRx = cx2 + S(1)  + kR; s_footRy = hy + S(51);
-        t.fillRoundRect(s_footLx, s_footLy, S(12), S(6), 2, furLight);
-        t.fillRoundRect(s_footRx, s_footRy, S(12), S(6), 2, furLight);
+        if (!feetHidden) {
+            t.fillRoundRect(s_footLx, s_footLy, S(12), S(6), 2, furLight);
+            t.fillRoundRect(s_footRx, s_footRy, S(12), S(6), 2, furLight);
+        }
     } else if (m == Mood::WALK) {
         // Feet stop while he is striking a beat. A walk cycle still
         // running under a character who has visibly paused is the single
@@ -6256,32 +6311,37 @@ static void drawBody(TFT_eSPI& t, int cx, int hy, int headTopY, uint32_t now, Mo
         //
         // Pinning the top is also what a leg does: the hip is a joint, the
         // foot is what travels.
-        keyR(cx2 - S(10), hy + S(40), S(8), S(10) + legL);
-        keyR(cx2 + S(2),  hy + S(40), S(8), S(10) + legR);
+        legKey(cx2 - S(10), hy + S(40), S(8), S(10) + legL);
+        legKey(cx2 + S(2),  hy + S(40), S(8), S(10) + legR);
         keyRR(cx2 - S(13), hy + S(49) + legL, S(12), S(6), 2);
         keyRR(cx2 + S(1),  hy + S(49) + legR, S(12), S(6), 2);
-        t.fillRect(cx2 - S(10), hy + S(40), S(8), S(10) + legL, legCol);
-        t.fillRect(cx2 + S(2),  hy + S(40), S(8), S(10) + legR, legCol);
+        legFill(cx2 - S(10), hy + S(40), S(8), S(10) + legL);
+        legFill(cx2 + S(2),  hy + S(40), S(8), S(10) + legR);
         s_footLx = cx2 - S(13); s_footLy = hy + S(49) + legL;
         s_footRx = cx2 + S(1);  s_footRy = hy + S(49) + legR;
-        t.fillRoundRect(s_footLx, s_footLy, S(12), S(6), 2, furLight);
-        t.fillRoundRect(s_footRx, s_footRy, S(12), S(6), 2, furLight);
+        if (!feetHidden) {
+            t.fillRoundRect(s_footLx, s_footLy, S(12), S(6), 2, furLight);
+            t.fillRoundRect(s_footRx, s_footRy, S(12), S(6), 2, furLight);
+        }
     } else {
         const int legH = S(10) - crouch, footY = hy + S(49) - crouch;
-        keyR(cx2 - S(10), hy + S(40), S(8), legH);
-        keyR(cx2 + S(2),  hy + S(40), S(8), legH);
+        legKey(cx2 - S(10), hy + S(40), S(8), legH);
+        legKey(cx2 + S(2),  hy + S(40), S(8), legH);
         keyRR(cx2 - S(13), footY, S(12), S(6), 2);
         keyRR(cx2 + S(1),  footY, S(12), S(6), 2);
-        t.fillRect(cx2 - S(10), hy + S(40), S(8), legH, legCol);
-        t.fillRect(cx2 + S(2),  hy + S(40), S(8), legH, legCol);
+        legFill(cx2 - S(10), hy + S(40), S(8), legH);
+        legFill(cx2 + S(2),  hy + S(40), S(8), legH);
         s_footLx = cx2 - S(13); s_footLy = footY;
         s_footRx = cx2 + S(1);  s_footRy = footY;
-        t.fillRoundRect(s_footLx, s_footLy, S(12), S(6), 2, furLight);
-        t.fillRoundRect(s_footRx, s_footRy, S(12), S(6), 2, furLight);
+        if (!feetHidden) {
+            t.fillRoundRect(s_footLx, s_footLy, S(12), S(6), 2, furLight);
+            t.fillRoundRect(s_footRx, s_footRy, S(12), S(6), 2, furLight);
+        }
     }
 
     // Body — broad, stocky torso instead of a slim rounded rect.
-    t.fillRoundRect(cx2 - S(torsoHalf()), hy + S(23), S(2 * torsoHalf()), S(18), S(5), furMain);
+    if (!torsoHidden)
+        t.fillRoundRect(cx2 - S(torsoHalf()), hy + S(23), S(2 * torsoHalf()), S(18), S(5), furMain);
     // No highlight down the sides. There used to be a light strip down each
     // edge, exactly under where the arms hang, so it was invisible at rest and
     // appeared as a second, lighter pair of arms the moment a pose lifted one.
