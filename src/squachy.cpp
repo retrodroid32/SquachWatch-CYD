@@ -1443,10 +1443,6 @@ static void ensurePrefsLoaded() {
     s_over9000Unlocked   = s_petPrefs.getBool("over9000", false);
     s_shamblerUnlocked   = s_petPrefs.getBool("shambler", false);
     s_th3Unlocked        = s_petPrefs.getBool("th3", false);
-    s_stripesUnlocked = s_petPrefs.getBool("stripes", false);
-    s_jailLeft = s_petPrefs.getUInt("jailMs", 0);
-    if (s_jailLeft > 600000u) s_jailLeft = 600000u;
-    s_jailLast = millis();
     s_stripesUnlocked    = s_petPrefs.getBool("stripes", false);
     s_jailLeft           = s_petPrefs.getUInt("jailMs", 0);
     if (s_jailLeft > 10u * 60u * 1000u) s_jailLeft = 10u * 60u * 1000u;
@@ -2511,6 +2507,7 @@ void cyclePet() {
 
 void togglePet() {
     ensurePrefsLoaded();
+    if (jailed()) return;  // same sentence lock as cyclePet()
     s_petSel = s_petSel ? 0 : (uint8_t)PetId::SHAGGY;
     s_petPrefs.putUChar("petSel", s_petSel);
 }
@@ -2547,7 +2544,7 @@ bool jailed() {
 uint32_t jailLeftMs() { return jailed() ? s_jailLeft : 0; }
 void jailStart() {
     ensurePrefsLoaded();
-    if (s_jailLeft) return;
+    if (jailed()) return;  // expire an old sentence before starting another
     s_jailLeft = JAIL_MS;
     s_jailLast = millis();
     s_jailFreed = false;
