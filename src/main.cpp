@@ -1557,7 +1557,8 @@ static void enterInvite() {
 // INVERT and ROT on the console -- see clock.cpp. Consumed in loop().
 volatile bool g_consoleInvert = false;
 volatile bool g_consoleAdc = false;
-volatile bool g_consoleXyzzy = false;      // ADC: spare input-only analog pins on ESP32 CYD hardware
+volatile bool g_consoleXyzzy = false;
+volatile bool g_consoleLegend = false;      // ADC: spare input-only analog pins on ESP32 CYD hardware
 volatile bool g_consoleRotate = false;
 volatile bool g_consoleRadioTest = false; // RADIO TEST: cycle even on the cable with the screen on (bench)
 volatile bool g_consoleBatt    = false;   // BATT: one reading, now
@@ -3887,6 +3888,11 @@ void loop() {
     }
 #endif
 #if defined(ARDUINO_ARCH_ESP32) && !defined(SQW_S3) && !defined(CROWPANEL7)
+    if (g_consoleLegend) {
+        g_consoleLegend = false;
+        Squachy::previewLegend(!Squachy::legendPreview());
+        Serial.printf("[legend] preview %s\n", Squachy::legendPreview() ? "ON" : "off");
+    }
     if (g_consoleXyzzy) {
         g_consoleXyzzy = false;
         Theme::summonXyzzy();
@@ -5716,7 +5722,7 @@ void loop() {
                         case SettingsRow::BINGO:        enterBingo(); break;
                         case SettingsRow::DEX:          enterDex(); break;
                         case SettingsRow::APPEARANCE:  uiSettingsOpenAppearance(true); break;
-                        case SettingsRow::TOP_HAT:     Settings::toggleTopHat(); break;
+                        case SettingsRow::AURA:        Settings::toggleAura(); break;
                         // From a sub-page, back to the main list; from the
                         // main list, out.
                         case SettingsRow::BACK:

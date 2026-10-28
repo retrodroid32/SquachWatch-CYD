@@ -570,6 +570,8 @@ int main(int argc, char** argv) {
     // The desk's HOW MANY follows --crowd, the way the main screen's does.
     for (int g = 0; g < 10 && Settings::deskCrowd() != Settings::meshCrowd(); g++) Settings::cycleDeskCrowd();
     if (getenv("SQUACHSIM_FULLVISIT") && !Settings::deskFullVisit()) Settings::toggleDeskFullVisit();
+    // SQUACHSIM_LEGEND=1: preview the Legend aura in emulator screenshots.
+    if (getenv("SQUACHSIM_LEGEND")) Squachy::previewLegend(true);
     // SQUACHSIM_CLOCK="font,size,backdrop", e.g. "1,2,3" for large Bangers over toasters.
     if (const char* ck = getenv("SQUACHSIM_CLOCK")) {
         int f = 0, z = 1, b = 0;
