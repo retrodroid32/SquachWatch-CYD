@@ -84,6 +84,8 @@ static inline int BHof(TFT_eSPI& t) { return t.width() >= 400 ?  36 : 26; }
 // the most that fits; the first versions ran to 41 and lost their last words
 // off the edge -- "you can read, not repl" -- which the emulator caught.
 const char* const NEED_PHRASE  = "Set a phrase: SQUACHMESH > PHRASE.";
+const char* const MESSAGES_OFF = "MESSAGES off: enable in SQUACHMESH.";
+const char* const CRYPTO_FAILED = "Messages unavailable: crypto test failed.";
 const char* const TRANSMIT_OFF = "TRANSMIT off: can read, not reply.";
 const char* const SENDING      = "Sending, for thirty seconds.";
 const char* const SEND_FAILED  = "Could not send. Try again.";
@@ -94,7 +96,11 @@ const char* const EMOTE_HINT   = "Tap one: you both act it out.";
 // The reasons a message could not go out, given BEFORE anything is chosen or
 // typed rather than after the person has confirmed it. Null when it can.
 const char* cannotSend() {
-    if (!MeshTalk::ready())             return NEED_PHRASE;
+    // ready() combines all three prerequisites; report the actual one
+    // instead of claiming a missing phrase when MESSAGES is simply OFF.
+    if (!MeshTalk::selfTestOk())        return CRYPTO_FAILED;
+    if (!MeshTalk::havePhrase())        return NEED_PHRASE;
+    if (!Settings::messagesOn())        return MESSAGES_OFF;
     if (!Settings::meshTransmit())      return TRANSMIT_OFF;
     return nullptr;
 }
@@ -674,7 +680,7 @@ ComposeHit uiMeshComposeTouch(int x, int y, uint32_t now) {
     auto sent = [](MeshTalk::Send r) {
         switch (r) {
             case MeshTalk::Send::OK:           return true;
-            case MeshTalk::Send::NOT_READY:    s_status = NEED_PHRASE;  s_statusCol = Theme::AMBER; break;
+            case MeshTalk::Send::NOT_READY:    s_status = cannotSend() ? cannotSend() : NEED_PHRASE; s_statusCol = Theme::AMBER; break;
             case MeshTalk::Send::TRANSMIT_OFF: s_status = TRANSMIT_OFF; s_statusCol = Theme::AMBER; break;
             default:                           s_status = SEND_FAILED;  s_statusCol = Theme::RED;   break;
         }
