@@ -1556,7 +1556,8 @@ static void enterInvite() {
 
 // INVERT and ROT on the console -- see clock.cpp. Consumed in loop().
 volatile bool g_consoleInvert = false;
-volatile bool g_consoleAdc = false;      // ADC: spare input-only analog pins on ESP32 CYD hardware
+volatile bool g_consoleAdc = false;
+volatile bool g_consoleXyzzy = false;      // ADC: spare input-only analog pins on ESP32 CYD hardware
 volatile bool g_consoleRotate = false;
 volatile bool g_consoleRadioTest = false; // RADIO TEST: cycle even on the cable with the screen on (bench)
 volatile bool g_consoleBatt    = false;   // BATT: one reading, now
@@ -3886,6 +3887,11 @@ void loop() {
     }
 #endif
 #if defined(ARDUINO_ARCH_ESP32) && !defined(SQW_S3) && !defined(CROWPANEL7)
+    if (g_consoleXyzzy) {
+        g_consoleXyzzy = false;
+        Theme::summonXyzzy();
+        Serial.println("[xyzzy] the terminal types it now (TERMINAL background only)");
+    }
     if (g_consoleAdc) {
         g_consoleAdc = false;
         const uint8_t pins[] = {
@@ -4347,6 +4353,7 @@ void loop() {
             if (Theme::consumeEyeCatch())       Squachy::unlockVoidEye();
             if (Theme::consumeLodgeKnock())     Squachy::unlockParka();
             if (Theme::consumeSharkCatch())     Squachy::unlockShark();
+            if (const uint8_t said = Theme::consumeXyzzy()) Squachy::magicWord(said);
     if (Theme::consumePetUnlock())      Squachy::unlockPet();
 
             bool boring = Settings::boringMode();

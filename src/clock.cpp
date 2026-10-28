@@ -50,6 +50,7 @@ extern volatile bool g_benchUpdateStop;
 // from the console, for bringing up a panel nobody can read yet.
 extern volatile bool g_consoleInvert;
 extern volatile bool g_consoleAdc;
+extern volatile bool g_consoleXyzzy;
 extern volatile bool g_consoleRotate;
 extern volatile bool g_consoleBatt;
 extern volatile bool g_consoleBattLog;
@@ -528,6 +529,7 @@ void pollSerial() {
         }
         if (strcasecmp(line, "INVERT") == 0) { g_consoleInvert = true; continue; }
         if (strcasecmp(line, "ADC") == 0)    { g_consoleAdc = true; continue; }
+        if (strcasecmp(line, "XYZZY") == 0)  { g_consoleXyzzy = true; continue; }
         if (strcasecmp(line, "ROT") == 0)    { g_consoleRotate = true; continue; }
         if (strcasecmp(line, "BATT") == 0)    { g_consoleBatt = true; continue; }
         if (strcasecmp(line, "BATTLOG") == 0) { g_consoleBattLog = true; continue; }
