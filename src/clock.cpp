@@ -53,6 +53,8 @@ extern volatile bool g_consoleAdc;
 extern volatile bool g_consoleXyzzy;
 extern volatile bool g_consoleLegend;
 extern volatile bool g_consoleJail;
+extern volatile bool g_consoleOutfitSet;
+extern volatile int8_t g_consoleOutfit;
 extern volatile bool g_consoleFree;
 extern volatile bool g_consoleRotate;
 extern volatile bool g_consoleBatt;
@@ -534,6 +536,7 @@ void pollSerial() {
         if (strcasecmp(line, "ADC") == 0)    { g_consoleAdc = true; continue; }
         if (strcasecmp(line, "XYZZY") == 0)  { g_consoleXyzzy = true; continue; }
         if (strcasecmp(line, "LEGEND") == 0) { g_consoleLegend = true; continue; }
+        if (strncasecmp(line, "OUTFIT ", 7) == 0) { g_consoleOutfit = (int8_t)atoi(line + 7); g_consoleOutfitSet = true; continue; }
         if (strcasecmp(line, "JAIL") == 0) { g_consoleJail = true; continue; }
         if (strcasecmp(line, "FREE") == 0) { g_consoleFree = true; continue; }
         if (strcasecmp(line, "ROT") == 0)    { g_consoleRotate = true; continue; }

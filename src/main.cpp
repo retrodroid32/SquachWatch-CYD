@@ -1560,6 +1560,8 @@ volatile bool g_consoleAdc = false;
 volatile bool g_consoleXyzzy = false;
 volatile bool g_consoleLegend = false;
 volatile bool g_consoleJail = false;
+volatile bool g_consoleOutfitSet = false;
+volatile int8_t g_consoleOutfit = -1;
 volatile bool g_consoleFree = false;      // ADC: spare input-only analog pins on ESP32 CYD hardware
 volatile bool g_consoleRotate = false;
 volatile bool g_consoleRadioTest = false; // RADIO TEST: cycle even on the cable with the screen on (bench)
@@ -3890,6 +3892,17 @@ void loop() {
     }
 #endif
 #if defined(ARDUINO_ARCH_ESP32) && !defined(SQW_S3) && !defined(CROWPANEL7)
+    if (g_consoleOutfitSet) {
+        g_consoleOutfitSet = false;
+        const int8_t idx = g_consoleOutfit;
+        if (idx >= -1 && idx < (int8_t)Squachy::outfitCount()) {
+            Squachy::setOutfitPreview(idx);
+            Serial.printf("[outfit] bench preview %d: %s\n", (int)idx,
+                          idx >= 0 ? Squachy::outfitNameAt((uint8_t)idx) : "off");
+        } else {
+            Serial.println("[outfit] invalid index; use -1 to 19");
+        }
+    }
     if (g_consoleJail) {
         g_consoleJail = false;
         Squachy::jailStart();
