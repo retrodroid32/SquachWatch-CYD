@@ -191,9 +191,13 @@ namespace Squachy {
     // reboots -- the fact that the card has been shown is saved.
     bool consumePetUnlockCard();
     bool petUnlocked();
-    // Legend stage, where the top hat comes in -- and so where the
-    // APPEARANCE page's TOP HAT row appears.
-    bool hasTopHat();
+    // Legend stage, where the aura comes in -- and so where the
+    // APPEARANCE page's AURA row appears.
+    bool hasAura();
+    // Wear the Legend look before it is earned, until the next boot: the
+    // emulator, the console's LEGEND, and builds that are not a release.
+    void previewLegend(bool on);
+    bool legendPreview();
     bool petEnabled();         // any companion at all: what pet.cpp asks
     void togglePet();          // kept for callers that only want on/off
 
