@@ -274,6 +274,11 @@ void uiSquadTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool adv
         s_send = { (int16_t)(w - BW - 4), (int16_t)(h - BH - 6), BW, BH };
         Theme::drawButton(t, s_send.x, s_send.y, s_send.w, s_send.h, "[ SEND ]", false);
     }
+    // main.cpp reports ADD's missing phrase / TX-off / failed invite via a
+    // toast. SQUAD used to repaint without drawing that toast, making an
+    // actionable failure look like a dead ADD button. Keep the toast atop
+    // the entire card and inbox, in both screen rotations.
+    Theme::drawToast(t, now);
 }
 
 SquadHit uiSquadTouch(int x, int y, uint32_t now) {
