@@ -1,3 +1,3 @@
-WATCH149-LANDBACK
-# Experimental LAB build after landscape WATCH BACK touch fix.
-# Triggered only on explicit user hardware regression report.
+BUBBLE137-MESHUI152
+# PR #137 pointed speech-bubble fix + draft PR #152 SquachMesh ADD/message UI feedback.
+# Diagnostic hardware build only. No production release/version/tag.
