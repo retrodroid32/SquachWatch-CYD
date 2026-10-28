@@ -1,3 +1,4 @@
-WATCH149-LANDBACK
-# Experimental LAB build after landscape WATCH BACK touch fix.
-# Triggered only on explicit user hardware regression report.
+AQUA120-80MHZ
+# PR #120 aquarium integer-rendering visual/regression validation.
+# Based on f2056954e84ced8e2db458d127bb8506b5741db5; use 3.2-inch ST7798 experimental 80 MHz profile.
+# LAB ONLY — no version tag and no production release.
