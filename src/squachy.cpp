@@ -21,6 +21,7 @@ static inline uint32_t tempo(uint32_t ms) { return ms * s_tempoPct / 100; }
 #include "void_eye.h"
 #if SQUACH_MESH
 #include "emote_script.h"   // spokenName, for the banter
+#include "draw_band.h"
 #include "squachmesh.h"     // OUTFIT_N, checked against OutfitId::COUNT below
 #endif
 #include <Arduino.h>
@@ -634,6 +635,11 @@ static bool     s_yzzerdUnlocked     = false;  // earned by tapping XYZZY three 
 static bool     s_over9000Unlocked   = false;  // earned by tapping his shades while the aura is lit
 static bool     s_shamblerUnlocked   = false;  // earned by tapping the owl while it asks WHAT REEKS?!
 static bool     s_th3Unlocked        = false;  // earned by tapping the red glyph in the DIGITAL rain
+static bool s_stripesUnlocked = false;
+static uint32_t s_jailLeft = 0, s_jailLast = 0, s_jailSaved = 0, s_yankAt = 0;
+static bool s_jailFreed = false, s_thYanked = false;
+static int s_chainX = 0, s_chainY = 0;
+static uint32_t s_chainAt = 0;
 static bool     s_sharkUnlocked      = false;  // earned by catching the Aquarium shark on his return pass
 static bool     s_petUnlocked        = false;  // earned by tapping the lil guy on the toasters
 // Whether the card has been shown for him. Kept separately from the unlock
@@ -1032,6 +1038,7 @@ enum class OutfitId : uint8_t {
     OVER9000,
     SHAMBLER,
     TH3_0N3,
+    STRIPES,
     COUNT
 };
 
@@ -1082,6 +1089,9 @@ static const OutfitDef OUTFITS[] = {
     // Earned by tapping the one red glyph that now and then falls in the
     // DIGITAL rain -- see Theme::consumeRedGlyph().
     { "TH3 0N3",        OUTFIT_BY_EVENT },
+    // Earned by serving ten minutes in them -- the sentence for throwing a
+    // pet ten times inside a minute. See jailStart().
+    { "STRIPES",        OUTFIT_BY_EVENT },
 };
 static const uint8_t OUTFITS_N = sizeof(OUTFITS) / sizeof(OUTFITS[0]);
 static_assert(OUTFITS_N == (uint8_t)OutfitId::COUNT, "OUTFITS must match OutfitId");
@@ -1115,6 +1125,7 @@ static bool outfitUnlocked(uint8_t i) {
             case OutfitId::OVER9000:   return s_over9000Unlocked;
             case OutfitId::SHAMBLER:   return s_shamblerUnlocked;
             case OutfitId::TH3_0N3:    return s_th3Unlocked;
+            case OutfitId::STRIPES:    return s_stripesUnlocked;
             default:                   return false;
         }
     }
@@ -1195,9 +1206,11 @@ static uint8_t activeShadeIdx() {
     return s_shadeIdx;
 }
 
+bool jailed();
 static OutfitId currentOutfit() {
     if (s_outfitOverride >= 0 && s_outfitOverride < (int8_t)OUTFITS_N)
         return (OutfitId)s_outfitOverride;
+    if (jailed()) return OutfitId::STRIPES;
     if (s_outfitIdx >= OUTFITS_N || !outfitUnlocked(s_outfitIdx)) s_outfitIdx = 0;
     return (OutfitId)s_outfitIdx;
 }
@@ -1430,6 +1443,14 @@ static void ensurePrefsLoaded() {
     s_over9000Unlocked   = s_petPrefs.getBool("over9000", false);
     s_shamblerUnlocked   = s_petPrefs.getBool("shambler", false);
     s_th3Unlocked        = s_petPrefs.getBool("th3", false);
+    s_stripesUnlocked = s_petPrefs.getBool("stripes", false);
+    s_jailLeft = s_petPrefs.getUInt("jailMs", 0);
+    if (s_jailLeft > 600000u) s_jailLeft = 600000u;
+    s_jailLast = millis();
+    s_stripesUnlocked    = s_petPrefs.getBool("stripes", false);
+    s_jailLeft           = s_petPrefs.getUInt("jailMs", 0);
+    if (s_jailLeft > 10u * 60u * 1000u) s_jailLeft = 10u * 60u * 1000u;
+    s_jailLast           = millis();
     s_outfitAnnounced    = s_petPrefs.getUInt("outfitSeen", 0xFFFFFFFFu);
     s_petPrefsLoaded  = true;
 }
@@ -2249,12 +2270,14 @@ const char* outfitName() {
 
 void cycleOutfit() {
     ensurePrefsLoaded();
+    if (jailed()) return;
     s_outfitIdx = stepOutfit(s_outfitIdx, +1);
     s_petPrefs.putUChar("outfitIdx", s_outfitIdx);
 }
 
 void cyclePrevOutfit() {
     ensurePrefsLoaded();
+    if (jailed()) return;
     s_outfitIdx = stepOutfit(s_outfitIdx, -1);
     s_petPrefs.putUChar("outfitIdx", s_outfitIdx);
 }
@@ -2481,6 +2504,7 @@ const char* petName() {
 
 void cyclePet() {
     ensurePrefsLoaded();
+    if (jailed()) return;
     s_petSel = (uint8_t)((s_petSel + 1) % (uint8_t)PetId::COUNT);
     s_petPrefs.putUChar("petSel", s_petSel);
 }
@@ -3277,7 +3301,8 @@ uint32_t visitReaction(VisitMoment m) {
 }
 
 uint8_t nicknameIndex() { ensurePrefsLoaded(); return s_nickIdx; }
-uint8_t outfitIndex()   { ensurePrefsLoaded(); return s_outfitIdx; }
+// What the squad sees: the stripes, while he serves.
+uint8_t outfitIndex()   { ensurePrefsLoaded(); return jailed() ? (uint8_t)OutfitId::STRIPES : s_outfitIdx; }
 uint8_t shadesIndex()   { ensurePrefsLoaded(); return s_shadeIdx; }
 
 const char* customName() {
@@ -4206,6 +4231,22 @@ static void drawOutfit(TFT_eSPI& t, int cx2, int hy, uint32_t now, Mood m, float
     using namespace Theme;
 
     switch (outfit) {
+        case OutfitId::STRIPES: {
+            // The striped pillbox cap, sat on his crown with his crest poking
+            // out of the top, and a short brim under it.
+            const int w = S(19), h = S(5) > 4 ? S(5) : 4;
+            const int x = cx2 - w / 2, y = hy - S(1) / 2 - 1;
+            int band = (int)lroundf(1.1f * scale);
+            if (band < 2) band = 2;
+            t.fillRect(x - 1, y - 1, w + 2, h + 2, BLACK);
+            for (int r = 0; r < h; r++)
+                t.drawFastHLine(x, y + r, w, (r / band) & 1 ? t.color565(27, 28, 31) : t.color565(241, 241, 236));
+            t.drawFastHLine(x, y, w, t.color565(255, 255, 255));
+            const int bh = S(1) > 1 ? S(1) : 2;
+            t.fillRect(x - 3, y + h, w + 6, bh + 1, BLACK);
+            t.fillRect(x - 2, y + h, w + 4, bh, t.color565(241, 241, 236));
+            break;
+        }
         case OutfitId::TANOOKI: {
             // A tanooki SUIT, the one-piece in the reference, not a raccoon
             // mask: his fur is recoloured to the suit's orange-brown up in
@@ -5569,6 +5610,113 @@ static void auraFront(TFT_eSPI& t, int cx2, int hy, int ground, uint32_t now, Mo
 // ownsBubble: whether the ONE global speech bubble (bubbleText/bubbleUntil)
 // belongs to the body being drawn. True for our own Squachy, who is the only
 // one who can put a line in it. False for every cameo -- see drawWaving().
+// STRIPES. Black and white bands painted over his own fur, after his body,
+// arms and legs are down and before his head goes on top: every pixel in his
+// fur colours in that box is body, arm or leg at that moment, so the stripes
+// follow whatever pose he is in. Read back from the frame rather than drawn
+// as shapes, because the arms swing and the shapes would have to know every
+// pose. His hands and feet stay fur. Each run of suit gets a lit pixel on its
+// left end and a shadow on its right, which is what makes it read as cloth.
+// own: this is our Squachy, not a visitor: the cuff's ring is where the
+// chain goes, and only ours wears the chain.
+static void prisonStripes(TFT_eSPI& t, int cx2, int hy, float scale, uint16_t furMain, uint16_t furLight, bool own) {
+    auto S = [scale](int v) { return (int)(v * scale); };
+    // From the shoulders down -- or from his hands, when they are up in the
+    // air: nothing but arms is drawn above his shoulders yet.
+    int y0 = hy + S(22);
+    const int handTop = (s_armL1y < s_armR1y ? s_armL1y : s_armR1y) - S(5);
+    if (handTop < y0) y0 = handTop;
+    if (y0 < 0) y0 = 0;
+    int y1 = (s_footLy < s_footRy ? s_footLy : s_footRy);
+    if (y1 > t.height()) y1 = t.height();
+    int x0 = cx2 - S(30), x1 = cx2 + S(30);
+    if (x0 < 0) x0 = 0;
+    if (x1 > t.width()) x1 = t.width();
+    if (y1 <= y0 || x1 <= x0 || !DrawBand::has(y0, y1)) return;
+    // What the frame hands back for each fur colour: the colour itself on a
+    // 16-bit frame, its 8-bit cousin on an 8-bit one. Found by asking it,
+    // on a pixel put straight back.
+    const int py = DrawBand::top(y0);
+    if (py >= y1) return;
+    const uint16_t keep = t.readPixel(x0, py);
+    t.drawPixel(x0, py, furMain);  const uint16_t qM = t.readPixel(x0, py);
+    t.drawPixel(x0, py, furLight); const uint16_t qL = t.readPixel(x0, py);
+    t.drawPixel(x0, py, keep);
+    if (qM == qL) return;               // the frame could not tell them apart: leave him be
+    const int torsoTop = hy + S(23);
+    int band = (int)lroundf(1.48f * scale);
+    if (band < 2) band = 2;
+    const uint16_t BODY_W = t.color565(230, 230, 223), BODY_D = t.color565(27, 28, 31);
+    const uint16_t ARM_W  = Theme::WHITE,              ARM_D  = t.color565(52, 54, 59);
+    const uint16_t LIT    = t.color565(201, 201, 192), SHADE = t.color565(13, 14, 16);
+    const int hr = S(4) + 1, hr2 = hr * hr;
+    static uint8_t cls[512];
+    const int yA = DrawBand::top(y0), yB = DrawBand::bot(y1);
+    for (int y = yA; y < yB; y++) {
+        const bool dark = (((y - torsoTop) + band * 64) / band) & 1;
+        const int n = x1 - x0 > 512 ? 512 : x1 - x0;
+        for (int i = 0; i < n; i++) {
+            const int x = x0 + i;
+            const uint16_t c = t.readPixel(x, y);
+            uint8_t k = 0;
+            if (c == furMain || c == qM) k = 1;
+            else if (c == furLight || c == qL) {
+                const int dl = (x - s_armL1x) * (x - s_armL1x) + (y - s_armL1y) * (y - s_armL1y);
+                const int dr = (x - s_armR1x) * (x - s_armR1x) + (y - s_armR1y) * (y - s_armR1y);
+                k = (dl <= hr2 || dr <= hr2) ? 0 : 2;
+            }
+            cls[i] = k;
+        }
+        for (int i = 0; i < n; ) {
+            if (!cls[i]) { i++; continue; }
+            int e = i;
+            while (e + 1 < n && cls[e + 1]) e++;
+            // inside the run, one span per kind; the two ends shaded
+            for (int a = i; a <= e; ) {
+                int b = a;
+                while (b + 1 <= e && cls[b + 1] == cls[a]) b++;
+                const uint16_t col = cls[a] == 1 ? (dark ? BODY_D : BODY_W) : (dark ? ARM_D : ARM_W);
+                t.drawFastHLine(x0 + a, y, b - a + 1, col);
+                a = b + 1;
+            }
+            if (e > i) { t.drawPixel(x0 + i, y, LIT); t.drawPixel(x0 + e, y, SHADE); }
+            i = e + 1;
+        }
+    }
+    // The number patch on his chest: 0010, in the little 3x5 digits where he
+    // is big enough to read them.
+    {
+        const int w = S(8) > 8 ? S(8) : 8, h = S(3) > 5 ? S(3) + 1 : 5;
+        const int px0 = cx2 - w / 2 + S(2), py0 = torsoTop + S(3);
+        t.fillRect(px0 - 1, py0 - 1, w + 2, h + 2, Theme::BLACK);
+        t.fillRect(px0, py0, w, h, Theme::WHITE);
+        if (scale >= 1.9f) {
+            static const uint8_t D0[5] = { 7, 5, 5, 5, 7 }, D1[5] = { 2, 6, 2, 2, 7 };
+            const uint8_t* dig[4] = { D0, D0, D1, D0 };
+            int tx = px0 + (w - 15) / 2;
+            const int ty = py0 + (h - 5) / 2;
+            for (int d = 0; d < 4; d++, tx += 4)
+                for (int r = 0; r < 5; r++)
+                    for (int k = 0; k < 3; k++)
+                        if (dig[d][r] & (4 >> k)) t.drawPixel(tx + k, ty + r, Theme::BLACK);
+        }
+    }
+    // The iron cuff on his right ankle, and its ring.
+    {
+        const int lx = s_footRx + S(1), lw = S(8);
+        const int ch = S(1) > 2 ? S(1) + 1 : 2;
+        const int cy = s_footRy - ch - 1;
+        const uint16_t IRON = t.color565(123, 130, 141), IRON_HI = t.color565(195, 201, 210);
+        t.fillRect(lx - 1, cy - 1, lw + 2, ch + 2, Theme::BLACK);
+        t.fillRect(lx, cy, lw, ch, IRON);
+        t.drawFastHLine(lx, cy, lw, IRON_HI);
+        const int rw = S(1) > 1 ? S(1) : 2;
+        t.fillRect(lx + lw, cy - 1, rw + 1, ch + 2, Theme::BLACK);
+        t.fillRect(lx + lw, cy, rw, ch, IRON_HI);
+        if (own) { s_chainX = lx + lw + rw / 2; s_chainY = cy + ch / 2; s_chainAt = millis(); }
+    }
+}
+
 static void drawBody(TFT_eSPI& t, int cx, int hy, int headTopY, uint32_t now, Mood m, float scale,
                      bool forceTalking = false, bool ownsBubble = true) {
     auto S = [scale](int v) { return (int)(v * scale); };
@@ -6515,6 +6663,7 @@ static void drawBody(TFT_eSPI& t, int cx, int hy, int headTopY, uint32_t now, Mo
     // then painted over -- his skull is wider than the sphere and its edges
     // would show around it. Everything inside keeps its original indentation
     // so this stays a two-line change instead of a two-hundred-line reformat.
+    if (outfitNow == OutfitId::STRIPES) prisonStripes(t, cx2, hy, scale, furMain, furLight, s_outfitOverride < 0);
     const bool hideFace = (outfitNow == OutfitId::VOIDEYE);
     // PARKA has no mouth. Guarded at each draw rather than painted over
     // afterwards: the mouth moves and changes shape with the mood, so no
