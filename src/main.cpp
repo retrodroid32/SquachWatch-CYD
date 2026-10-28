@@ -6134,6 +6134,12 @@ void loop() {
                     case SquadHit::ADD: {
                         const uint8_t* mac = uiSquadSelectedMac();
                         if (!mac) break;
+                        // A tap reached ADD even if an invite cannot start.
+                        // Log the prerequisite flags, not the private phrase.
+                        Serial.printf("[mesh-ui] ADD tapped: phrase=%u crypto=%u tx=%u\n",
+                                      (unsigned)MeshTalk::havePhrase(),
+                                      (unsigned)MeshTalk::selfTestOk(),
+                                      (unsigned)Settings::meshTransmit());
                         const MeshTalk::Send r = MeshTalk::inviteStart(mac, uiSquadSelectedName(), now);
                         if (r == MeshTalk::Send::OK)            enterInvite();
                         else if (r == MeshTalk::Send::NOT_READY) Theme::showToast("NO PHRASE TO SHARE", "Set one under SQUACHMESH first", Theme::AMBER);
