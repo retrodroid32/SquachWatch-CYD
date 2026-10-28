@@ -1,3 +1,4 @@
-WATCH149-LANDBACK
-# Experimental LAB build after landscape WATCH BACK touch fix.
-# Triggered only on explicit user hardware regression report.
+pr121-costumes-20261028
+# PR #121 wardrobe/art integration; 3.2-inch ST7798 experimental 80MHz hardware validation.
+# Costume previews only. STRIPES automatic throw penalty and jail ball are not complete.
+# PR feature branch source: 2f80512265d11ef7f76a6e8f9b4d06f99e661cf7
