@@ -5749,7 +5749,7 @@ void drawFire(TFT_eSPI& t, uint32_t now, int yStart, int yEnd) {
             // once a minute and a half is findable; once in five minutes,
             // at three and a half seconds a time, is not.
             const uint32_t slot = now / CYCLE;
-            const bool reek = !wolfOut && (slot % 3) == 1;
+            const bool reek = s_owlAsks && !wolfOut && (slot % 3) == 1;
             const char* q = wolfOut
                 ? SCARED[((now - s_wolfAt) / 1400) % (sizeof(SCARED) / sizeof(SCARED[0]))]
                 : reek ? "WHAT REEKS?!"
