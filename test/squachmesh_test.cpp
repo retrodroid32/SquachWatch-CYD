@@ -186,7 +186,7 @@ int main() {
 
     suite("Unknown indices clamp rather than refuse");
     {
-        // Five bits hold 0..31 and this build has 18 outfits, so a peer on
+        // Five bits hold 0..31 and this build has 19 outfits, so a peer on
         // newer firmware can send one we do not have: a wrong hat, not an
         // attack.
         size_t n = encode(mk(15, 31, 3, nullptr), buf);
@@ -198,7 +198,7 @@ int main() {
 
     suite("The seventeenth outfit, and boards from before it");
     {
-        ck("eighteen outfits", OUTFIT_N == 18);
+        ck("nineteen outfits", OUTFIT_N == 19);
         size_t n = encode(mk(3, 16, 1, nullptr), buf);
         ck("outfit 16 survives the trip", decode(buf, n, p) && p.outfit == 16);
         ck("its fifth bit is a spare bit, not a new byte", n == LEN_INDEXED);

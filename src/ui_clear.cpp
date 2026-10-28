@@ -3070,6 +3070,7 @@ void uiClearTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool adv
     static bool s_wasActive = false;
     if (anyActive && !s_wasActive) Theme::triggerGlitchBurst(3);
     s_wasActive = anyActive;
+    Squachy::setNearbyLit(anyActive && s_serious);
 
     // Nothing on the row while nothing is happening. ALL CLEAR is gone and
     // the headline does not replace it: a permanent label asserting anything
