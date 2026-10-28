@@ -52,6 +52,8 @@ extern volatile bool g_consoleInvert;
 extern volatile bool g_consoleAdc;
 extern volatile bool g_consoleXyzzy;
 extern volatile bool g_consoleLegend;
+extern volatile bool g_consoleJail;
+extern volatile bool g_consoleFree;
 extern volatile bool g_consoleRotate;
 extern volatile bool g_consoleBatt;
 extern volatile bool g_consoleBattLog;
@@ -532,6 +534,8 @@ void pollSerial() {
         if (strcasecmp(line, "ADC") == 0)    { g_consoleAdc = true; continue; }
         if (strcasecmp(line, "XYZZY") == 0)  { g_consoleXyzzy = true; continue; }
         if (strcasecmp(line, "LEGEND") == 0) { g_consoleLegend = true; continue; }
+        if (strcasecmp(line, "JAIL") == 0) { g_consoleJail = true; continue; }
+        if (strcasecmp(line, "FREE") == 0) { g_consoleFree = true; continue; }
         if (strcasecmp(line, "ROT") == 0)    { g_consoleRotate = true; continue; }
         if (strcasecmp(line, "BATT") == 0)    { g_consoleBatt = true; continue; }
         if (strcasecmp(line, "BATTLOG") == 0) { g_consoleBattLog = true; continue; }

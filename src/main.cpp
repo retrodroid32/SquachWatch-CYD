@@ -1558,7 +1558,9 @@ static void enterInvite() {
 volatile bool g_consoleInvert = false;
 volatile bool g_consoleAdc = false;
 volatile bool g_consoleXyzzy = false;
-volatile bool g_consoleLegend = false;      // ADC: spare input-only analog pins on ESP32 CYD hardware
+volatile bool g_consoleLegend = false;
+volatile bool g_consoleJail = false;
+volatile bool g_consoleFree = false;      // ADC: spare input-only analog pins on ESP32 CYD hardware
 volatile bool g_consoleRotate = false;
 volatile bool g_consoleRadioTest = false; // RADIO TEST: cycle even on the cable with the screen on (bench)
 volatile bool g_consoleBatt    = false;   // BATT: one reading, now
@@ -3888,6 +3890,16 @@ void loop() {
     }
 #endif
 #if defined(ARDUINO_ARCH_ESP32) && !defined(SQW_S3) && !defined(CROWPANEL7)
+    if (g_consoleJail) {
+        g_consoleJail = false;
+        Squachy::jailStart();
+        Serial.println("[jail] ten-minute sentence started; pet throw counter not integrated");
+    }
+    if (g_consoleFree) {
+        g_consoleFree = false;
+        Squachy::jailFree();
+        Serial.println("[jail] sentence ended; STRIPES unlocked");
+    }
     if (g_consoleLegend) {
         g_consoleLegend = false;
         Squachy::previewLegend(!Squachy::legendPreview());
@@ -5719,8 +5731,16 @@ void loop() {
                             break;
                         case SettingsRow::SHADES_COLOR: Squachy::cycleShadesColor(); break;
                         case SettingsRow::SQUACHY_SIZE: Settings::cycleSquachySize(); break;
-                        case SettingsRow::OUTFIT:       enterOutfit(); break;
-                        case SettingsRow::PET:          Squachy::cyclePet(); break;
+                        case SettingsRow::OUTFIT:
+                        case SettingsRow::PET:
+                            if (Squachy::jailed()) {
+                                const uint32_t secs = (Squachy::jailLeftMs() + 999u) / 1000u;
+                                char msg[28];
+                                snprintf(msg, sizeof(msg), "%lu:%02lu left. Behave.", (unsigned long)(secs / 60u), (unsigned long)(secs % 60u));
+                                Theme::showToast("SERVING TIME", msg, Theme::AMBER, 2500);
+                            } else if (row == SettingsRow::OUTFIT) enterOutfit();
+                            else Squachy::cyclePet();
+                            break;
                         case SettingsRow::BANTER:       Settings::cycleBanter(); break;
                         case SettingsRow::VIEW_DIARY:   enterDiary(); break;
                         case SettingsRow::BINGO:        enterBingo(); break;
