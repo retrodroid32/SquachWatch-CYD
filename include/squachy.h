@@ -252,6 +252,12 @@ namespace Squachy {
     // tapped while it asks WHAT REEKS?! -- see Theme::consumeOwlReek(). Not a
     // no-op once earned: he answers the owl either way.
     void unlockShambler();
+    bool shamblerUnlocked();
+    // TH3 0N3: red DIGITAL glyph unlock and alert-responsive lenses.
+    void unlockTh3();
+    bool th3Unlocked();
+    bool th3Wearing();
+    void setNearbyLit(bool on);
 
     // Unlock announcements. Any outfit that becomes available -- by
     // crossing its lifetime-detection threshold, or by the werewolf

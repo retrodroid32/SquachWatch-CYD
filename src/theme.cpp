@@ -4766,6 +4766,8 @@ static bool     s_lodgePending = false;
 static int      s_owlX = 0, s_owlY = 0, s_owlBubX = 0, s_owlBubY = 0, s_owlBubW = 0, s_owlBubH = 0;
 static uint32_t s_owlReekAt = 0;
 static bool     s_owlReekPending = false;
+static bool     s_owlAsks = true;
+void setOwlAsks(bool on) { s_owlAsks = on; }
 
 // Where the toasters cameo is RIGHT NOW, so a tap can find him. Same shape
 // as the lodge and the starfield eye: the drawing code publishes a box each

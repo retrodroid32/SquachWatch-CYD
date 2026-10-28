@@ -518,6 +518,10 @@ namespace Theme {
     // WHAT REEKS?! (every third time he speaks). main.cpp turns it into
     // Squachy::unlockShambler().
     bool consumeOwlReek();
+    void setOwlAsks(bool on);
+    // TH3 0N3: the red glyph in DIGITAL rain.
+    bool consumeRedGlyph();
+    void setRedGlyph(bool on);
     // XYZZY, on the TERMINAL background: the terminal types the word now and
     // then, and each tap on it is reported here once -- 1, 2, then 3, which is
     // the YZZERD unlock, then round again. 0 when nothing new was tapped.

@@ -4359,6 +4359,9 @@ void loop() {
             if (Theme::consumeEyeCatch())       Squachy::unlockVoidEye();
             if (Theme::consumeLodgeKnock())     Squachy::unlockParka();
             if (Theme::consumeOwlReek())        Squachy::unlockShambler();
+            if (Theme::consumeRedGlyph())       Squachy::unlockTh3();
+            Theme::setOwlAsks(!Squachy::shamblerUnlocked());
+            Theme::setRedGlyph(!Squachy::th3Unlocked());
             if (Theme::consumeSharkCatch())     Squachy::unlockShark();
             if (const uint8_t said = Theme::consumeXyzzy()) Squachy::magicWord(said);
     if (Theme::consumePetUnlock())      Squachy::unlockPet();
