@@ -255,6 +255,14 @@ namespace Squachy {
     bool shamblerUnlocked();
     // TH3 0N3: red DIGITAL glyph unlock and alert-responsive lenses.
     void unlockTh3();
+    // STRIPES: cell-block costume, ten-minute sentence.
+    void jailStart();
+    void jailFree();
+    bool jailed();
+    uint32_t jailLeftMs();
+    bool takeJailFreed();
+    bool chainPoint(int& x, int& y);
+    uint32_t yankedAt();
     bool th3Unlocked();
     bool th3Wearing();
     void setNearbyLit(bool on);

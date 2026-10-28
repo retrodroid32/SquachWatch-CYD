@@ -2529,6 +2529,54 @@ bool th3Unlocked() {
     return outfitUnlocked((uint8_t)OutfitId::TH3_0N3);
 }
 
+// STRIPES -- a sentence is real elapsed time even across other screens.
+// The upstream pet throwing trigger is not present in this fork; console
+// JAIL/FREE are test access until that gameplay integration is complete.
+static const uint32_t JAIL_MS = 10u * 60u * 1000u;
+static void jailSave() { s_petPrefs.putUInt("jailMs", s_jailLeft); s_jailSaved = millis(); }
+void jailFree();
+bool jailed() {
+    if (!s_jailLeft) return false;
+    const uint32_t now = millis(), elapsed = now - s_jailLast;
+    s_jailLast = now;
+    if (elapsed >= s_jailLeft) { jailFree(); return false; }
+    s_jailLeft -= elapsed;
+    if (now - s_jailSaved > 15000u) jailSave();
+    return true;
+}
+uint32_t jailLeftMs() { return jailed() ? s_jailLeft : 0; }
+void jailStart() {
+    ensurePrefsLoaded();
+    if (s_jailLeft) return;
+    s_jailLeft = JAIL_MS;
+    s_jailLast = millis();
+    s_jailFreed = false;
+    jailSave();
+    mood = Mood::SHOCKED;
+    moodUntil = millis() + tempo(1600);
+}
+void jailFree() {
+    ensurePrefsLoaded();
+    if (!s_jailLeft) return;
+    s_jailLeft = 0;
+    jailSave();
+    s_jailFreed = true;
+    if (!s_stripesUnlocked) {
+        s_stripesUnlocked = true;
+        s_petPrefs.putBool("stripes", true);
+        refreshOutfitUnlocks();
+    }
+    mood = Mood::BOUNCE;
+    moodUntil = millis() + tempo(2000);
+    say("Free! I'm keeping the stripes.", 3600);
+}
+bool takeJailFreed() { const bool f=s_jailFreed; s_jailFreed=false; return f; }
+bool chainPoint(int& x, int& y) {
+    if (!s_chainAt || millis() - s_chainAt > 300u) return false;
+    x=s_chainX; y=s_chainY; return true;
+}
+uint32_t yankedAt() { return s_yankAt; }
+
 void unlockTh3() {
     ensurePrefsLoaded();
     mood = Mood::BOUNCE;
