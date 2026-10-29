@@ -1,3 +1,5 @@
-WATCH149-LANDBACK
-# Experimental LAB build after landscape WATCH BACK touch fix.
-# Triggered only on explicit user hardware regression report.
+pr153-stripes-20261028
+# LAB only: dependent PR 153 SHAGGY throws, 10-per-minute STRIPES sentence and temporary jail ball.
+# 3.2-inch CYD ST7798 80MHz and standard, 2.8-inch CYD variants; no production tag/release.
+# Firmware source: ff30863b12915e353d78b6372ce13282d23bde54
+# Hardware testing required: do not merge PR 121 or PR 153.
