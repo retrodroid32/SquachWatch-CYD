@@ -4458,6 +4458,13 @@ void loop() {
             // active gesture, still takes priority over the button bar
             // in the branch below -- Squachy is drawn well clear of the
             // button row, so the two never really compete in practice.)
+            // A different screen may have consumed the release edge (for
+            // example, an incoming ALERT). Cancel the stale hold safely
+            // before a new touch or a touchless return to CLEAR.
+            if (petGrabActive && (touchJustDown || (!tp.valid && !touchJustUp))) {
+                Pet::cancel(now);
+                petGrabActive = false;
+            }
             if (touchJustDown) {
                 // The pet can sit directly over Squachy's head. Give the
                 // companion first refusal, then leave every existing UI
