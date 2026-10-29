@@ -59,6 +59,9 @@ volatile uint8_t s_testDropReason = 0;
 uint8_t s_testIndex = 0;
 char s_testSsid[33] = "";
 char s_testPass[65] = "";
+// A failed USE launch used to be reported as WIFI BUSY for every cause,
+// including failed FreeRTOS stack allocation on a memory-constrained CYD32.
+const char* s_testStartIssue = "Ready";
 
 void key(char* out, const char* k, uint8_t i) { snprintf(out, 4, "%s%u", k, (unsigned)i); }
 
@@ -789,28 +792,46 @@ void clearSavedTest() {
         s_testState = SavedTest::IDLE;
 #endif
 }
+const char* savedTestStartIssue() { return s_testStartIssue; }
 bool testSavedAt(uint8_t i) {
     readSaved();
-    if (i >= s_n || s_task || s_testTask || s_testState != SavedTest::IDLE ||
-        s_state != State::OFF || Security::locked()) {
-#if defined(CYD32)
-        Serial.printf("[wifi] USE refused: index=%u/%u otaTask=%p testTask=%p test=%u ota=%u locked=%u\n",
-                      (unsigned)i, (unsigned)s_n, (void*)s_task,
-                      (void*)s_testTask, (unsigned)s_testState,
-                      (unsigned)s_state, (unsigned)Security::locked());
-#endif
+    s_testStartIssue = "Ready";
+    if (i >= s_n) s_testStartIssue = "Invalid saved network";
+    else if (Security::locked()) s_testStartIssue = "Unlock device first";
+    else if (s_task) s_testStartIssue = "OTA worker still active";
+    else if (s_testTask) s_testStartIssue = "WiFi test worker active";
+    else if (s_testState == SavedTest::CONNECTING) s_testStartIssue = "WiFi test still connecting";
+    else if (s_testState != SavedTest::IDLE) s_testStartIssue = "Previous WiFi result pending";
+    else if (s_state != State::OFF) s_testStartIssue = "WiFi update mode active";
+    if (strcmp(s_testStartIssue, "Ready") != 0) {
+        Serial.printf("[wifi] USE refused: %s (slot=%u/%u otaTask=%p testTask=%p test=%u ota=%u)\n",
+                      s_testStartIssue, (unsigned)i, (unsigned)s_n,
+                      (void*)s_task, (void*)s_testTask,
+                      (unsigned)s_testState, (unsigned)s_state);
         return false;
     }
-    if (!passAt(i, s_testPass, sizeof s_testPass)) return false;
+    if (!passAt(i, s_testPass, sizeof s_testPass)) {
+        s_testStartIssue = "Saved credentials unreadable";
+        Serial.println("[wifi] USE refused: saved credentials unreadable");
+        return false;
+    }
     strncpy(s_testSsid, s_list[i].ssid, sizeof s_testSsid - 1);
     s_testSsid[sizeof s_testSsid - 1] = '\0';
     s_testIndex = i;
     s_testState = SavedTest::CONNECTING;
+    Serial.printf("[wifi] USE start: free=%lu largest=%lu test stack=%u\n",
+                  (unsigned long)ESP.getFreeHeap(),
+                  (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT),
+                  6144u);
     if (xTaskCreatePinnedToCore(testSavedTask, "wifi-test", 6144,
                                 nullptr, 1, &s_testTask, 1) != pdPASS) {
         s_testTask = nullptr;
         s_testState = SavedTest::IDLE;
         memset(s_testPass, 0, sizeof s_testPass);
+        s_testStartIssue = "Not enough memory for WiFi";
+        Serial.printf("[wifi] USE worker allocation FAILED: free=%lu largest=%lu\n",
+                      (unsigned long)ESP.getFreeHeap(),
+                      (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
         return false;
     }
     return true;
