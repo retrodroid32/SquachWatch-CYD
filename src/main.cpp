@@ -4462,7 +4462,14 @@ void loop() {
                 // The pet can sit directly over Squachy's head. Give the
                 // companion first refusal, then leave every existing UI
                 // and Squachy gesture path unchanged when it is missed.
-                petGrabActive = !boring && Pet::grab(tp.x, tp.y, now);
+                // Tutorials, onboarding and show-off intentionally own all
+                // touches until dismissed; never start a stranded pet grip.
+                bool petCanGrab = !boring && !Squachy::onboardingActive() &&
+                                  !Squachy::showOffActive();
+#if SQUACH_MESH
+                petCanGrab = petCanGrab && !MeshTutor::active();
+#endif
+                petGrabActive = petCanGrab && Pet::grab(tp.x, tp.y, now);
                 sqActive = !petGrabActive && !boring && Squachy::hitTest(tp.x, tp.y);
                 sqHeld = false;
                 sqPetting = false;
