@@ -149,6 +149,19 @@ void drag(int x, int y, uint32_t now) {
     s_petY = (float)(y - s_grabOffY);
 }
 
+void cancel(uint32_t now) {
+    if (!s_petHeld) return;
+    // Alerts can take over the screen mid-gesture. Returning to CLEAR with
+    // no release edge must not strand SHAGGY in HELD or silently record a
+    // throw from the last sampled velocity.
+    s_petHeld = false;
+    s_petAir = false;
+    s_petVX = s_petVY = 0;
+    s_x = s_petX; s_y = s_petY;
+    s_phase = Phase::HECKLE;
+    s_at = now;
+}
+
 void release(uint32_t now) {
     if (!s_petHeld) return;
     s_petHeld = false;
