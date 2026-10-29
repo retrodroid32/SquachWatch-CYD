@@ -668,7 +668,15 @@ static void testSavedTask(void*) {
     WiFi.mode(WIFI_STA);
     delay(180); // Let the asynchronous BLE/update radio handoff settle.
 
+    // On 3.2-inch ST7798 the USE survey + BSSID-pinned join can fail
+    // after the sniffer-to-STA handoff even though the boot join succeeds.
+    // Match bootCheck's direct saved-SSID join; keep 2.8 unchanged.
+#if defined(CYD32)
+    const int16_t surveyCount = -1;
+    Serial.printf("[wifi] USE CYD32 direct join: %s\n", s_testSsid);
+#else
     const int16_t surveyCount = WiFi.scanNetworks(false, false, false, 180);
+#endif
     bool apSeen = false;
     int8_t bestRssi = -127;
     int32_t apChannel = 0;
@@ -696,6 +704,10 @@ static void testSavedTask(void*) {
             s_testDropReason = info.wifi_sta_disconnected.reason;
         }, ARDUINO_EVENT_WIFI_STA_DISCONNECTED);
     const char* pass = s_testPass[0] ? s_testPass : nullptr;
+#if defined(CYD32)
+    WiFi.setAutoReconnect(false);
+    WiFi.setSleep(false);
+#endif
     // If the survey found the AP, use its channel/BSSID instead of the
     // scanner's previous hopping channel. If the survey failed or missed
     // a hidden SSID, still try the saved credentials without a pin.
@@ -707,10 +719,12 @@ static void testSavedTask(void*) {
     uint32_t started = millis();
     wl_status_t st = WiFi.status();
     while (st != WL_CONNECTED && millis() - started < 8000) {
-        // Immediately after begin() the Arduino event state may still
-        // describe a previous connection: do not abort prematurely.
+        // CYD32 tolerates an initial stale WiFi status while the sniffer
+        // releases the radio; the working 2.8 path retains early failure.
+#if !defined(CYD32)
         if (millis() - started > 1800 &&
             (st == WL_NO_SSID_AVAIL || st == WL_CONNECT_FAILED)) break;
+#endif
         delay(100);
         st = WiFi.status();
     }
@@ -718,8 +732,13 @@ static void testSavedTask(void*) {
     // A router can roam to a different channel/BSSID between survey and
     // association. Retry once without AP pinning rather than declaring
     // a network we just saw to be unavailable.
-    if (apSeen && st != WL_CONNECTED &&
-        (st == WL_NO_SSID_AVAIL || reason == 201)) {
+    if (st != WL_CONNECTED &&
+#if defined(CYD32)
+        true  // retry direct join once; no stale BSSID/channel
+#else
+        apSeen && (st == WL_NO_SSID_AVAIL || reason == 201)
+#endif
+        ) {
         Serial.println("[wifi] USE retry: AP visible, joining without BSSID");
         WiFi.disconnect(false, false);
         delay(180);
@@ -746,8 +765,11 @@ static void testSavedTask(void*) {
         result = SavedResult::NOT_FOUND;
     // 15 = four-way handshake timeout, 202 = authentication failure,
     // 204 = handshake timeout. A generic timeout is NOT a bad password.
-    else if (reason == 15 || reason == 202 || reason == 204 ||
-             st == WL_CONNECT_FAILED) result = SavedResult::BAD_PASSWORD;
+    else if (reason == 15 || reason == 202 || reason == 204
+#if !defined(CYD32)
+             || st == WL_CONNECT_FAILED
+#endif
+             ) result = SavedResult::BAD_PASSWORD;
 
     setResult((int8_t)s_testIndex, result);
     Serial.printf("[wifi] USE join: status=%d drop=%u scan=%d visible=%u result=%u\n",
@@ -765,13 +787,30 @@ static void testSavedTask(void*) {
 
 SavedTest savedTestState() { return s_testState; }
 void clearSavedTest() {
+#if defined(CYD32)
+    // The worker publishes a terminal status only after it completes radio
+    // cleanup. A stale handle should not strand the next USE in WIFI BUSY.
+    if (s_testState != SavedTest::CONNECTING) {
+        s_testTask = nullptr;
+        s_testState = SavedTest::IDLE;
+    }
+#else
     if (s_testState != SavedTest::CONNECTING && !s_testTask)
         s_testState = SavedTest::IDLE;
+#endif
 }
 bool testSavedAt(uint8_t i) {
     readSaved();
     if (i >= s_n || s_task || s_testTask || s_testState != SavedTest::IDLE ||
-        s_state != State::OFF || Security::locked()) return false;
+        s_state != State::OFF || Security::locked()) {
+#if defined(CYD32)
+        Serial.printf("[wifi] USE refused: index=%u/%u otaTask=%p testTask=%p test=%u ota=%u locked=%u\n",
+                      (unsigned)i, (unsigned)s_n, (void*)s_task,
+                      (void*)s_testTask, (unsigned)s_testState,
+                      (unsigned)s_state, (unsigned)Security::locked());
+#endif
+        return false;
+    }
     if (!passAt(i, s_testPass, sizeof s_testPass)) return false;
     strncpy(s_testSsid, s_list[i].ssid, sizeof s_testSsid - 1);
     s_testSsid[sizeof s_testSsid - 1] = '\0';
