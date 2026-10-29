@@ -29,7 +29,8 @@ int main() {
     assert(!WifiUsePolicy::retry(false, false, true, false));
     assert(!WifiUsePolicy::retry(false, true, false, false));
     assert(!WifiUsePolicy::retry(true, true, true, false));
-    for (uint8_t bands : { (uint8_t)1, (uint8_t)2, (uint8_t)4, (uint8_t)16 }) {
+    const uint8_t bandCounts[] = { 1, 2, 4, 16 };
+    for (uint8_t bands : bandCounts) {
         assert(!WifiScreenPolicy::keyboardDirectPanel(true, bands));
         assert(!WifiScreenPolicy::networksDirectPanel(true, bands));
     }
