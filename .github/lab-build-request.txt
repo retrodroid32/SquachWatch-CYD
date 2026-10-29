@@ -1,6 +1,7 @@
-pr153-pr154-wifi-use-st7798-20261028
-# LAB hardware test firmware combining DRAFT #153 gameplay with DRAFT #154 CYD32-specific WiFi USE fix.
-# WiFi source PR154: 17e9c28a20764d59378690553be93e25afd95f4c
-# Pet/costume source PR153: e7e468935662439477b38c2214b417237dd75f58
-# Includes 2.8 firmware without 3.2-specific WiFi behavior changes.
-# Verify standard 3.2 ST7798 and experimental 80 MHz; no production release/tag or merges.
+pr153-pr154-wifi-use-heap-r2-20261029
+# LAB ONLY: supersedes pr153-pr154-wifi-use-st7798-20261028.
+# CYD32 ST7798 saved USE startup: 77KB frame loan + precise failure reason.
+# PR154 source: 948fd346b18f2ed0e25d6c3bb73cccc59f84d55c
+# Combined with PR153 wardrobe/STRIPES pet game, kept on separate LAB branch.
+# Test both normal and experimental 80MHz ST7798. 2.8-inch behavior unchanged.
+# Never merge or publish production automatically; hardware validation pending.
