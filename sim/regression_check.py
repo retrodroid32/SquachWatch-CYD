@@ -6,6 +6,8 @@ HERE=Path(__file__).resolve().parent
 BIN=HERE/"squachsim"
 CASES=[
  ("clear","clear",["--bg","7","--outfit","13","--frames","60"],(320,240)),
+ ("stripes-jail-ball","clear",["--jail","--pet","1","--frames","8"],(320,240)),
+ ("stripes-jail-ball-portrait","clear",["--jail","--pet","1","--frames","8","--portrait"],(240,320)),
  ("camera-alert","alert",["--alert","9","--frames","6"],(320,240)),
  ("settings","settings",[],(320,240)),
  ("alert-rules","alertrules",[],(320,240)),
