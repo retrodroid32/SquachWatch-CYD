@@ -105,7 +105,7 @@ static int s_grabStartX = 0, s_grabStartY = 0;
 static int s_dragLastX = 0, s_dragLastY = 0;
 static uint32_t s_dragAt = 0, s_airAt = 0, s_drawAt = 0;
 static uint32_t s_petPhysicsAt = 0;
-static int s_floor = 200, s_limitX = 320;
+static int s_floor = 200;
 
 bool hit(int x, int y) {
     if (s_petHeld || s_petAir || Squachy::jailed() ||
@@ -407,7 +407,6 @@ static void yetiTick(TFT_eSPI& t, uint32_t now, int screenW, int cx, int halfW, 
 
 void tick(TFT_eSPI& t, uint32_t now, int screenW, int bandTop, int bandBottom) {
     s_floor = bandBottom - SPR;
-    s_limitX = screenW;
     if (Squachy::jailed()) {
         s_petHeld = s_petAir = false;
         s_drawAt = 0;
