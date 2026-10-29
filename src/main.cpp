@@ -275,6 +275,7 @@ static void drawCrashCard(TFT_eSPI& t) {
 #include "ota_core.h"
 #include "ota_ble.h"
 #include "ota_wifi.h"
+#include "wifi_use_policy.h"
 #include "ui_update.h"
 #include "ui_wifipass.h"
 #include "ui_sysprops.h"
@@ -5925,7 +5926,7 @@ void loop() {
             // The board redraws only what changed, so it is the same with the
             // frame buffer and without it (given up for a download).
 #if defined(CYD32)
-            if (frameBufferOk && s_recoveryBands > 1) {
+            if (WifiScreenPolicy::keyboardDirectPanel(frameBufferOk, s_recoveryBands)) {
                 // The password widget measures screen height and retains
                 // incremental paint state. Calling it once PER SPRITE BAND
                 // gives it a shortened height and suppresses subsequent
@@ -5985,7 +5986,7 @@ void loop() {
             // If we recover only 2/4/8 bands, render this static list direct
             // ONCE per actual change instead of redrawing all bands on each
             // loop. Normal full-buffer rendering remains unchanged.
-            const bool directWifiList = !frameBufferOk || s_recoveryBands > 1;
+            const bool directWifiList = WifiScreenPolicy::networksDirectPanel(frameBufferOk, s_recoveryBands);
             if (directWifiList) {
                 static uint32_t paintedScene = UINT32_MAX;
                 static uint8_t  paintedTest = 255;
