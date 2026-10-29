@@ -5992,15 +5992,24 @@ void loop() {
                 static uint8_t  paintedTest = 255;
                 static int      paintedSelected = -999;
                 static bool     repaintAfterInput = false;
+                static uint32_t toastCleanupAt = 0;
+                const bool toastExpired = toastCleanupAt &&
+                    (int32_t)(now - toastCleanupAt) >= 0;
                 const bool shouldPaint = paintedScene != transitionStart ||
                     paintedTest != (uint8_t)test ||
                     paintedSelected != uiWifiNetsSelected() ||
-                    touchJustDown || touchJustUp || repaintAfterInput;
+                    touchJustDown || touchJustUp || repaintAfterInput || toastExpired;
                 if (shouldPaint) {
                     uiWifiNetsTick(tft, now);
                     paintedScene = transitionStart;
                     paintedTest = (uint8_t)test;
                     paintedSelected = uiWifiNetsSelected();
+                    // Clear an expired toast with just one delayed repaint.
+                    if (toastExpired) toastCleanupAt = 0;
+                    else if (touchJustDown ||
+                             (test != OtaWifi::SavedTest::IDLE &&
+                              test != OtaWifi::SavedTest::CONNECTING))
+                        toastCleanupAt = now + 4000u;
                 }
                 // USE, REMOVE and ADD commit after rendering; show the new
                 // toast/selection on the next loop without busy-frame flicker.
