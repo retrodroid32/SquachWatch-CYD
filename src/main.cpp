@@ -1230,7 +1230,7 @@ static bool s_scanPickerOpen = false;
 
 static void enterLocked();
 // The frame buffer lent to a WiFi download, and taken back; defined with the update code below.
-static void lendFrameToDownload();
+static void lendFrameToDownload(bool preservePanel = false);
 static void restoreFrameBuffer();
 // Every way home goes through here, which makes it the one place the lock has
 // to be honoured: while locked, "home" is the lock screen.
@@ -1648,13 +1648,15 @@ static void autoUpdateTick(uint32_t now) {
 // about to restart and the copying the wipe does ran the heap dry without
 // it. Afterwards the screens draw straight to the panel, the fallback a
 // failed rotate already uses.
-static void releaseFrameBuffer(const char* who) {
+static void releaseFrameBuffer(const char* who, bool clearPanel = true) {
 #if !defined(CYD35)
     if (!frameBufferOk) return;
     frame.deleteSprite();
     frameBufferOk = false;
     canvas = &tft;
-    tft.fillScreen(Theme::BG);
+    // A saved-network USE check must not blank the LCD when freeing the
+    // framebuffer: that used to cause an obvious full-screen flash at tap.
+    if (clearPanel) tft.fillScreen(Theme::BG);
     Serial.printf("[%s] frame buffer released: largest block %lu\n", who,
                   (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
 #else
@@ -1680,9 +1682,9 @@ static bool s_frameLent = false;
 // can make 76.8 KB / 38.4 KB contiguous allocations impossible. Recover
 // with the smallest power-of-two band count that fits: 2, 4, 8, or 16.
 // Every supported 240x320 / 320x240 rotation divides evenly by those counts.
-static void lendFrameToDownload() {
+static void lendFrameToDownload(bool preservePanel) {
     if (!frameBufferOk) return;
-    releaseFrameBuffer("ota");
+    releaseFrameBuffer(preservePanel ? "wifi-use" : "ota", !preservePanel);
     s_recoveryBands = 1;
     s_frameLent = true;
 }
@@ -5922,7 +5924,17 @@ void loop() {
             lastTouch = now;
             // The board redraws only what changed, so it is the same with the
             // frame buffer and without it (given up for a download).
-            drawTwoBand([&](TFT_eSPI& t, bool) { uiWifiPassTick(t, now); });
+#if defined(CYD32)
+            if (frameBufferOk && s_recoveryBands > 1) {
+                // The password widget measures screen height and retains
+                // incremental paint state. Calling it once PER SPRITE BAND
+                // gives it a shortened height and suppresses subsequent
+                // bands, producing duplicate/overlapping keyboards.
+                // Its existing direct-panel path redraws only changed keys.
+                uiWifiPassTick(tft, now);
+            } else
+#endif
+                drawTwoBand([&](TFT_eSPI& t, bool) { uiWifiPassTick(t, now); });
             if (touchJustDown)    uiWifiPassTouch(tp.x, tp.y, now, WifiPassTouch::DOWN);
             else if (tp.valid)    uiWifiPassTouch(tp.x, tp.y, now, WifiPassTouch::MOVE);
             else if (touchJustUp) uiWifiPassTouch(tp.x, tp.y, now, WifiPassTouch::UP);
@@ -5966,7 +5978,35 @@ void loop() {
                     default:                               Theme::showToast("CONNECTION FAILED", "Try again or move closer", Theme::AMBER); break;
                 }
             }
-            drawTwoBand([&](TFT_eSPI& t, bool) { uiWifiNetsTick(t, now); });
+#if defined(CYD32)
+            // USE lends its large sprite to FreeRTOS/WiFi. Until it can be
+            // restored, drawing the entire list at 30fps directly on the LCD
+            // flashes every time each rectangle is cleared and repainted.
+            // If we recover only 2/4/8 bands, render this static list direct
+            // ONCE per actual change instead of redrawing all bands on each
+            // loop. Normal full-buffer rendering remains unchanged.
+            const bool directWifiList = !frameBufferOk || s_recoveryBands > 1;
+            if (directWifiList) {
+                static uint32_t paintedScene = UINT32_MAX;
+                static uint8_t  paintedTest = 255;
+                static int      paintedSelected = -999;
+                static bool     repaintAfterInput = false;
+                const bool shouldPaint = paintedScene != transitionStart ||
+                    paintedTest != (uint8_t)test ||
+                    paintedSelected != uiWifiNetsSelected() ||
+                    touchJustDown || touchJustUp || repaintAfterInput;
+                if (shouldPaint) {
+                    uiWifiNetsTick(tft, now);
+                    paintedScene = transitionStart;
+                    paintedTest = (uint8_t)test;
+                    paintedSelected = uiWifiNetsSelected();
+                }
+                // USE, REMOVE and ADD commit after rendering; show the new
+                // toast/selection on the next loop without busy-frame flicker.
+                repaintAfterInput = touchJustDown;
+            } else
+#endif
+                drawTwoBand([&](TFT_eSPI& t, bool) { uiWifiNetsTick(t, now); });
             if (test == OtaWifi::SavedTest::CONNECTING) break;
             if (touchJustDown) {
                 int row = -1;
@@ -5986,7 +6026,7 @@ void loop() {
                                 // with the 77KB sprite still resident; failure
                                 // was mislabeled WIFI BUSY. Match OTA's proven
                                 // framebuffer loan on this board only.
-                                lendFrameToDownload();
+                                lendFrameToDownload(true);
 #endif
                                 if (OtaWifi::testSavedAt((uint8_t)s))
                                     Theme::showToast("CONNECTING", "Testing saved WiFi only", Theme::CYAN);
