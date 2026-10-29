@@ -2,6 +2,7 @@
 #include "ota_wifi.h"
 #include "security.h"
 #include "clock.h"
+#include "wifi_use_policy.h"
 #include <Arduino.h>
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
@@ -671,11 +672,10 @@ static void testSavedTask(void*) {
     // On 3.2-inch ST7798 the USE survey + BSSID-pinned join can fail
     // after the sniffer-to-STA handoff even though the boot join succeeds.
     // Match bootCheck's direct saved-SSID join; keep 2.8 unchanged.
+    const int16_t surveyCount = WifiUsePolicy::SCAN_BEFORE_JOIN ?
+        WiFi.scanNetworks(false, false, false, 180) : -1;
 #if defined(CYD32)
-    const int16_t surveyCount = -1;
     Serial.printf("[wifi] USE CYD32 direct join: %s\n", s_testSsid);
-#else
-    const int16_t surveyCount = WiFi.scanNetworks(false, false, false, 180);
 #endif
     bool apSeen = false;
     int8_t bestRssi = -127;
@@ -721,10 +721,9 @@ static void testSavedTask(void*) {
     while (st != WL_CONNECTED && millis() - started < 8000) {
         // CYD32 tolerates an initial stale WiFi status while the sniffer
         // releases the radio; the working 2.8 path retains early failure.
-#if !defined(CYD32)
-        if (millis() - started > 1800 &&
+        if (WifiUsePolicy::BREAK_ON_EARLY_ERROR &&
+            millis() - started > 1800 &&
             (st == WL_NO_SSID_AVAIL || st == WL_CONNECT_FAILED)) break;
-#endif
         delay(100);
         st = WiFi.status();
     }
@@ -732,13 +731,9 @@ static void testSavedTask(void*) {
     // A router can roam to a different channel/BSSID between survey and
     // association. Retry once without AP pinning rather than declaring
     // a network we just saw to be unavailable.
-    if (st != WL_CONNECTED &&
-#if defined(CYD32)
-        true  // retry direct join once; no stale BSSID/channel
-#else
-        apSeen && (st == WL_NO_SSID_AVAIL || reason == 201)
-#endif
-        ) {
+    const bool authRejected = reason == 15 || reason == 202 || reason == 204;
+    if (WifiUsePolicy::retry(st == WL_CONNECTED, apSeen,
+                             st == WL_NO_SSID_AVAIL || reason == 201, authRejected)) {
         Serial.println("[wifi] USE retry: AP visible, joining without BSSID");
         WiFi.disconnect(false, false);
         delay(180);
@@ -747,7 +742,8 @@ static void testSavedTask(void*) {
         started = millis();
         st = WiFi.status();
         while (st != WL_CONNECTED && millis() - started < 5000) {
-            if (millis() - started > 1800 &&
+            if (WifiUsePolicy::BREAK_ON_EARLY_ERROR &&
+                millis() - started > 1800 &&
                 (st == WL_NO_SSID_AVAIL || st == WL_CONNECT_FAILED)) break;
             delay(100);
             st = WiFi.status();
@@ -765,11 +761,9 @@ static void testSavedTask(void*) {
         result = SavedResult::NOT_FOUND;
     // 15 = four-way handshake timeout, 202 = authentication failure,
     // 204 = handshake timeout. A generic timeout is NOT a bad password.
-    else if (reason == 15 || reason == 202 || reason == 204
-#if !defined(CYD32)
-             || st == WL_CONNECT_FAILED
-#endif
-             ) result = SavedResult::BAD_PASSWORD;
+    else if (reason == 15 || reason == 202 || reason == 204 ||
+             (WifiUsePolicy::GENERIC_CONNECT_FAILED_IS_AUTH && st == WL_CONNECT_FAILED))
+        result = SavedResult::BAD_PASSWORD;
 
     setResult((int8_t)s_testIndex, result);
     Serial.printf("[wifi] USE join: status=%d drop=%u scan=%d visible=%u result=%u\n",
