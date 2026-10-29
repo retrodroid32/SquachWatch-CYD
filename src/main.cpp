@@ -1695,6 +1695,11 @@ static void lendFrameToDownload() {
 }
 static void restoreFrameBuffer() {
     if (!s_frameLent) return;
+#if defined(CYD32)
+    // Saved WiFi USE borrows the 77 KB sprite so its FreeRTOS worker and
+    // station driver have heap. Reclaim only after radio test cleanup.
+    if (OtaWifi::savedTestState() != OtaWifi::SavedTest::IDLE) return;
+#endif
 #if defined(CYD35)
     // CYD35 keeps its half-screen sprite during OTA: nothing to allocate.
     s_frameLent = false;
@@ -6028,6 +6033,9 @@ void loop() {
             else if (test != OtaWifi::SavedTest::IDLE) {
                 OtaWifi::clearSavedTest();
                 engine.stopUpdateRadio();
+#if defined(CYD32)
+                restoreFrameBuffer();
+#endif
                 switch (test) {
                     case OtaWifi::SavedTest::JOINED:       Theme::showToast("WIFI CONNECTED", "Verified; scanning resumed", Theme::GREEN); break;
                     case OtaWifi::SavedTest::BAD_PASSWORD: Theme::showToast("AUTH FAILED", "Check saved password", Theme::AMBER); break;
@@ -6049,11 +6057,17 @@ void loop() {
                             } else {
                                 OtaWifi::useSaved((uint8_t)s);
                                 engine.startUpdateRadio();
+#if defined(CYD32)
+                                lendFrameToDownload();
+#endif
                                 if (OtaWifi::testSavedAt((uint8_t)s))
                                     Theme::showToast("CONNECTING", "Testing saved WiFi only", Theme::CYAN);
                                 else {
                                     engine.stopUpdateRadio();
-                                    Theme::showToast("WIFI BUSY", "Try again shortly", Theme::AMBER);
+#if defined(CYD32)
+                                    restoreFrameBuffer();
+#endif
+                                    Theme::showToast("WIFI CAN'T START", OtaWifi::savedTestStartIssue(), Theme::AMBER);
                                 }
                             }
                         }
