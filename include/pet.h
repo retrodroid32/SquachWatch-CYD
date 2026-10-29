@@ -29,6 +29,7 @@ namespace Pet {
     bool grab(int x, int y, uint32_t now);
     void drag(int x, int y, uint32_t now);
     void release(uint32_t now);
+    void cancel(uint32_t now);  // screen transition: drop, never count a fling
 
     // Cancels whatever he is doing and puts him off screen. Used when the
     // screen changes underneath him, so he does not reappear mid-jump on a
