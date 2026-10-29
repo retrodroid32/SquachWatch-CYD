@@ -704,10 +704,6 @@ static void testSavedTask(void*) {
             s_testDropReason = info.wifi_sta_disconnected.reason;
         }, ARDUINO_EVENT_WIFI_STA_DISCONNECTED);
     const char* pass = s_testPass[0] ? s_testPass : nullptr;
-#if defined(CYD32)
-    WiFi.setAutoReconnect(false);
-    WiFi.setSleep(false);
-#endif
     // If the survey found the AP, use its channel/BSSID instead of the
     // scanner's previous hopping channel. If the survey failed or missed
     // a hidden SSID, still try the saved credentials without a pin.
