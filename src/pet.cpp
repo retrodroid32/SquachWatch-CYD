@@ -106,6 +106,11 @@ static int s_dragLastX = 0, s_dragLastY = 0;
 static uint32_t s_dragAt = 0, s_airAt = 0, s_drawAt = 0;
 static uint32_t s_petPhysicsAt = 0;
 static int s_floor = 200;
+// After a real toss, SHAGGY stays on-screen so a ten-throw streak is
+// achievable. Without this, the original 3.2-second cameo ends before
+// the player can possibly earn STRIPES; the next visit is 45-90s later.
+static bool s_playActive = false;
+static uint32_t s_lastPlayThrowAt = 0;
 
 bool hit(int x, int y) {
     if (s_petHeld || s_petAir || Squachy::jailed() ||
@@ -153,11 +158,14 @@ void release(uint32_t now) {
     // A stationary finger, tap, or short resistive jitter is not a throw.
     const bool valid = dx * dx + dy * dy >= 24 * 24 && speed2 >= 0.30f * 0.30f;
     if (valid) {
+        s_playActive = true;
+        s_lastPlayThrowAt = now;
         s_petAir = true;
         s_petVX = fmaxf(-0.95f, fminf(0.95f, s_petVX));
         s_petVY = fmaxf(-0.95f, fminf(0.95f, s_petVY));
         s_airAt = s_petPhysicsAt = now;
         if (s_throwStreak.note(now)) {
+            s_playActive = false;
             s_petAir = false;
             s_phase = Phase::AWAY;
             s_nextAt = 0;
@@ -280,7 +288,8 @@ static const char* const NAP_REPLY[3] = {
 };
 
 void reset() {
-    s_petHeld = s_petAir = false;
+    s_petHeld = s_petAir = s_playActive = false;
+    s_throwStreak.reset();
     s_drawAt = 0;
     s_phase  = Phase::AWAY;
     s_x      = -100.0f;
@@ -408,7 +417,8 @@ static void yetiTick(TFT_eSPI& t, uint32_t now, int screenW, int cx, int halfW, 
 void tick(TFT_eSPI& t, uint32_t now, int screenW, int bandTop, int bandBottom) {
     s_floor = bandBottom - SPR;
     if (Squachy::jailed()) {
-        s_petHeld = s_petAir = false;
+        s_petHeld = s_petAir = s_playActive = false;
+        s_throwStreak.reset();
         s_drawAt = 0;
         drawJailBall(t, now, screenW, bandBottom);
         return;
@@ -442,11 +452,15 @@ void tick(TFT_eSPI& t, uint32_t now, int screenW, int bandTop, int bandBottom) {
     }
     const Squachy::PetId which = Squachy::petChoice();
     if (!Squachy::petUnlocked() || which == Squachy::PetId::OFF) {
+        s_playActive = false;
+        s_throwStreak.reset();
         s_phase  = Phase::AWAY;
         s_yPhase = YPhase::AWAY;
         return;
     }
     if (which == Squachy::PetId::YETI) {
+        s_playActive = false;
+        s_throwStreak.reset();
         int ycx, yhalfW, ytop, ybot;
         if (!Squachy::lastFootprint(ycx, yhalfW, ytop, ybot)) return;
         if (Squachy::isHeld()) { s_yPhase = YPhase::AWAY; return; }
@@ -547,11 +561,16 @@ void tick(TFT_eSPI& t, uint32_t now, int screenW, int bandTop, int bandBottom) {
         break;
     }
     case Phase::HECKLE: {
-        // Standing still beside him, on the ground he ran in on. He holds
-        // the same beat the perch does, so the line gets the same time to be
-        // read whichever way he delivered it.
+        // After an actual throw, linger through the rolling-minute streak
+        // so the automatic STRIPES sentence can be earned in normal play.
+        // Untouched cameos retain the original 3.2-second visit and exit.
+        const bool playing = s_playActive &&
+                             (uint32_t)(now - s_lastPlayThrowAt) < PetThrowStreak::WINDOW_MS;
+        if (!playing) s_playActive = false;
         s_y = ground;
-        if (now - s_at >= PERCH_MS) { s_phase = Phase::RUN_OUT; s_at = now; }
+        if (!playing && now - s_at >= PERCH_MS) {
+            s_phase = Phase::RUN_OUT; s_at = now;
+        }
         break;
     }
     case Phase::UP: {
