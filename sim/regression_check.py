@@ -17,7 +17,7 @@ CASES=[
  ("log-events-portrait","log",["--pose","1","--portrait"],(240,320)),
  ("colorcheck","colorcheck",[],(320,240)),
  ("solo-default","solo",["--outfit","0","--frames","0"],(320,240)),
- ("solo-legend","solo",["--outfit","14","--frames","0"],(320,240)),
+ ("solo-shark","solo",["--outfit","14","--frames","0"],(320,240)),
  ("solo-stripes-portrait","solo",["--outfit","19","--portrait","--frames","0"],(240,320)),
  ("camera-alert-portrait","alert",["--alert","9","--portrait","--frames","6"],(240,320)),
 ]
