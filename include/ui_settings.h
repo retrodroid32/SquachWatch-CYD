@@ -34,7 +34,7 @@ enum class SettingsRow : uint8_t {
     SQUACHY_NAME,   // opens the payphone; SquachMesh builds only
     SQUACHMESH,     // announce ourselves to other SquachWatches
     APPEARANCE,     // opens the APPEARANCE page: the display rows, and the hat
-    TOP_HAT,        // on the APPEARANCE page, once he is a Legend
+    AURA,           // on the APPEARANCE page, once he is a Legend
     SYSTEM,         // opens the SYSTEM page: calibrate, colours, diagnostics, reset
     WATCH_TARGET,   // "WATCHING: <name>", only while a watch is set. Taps clear it.
     HUNT_TARGET,    // "HUNTING: <name>", same deal
@@ -66,13 +66,19 @@ enum class SettingsRow : uint8_t {
     WATCH_TEMP,      // the T-Watch only: the chip's temperature, a reading, under WATCH
     WATCH_XTAL,      // the T-Watch only: CLOCK CHECK, the ESP32's crystal against the clock chip's
     PRIVACY,         // screen-only masking of addresses and device/network names
+    SNOOZE_MANAGER,  // main Settings: opens the current per-device snooze list
+    SNOOZE_ENTRY,    // dynamic entry on the snooze page: tap to unsnooze
+    SNOOZE_EMPTY,    // no active snoozes
     BACK,
     COUNT,
     NONE = 255
 };
 
 void uiSettingsInit(TFT_eSPI& t);
-void uiSettingsTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng);
+// staticBackground is for the low-memory, direct-to-panel fallback after OTA:
+// avoid continuously repainting an animated background without a sprite.
+void uiSettingsTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng,
+                    bool staticBackground = false, bool advance = true);
 void uiSettingsScroll(int delta);     // positive = scroll down
 
 // Sub-pages are this same screen with a different list on it, so their rows
@@ -82,7 +88,7 @@ void uiSettingsScroll(int delta);     // positive = scroll down
 // Each page keeps its OWN scroll position, so leaving a page and coming back
 // puts you where you were instead of at the top -- the list is long enough
 // that losing your place was the most-felt annoyance on this screen.
-enum class SettingsPage : uint8_t { MAIN = 0, APPEARANCE = 1, SYSTEM = 2, DESK = 3, WATCH = 4 };
+enum class SettingsPage : uint8_t { MAIN = 0, APPEARANCE = 1, SYSTEM = 2, DESK = 3, WATCH = 4, SNOOZES = 5 };
 void         uiSettingsOpenPage(SettingsPage p);
 SettingsPage uiSettingsCurrentPage();
 
@@ -107,11 +113,18 @@ bool uiSettingsTapPinnedOk(int x, int y, int screenW, int screenH);
 // just the screen dimensions) since row height now depends on actual
 // font metrics -- same reasoning as ui_rawscan.cpp's uiRawScanRowAt().
 SettingsRow uiSettingsHitTest(TFT_eSPI& t, int x, int y, int screenW, int screenH);
+// For SNOOZES page entries only: the exact entry index at the touched row.
+int uiSettingsSnoozeIndexAt(TFT_eSPI& t, int x, int y, int screenW, int screenH);
 
 // BRIGHT draws its own visible "-" and "+" controls inside the row. Return
 // the matching -16/+16 step for a tap x coordinate using the same font sizing
 // as the row, so the touch split follows the glyphs in either orientation.
 int8_t uiSettingsBrightnessDeltaForTap(TFT_eSPI& t, int x, int screenW, int screenH);
+
+// ZONE <  > draws both arrows beside the left-aligned label. Return the
+// west/east step based on the *visible arrow gap*, not half the screen,
+// just as BRIGHT follows its own '-' and '+' glyphs in both orientations.
+int8_t uiSettingsTimeZoneStepForTap(TFT_eSPI& t, int x, int screenW, int screenH);
 
 // ---- confirmation panel ---------------------------------------------------
 // Two rows here cannot be taken back by tapping them again: CALIBRATE TOUCH

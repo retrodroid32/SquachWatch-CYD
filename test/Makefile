@@ -29,7 +29,7 @@ CXXFLAGS := -std=c++17 -O1 -g -Wall -Wextra -Wno-unused-parameter \
 # cheaper and safer than pretending those dependencies do not exist.
 HOST_HEADERS := $(wildcard $(INC)/*.h) $(wildcard $(SIM)/*.h)
 
-TESTS := remote_id_test ibeacon_test signatures_test emitter_roundtrip_test ignore_list_test hacker_test pwnagotchi_test shim_fidelity_test squachmesh_test qwerty_test meshmsg_test device_info_test security_test emote_script_test blackbox_test bingo_test hunt_test bgretire_test autoquiet_test framepush_test touchfit_test logindex_test dex_test regulars_test detection_labels_test detection_vectors_test detection_evidence_test alert_rules_test ignore_migrate_dev_test ignore_migrate_macs_test ignore_migrate_fail_test spam_test ble_adv_utils_test sd_timestamp_test uifit_test mesh_airtime_test mesh_tx_policy_test mesh_appearance_test mesh_primary_transport_test mesh_visit_appearance_test
+TESTS := remote_id_test ibeacon_test signatures_test emitter_roundtrip_test ignore_list_test hacker_test pwnagotchi_test shim_fidelity_test squachmesh_test qwerty_test meshmsg_test device_info_test security_test emote_script_test blackbox_test bingo_test hunt_test bgretire_test autoquiet_test framepush_test touchfit_test logindex_test dex_test regulars_test detection_labels_test detection_vectors_test detection_evidence_test alert_rules_test ignore_migrate_dev_test ignore_migrate_macs_test ignore_migrate_fail_test spam_test ble_adv_utils_test uifit_test mesh_airtime_test mesh_tx_policy_test mesh_appearance_test mesh_primary_transport_test mesh_visit_appearance_test watch_ack_test wifi_use_test wifi_use_policy_test wifi_use_policy_cyd32_test pet_throw_streak_test sd_timestamp_test
 
 # Only the units under test get linked in. Pulling the whole firmware
 # would drag in TFT_eSPI, NimBLE and the UI, and a test that needs a
@@ -40,6 +40,7 @@ signatures_test_SRCS         := $(SRC)/signatures.cpp
 detection_vectors_test_SRCS  := $(SRC)/signatures.cpp
 emitter_roundtrip_test_SRCS  := $(SRC)/remote_id.cpp
 ignore_list_test_SRCS        := $(SRC)/ignore_list.cpp
+watch_ack_test_SRCS         := $(SIM)/detection_sim.cpp $(SRC)/remote_id.cpp $(SRC)/ignore_list.cpp
 ignore_migrate_dev_test_SRCS := $(SRC)/ignore_list.cpp
 ignore_migrate_macs_test_SRCS := $(SRC)/ignore_list.cpp
 ignore_migrate_fail_test_SRCS := $(SRC)/ignore_list.cpp
@@ -68,17 +69,19 @@ blackbox_test_FLAGS          := -DBLACKBOX_TEST
 # One LOG row per device, over the same RAM flash.
 logindex_test_SRCS           := $(SRC)/blackbox.cpp $(SRC)/log_index.cpp
 # The DEX's cards and the record, through the Preferences shim; the clock is stubbed.
-dex_test_SRCS                := $(SRC)/dex.cpp $(SIM)/detection_sim.cpp $(SRC)/remote_id.cpp
+dex_test_SRCS                := $(SRC)/dex.cpp $(SIM)/detection_sim.cpp $(SRC)/remote_id.cpp $(SRC)/ignore_list.cpp
 # The neighbours table; the clock is stubbed.
 regulars_test_SRCS           := $(SRC)/regulars.cpp
 # The card: winnable, and it keeps what it earned. The clock is stubbed in
 # the test; the engine comes along for its lifetime counts.
-bingo_test_SRCS              := $(SRC)/bingo.cpp $(SIM)/detection_sim.cpp $(SRC)/remote_id.cpp
+bingo_test_SRCS              := $(SRC)/bingo.cpp $(SIM)/detection_sim.cpp $(SRC)/remote_id.cpp $(SRC)/ignore_list.cpp
 bingo_test_FLAGS             := -DSQUACH_MESH=1
 # An unfinished egg hunt, through the settings store. Theme and Clock are
 # stubbed in the test; settings.cpp only calls a handful of each.
-autoquiet_test_SRCS       := $(SIM)/detection_sim.cpp $(SRC)/remote_id.cpp
+autoquiet_test_SRCS       := $(SIM)/detection_sim.cpp $(SRC)/remote_id.cpp $(SRC)/ignore_list.cpp
 bgretire_test_SRCS := $(SRC)/settings.cpp
+# Emulator stand-in exercises USE -> asynchronous result contract.
+wifi_use_test_SRCS := $(SIM)/ota_sim.cpp
 hunt_test_SRCS               := $(SRC)/settings.cpp
 alert_rules_test_SRCS         := $(SRC)/settings.cpp
 # Header-only, both: the colour arithmetic the overlapped frame push
@@ -102,7 +105,7 @@ mesh_visit_appearance_test_SRCS :=
 mesh_visit_appearance_test_FLAGS := -DSQUACH_MESH=1
 
 .PHONY: all clean
-all: $(addprefix run-,$(TESTS))
+all: $(addprefix run-,$(TESTS)) run-time-zone-test
 
 $(OUT):
 	@mkdir -p $(OUT)
@@ -149,3 +152,8 @@ $(OUT)/meshcrypto_test: $(CRYPTO_OBJS)
 	$(CXX) -o $@ $^ -lmbedcrypto
 
 -include $(CRYPTO_OBJS:.o=.d)
+
+# Validate the real firmware zone table/order without Arduino hardware.
+.PHONY: run-time-zone-test
+run-time-zone-test:
+	@python3 time_zone_test.py

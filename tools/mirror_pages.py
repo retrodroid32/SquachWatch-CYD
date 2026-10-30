@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import json
 import posixpath
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -35,15 +36,36 @@ class PagesMirror:
         rel = self.clean(rel)
         url = urllib.parse.urljoin(self.base, rel)
         req = urllib.request.Request(url, headers={"User-Agent": "SquachWatch-CYD-release-workflow"})
-        try:
-            with urllib.request.urlopen(req, timeout=30) as response:
-                data = response.read()
-        except urllib.error.HTTPError as exc:
-            if optional and exc.code == 404:
-                return None
-            raise RuntimeError(f"could not mirror {url}: HTTP {exc.code}") from exc
-        except urllib.error.URLError as exc:
-            raise RuntimeError(f"could not mirror {url}: {exc.reason}") from exc
+        # A lab publish mirrors the live production root byte-for-byte before
+        # adding lab files. GitHub Pages can briefly return 503 while serving
+        # an otherwise healthy manifest. Retry only transient server errors,
+        # rate limits and network failures; a missing *required* asset remains
+        # a hard failure, so we never deploy a partial production mirror.
+        attempts = 5
+        for attempt in range(1, attempts + 1):
+            try:
+                with urllib.request.urlopen(req, timeout=30) as response:
+                    data = response.read()
+                break
+            except urllib.error.HTTPError as exc:
+                if optional and exc.code == 404:
+                    return None
+                if exc.code != 429 and not (500 <= exc.code < 600):
+                    raise RuntimeError(f"could not mirror {url}: HTTP {exc.code}") from exc
+                reason = f"HTTP {exc.code}"
+            except (urllib.error.URLError, TimeoutError) as exc:
+                reason = str(getattr(exc, "reason", exc))
+            if attempt == attempts:
+                raise RuntimeError(
+                    f"could not mirror {url} after {attempts} attempts: {reason}"
+                )
+            delay = 2 ** attempt  # 2s, 4s, 8s, 16s between attempts
+            print(
+                f"::warning::Pages mirror transient failure ({reason}) fetching "
+                f"{rel}; retry {attempt + 1}/{attempts} in {delay}s",
+                flush=True,
+            )
+            time.sleep(delay)
         if not data:
             if optional:
                 return None

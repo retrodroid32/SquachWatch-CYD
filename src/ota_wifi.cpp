@@ -2,6 +2,7 @@
 #include "ota_wifi.h"
 #include "security.h"
 #include "clock.h"
+#include "wifi_use_policy.h"
 #include <Arduino.h>
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
@@ -51,6 +52,16 @@ uint8_t s_sig[80];
 uint8_t s_sigLen = 0;
 
 TaskHandle_t s_task       = nullptr;
+// Dedicated join-only test: does not enter OTA mode or touch OtaCore.
+TaskHandle_t s_testTask = nullptr;
+volatile SavedTest s_testState = SavedTest::IDLE;
+volatile uint8_t s_testDropReason = 0;
+uint8_t s_testIndex = 0;
+char s_testSsid[33] = "";
+char s_testPass[65] = "";
+// A failed USE launch used to be reported as WIFI BUSY for every cause,
+// including failed FreeRTOS stack allocation on a memory-constrained CYD32.
+const char* s_testStartIssue = "Ready";
 
 void key(char* out, const char* k, uint8_t i) { snprintf(out, 4, "%s%u", k, (unsigned)i); }
 
@@ -483,6 +494,11 @@ void run(void*) {
     // rather than the board.
     WiFi.removeEvent(dropEv);
     WiFi.disconnect(false, false);
+    // The OTA task is finished using HTTPS. Free the reusable TLS client
+    // before marking the worker idle so the UI can reclaim its framebuffer.
+    // Keeping it alive fragmented the heap after a check-only attempt.
+    delete s_tls;
+    s_tls = nullptr;
     Serial.printf("[ota] update task stack: %u of %u bytes never used\n",
                   (unsigned)(uxTaskGetStackHighWaterMark(nullptr) * sizeof(StackType_t)), (unsigned)TASK_STACK);
     s_task = nullptr;
@@ -548,6 +564,7 @@ void rescan() {
 }
 
 State      state()    { return s_state; }
+bool       taskActive() { return s_task != nullptr; }
 uint8_t    netCount() { return s_netN; }
 const Net* net(uint8_t i) { return i < s_netN ? &s_nets[i] : nullptr; }
 
@@ -637,6 +654,187 @@ void useSaved(uint8_t i) {
     if (i >= s_n) return;
     s_use = i;
     writeList();
+}
+
+// Runs in its own task so the saved-networks screen can show CONNECTING and
+// still redraw. Wi-Fi detection/BLE scanning must already have been paused
+// by the caller before this task starts; neither firmware downloads nor NTP
+// /HTTPS checks occur here. The radio is handed back before publishing a
+// terminal result to the UI.
+static void testSavedTask(void*) {
+    // The normal CYD scanner hops channels in promiscuous mode. Survey
+    // the saved SSID in station mode before association so an obsolete
+    // sniffer channel or stale NO_SSID event cannot masquerade as a
+    // missing network. This task runs after startUpdateRadio() stops hopping.
+    WiFi.scanDelete();
+    Clock::syncStop();
+    WiFi.disconnect(false, false);
+    WiFi.mode(WIFI_STA);
+    delay(180); // Let the asynchronous BLE/update radio handoff settle.
+
+    // On 3.2-inch ST7798 the USE survey + BSSID-pinned join can fail
+    // after the sniffer-to-STA handoff even though the boot join succeeds.
+    // Match bootCheck's direct saved-SSID join; keep 2.8 unchanged.
+    const int16_t surveyCount = WifiUsePolicy::SCAN_BEFORE_JOIN ?
+        WiFi.scanNetworks(false, false, false, 180) : -1;
+#if defined(CYD32)
+    Serial.printf("[wifi] USE CYD32 direct join: %s\n", s_testSsid);
+#endif
+    bool apSeen = false;
+    int8_t bestRssi = -127;
+    int32_t apChannel = 0;
+    uint8_t apBssid[6] = {};
+    if (surveyCount >= 0) {
+        for (int i = 0; i < surveyCount; ++i) {
+            if (WiFi.SSID(i) != s_testSsid) continue;
+            if (!apSeen || WiFi.RSSI(i) > bestRssi) {
+                apSeen = true;
+                bestRssi = (int8_t)WiFi.RSSI(i);
+                apChannel = WiFi.channel(i);
+                const uint8_t* bssid = WiFi.BSSID(i);
+                if (bssid) memcpy(apBssid, bssid, sizeof apBssid);
+            }
+        }
+    }
+    WiFi.scanDelete();
+    Serial.printf("[wifi] USE survey: ssid=%s n=%d seen=%u ch=%ld rssi=%d\n",
+                  s_testSsid, (int)surveyCount, (unsigned)apSeen,
+                  (long)apChannel, (int)bestRssi);
+
+    s_testDropReason = 0;
+    const wifi_event_id_t dropEv = WiFi.onEvent(
+        [](arduino_event_id_t, arduino_event_info_t info) {
+            s_testDropReason = info.wifi_sta_disconnected.reason;
+        }, ARDUINO_EVENT_WIFI_STA_DISCONNECTED);
+    const char* pass = s_testPass[0] ? s_testPass : nullptr;
+    // If the survey found the AP, use its channel/BSSID instead of the
+    // scanner's previous hopping channel. If the survey failed or missed
+    // a hidden SSID, still try the saved credentials without a pin.
+    if (apSeen && apChannel > 0) {
+        WiFi.begin(s_testSsid, pass, apChannel, apBssid);
+    } else {
+        WiFi.begin(s_testSsid, pass);
+    }
+    uint32_t started = millis();
+    wl_status_t st = WiFi.status();
+    while (st != WL_CONNECTED && millis() - started < 8000) {
+        // CYD32 tolerates an initial stale WiFi status while the sniffer
+        // releases the radio; the working 2.8 path retains early failure.
+        if (WifiUsePolicy::BREAK_ON_EARLY_ERROR &&
+            millis() - started > 1800 &&
+            (st == WL_NO_SSID_AVAIL || st == WL_CONNECT_FAILED)) break;
+        delay(100);
+        st = WiFi.status();
+    }
+    uint8_t reason = s_testDropReason;
+    // A router can roam to a different channel/BSSID between survey and
+    // association. Retry once without AP pinning rather than declaring
+    // a network we just saw to be unavailable.
+    const bool authRejected = reason == 15 || reason == 202 || reason == 204;
+    if (WifiUsePolicy::retry(st == WL_CONNECTED, apSeen,
+                             st == WL_NO_SSID_AVAIL || reason == 201, authRejected)) {
+        Serial.println("[wifi] USE retry: AP visible, joining without BSSID");
+        WiFi.disconnect(false, false);
+        delay(180);
+        s_testDropReason = 0;
+        WiFi.begin(s_testSsid, pass);
+        started = millis();
+        st = WiFi.status();
+        while (st != WL_CONNECTED && millis() - started < 5000) {
+            if (WifiUsePolicy::BREAK_ON_EARLY_ERROR &&
+                millis() - started > 1800 &&
+                (st == WL_NO_SSID_AVAIL || st == WL_CONNECT_FAILED)) break;
+            delay(100);
+            st = WiFi.status();
+        }
+        reason = s_testDropReason;
+    }
+    WiFi.removeEvent(dropEv);
+
+    SavedResult result = SavedResult::FAILED;
+    if (st == WL_CONNECTED) result = SavedResult::JOINED;
+    // NOT_FOUND needs corroboration from a *completed station scan*.
+    // A failed association to an AP seen above is not an absent AP.
+    else if (surveyCount >= 0 && !apSeen &&
+             (st == WL_NO_SSID_AVAIL || reason == 201))
+        result = SavedResult::NOT_FOUND;
+    // 15 = four-way handshake timeout, 202 = authentication failure,
+    // 204 = handshake timeout. A generic timeout is NOT a bad password.
+    else if (reason == 15 || reason == 202 || reason == 204 ||
+             (WifiUsePolicy::GENERIC_CONNECT_FAILED_IS_AUTH && st == WL_CONNECT_FAILED))
+        result = SavedResult::BAD_PASSWORD;
+
+    setResult((int8_t)s_testIndex, result);
+    Serial.printf("[wifi] USE join: status=%d drop=%u scan=%d visible=%u result=%u\n",
+                  (int)st, (unsigned)reason, (int)surveyCount,
+                  (unsigned)apSeen, (unsigned)result);
+    WiFi.disconnect(false, false); // Preserve the driver for detection.
+    memset(s_testPass, 0, sizeof s_testPass);
+    s_testTask = nullptr;
+    s_testState = result == SavedResult::JOINED ? SavedTest::JOINED :
+                  result == SavedResult::NOT_FOUND ? SavedTest::NOT_FOUND :
+                  result == SavedResult::BAD_PASSWORD ? SavedTest::BAD_PASSWORD :
+                                                        SavedTest::FAILED;
+    vTaskDelete(nullptr);
+}
+
+SavedTest savedTestState() { return s_testState; }
+void clearSavedTest() {
+#if defined(CYD32)
+    // The worker publishes a terminal status only after it completes radio
+    // cleanup. A stale handle should not strand the next USE in WIFI BUSY.
+    if (s_testState != SavedTest::CONNECTING) {
+        s_testTask = nullptr;
+        s_testState = SavedTest::IDLE;
+    }
+#else
+    if (s_testState != SavedTest::CONNECTING && !s_testTask)
+        s_testState = SavedTest::IDLE;
+#endif
+}
+const char* savedTestStartIssue() { return s_testStartIssue; }
+bool testSavedAt(uint8_t i) {
+    readSaved();
+    s_testStartIssue = "Ready";
+    if (i >= s_n) s_testStartIssue = "Invalid saved network";
+    else if (Security::locked()) s_testStartIssue = "Unlock device first";
+    else if (s_task) s_testStartIssue = "OTA worker still active";
+    else if (s_testTask) s_testStartIssue = "WiFi test worker active";
+    else if (s_testState == SavedTest::CONNECTING) s_testStartIssue = "WiFi test still connecting";
+    else if (s_testState != SavedTest::IDLE) s_testStartIssue = "Previous WiFi result pending";
+    else if (s_state != State::OFF) s_testStartIssue = "WiFi update mode active";
+    if (strcmp(s_testStartIssue, "Ready") != 0) {
+        Serial.printf("[wifi] USE refused: %s (slot=%u/%u otaTask=%p testTask=%p test=%u ota=%u)\n",
+                      s_testStartIssue, (unsigned)i, (unsigned)s_n,
+                      (void*)s_task, (void*)s_testTask,
+                      (unsigned)s_testState, (unsigned)s_state);
+        return false;
+    }
+    if (!passAt(i, s_testPass, sizeof s_testPass)) {
+        s_testStartIssue = "Saved credentials unreadable";
+        Serial.println("[wifi] USE refused: saved credentials unreadable");
+        return false;
+    }
+    strncpy(s_testSsid, s_list[i].ssid, sizeof s_testSsid - 1);
+    s_testSsid[sizeof s_testSsid - 1] = '\0';
+    s_testIndex = i;
+    s_testState = SavedTest::CONNECTING;
+    Serial.printf("[wifi] USE start: free=%lu largest=%lu test stack=%u\n",
+                  (unsigned long)ESP.getFreeHeap(),
+                  (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT),
+                  6144u);
+    if (xTaskCreatePinnedToCore(testSavedTask, "wifi-test", 6144,
+                                nullptr, 1, &s_testTask, 1) != pdPASS) {
+        s_testTask = nullptr;
+        s_testState = SavedTest::IDLE;
+        memset(s_testPass, 0, sizeof s_testPass);
+        s_testStartIssue = "Not enough memory for WiFi";
+        Serial.printf("[wifi] USE worker allocation FAILED: free=%lu largest=%lu\n",
+                      (unsigned long)ESP.getFreeHeap(),
+                      (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
+        return false;
+    }
+    return true;
 }
 
 // The best saved network in the last scan: USE when it is there, else the
