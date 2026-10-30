@@ -32,7 +32,10 @@ namespace WifiScreenPolicy {
 // display, so it must never receive a full-screen keyboard layout pass.
 inline bool keyboardDirectPanel(bool framebufferReady, uint8_t bands) {
 #if defined(CYD32)
-    return framebufferReady && bands > 1;
+    // A full-size sprite is the ONLY surface that can safely redraw the
+    // keyboard every frame. After WiFi memory loans, the 3.2 may have no
+    // framebuffer OR only 2/4/8/16 short sprite bands.
+    return !framebufferReady || bands > 1;
 #else
     (void)framebufferReady; (void)bands;
     return false;  // preserve working 2.8-inch rendering path
