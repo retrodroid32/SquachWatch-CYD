@@ -203,6 +203,8 @@ namespace Theme {
     // painted over the resulting screen.
     void clearToast();
     bool toastActive(uint32_t now);
+    // Advances on show/clear. Lets direct-panel menus redraw toast only on changes.
+    uint32_t toastSerial();
 
     // No-op unless a toast is live. Call last, after the screen has drawn.
     void drawToast(TFT_eSPI& t, uint32_t now);
@@ -514,6 +516,20 @@ namespace Theme {
     // consume-once contract as the three above; main.cpp turns it into the
     // PARKA unlock.
     bool consumeLodgeKnock();
+    // True once, after the owl on the FIRE background was tapped while asking
+    // WHAT REEKS?! (every third time he speaks). main.cpp turns it into
+    // Squachy::unlockShambler().
+    bool consumeOwlReek();
+    void setOwlAsks(bool on);
+    // TH3 0N3: the red glyph in DIGITAL rain.
+    bool consumeRedGlyph();
+    void setRedGlyph(bool on);
+    // XYZZY, on the TERMINAL background: the terminal types the word now and
+    // then, and each tap on it is reported here once -- 1, 2, then 3, which is
+    // the YZZERD unlock, then round again. 0 when nothing new was tapped.
+    uint8_t consumeXyzzy();
+    // Bring the word up now instead of on its own clock (console, emulator).
+    void summonXyzzy();
 
     // The flock's wing, exposed so the CHROME WING outfit can wear the
     // exact same shape rather than an approximation of it: a curved lobe

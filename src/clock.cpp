@@ -50,6 +50,12 @@ extern volatile bool g_benchUpdateStop;
 // from the console, for bringing up a panel nobody can read yet.
 extern volatile bool g_consoleInvert;
 extern volatile bool g_consoleAdc;
+extern volatile bool g_consoleXyzzy;
+extern volatile bool g_consoleLegend;
+extern volatile bool g_consoleJail;
+extern volatile bool g_consoleOutfitSet;
+extern volatile int8_t g_consoleOutfit;
+extern volatile bool g_consoleFree;
 extern volatile bool g_consoleRotate;
 extern volatile bool g_consoleBatt;
 extern volatile bool g_consoleBattLog;
@@ -305,11 +311,46 @@ static const Zone ZONES[] = {
     { "AUS EASTERN", "AEST-10AEDT,M10.1.0,M4.1.0/3" },
     { "AUS WESTERN", "AWST-8" },
     { "NEW ZEALAND", "NZST-12NZDT,M9.5.0,M4.1.0/3" },
+    // Appended rather than inserted because the persisted value is an index.
+    { "MEXICO",      "CST6" },
+    { "COLOMBIA",    "<-05>5" },
+    { "CHILE",       "<-04>4<-03>,M9.1.6/24,M4.1.6/24" },
+    { "ARGENTINA",   "<-03>3" },
+    { "W AFRICA",    "WAT-1" },
+    { "S AFRICA",    "SAST-2" },
+    { "E AFRICA",    "EAT-3" },
+    { "PALESTINE",   "IST-2IDT,M3.4.4/26,M10.5.0" },
+    { "TURKEY",      "<+03>-3" },
+    { "GULF",        "<+04>-4" },
+    { "PAKISTAN",    "PKT-5" },
+    { "BANGLADESH",  "<+06>-6" },
+    { "SE ASIA",     "<+07>-7" },
+    { "SINGAPORE",   "<+08>-8" },
+    { "KOREA",       "KST-9" },
+    { "QUEENSLAND",  "AEST-10" },
+    { "AUS CENTRAL", "ACST-9:30ACDT,M10.1.0,M4.1.0/3" },
+    { "DARWIN",      "ACST-9:30" },
 };
 static const uint8_t ZONES_N = sizeof(ZONES) / sizeof(ZONES[0]);
 
+// Display order for PREV/NEXT: west to east while preserving stored indices.
+static const uint8_t ORDER[] = {
+    6, 5, 4, 2, 3, 1, 21, 0, 22,
+    23, 7, 8, 9, 24, 10, 11,
+    25, 12, 26, 13, 28, 27, 29, 14,
+    30, 31, 15, 32, 33,
+    16, 34, 19, 35, 17,
+    38, 37, 36, 18, 20,
+};
+static_assert(sizeof(ORDER) == ZONES_N, "every zone once in ORDER");
+
 uint8_t     zoneCount()        { return ZONES_N; }
 const char* zoneName(uint8_t i){ return ZONES[i < ZONES_N ? i : 0].name; }
+uint8_t zoneStep(uint8_t i, int dir) {
+    uint8_t at = 0;
+    for (uint8_t k = 0; k < ZONES_N; k++) if (ORDER[k] == i) { at = k; break; }
+    return ORDER[(at + ZONES_N + (dir < 0 ? -1 : 1)) % ZONES_N];
+}
 void applyZone(uint8_t i) {
     setenv("TZ", ZONES[i < ZONES_N ? i : 0].rule, 1);
     tzset();
@@ -493,6 +534,11 @@ void pollSerial() {
         }
         if (strcasecmp(line, "INVERT") == 0) { g_consoleInvert = true; continue; }
         if (strcasecmp(line, "ADC") == 0)    { g_consoleAdc = true; continue; }
+        if (strcasecmp(line, "XYZZY") == 0)  { g_consoleXyzzy = true; continue; }
+        if (strcasecmp(line, "LEGEND") == 0) { g_consoleLegend = true; continue; }
+        if (strncasecmp(line, "OUTFIT ", 7) == 0) { g_consoleOutfit = (int8_t)atoi(line + 7); g_consoleOutfitSet = true; continue; }
+        if (strcasecmp(line, "JAIL") == 0) { g_consoleJail = true; continue; }
+        if (strcasecmp(line, "FREE") == 0) { g_consoleFree = true; continue; }
         if (strcasecmp(line, "ROT") == 0)    { g_consoleRotate = true; continue; }
         if (strcasecmp(line, "BATT") == 0)    { g_consoleBatt = true; continue; }
         if (strcasecmp(line, "BATTLOG") == 0) { g_consoleBattLog = true; continue; }

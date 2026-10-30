@@ -186,14 +186,47 @@ int main() {
 
     suite("Unknown indices clamp rather than refuse");
     {
-        // Four bits hold 0..15; this build has 10 nicknames and 15 outfits.
-        // A peer on newer firmware is a wrong hat, not an attack.
-        size_t n = encode(mk(15, 15, 3, nullptr), buf);
+        // Five bits hold 0..31 and this build has 20 outfits; an
+        // unsupported future costume must fall back to NONE, not to an
+        // unrelated old costume via modulo.
+        size_t n = encode(mk(15, 31, 3, nullptr), buf);
         ck("a payload with out-of-range indices still decodes", decode(buf, n, p));
         ck("nickname lands in range", p.nick < NICK_N);
-        ck("outfit lands in range",   p.outfit < OUTFIT_N);
-        ck("the last real outfit is not clamped", OUTFIT_N == 15);
+        ck("unknown outfit becomes plain Squachy", p.outfit == 0);
         ck("shades land in range",    p.shade < 4);
+        n = encode(mk(3, 21, 1, nullptr), buf);
+        ck("future outfit 21 also becomes NONE", decode(buf, n, p) && p.outfit == 0);
+    }
+
+    suite("The seventeenth outfit, and boards from before it");
+    {
+        ck("twenty outfits, including STRIPES", OUTFIT_N == 20);
+        size_t n = encode(mk(3, 16, 1, nullptr), buf);
+        ck("outfit 16 survives the trip", decode(buf, n, p) && p.outfit == 16);
+        ck("its fifth bit is a spare bit, not a new byte", n == LEN_INDEXED);
+        // What a board from before reads: the low four bits only.
+        const uint16_t w = (uint16_t)(buf[5] | ((uint16_t)buf[6] << 8));
+        ck("an older board sees outfit 0, plain Squachy", ((w >> 8) & 0x0F) == 0);
+        ck("and the rest of the word is unchanged", ((w >> 12) & 0x0F) == 3 && ((w >> 6) & 0x03) == 1);
+        n = encode(mk(3, 15, 1, nullptr), buf);
+        ck("outfit 15 sets no fifth bit", decode(buf, n, p) && p.outfit == 15 && !(buf[5] & 0x10));
+    }
+
+    suite("All 20 outfit IDs survive indexed and named payloads");
+    {
+        for (uint8_t i = 0; i < OUTFIT_N; i++) {
+            char label[96];
+            size_t n = encode(mk(3, i, 2, nullptr), buf);
+            snprintf(label, sizeof(label), "indexed outfit %u round-trips", (unsigned)i);
+            ck(label, n == LEN_INDEXED && decode(buf, n, p) && p.outfit == i);
+            const uint16_t word = (uint16_t)(buf[5] | ((uint16_t)buf[6] << 8));
+            snprintf(label, sizeof(label), "outfit %u fifth bit matches index", (unsigned)i);
+            ck(label, ((word & OUTFIT_HI_BIT) != 0) == (i >= 16));
+            n = encode(mk(3, i, 2, "TEST"), buf);
+            snprintf(label, sizeof(label), "named outfit %u round-trips", (unsigned)i);
+            ck(label, n == LEN_NAMED && decode(buf, n, p) &&
+               p.outfit == i && p.custom && strcmp(p.name, "TEST") == 0);
+        }
     }
 
     suite("A rejected payload leaves the output alone");
