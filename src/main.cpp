@@ -6006,10 +6006,10 @@ void loop() {
             // frame buffer and without it (given up for a download).
 #if defined(CYD32)
             if (WifiScreenPolicy::keyboardDirectPanel(frameBufferOk, s_recoveryBands)) {
-                // After USE, recovery can leave only a partial-height sprite.
-                // This keyboard requires full physical panel dimensions and
-                // keeps incremental paint state. Never draw it once per band.
-                uiWifiPassTick(tft, now);
+                // A saved-WiFi memory loan may leave no framebuffer, or
+                // recover only narrow sprite bands. Draw keys atomically to
+                // the full physical display, never through those bands.
+                uiWifiPassTick(tft, now, true);
             } else
 #endif
                 drawTwoBand([&](TFT_eSPI& t, bool) { uiWifiPassTick(t, now); });
