@@ -77,7 +77,7 @@ def main():
             [str(BIN), "solo", str(bench_path), "--outfit", "18", "--frames", "0"],
             cwd=HERE, check=True, capture_output=True, text=True, env=env,
         )
-        reported = re.search(r"BENCH pix ([0-9]+(?:\\.[0-9]+)?)", result.stdout)
+        reported = re.search(r"BENCH pix ([0-9]+(?:\.[0-9]+)?)", result.stdout)
         assert reported, f"solo benchmark did not report a count: {result.stdout!r}"
         avg = float(reported.group(1))
         assert 0 < avg < 300000, f"implausible solo pixel-write count: {avg}"

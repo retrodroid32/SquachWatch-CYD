@@ -792,7 +792,7 @@ int main(int argc, char** argv) {
                                 2.2f, nullptr, false, 0,
                                 pi == 1, 34, false, false, false, kP[pi]);
                         g_simPixActive = false;
-                        printf("BENCH pix %.0f\\n", (double)g_simPix / N);
+                        printf("BENCH pix %.0f\n", (double)g_simPix / N);
                     }
                 }
             }
