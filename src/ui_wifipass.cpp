@@ -2,6 +2,7 @@
 #include "ui_wifipass.h"
 #include "theme.h"
 #include "privacy.h"
+#include "wifi_use_policy.h"
 #include <Arduino.h>
 #include <stdio.h>
 #include <string.h>
@@ -356,7 +357,7 @@ void uiWifiPassTick(TFT_eSPI& t, uint32_t now, bool directPanel) {
     // A direct-panel full repaint visibly erases the keyboard before its
     // key labels appear. There is no buffered transition animation to
     // settle here, so one initial paint is enough.
-    if (s_full || (!directPanel && now - s_initAt < SETTLE_MS)) {
+    if (WifiScreenPolicy::passwordFullPaint(s_full, directPanel, now - s_initAt, SETTLE_MS)) {
         drawAll(t, now);
         return;
     }
