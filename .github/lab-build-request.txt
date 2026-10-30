@@ -1,7 +1,9 @@
-pr153-pr154-wifi-screen-r3-20261029
-# Supersedes earlier 3.2 LAB builds; memory-safe USE now connects but flickers and repeats password keyboard.
-# CYD32-only: preserve LCD on memory loan, paint WiFi list on change, draw password on full panel in band recovery.
-# Latest PR154 (draft) source: 5cffc53e623d99a99b1d753ea84681e4e1aadbf7
-# Gameplay PR153 source: e7e468935662439477b38c2214b417237dd75f58
-# 3.2 ST7798 standard and 80MHz, plus 2.8 regression builds; no production release or merge.
-# Hardware validation required before claiming display issue fixed.
+pr153-pr154-wifi-buttons-r4-20261030
+# LAB ONLY: targeted incremental 3.2-inch ST7798 WIFI NETWORKS redraw.
+# Previous screen r3 validated by user: joins WiFi, keyboard and major flicker fixed; slight button-press flicker remained.
+# Uses existing LCD image after USE lends framebuffer; paints changed network rows, buttons and toast only.
+# Preserves #153 STRIPES/wardrobe and #154 3.2 direct saved-network join; 2.8 legacy path unchanged.
+# PR154 head 290991bfe95e36d37bc48b4779dd9011434641cd
+# PR153 head e7e468935662439477b38c2214b417237dd75f58
+# Standard ST7798 + experimental 80MHz, plus 2.8 compilation. Hardware validation required.
+# DRAFT ONLY; never merge or publish production automatically.
