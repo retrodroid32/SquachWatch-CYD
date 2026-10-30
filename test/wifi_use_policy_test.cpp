@@ -29,7 +29,15 @@ int main() {
     assert(WifiScreenPolicy::keyboardDirectPanel(true, 2));
     assert(WifiScreenPolicy::keyboardDirectPanel(true, 4));
     assert(WifiScreenPolicy::keyboardDirectPanel(true, 16));
-    assert(!WifiScreenPolicy::keyboardDirectPanel(false, 1));
+    assert(WifiScreenPolicy::keyboardDirectPanel(false, 1));
+    assert(WifiScreenPolicy::keyboardDirectPanel(false, 2));
+    // Direct LCD must not erase/repaint all 40 keys during the 400ms
+    // settle period; buffered screens preserve their old behavior.
+    assert(WifiScreenPolicy::passwordFullPaint(true, true, 10, 400));
+    assert(!WifiScreenPolicy::passwordFullPaint(false, true, 10, 400));
+    assert(!WifiScreenPolicy::passwordFullPaint(false, true, 399, 400));
+    assert(WifiScreenPolicy::passwordFullPaint(false, false, 10, 400));
+    assert(!WifiScreenPolicy::passwordFullPaint(false, false, 400, 400));
     assert(!WifiScreenPolicy::networksDirectPanel(true, 1));
     assert(WifiScreenPolicy::networksDirectPanel(false, 1));
     assert(WifiScreenPolicy::networksDirectPanel(true, 2));
@@ -49,6 +57,10 @@ int main() {
         assert(!WifiScreenPolicy::networksDirectPanel(true, bands));
     }
     assert(!WifiScreenPolicy::networksDirectPanel(false, 1));
+    // 2.8 uses only the buffered path: unchanged 400ms settle semantics.
+    assert(WifiScreenPolicy::passwordFullPaint(true, false, 0, 400));
+    assert(WifiScreenPolicy::passwordFullPaint(false, false, 399, 400));
+    assert(!WifiScreenPolicy::passwordFullPaint(false, false, 400, 400));
     puts("PASS: 2.8 WiFi USE and UI render policy unchanged");
 #endif
     return 0;
