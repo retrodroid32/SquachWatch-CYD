@@ -318,6 +318,7 @@ static void usage() {
         "  --first / --night / --lastfree   the ALERT card's banners\n"
         "  --noseed          no detections at all -- CLEAR's idle state\n"
         "  --pet N           companion: 0 off, 1 VAPOR SHAGGY, 2 the yeti\n"
+        "  --jail            start the STRIPES sentence and draw chained jail ball\n"
         "  --peer N          draw a visiting SquachMesh peer in outfit N\n"
         "  --peername NAME   give that visitor a custom name\n"
         "  --crowd N         clear screen: N squad members in range, roaming with ours\n"
@@ -339,6 +340,7 @@ int main(int argc, char** argv) {
     std::string outPath = (argc > 2 && argv[2][0] != '-') ? argv[2] : "squachsim.png";
 
     bool portrait = false, onboard = false, showoff = false, qwerty = false;
+    bool jailPreview = false;
     // Messages: --msgs switches them on with a phrase set; --inbox N also
     // delivers canned line N from the visitor, through the real receive path.
     bool msgs = false;
@@ -400,6 +402,7 @@ int main(int argc, char** argv) {
         else if (a == "--theme" && i + 1 < argc) themeIdx = atoi(argv[++i]);
         else if (a == "--outfit" && i + 1 < argc) outfitIdx = atoi(argv[++i]);
         else if (a == "--pet" && i + 1 < argc) petIdx = atoi(argv[++i]);
+        else if (a == "--jail") jailPreview = true;
         else if (a == "--pose" && i + 1 < argc) poseIdx = atoi(argv[++i]);
         else if (a == "--frames" && i + 1 < argc) frames = atoi(argv[++i]);
         else if (a == "--sequence" && i + 1 < argc) sequence = atoi(argv[++i]);
@@ -499,6 +502,8 @@ int main(int argc, char** argv) {
         Squachy::unlockPet();
         for (int k = 0; k < 8 && (int)Squachy::petChoice() != petIdx; k++) Squachy::cyclePet();
     }
+
+    if (jailPreview) Squachy::jailStart();
 
     SquachMesh::Peer guest{};
     if (peerOutfit >= 0) {

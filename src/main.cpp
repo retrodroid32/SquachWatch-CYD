@@ -40,6 +40,7 @@
 #include "ui_dex.h"
 #include "regulars.h"
 #include "notices.h"
+#include "pet.h"              // native companion touch/throw gestures
 #include "theme.h"            // the crash card on the splash
 #include "privacy.h"
 #include "clock.h"
@@ -4424,6 +4425,7 @@ void loop() {
             // reads as PETTING (a drag/stroke) and keeps firing, throttled
             // internally by squachy.cpp, for as long as the stroke
             // continues.
+            static bool     petGrabActive = false;
             static bool     sqActive = false;
             static bool     sqHeld = false;
             static bool     sqPetting = false;
@@ -4465,8 +4467,26 @@ void loop() {
             // active gesture, still takes priority over the button bar
             // in the branch below -- Squachy is drawn well clear of the
             // button row, so the two never really compete in practice.)
+            // A different screen may have consumed the release edge (for
+            // example, an incoming ALERT). Cancel the stale hold safely
+            // before a new touch or a touchless return to CLEAR.
+            if (petGrabActive && (touchJustDown || (!tp.valid && !touchJustUp))) {
+                Pet::cancel(now);
+                petGrabActive = false;
+            }
             if (touchJustDown) {
-                sqActive = !boring && Squachy::hitTest(tp.x, tp.y);
+                // The pet can sit directly over Squachy's head. Give the
+                // companion first refusal, then leave every existing UI
+                // and Squachy gesture path unchanged when it is missed.
+                // Tutorials, onboarding and show-off intentionally own all
+                // touches until dismissed; never start a stranded pet grip.
+                bool petCanGrab = !boring && !Squachy::onboardingActive() &&
+                                  !Squachy::showOffActive();
+#if SQUACH_MESH
+                petCanGrab = petCanGrab && !MeshTutor::active();
+#endif
+                petGrabActive = petCanGrab && Pet::grab(tp.x, tp.y, now);
+                sqActive = !petGrabActive && !boring && Squachy::hitTest(tp.x, tp.y);
                 sqHeld = false;
                 sqPetting = false;
                 sqStartMs = now;
@@ -4476,7 +4496,7 @@ void loop() {
                 clrHoldActive = !s_scanPickerOpen && barBtn == ButtonId::CLR;
                 clrHoldFired  = false;
                 clrHoldStart  = now;
-                nbActive = !s_scanPickerOpen && uiClearNearbyHit(tp.x, tp.y);
+                nbActive = !petGrabActive && !s_scanPickerOpen && uiClearNearbyHit(tp.x, tp.y);
                 nbStart  = now;
             }
 
@@ -4508,6 +4528,16 @@ void loop() {
                     }
                 }
 #endif
+            } else if (petGrabActive) {
+                // Latch for the entire finger gesture: movement over a
+                // WATCH/HUNT pill, edge zone or other button cannot turn
+                // one pet throw into an unrelated UI action.
+                if (tp.valid) Pet::drag(tp.x, tp.y, now);
+                if (touchJustUp) {
+                    Pet::release(now);
+                    petGrabActive = false;
+                    lastTouch = now;
+                }
             } else if (!boring && Squachy::onboardingActive() && tp.valid && (now - lastTouch) > TOUCH_DEBOUNCE_MS &&
                 Squachy::onboardingTapAdvance(tp.x, tp.y)) {
                 lastTouch = now;
