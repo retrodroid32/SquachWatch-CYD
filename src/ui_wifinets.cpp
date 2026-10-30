@@ -19,6 +19,7 @@ int s_selected = -1;
 // Small, direct-to-panel renderer for a CYD32 which has lent its full-frame
 // sprite to WiFi. A press must not erase and redraw every pixel of the menu.
 bool s_directReady = false;
+bool s_panelKnown = false; // full menu already exists on physical LCD when USE lends sprite
 int s_directW = 0, s_directH = 0, s_lastSelected = -1;
 uint8_t s_lastCount = 0, s_lastUse = 0;
 OtaWifi::SavedTest s_lastTest = OtaWifi::SavedTest::IDLE;
@@ -155,6 +156,7 @@ static void drawSavedButtons(TFT_eSPI& t, uint8_t n, const Bar& b) {
 void uiWifiNetsInit(TFT_eSPI& t) {
     s_selected = OtaWifi::savedCount() ? (int)OtaWifi::savedUse() : -1;
     s_directReady = false;
+    s_panelKnown = false;
     t.fillRect(0, 0, t.width(), t.height(), Theme::BG);
 }
 
@@ -179,6 +181,19 @@ void uiWifiNetsTick(TFT_eSPI& t, uint32_t now) {
     for (int i = 0; i < n && i < fit; i++) drawSavedRow(t, i, w);
     drawSavedButtons(t, n, b);
     Theme::drawToast(t, now);
+    // The full-screen sprite will be pushed at the end of this frame.
+    // If USE then lends that sprite, the physical LCD already shows the
+    // same menu and MUST be adopted rather than cleared a second time.
+    s_panelKnown = true;
+    s_directW = t.width();
+    s_directH = t.height();
+    s_lastCount = n;
+    s_lastUse = OtaWifi::savedUse();
+    s_lastSelected = s_selected;
+    s_lastTest = OtaWifi::savedTestState();
+    for (uint8_t i = 0; i < n; i++) s_lastResult[i] = OtaWifi::savedResult(i);
+    s_lastToastSerial = Theme::toastSerial();
+    s_lastToastVisible = Theme::toastActive(now);
 }
 
 // CYD32-only call: paints ONLY dirty rows/buttons and the toast's former
@@ -194,8 +209,15 @@ void uiWifiNetsTickDirect(TFT_eSPI& t, uint32_t now) {
     const Bar b = bar(t, 4);
     const int fit = rowsThatFit(t, b.y[0]);
 
-    if (!s_directReady || s_directW != w || s_directH != h) {
-        uiWifiNetsTick(t, now); // initial scene, not a button update
+    // A full frame was rendered before USE freed its ~77 KB sprite.
+    // Its pixels remain on the glass. Adopt that scene without clearing
+    // it, then update only the USE row/button/toast changes.
+    const bool adoptExisting = !s_directReady && s_panelKnown &&
+                               s_directW == w && s_directH == h;
+    const bool fullRequired = !adoptExisting &&
+                              (!s_directReady || s_directW != w || s_directH != h);
+    if (fullRequired) {
+        uiWifiNetsTick(t, now); // true new screen/rotation only
         s_directReady = true;
     } else {
         t.setTextSize(1);
@@ -255,6 +277,8 @@ void uiWifiNetsTickDirect(TFT_eSPI& t, uint32_t now) {
                             use != s_lastUse))
             Theme::drawToast(t, now);
     }
+    s_directReady = true;
+    s_panelKnown = true;
     s_directW = w;
     s_directH = h;
     s_lastCount = n;
