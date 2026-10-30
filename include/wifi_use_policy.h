@@ -27,6 +27,13 @@ inline bool retry(bool connected, bool apSeen, bool absentAp, bool authRejected)
 #include <stdint.h>
 
 namespace WifiScreenPolicy {
+// Full-frame buffered UI keeps its existing 400ms settle/redraw cadence.
+// Direct-panel WiFi password entry MUST paint the full scene just once,
+// otherwise every frame erases the physical LCD while keys are appearing.
+inline bool passwordFullPaint(bool pendingFirstPaint, bool directPanel,
+                              uint32_t sinceInitMs, uint32_t settleMs) {
+    return pendingFirstPaint || (!directPanel && sinceInitMs < settleMs);
+}
 // Incremental keyboard painting is stateful, and measures the rendering
 // canvas's height. The recovery sprite covers only a band, not the full
 // display, so it must never receive a full-screen keyboard layout pass.
