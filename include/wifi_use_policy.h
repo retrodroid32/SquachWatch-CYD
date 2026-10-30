@@ -27,12 +27,22 @@ inline bool retry(bool connected, bool apSeen, bool absentAp, bool authRejected)
 #include <stdint.h>
 
 namespace WifiScreenPolicy {
+// Full-frame buffered UI keeps its existing 400ms settle/redraw cadence.
+// Direct-panel WiFi password entry MUST paint the full scene just once,
+// otherwise every frame erases the physical LCD while keys are appearing.
+inline bool passwordFullPaint(bool pendingFirstPaint, bool directPanel,
+                              uint32_t sinceInitMs, uint32_t settleMs) {
+    return pendingFirstPaint || (!directPanel && sinceInitMs < settleMs);
+}
 // Incremental keyboard painting is stateful, and measures the rendering
 // canvas's height. The recovery sprite covers only a band, not the full
 // display, so it must never receive a full-screen keyboard layout pass.
 inline bool keyboardDirectPanel(bool framebufferReady, uint8_t bands) {
 #if defined(CYD32)
-    return framebufferReady && bands > 1;
+    // A full-size sprite is the ONLY surface that can safely redraw the
+    // keyboard every frame. After WiFi memory loans, the 3.2 may have no
+    // framebuffer OR only 2/4/8/16 short sprite bands.
+    return !framebufferReady || bands > 1;
 #else
     (void)framebufferReady; (void)bands;
     return false;  // preserve working 2.8-inch rendering path
