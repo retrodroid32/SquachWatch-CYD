@@ -1,9 +1,9 @@
-pr153-pr154-wifi-buttons-r4-20261030
-# LAB ONLY: targeted incremental 3.2-inch ST7798 WIFI NETWORKS redraw.
-# Previous screen r3 validated by user: joins WiFi, keyboard and major flicker fixed; slight button-press flicker remained.
-# Uses existing LCD image after USE lends framebuffer; paints changed network rows, buttons and toast only.
-# Preserves #153 STRIPES/wardrobe and #154 3.2 direct saved-network join; 2.8 legacy path unchanged.
-# PR154 head 290991bfe95e36d37bc48b4779dd9011434641cd
-# PR153 head e7e468935662439477b38c2214b417237dd75f58
-# Standard ST7798 + experimental 80MHz, plus 2.8 compilation. Hardware validation required.
-# DRAFT ONLY; never merge or publish production automatically.
+pr153-pr154-wifi-keyboard-r5-20261030
+# LAB ONLY: last 3.2-inch ST7798 WiFi password-keyboard flicker.
+# Hardware PASS on r4 for WiFi association and the network menu. The password keyboard alone still flickered.
+# CYD32 direct-panel: paint entire keyboard once, then atomic small-sprite key and field patches.
+# Keep preexisting 2.8 behavior, all WiFi association fixes, and #153 wardrobe/STRIPES game.
+# WiFi draft PR154 5c3ad1f17eb29c9a5802eff91f0e203dea94707d
+# Gameplay draft PR153 e7e468935662439477b38c2214b417237dd75f58
+# 3.2 ST7798 standard + 80MHz and 2.8 variant compilation; no production release/tag or PR merge.
+# Hardware validation required.
