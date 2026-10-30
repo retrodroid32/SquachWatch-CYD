@@ -6055,36 +6055,11 @@ void loop() {
                 }
             }
 #if defined(CYD32)
-            const bool directWifiList = WifiScreenPolicy::networksDirectPanel(frameBufferOk, s_recoveryBands);
-            if (directWifiList) {
-                // Without a full framebuffer, a 30fps full-screen LCD redraw
-                // causes rapid flashes after saved-network USE. Paint the
-                // static list once per touch/test/selection change instead.
-                static uint32_t paintedScene = UINT32_MAX;
-                static uint8_t paintedTest = 255;
-                static int paintedSelected = -999;
-                static bool repaintAfterInput = false;
-                static uint32_t toastCleanupAt = 0;
-                const bool toastExpired = toastCleanupAt &&
-                    (int32_t)(now - toastCleanupAt) >= 0;
-                const bool shouldPaint = paintedScene != transitionStart ||
-                    paintedTest != (uint8_t)test ||
-                    paintedSelected != uiWifiNetsSelected() ||
-                    touchJustDown || touchJustUp || repaintAfterInput || toastExpired;
-                if (shouldPaint) {
-                    uiWifiNetsTick(tft, now);
-                    paintedScene = transitionStart;
-                    paintedTest = (uint8_t)test;
-                    paintedSelected = uiWifiNetsSelected();
-                    // Clear an expired toast with just one delayed repaint.
-                    if (toastExpired) toastCleanupAt = 0;
-                    else if (touchJustDown ||
-                             (test != OtaWifi::SavedTest::IDLE &&
-                              test != OtaWifi::SavedTest::CONNECTING))
-                        toastCleanupAt = now + 4000u;
-                }
-                repaintAfterInput = touchJustDown;
-            } else
+            // A button press must update only the affected network rows,
+            // button bar and toast overlay. No full-screen blank/redraw.
+            if (WifiScreenPolicy::networksDirectPanel(frameBufferOk, s_recoveryBands))
+                uiWifiNetsTickDirect(tft, now);
+            else
 #endif
                 drawTwoBand([&](TFT_eSPI& t, bool) { uiWifiNetsTick(t, now); });
             if (test == OtaWifi::SavedTest::CONNECTING) break;
