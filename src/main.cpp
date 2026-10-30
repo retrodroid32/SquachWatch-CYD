@@ -1557,7 +1557,13 @@ static void enterInvite() {
 
 // INVERT and ROT on the console -- see clock.cpp. Consumed in loop().
 volatile bool g_consoleInvert = false;
-volatile bool g_consoleAdc = false;      // ADC: spare input-only analog pins on ESP32 CYD hardware
+volatile bool g_consoleAdc = false;
+volatile bool g_consoleXyzzy = false;
+volatile bool g_consoleLegend = false;
+volatile bool g_consoleJail = false;
+volatile bool g_consoleOutfitSet = false;
+volatile int8_t g_consoleOutfit = -1;
+volatile bool g_consoleFree = false;      // ADC: spare input-only analog pins on ESP32 CYD hardware
 volatile bool g_consoleRotate = false;
 volatile bool g_consoleRadioTest = false; // RADIO TEST: cycle even on the cable with the screen on (bench)
 volatile bool g_consoleBatt    = false;   // BATT: one reading, now
@@ -3895,6 +3901,37 @@ void loop() {
     }
 #endif
 #if defined(ARDUINO_ARCH_ESP32) && !defined(SQW_S3) && !defined(CROWPANEL7)
+    if (g_consoleOutfitSet) {
+        g_consoleOutfitSet = false;
+        const int8_t idx = g_consoleOutfit;
+        if (idx >= -1 && idx < (int8_t)Squachy::outfitCount()) {
+            Squachy::setOutfitPreview(idx);
+            Serial.printf("[outfit] bench preview %d: %s\n", (int)idx,
+                          idx >= 0 ? Squachy::outfitNameAt((uint8_t)idx) : "off");
+        } else {
+            Serial.println("[outfit] invalid index; use -1 to 19");
+        }
+    }
+    if (g_consoleJail) {
+        g_consoleJail = false;
+        Squachy::jailStart();
+        Serial.println("[jail] ten-minute sentence started; pet throw counter not integrated");
+    }
+    if (g_consoleFree) {
+        g_consoleFree = false;
+        Squachy::jailFree();
+        Serial.println("[jail] sentence ended; STRIPES unlocked");
+    }
+    if (g_consoleLegend) {
+        g_consoleLegend = false;
+        Squachy::previewLegend(!Squachy::legendPreview());
+        Serial.printf("[legend] preview %s\n", Squachy::legendPreview() ? "ON" : "off");
+    }
+    if (g_consoleXyzzy) {
+        g_consoleXyzzy = false;
+        Theme::summonXyzzy();
+        Serial.println("[xyzzy] the terminal types it now (TERMINAL background only)");
+    }
     if (g_consoleAdc) {
         g_consoleAdc = false;
         const uint8_t pins[] = {
@@ -4355,7 +4392,12 @@ void loop() {
             if (Theme::consumeToasterCatch())   Squachy::unlockChromeWing();
             if (Theme::consumeEyeCatch())       Squachy::unlockVoidEye();
             if (Theme::consumeLodgeKnock())     Squachy::unlockParka();
+            if (Theme::consumeOwlReek())        Squachy::unlockShambler();
+            if (Theme::consumeRedGlyph())       Squachy::unlockTh3();
+            Theme::setOwlAsks(!Squachy::shamblerUnlocked());
+            Theme::setRedGlyph(!Squachy::th3Unlocked());
             if (Theme::consumeSharkCatch())     Squachy::unlockShark();
+            if (const uint8_t said = Theme::consumeXyzzy()) Squachy::magicWord(said);
     if (Theme::consumePetUnlock())      Squachy::unlockPet();
 
             bool boring = Settings::boringMode();
@@ -5711,14 +5753,22 @@ void loop() {
                             break;
                         case SettingsRow::SHADES_COLOR: Squachy::cycleShadesColor(); break;
                         case SettingsRow::SQUACHY_SIZE: Settings::cycleSquachySize(); break;
-                        case SettingsRow::OUTFIT:       enterOutfit(); break;
-                        case SettingsRow::PET:          Squachy::cyclePet(); break;
+                        case SettingsRow::OUTFIT:
+                        case SettingsRow::PET:
+                            if (Squachy::jailed()) {
+                                const uint32_t secs = (Squachy::jailLeftMs() + 999u) / 1000u;
+                                char msg[28];
+                                snprintf(msg, sizeof(msg), "%lu:%02lu left. Behave.", (unsigned long)(secs / 60u), (unsigned long)(secs % 60u));
+                                Theme::showToast("SERVING TIME", msg, Theme::AMBER, 2500);
+                            } else if (row == SettingsRow::OUTFIT) enterOutfit();
+                            else Squachy::cyclePet();
+                            break;
                         case SettingsRow::BANTER:       Settings::cycleBanter(); break;
                         case SettingsRow::VIEW_DIARY:   enterDiary(); break;
                         case SettingsRow::BINGO:        enterBingo(); break;
                         case SettingsRow::DEX:          enterDex(); break;
                         case SettingsRow::APPEARANCE:  uiSettingsOpenAppearance(true); break;
-                        case SettingsRow::TOP_HAT:     Settings::toggleTopHat(); break;
+                        case SettingsRow::AURA:        Settings::toggleAura(); break;
                         // From a sub-page, back to the main list; from the
                         // main list, out.
                         case SettingsRow::BACK:

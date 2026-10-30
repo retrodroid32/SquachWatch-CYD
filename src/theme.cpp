@@ -870,6 +870,23 @@ static void releaseRain() {
     if (s_rainBuf) { free(s_rainBuf); s_rainBuf = nullptr; s_rainInited = false; }
 }
 
+// TH3 0N3's door. Every half a minute to a minute, one glyph in one slow
+// column falls red -- drawn big, so it is a target and not a speck -- and a
+// tap on it earns the coat. Where it was the last frame it was drawn, and
+// when; backgroundTap() believes only the last quarter second, the same
+// freshness rule as the owl and the eye.
+//
+// The main screen says every frame whether to send it (off once the coat
+// is earned). The rain falls behind LOG, SETTINGS and the rest too, where
+// a tap goes to the screen and not the rain -- so it only falls red while
+// that word is fresh, which is to say on the main screen.
+static bool     s_redGlyphOn = false;
+static uint32_t s_redGlyphSaid = 0;
+static int      s_redX = 0, s_redY = 0;
+static uint32_t s_redAt = 0;
+static bool     s_redPending = false;
+void setRedGlyph(bool on) { s_redGlyphOn = on; s_redGlyphSaid = millis(); }
+
 void drawDigitalRain(TFT_eSPI& t, uint32_t now, int yStart, int yEnd, bool advance) {
     // Dense columns with long, smoothly-decaying trails. Glyphs are plain
     // ASCII (the default GLCD font can't render UTF-8 katakana correctly)
@@ -1032,6 +1049,35 @@ void drawDigitalRain(TFT_eSPI& t, uint32_t now, int yStart, int yEnd, bool advan
     // each column's x.
     int sqCx = 0, sqHalf = 0, sqTop = 0, sqBot = 0;
     const bool sqHere = Squachy::lastFootprint(sqCx, sqHalf, sqTop, sqBot);
+
+    // The red glyph: which column carries it, when it started, when the next.
+    // Picked from the columns whose heads have just come in at the top, the
+    // slowest of them, and never one falling behind him.
+    static int      redCol = -1;
+    static uint32_t redFrom = 0, redNext = 0;
+    const bool redHere = s_redGlyphOn && s_redGlyphSaid && (uint32_t)(millis() - s_redGlyphSaid) < 500u;
+    if (!redHere) redCol = -1;
+    if (advance && redHere) {
+        if (redCol >= 0 && (redCol >= cols ||
+                            yPos[redCol] - 16 >= yEnd || now - redFrom > 12000u)) redCol = -1;
+        if (redCol < 0) {
+            if (!redNext) redNext = now + 20000u + (uint32_t)random(0, 20000);
+            else if (now >= redNext) {
+                int best = -1;
+                for (int i = 0; i < cols; i++) {
+                    if (yPos[i] < yStart + 16 || yPos[i] > yStart + 70) continue;
+                    const int d = 3 + i * SPACING - sqCx;
+                    if (sqHere && (d < 0 ? -d : d) < sqHalf + 18) continue;
+                    if (best < 0 || ySpeed[i] > ySpeed[best]) best = i;
+                }
+                if (best >= 0) {
+                    redCol = best; redFrom = now;
+                    redNext = now + 30000u + (uint32_t)random(0, 30000);
+                }
+            }
+        }
+    }
+    int redX = -1, redY = 0;
 
     // Full-band clear every frame, same as every other background style.
     // Without it a column that just wrapped skips its narrow vertical strip
@@ -1198,7 +1244,20 @@ void drawDigitalRain(TFT_eSPI& t, uint32_t now, int yStart, int yEnd, bool advan
             t.setTextColor(fg, bg);
             t.setCursor(x, ry);
             t.print(buf);
+            if (i == redCol && j == 2) { redX = x; redY = ry; }
         }
+    }
+    // Over the column, twice the size, in red with a dark red glow. The
+    // glyph itself is whatever that cell is showing.
+    if (redX >= 0) {
+        const char rb[2] = { GLYPHS[charBuf[redCol][2]], 0 };
+        const int gx = redX - 3, gy = redY - 4;
+        t.setTextSize(2);
+        t.setTextColor(t.color565(255, 40, 40), t.color565(90, 0, 0));
+        t.setCursor(gx, gy);
+        t.print(rb);
+        t.setTextSize(1);
+        s_redX = gx + 6; s_redY = gy + 8; s_redAt = now ? now : 1;
     }
 
     // Grow-and-fade glyphs. Size steps 1 -> 2 -> 3 over the life while the
@@ -3725,6 +3784,73 @@ void drawAquarium(TFT_eSPI& t, uint32_t now, int yStart, int yEnd) {
     }
 }
 
+// ---- XYZZY ----------------------------------------------------------------
+// The magic word from the first adventure game. Every so often the terminal
+// types it, large, either side of Squachy, and holds it for a few seconds.
+// Tap it three times (three appearances) and consumeXyzzy() reports each
+// one; the third is the YZZERD unlock.
+//
+// Either side of him, not centred like the banner below: he stands in the
+// middle of this band and a centred word is behind him.
+static const uint32_t XYZZY_SHOW_MS = 3500;
+static const uint8_t  XYZZY_NEEDED  = 3;
+static uint32_t s_xyzzyNextAt = 0, s_xyzzyStart = 0, s_xyzzyHitAt = 0;
+// Where the word is RIGHT NOW, so a tap can find it -- same shape as the
+// lodge and the eye: published every frame it is up, stale after 250 ms.
+static int      s_xyzzyX[2] = { 0, 0 }, s_xyzzyY = 0, s_xyzzyHW = 0, s_xyzzyHH = 0;
+static uint32_t s_xyzzyAt = 0;
+static uint8_t  s_xyzzyTaps = 0, s_xyzzyPending = 0;
+
+uint8_t consumeXyzzy() {
+    const uint8_t n = s_xyzzyPending;
+    s_xyzzyPending = 0;
+    return n;
+}
+
+// Bring the word up now rather than on its own clock: the console's XYZZY
+// command and the emulator, so the unlock can be tested without waiting.
+void summonXyzzy() { if (!s_xyzzyStart) s_xyzzyNextAt = 1; }
+
+static void drawXyzzy(TFT_eSPI& t, uint32_t now, int yStart, int bandH) {
+    if (!s_xyzzyNextAt) s_xyzzyNextAt = now + (uint32_t)random(12000, 24000);
+    if (!s_xyzzyStart) {
+        if (now < s_xyzzyNextAt) return;
+        s_xyzzyStart = now ? now : 1;
+        s_xyzzyHitAt = 0;
+    }
+    const bool hit = s_xyzzyHitAt != 0;
+    if (hit ? (now - s_xyzzyHitAt > 450) : (now - s_xyzzyStart > XYZZY_SHOW_MS)) {
+        s_xyzzyStart  = 0;
+        s_xyzzyHitAt  = 0;
+        s_xyzzyNextAt = now + (uint32_t)random(14000, 28000);
+        return;
+    }
+    const int w  = t.width();
+    const int sz = (w >= 300) ? 2 : 1;
+    const int cw = 6 * sz * 5, ch = 8 * sz;              // "XYZZY"
+    const int cy = yStart + bandH / 3;
+    // Tapped: it flashes inverted, then goes. Otherwise yellow on the dark,
+    // with a cursor blinking after it, so it reads as typed.
+    const uint16_t ink = hit ? BG : VAPOR_YELLOW, paper = hit ? VAPOR_YELLOW : BG;
+    t.setTextSize(sz);
+    t.setTextColor(ink, paper);
+    for (uint8_t k = 0; k < 2; k++) {
+        const int cx = k == 0 ? w / 5 : w - w / 5;
+        t.fillRect(cx - cw / 2 - 4, cy - ch / 2 - 3, cw + 8 + 6 * sz, ch + 6, paper);
+        t.drawRect(cx - cw / 2 - 4, cy - ch / 2 - 3, cw + 8 + 6 * sz, ch + 6, VAPOR_YELLOW);
+        t.setCursor(cx - cw / 2, cy - ch / 2);
+        t.print("XYZZY");
+        if (!hit && ((now / 300) & 1)) t.fillRect(cx + cw / 2 + sz, cy - ch / 2, 5 * sz, ch, VAPOR_YELLOW);
+        s_xyzzyX[k] = cx + 3 * sz;
+    }
+    t.setTextSize(1);
+    if (!hit) {
+        // Generous: it is a word to be poked at, not a target to be hit.
+        s_xyzzyY = cy; s_xyzzyHW = cw / 2 + 4 + 3 * sz + 8; s_xyzzyHH = ch / 2 + 3 + 10;
+        s_xyzzyAt = now ? now : 1;
+    }
+}
+
 // Two independently-scrolling columns (different add intervals so they
 // never sync up) side by side, so the log fills the full screen width
 // instead of a narrow strip down the left.
@@ -3851,6 +3977,9 @@ void drawTerminalLog(TFT_eSPI& t, uint32_t now, int yStart, int yEnd) {
             flashNextAt = now + (uint32_t)random(9000, 20000);
         }
     }
+
+    // The magic word, over everything else the terminal has up.
+    drawXyzzy(t, now, yStart, bandH);
 }
 
 // ---- FIREFLIES ---------------------------------------------------------
@@ -4636,6 +4765,14 @@ static uint32_t s_lodgeAt = 0;
 static uint8_t  s_lodgeKnocks = 0;
 static uint32_t s_lodgeKnockAt = 0;
 static bool     s_lodgePending = false;
+// The FIRE owl while he asks WHAT REEKS?!: where he and his bubble were the
+// last frame he asked it, and when. backgroundTap() only believes a frame
+// from the last quarter second, the same freshness rule as the eye.
+static int      s_owlX = 0, s_owlY = 0, s_owlBubX = 0, s_owlBubY = 0, s_owlBubW = 0, s_owlBubH = 0;
+static uint32_t s_owlReekAt = 0;
+static bool     s_owlReekPending = false;
+static bool     s_owlAsks = true;
+void setOwlAsks(bool on) { s_owlAsks = on; }
 
 // Where the toasters cameo is RIGHT NOW, so a tap can find him. Same shape
 // as the lodge and the starfield eye: the drawing code publishes a box each
@@ -4663,6 +4800,18 @@ static void publishLodge(int cx, int ridgeY, uint32_t now) {
 // cycle. snowLodge() reads this so each knock lights another one: the tell
 // the Starfield eye taught us a multi-step trigger cannot do without.
 uint8_t lodgeKnocks() { return s_lodgeKnocks; }
+
+bool consumeRedGlyph() {
+    if (!s_redPending) return false;
+    s_redPending = false;
+    return true;
+}
+
+bool consumeOwlReek() {
+    if (!s_owlReekPending) return false;
+    s_owlReekPending = false;
+    return true;
+}
 
 bool consumeLodgeKnock() {
     if (!s_lodgePending) return false;
@@ -4708,6 +4857,46 @@ bool backgroundTap(int x, int y, uint32_t now) {
             } else {
                 setEyeStreak(run);
             }
+            return true;
+        }
+    }
+
+    // The FIRE owl, while he is asking WHAT REEKS?!. On him -- a generous box,
+    // he is about twenty pixels of bird -- or on his bubble, which is where a
+    // finger goes when the question is the thing that caught the eye.
+    if (s_owlReekAt && (now - s_owlReekAt) <= 250) {
+        const int odx = x - s_owlX, ody = y - s_owlY;
+        const bool onOwl = odx >= -14 && odx <= 14 && ody >= -14 && ody <= 18;
+        const bool onBub = x >= s_owlBubX - 2 && x <= s_owlBubX + s_owlBubW + 2 &&
+                           y >= s_owlBubY - 2 && y <= s_owlBubY + s_owlBubH + 4;
+        if (onOwl || onBub) {
+            s_owlReekAt = 0;                      // one answer a question
+            s_owlReekPending = true;
+            return true;
+        }
+    }
+
+    // The red glyph, while it falls. Generous: it is twelve pixels of a
+    // moving letter.
+    if (s_redAt && (now - s_redAt) <= 250) {
+        const int rdx = x - s_redX, rdy = y - s_redY;
+        if (rdx >= -16 && rdx <= 16 && rdy >= -18 && rdy <= 18) {
+            s_redAt = 0;
+            s_redPending = true;
+            return true;
+        }
+    }
+
+    // XYZZY, while the terminal has it up. Either copy of the word counts.
+    if (s_xyzzyAt && (now - s_xyzzyAt) <= 250) {
+        const int xdy = y - s_xyzzyY;
+        for (uint8_t k = 0; k < 2; k++) {
+            const int xdx = x - s_xyzzyX[k];
+            if (xdx < -s_xyzzyHW || xdx > s_xyzzyHW || xdy < -s_xyzzyHH || xdy > s_xyzzyHH) continue;
+            s_xyzzyAt    = 0;                    // taken: one tap an appearance
+            s_xyzzyHitAt = now ? now : 1;
+            if (++s_xyzzyTaps >= XYZZY_NEEDED) s_xyzzyTaps = 0;
+            s_xyzzyPending = s_xyzzyTaps ? s_xyzzyTaps : XYZZY_NEEDED;
             return true;
         }
     }
@@ -5558,9 +5747,18 @@ void drawFire(TFT_eSPI& t, uint32_t now, int yStart, int yEnd) {
             // it a few times. Check this stays coprime if the list
             // length changes -- a stride sharing a factor with the count
             // silently hides some of the lines forever.
+            //
+            // Every third slot is his own line instead, WHAT REEKS?!, and a
+            // tap on him while he is asking it is the SHAMBLER unlock (see
+            // backgroundTap()). Every third, not one in ten like a quip:
+            // once a minute and a half is findable; once in five minutes,
+            // at three and a half seconds a time, is not.
+            const uint32_t slot = now / CYCLE;
+            const bool reek = s_owlAsks && !wolfOut && (slot % 3) == 1;
             const char* q = wolfOut
                 ? SCARED[((now - s_wolfAt) / 1400) % (sizeof(SCARED) / sizeof(SCARED[0]))]
-                : QUIPS[((now / CYCLE) * 5 + 2) % NQUIP];
+                : reek ? "WHAT REEKS?!"
+                : QUIPS[(slot * 5 + 2) % NQUIP];
             t.setTextSize(1);
             const int bw = t.textWidth(q) + 8;
             // Derived, not the hard-coded 11 this used to be. Squachy's
@@ -5607,6 +5805,12 @@ void drawFire(TFT_eSPI& t, uint32_t now, int yStart, int yEnd) {
             t.setTextColor(ink, paper);
             t.setCursor(bx + 4, by + 3);
             t.print(q);
+            if (reek) {
+                // Where he is and where his bubble is, for the tap.
+                s_owlX = owlX; s_owlY = owlY;
+                s_owlBubX = bx; s_owlBubY = by; s_owlBubW = bw; s_owlBubH = bh;
+                s_owlReekAt = now ? now : 1;
+            }
         }
     }
 
