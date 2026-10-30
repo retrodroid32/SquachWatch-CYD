@@ -318,6 +318,8 @@ static void usage() {
         "  --first / --night / --lastfree   the ALERT card's banners\n"
         "  --noseed          no detections at all -- CLEAR's idle state\n"
         "  --pet N           companion: 0 off, 1 VAPOR SHAGGY, 2 the yeti\n"
+        "  solo              isolated costume render with --outfit N and --pose 0..9\n"
+        "                    SQUACHSIM_BENCH=1 prints average sprite pixel writes\n"
         "  --jail            start the STRIPES sentence and draw chained jail ball\n"
         "  --peer N          draw a visiting SquachMesh peer in outfit N\n"
         "  --peername NAME   give that visitor a custom name\n"
@@ -763,6 +765,39 @@ int main(int argc, char** argv) {
             frame.fillRect(0, 0, W, H, 0x024A);   // dark teal: no costume uses it
             Squachy::drawWaving(frame, W / 2, H - 12, tt, 2.0f, nullptr, false, 0,
                                 /*waving*/ pi == 1, 34, false, false, false, kPoses[pi]);
+        }
+        else if (screen == "solo") {
+            // Preview the real outfit renderer at main-screen scale, separate
+            // from backgrounds, WATCH/HUNT overlays and UI chrome.
+            using VP = Squachy::VisitPose;
+            static const VP kP[] = {
+                VP::NONE, VP::NONE, VP::HANDS_UP, VP::CHEER, VP::DANCE,
+                VP::BOW, VP::STARTLED, VP::CROUCH, VP::COVER, VP::HIGH_FIVE
+            };
+            const int pi = poseIdx < 0 ? 0 : (poseIdx % 10 + 10) % 10;
+            frame.fillRect(0, 0, W, H, 0x024A);
+            // This counter measures accepted in-sprite writes, not FPS or
+            // physical TFT/SPI bandwidth. It excludes the flat background.
+            if (const char* bench = getenv("SQUACHSIM_BENCH")) {
+                if (bench[0] != '0') {
+                    static bool done = false;
+                    if (!done) {
+                        done = true;
+                        constexpr int N = 240; // enough to span multiple animations
+                        g_simPix = 0;
+                        g_simPixActive = true;
+                        for (int i = 0; i < N; ++i)
+                            Squachy::drawWaving(frame, W / 2, H - 14,
+                                t + 7000u + (uint32_t)i * 33u,
+                                2.2f, nullptr, false, 0,
+                                pi == 1, 34, false, false, false, kP[pi]);
+                        g_simPixActive = false;
+                        printf("BENCH pix %.0f\n", (double)g_simPix / N);
+                    }
+                }
+            }
+            Squachy::drawWaving(frame, W / 2, H - 14, t, 2.2f, nullptr,
+                                false, 0, pi == 1, 34, false, false, false, kP[pi]);
         }
         else return false;
         return true;
