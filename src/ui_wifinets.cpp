@@ -1,6 +1,7 @@
 // SquachWatch-CYD -- WIFI NETWORKS. See include/ui_wifinets.h.
 #include "ui_wifinets.h"
 #include "ota_wifi.h"
+#include "wifi_use_policy.h"
 #include "theme.h"
 #include "privacy.h"
 #include <Arduino.h>
@@ -212,10 +213,8 @@ void uiWifiNetsTickDirect(TFT_eSPI& t, uint32_t now) {
     // A full frame was rendered before USE freed its ~77 KB sprite.
     // Its pixels remain on the glass. Adopt that scene without clearing
     // it, then update only the USE row/button/toast changes.
-    const bool adoptExisting = !s_directReady && s_panelKnown &&
-                               s_directW == w && s_directH == h;
-    const bool fullRequired = !adoptExisting &&
-                              (!s_directReady || s_directW != w || s_directH != h);
+    const bool fullRequired = WifiScreenPolicy::networksNeedsFullPaint(
+        s_directReady, s_panelKnown, s_directW == w && s_directH == h);
     if (fullRequired) {
         uiWifiNetsTick(t, now); // true new screen/rotation only
         s_directReady = true;
@@ -260,14 +259,10 @@ void uiWifiNetsTickDirect(TFT_eSPI& t, uint32_t now) {
         } else {
             for (int i = 0; i < n && i < fit; i++) {
                 const OtaWifi::SavedResult result = OtaWifi::savedResult((uint8_t)i);
-                if (i == s_selected || i == s_lastSelected ||
-                    i == use || i == s_lastUse) {
-                    if (s_selected != s_lastSelected || use != s_lastUse ||
-                        test != s_lastTest || result != s_lastResult[i])
-                        drawSavedRow(t, i, w);
-                } else if (result != s_lastResult[i]) {
+                if (WifiScreenPolicy::networksRowChanged(
+                        i, s_selected, s_lastSelected, use, s_lastUse,
+                        test != s_lastTest, result != s_lastResult[i]))
                     drawSavedRow(t, i, w);
-                }
             }
         }
         if (n != s_lastCount || s_selected != s_lastSelected ||
