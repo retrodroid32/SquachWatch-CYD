@@ -4497,12 +4497,14 @@ static char     s_toastHead[TOAST_HEAD_CAP] = {0};
 static char     s_toastSub[TOAST_SUB_CAP]  = {0};
 static uint16_t s_toastAccent   = 0;
 static uint32_t s_toastUntil    = 0;
+static uint32_t s_toastSerial = 0;
 
 void showToast(const char* head, const char* sub, uint16_t accent, uint32_t ms) {
     UiFit::fitHead(s_toastHead, sizeof s_toastHead, head ? head : "", (int)sizeof s_toastHead - 1);
     UiFit::fitHead(s_toastSub, sizeof s_toastSub, sub ? sub : "", (int)sizeof s_toastSub - 1);
     s_toastAccent = accent;
     s_toastUntil  = millis() + ms;
+    ++s_toastSerial;
 }
 
 void clearToast() {
@@ -4510,7 +4512,10 @@ void clearToast() {
     s_toastSub[0]  = '\0';
     s_toastAccent  = 0;
     s_toastUntil   = 0;
+    ++s_toastSerial;
 }
+
+uint32_t toastSerial() { return s_toastSerial; }
 
 bool toastActive(uint32_t now) {
     return s_toastUntil && (int32_t)(s_toastUntil - now) > 0;

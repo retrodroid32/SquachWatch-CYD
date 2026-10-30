@@ -2,6 +2,7 @@
 #include "ui_wifipass.h"
 #include "theme.h"
 #include "privacy.h"
+#include "wifi_use_policy.h"
 #include <Arduino.h>
 #include <stdio.h>
 #include <string.h>
@@ -180,6 +181,9 @@ void type(char ch, uint32_t now) {
 // cursor when it blinks, and every key when the page or SHIFT changes.
 uint32_t s_initAt = 0;
 bool     s_full   = true;
+// A direct TFT keyboard cannot safely repaint the whole screen on every
+// frame during the initial 400ms. Buffered screens retain the old cadence.
+bool     s_directPanel = false;
 int8_t   s_drawnLit   = -1;
 bool     s_drawnShift = false, s_drawnSym = false, s_drawnShow = false;
 uint8_t  s_drawnLen   = 0;
@@ -191,48 +195,98 @@ const uint32_t SETTLE_MS = 400;
 
 int fieldW(int w) { return showX(w) - GAP - MARGIN; }
 
-void drawKey(TFT_eSPI& t, uint8_t i) {
+// xOffset/yOffset lets us paint a key into a tiny scratch sprite and
+// transfer its finished pixels to the panel in one operation. The same key
+// geometry and artwork are used for buffered and direct drawing.
+void paintKey(TFT_eSPI& t, uint8_t i, int xOffset = 0, int yOffset = 0) {
     const Key& k = s_keys[i];
+    const int x = k.x - xOffset, y = k.y - yOffset;
     // A blank on the symbols page is chassis, not a hole in it.
-    if (k.ch == K_NONE) { t.fillRect(k.x, k.y, k.w, k.h, Theme::W95_FACE); return; }
+    if (k.ch == K_NONE) { t.fillRect(x, y, k.w, k.h, Theme::W95_FACE); return; }
     const bool lit = (s_armed == (int8_t)i) || (k.ch == K_SHIFT && s_shift);
-    Theme::drawSteelKey(t, k.x, k.y, k.w, k.h, lit);
+    Theme::drawSteelKey(t, x, y, k.w, k.h, lit);
     char one[2];
     const char* lab = label(k.ch, one);
     t.setTextSize(2);
     if (t.textWidth(lab) > k.w - 6) t.setTextSize(1);
     t.setTextColor(lit ? Theme::VAPOR_YELLOW : Theme::WHITE);
-    t.setCursor(k.x + (k.w - t.textWidth(lab)) / 2, k.y + (k.h - t.fontHeight()) / 2);
+    t.setCursor(x + (k.w - t.textWidth(lab)) / 2, y + (k.h - t.fontHeight()) / 2);
     t.print(lab);
     t.setTextSize(1);
 }
 
+void drawKey(TFT_eSPI& t, uint8_t i) {
+#if defined(CYD32)
+    if (s_directPanel) {
+        // At most one key (typically ~1KB at RGB332) is allocated at a time.
+        // Never reserve another full-screen buffer: USE had to free the old
+        // 77KB buffer to leave enough RAM for WiFi in the first place.
+        const Key& k = s_keys[i];
+        TFT_eSprite patch(&t);
+        patch.setColorDepth(8);
+        if (patch.createSprite(k.w, k.h)) {
+            paintKey(patch, i, k.x, k.y);
+            patch.pushSprite(k.x, k.y);
+            patch.deleteSprite();
+            return;
+        }
+        // Low-heap fallback: still usable, but avoid touching WiFi or its
+        // allocated worker merely to improve cosmetics.
+    }
+#endif
+    paintKey(t, i);
+}
+
 // The field: the password as stars but for the last character for a moment
 // (or all of it with SHOW on), and the cursor.
-void drawField(TFT_eSPI& t, int w, uint32_t now) {
+void paintField(TFT_eSPI& t, int w, uint32_t now,
+                int xOffset = 0, int yOffset = 0) {
     const int fw = fieldW(w);
-    // The payphone's readout, to the pixel: a sunken steel bezel with a
-    // black screen in it and green text on that. Drawn here rather than
-    // once in drawAll() because the cursor brings us back every frame and
-    // a bezel that is only painted on a full redraw gets eaten by it.
-    Theme::drawSteelPanel(t, MARGIN - 3, FIELD_Y - 3, fw + 6, FIELD_H + 6, true);
-    t.fillRect(MARGIN, FIELD_Y, fw, FIELD_H, Theme::BLACK);
+    // Keep the same bezel and text geometry as buffered rendering.
+    Theme::drawSteelPanel(t, MARGIN - 3 - xOffset, FIELD_Y - 3 - yOffset,
+                          fw + 6, FIELD_H + 6, true);
+    t.fillRect(MARGIN - xOffset, FIELD_Y - yOffset,
+               fw, FIELD_H, Theme::BLACK);
     const bool reveal = s_len && now - s_typedAt < 900;
     char shown[PASS_MAX + 1];
-    for (uint8_t i = 0; i < s_len; i++) shown[i] = (s_show || (reveal && i + 1 == s_len)) ? s_buf[i] : '*';
+    for (uint8_t i = 0; i < s_len; i++)
+        shown[i] = (s_show || (reveal && i + 1 == s_len)) ? s_buf[i] : '*';
     shown[s_len] = '\0';
     t.setTextSize(2);
     const int cw = t.textWidth("M");
     const int fits = (fw - 8) / cw;
     const char* tail = s_len > fits ? shown + (s_len - fits) : shown;
     t.setTextColor(Theme::GREEN, Theme::BLACK);
-    t.setCursor(MARGIN + 4, FIELD_Y + (FIELD_H - t.fontHeight()) / 2);
+    t.setCursor(MARGIN + 4 - xOffset,
+                FIELD_Y + (FIELD_H - t.fontHeight()) / 2 - yOffset);
     t.print(tail);
     s_cursorX = MARGIN + 4 + t.textWidth(tail) + 1;
     const bool cursor = (now / 500) % 2;
-    t.fillRect(s_cursorX, FIELD_Y + 3, 2, FIELD_H - 6, cursor ? Theme::GREEN : Theme::BLACK);
+    t.fillRect(s_cursorX - xOffset, FIELD_Y + 3 - yOffset, 2,
+               FIELD_H - 6, cursor ? Theme::GREEN : Theme::BLACK);
     t.setTextSize(1);
     s_drawnLen = s_len; s_drawnReveal = reveal; s_drawnCursor = cursor;
+}
+
+void drawField(TFT_eSPI& t, int w, uint32_t now) {
+#if defined(CYD32)
+    if (s_directPanel) {
+        // Joining WiFi no longer flashes; password editing needs the same
+        // atomic paint. A temporary 26px-tall sprite covers only the field,
+        // not the whole keyboard or display. Fallback is harmless if a
+        // memory-constrained board cannot allocate this optional patch.
+        const int x = MARGIN - 3, y = FIELD_Y - 3;
+        TFT_eSprite patch(&t);
+        patch.setColorDepth(8);
+        if (patch.createSprite(fieldW(w) + 6, FIELD_H + 6)) {
+            paintField(patch, w, now, x, y);
+            patch.pushSprite(x, y);
+            patch.deleteSprite();
+            return;
+        }
+    }
+#endif
+    paintField(t, w, now);
 }
 
 void drawShow(TFT_eSPI& t, int w) {
@@ -286,14 +340,27 @@ void uiWifiPassInit(TFT_eSPI& t, const char* ssid) {
     s_armed = s_lastKey = -1;
     layout(t.width(), t.height());
     s_full   = true;
+    s_directPanel = false;
     s_initAt = millis();
     t.fillRect(0, 0, t.width(), t.height(), Theme::BG);
 }
 
-void uiWifiPassTick(TFT_eSPI& t, uint32_t now) {
+void uiWifiPassTick(TFT_eSPI& t, uint32_t now, bool directPanel) {
+    // Changing between the physical LCD and a framebuffer requires exactly
+    // one complete paint of that new surface, never one per sprite band.
+    if (s_directPanel != directPanel) {
+        s_directPanel = directPanel;
+        s_full = true;
+    }
     const int w = t.width(), h = t.height();
     layout(w, h);
-    if (s_full || now - s_initAt < SETTLE_MS) { drawAll(t, now); return; }
+    // A direct-panel full repaint visibly erases the keyboard before its
+    // key labels appear. There is no buffered transition animation to
+    // settle here, so one initial paint is enough.
+    if (WifiScreenPolicy::passwordFullPaint(s_full, directPanel, now - s_initAt, SETTLE_MS)) {
+        drawAll(t, now);
+        return;
+    }
     // Every key when the page or SHIFT changes: the labels are different
     // and the SHIFT key lights while it is on.
     if (s_drawnShift != s_shift || s_drawnSym != s_sym) drawKeys(t);
