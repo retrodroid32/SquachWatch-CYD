@@ -42,6 +42,24 @@ inline bool keyboardDirectPanel(bool framebufferReady, uint8_t bands) {
 // After saved USE, the framebuffer may have been lent out or recovered in
 // narrow bands. A network list doesn't need 30 full-screen repaints/sec:
 // paint straight to the display when the selected row or test state changes.
+// The full-screen image was just painted into the framebuffer before USE
+// lent its RAM. The physical LCD still holds that scene; adopt it instead of
+// clearing the whole panel on the first direct-rendered frame.
+inline bool networksNeedsFullPaint(bool directReady, bool physicalSceneKnown,
+                                   bool sizeMatches) {
+    return !sizeMatches || (!directReady && !physicalSceneKnown);
+}
+
+// A tap without a selection/use/status change must not redraw a network row.
+inline bool networksRowChanged(int row, int selected, int priorSelected,
+                               int use, int priorUse, bool testChanged,
+                               bool resultChanged) {
+    if (resultChanged) return true;
+    if (selected == priorSelected && use == priorUse && !testChanged) return false;
+    return row == selected || row == priorSelected ||
+           row == use || row == priorUse;
+}
+
 inline bool networksDirectPanel(bool framebufferReady, uint8_t bands) {
 #if defined(CYD32)
     return !framebufferReady || bands > 1;
