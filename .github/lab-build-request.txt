@@ -1,3 +1,7 @@
-WATCH149-LANDBACK
-# Experimental LAB build after landscape WATCH BACK touch fix.
-# Triggered only on explicit user hardware regression report.
+pr119-wardrobe-stripes-20261030
+# LAB-only firmware built from PR #119 validated head 7d2bc1762d13ae8bb6e326558417f67a6335b419
+# Includes merged #121 full 20-outfit wardrobe, #153 native STRIPES jail/pet gameplay,
+# merged #154 3.2-inch saved Wi-Fi USE / password keyboard flicker repairs.
+# PR #119 adds emulator-only SOLO costume pixel bench; device firmware source matches master.
+# Both 2.8 and 3.2 CYD, including ST7798 standard / experimental 80MHz variants.
+# Preserve production v1.21.0, no versioned release, tag, or PR merge.
