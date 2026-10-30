@@ -5926,8 +5926,7 @@ void loop() {
             // The board redraws only what changed, so it is the same with the
             // frame buffer and without it (given up for a download).
 #if defined(CYD32)
-            if (!frameBufferOk ||
-                WifiScreenPolicy::keyboardDirectPanel(frameBufferOk, s_recoveryBands)) {
+            if (WifiScreenPolicy::keyboardDirectPanel(frameBufferOk, s_recoveryBands)) {
                 // A 3.2-inch board may be unbuffered, or may have recovered
                 // only a partial-height sprite after WiFi USE. In either
                 // case draw once on the full-size panel, with atomic
