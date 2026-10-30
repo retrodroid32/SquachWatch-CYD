@@ -203,6 +203,9 @@ namespace Theme {
     // painted over the resulting screen.
     void clearToast();
     bool toastActive(uint32_t now);
+    // Incremented when a toast is replaced or cleared; direct-paint menus
+    // can update only the overlay instead of redrawing the whole screen.
+    uint32_t toastSerial();
 
     // No-op unless a toast is live. Call last, after the screen has drawn.
     void drawToast(TFT_eSPI& t, uint32_t now);
