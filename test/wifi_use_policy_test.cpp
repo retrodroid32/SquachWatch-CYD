@@ -3,6 +3,20 @@
 #include <cstdio>
 
 int main() {
+    // A rendered WiFi screen is already present on the LCD when USE loans
+    // the framebuffer. A touch edge alone must not blank/repaint it.
+    assert(!WifiScreenPolicy::networksNeedsFullPaint(false, true, true));
+    assert(!WifiScreenPolicy::networksNeedsFullPaint(true, true, true));
+    assert(WifiScreenPolicy::networksNeedsFullPaint(false, false, true));
+    assert(WifiScreenPolicy::networksNeedsFullPaint(false, true, false));
+    assert(!WifiScreenPolicy::networksRowChanged(2, 1, 1, 0, 0, false, false));
+    // Only selection, USE or result state changes should repaint a row.
+    assert(WifiScreenPolicy::networksRowChanged(1, 1, 2, 0, 0, false, false));
+    assert(WifiScreenPolicy::networksRowChanged(2, 1, 2, 0, 0, false, false));
+    assert(WifiScreenPolicy::networksRowChanged(3, 1, 1, 0, 0, false, true));
+    assert(!WifiScreenPolicy::networksRowChanged(3, 1, 2, 0, 0, false, false));
+    assert(WifiScreenPolicy::networksRowChanged(0, 1, 1, 0, 0, true, false));
+
 #if defined(CYD32)
     static_assert(!WifiUsePolicy::SCAN_BEFORE_JOIN, "ST7798 should skip prerequisite WiFi scan");
     static_assert(!WifiUsePolicy::BREAK_ON_EARLY_ERROR, "ST7798 must wait for radio handoff");
