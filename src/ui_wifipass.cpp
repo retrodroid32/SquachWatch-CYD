@@ -238,30 +238,54 @@ void drawKey(TFT_eSPI& t, uint8_t i) {
 
 // The field: the password as stars but for the last character for a moment
 // (or all of it with SHOW on), and the cursor.
-void drawField(TFT_eSPI& t, int w, uint32_t now) {
+void paintField(TFT_eSPI& t, int w, uint32_t now,
+                int xOffset = 0, int yOffset = 0) {
     const int fw = fieldW(w);
-    // The payphone's readout, to the pixel: a sunken steel bezel with a
-    // black screen in it and green text on that. Drawn here rather than
-    // once in drawAll() because the cursor brings us back every frame and
-    // a bezel that is only painted on a full redraw gets eaten by it.
-    Theme::drawSteelPanel(t, MARGIN - 3, FIELD_Y - 3, fw + 6, FIELD_H + 6, true);
-    t.fillRect(MARGIN, FIELD_Y, fw, FIELD_H, Theme::BLACK);
+    // Keep the same bezel and text geometry as buffered rendering.
+    Theme::drawSteelPanel(t, MARGIN - 3 - xOffset, FIELD_Y - 3 - yOffset,
+                          fw + 6, FIELD_H + 6, true);
+    t.fillRect(MARGIN - xOffset, FIELD_Y - yOffset,
+               fw, FIELD_H, Theme::BLACK);
     const bool reveal = s_len && now - s_typedAt < 900;
     char shown[PASS_MAX + 1];
-    for (uint8_t i = 0; i < s_len; i++) shown[i] = (s_show || (reveal && i + 1 == s_len)) ? s_buf[i] : '*';
+    for (uint8_t i = 0; i < s_len; i++)
+        shown[i] = (s_show || (reveal && i + 1 == s_len)) ? s_buf[i] : '*';
     shown[s_len] = '\0';
     t.setTextSize(2);
     const int cw = t.textWidth("M");
     const int fits = (fw - 8) / cw;
     const char* tail = s_len > fits ? shown + (s_len - fits) : shown;
     t.setTextColor(Theme::GREEN, Theme::BLACK);
-    t.setCursor(MARGIN + 4, FIELD_Y + (FIELD_H - t.fontHeight()) / 2);
+    t.setCursor(MARGIN + 4 - xOffset,
+                FIELD_Y + (FIELD_H - t.fontHeight()) / 2 - yOffset);
     t.print(tail);
     s_cursorX = MARGIN + 4 + t.textWidth(tail) + 1;
     const bool cursor = (now / 500) % 2;
-    t.fillRect(s_cursorX, FIELD_Y + 3, 2, FIELD_H - 6, cursor ? Theme::GREEN : Theme::BLACK);
+    t.fillRect(s_cursorX - xOffset, FIELD_Y + 3 - yOffset, 2,
+               FIELD_H - 6, cursor ? Theme::GREEN : Theme::BLACK);
     t.setTextSize(1);
     s_drawnLen = s_len; s_drawnReveal = reveal; s_drawnCursor = cursor;
+}
+
+void drawField(TFT_eSPI& t, int w, uint32_t now) {
+#if defined(CYD32)
+    if (s_directPanel) {
+        // Joining WiFi no longer flashes; password editing needs the same
+        // atomic paint. A temporary 26px-tall sprite covers only the field,
+        // not the whole keyboard or display. Fallback is harmless if a
+        // memory-constrained board cannot allocate this optional patch.
+        const int x = MARGIN - 3, y = FIELD_Y - 3;
+        TFT_eSprite patch(&t);
+        patch.setColorDepth(8);
+        if (patch.createSprite(fieldW(w) + 6, FIELD_H + 6)) {
+            paintField(patch, w, now, x, y);
+            patch.pushSprite(x, y);
+            patch.deleteSprite();
+            return;
+        }
+    }
+#endif
+    paintField(t, w, now);
 }
 
 void drawShow(TFT_eSPI& t, int w) {
