@@ -5926,13 +5926,13 @@ void loop() {
             // The board redraws only what changed, so it is the same with the
             // frame buffer and without it (given up for a download).
 #if defined(CYD32)
-            if (WifiScreenPolicy::keyboardDirectPanel(frameBufferOk, s_recoveryBands)) {
-                // The password widget measures screen height and retains
-                // incremental paint state. Calling it once PER SPRITE BAND
-                // gives it a shortened height and suppresses subsequent
-                // bands, producing duplicate/overlapping keyboards.
-                // Its existing direct-panel path redraws only changed keys.
-                uiWifiPassTick(tft, now);
+            if (!frameBufferOk ||
+                WifiScreenPolicy::keyboardDirectPanel(frameBufferOk, s_recoveryBands)) {
+                // A 3.2-inch board may be unbuffered, or may have recovered
+                // only a partial-height sprite after WiFi USE. In either
+                // case draw once on the full-size panel, with atomic
+                // key patches and no repeated whole-keyboard redraws.
+                uiWifiPassTick(tft, now, true);
             } else
 #endif
                 drawTwoBand([&](TFT_eSPI& t, bool) { uiWifiPassTick(t, now); });
