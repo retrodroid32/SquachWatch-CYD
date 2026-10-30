@@ -1,3 +1,7 @@
-WATCH149-LANDBACK
-# Experimental LAB build after landscape WATCH BACK touch fix.
-# Triggered only on explicit user hardware regression report.
+pr141-sd-utc-cyd-20261030
+# LAB only: SD detection timestamp validation on 2.8 ST7789 and 3.2 ST7798.
+# Built from PR #141 head 2f7987064a4ae2c01b6e94536bea4a13e0a9fc9e atop master with merged PRs #119, #121, #153 and #154.
+# Trusted UTC becomes YYYY-MM-DDTHH:MM:SSZ; untrusted retains numeric uptime.
+# Test both boards, portrait/landscape, SD file content, and mesh/WATCH/HUNT regressions.
+# 3.2 standard and optional 80MHz profile, 2.8 ST7789 standard and optional fast.
+# Do not merge PR141, create a production release or tag, or delete branches.
