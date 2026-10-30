@@ -275,6 +275,7 @@ static void drawCrashCard(TFT_eSPI& t) {
 #include "ota_core.h"
 #include "ota_ble.h"
 #include "ota_wifi.h"
+#include "wifi_use_policy.h"
 #include "ui_update.h"
 #include "ui_wifipass.h"
 #include "ui_sysprops.h"
@@ -1230,7 +1231,7 @@ static bool s_scanPickerOpen = false;
 
 static void enterLocked();
 // The frame buffer lent to a WiFi download, and taken back; defined with the update code below.
-static void lendFrameToDownload();
+static void lendFrameToDownload(bool preservePanel = false);
 static void restoreFrameBuffer();
 // Every way home goes through here, which makes it the one place the lock has
 // to be honoured: while locked, "home" is the lock screen.
@@ -1648,13 +1649,15 @@ static void autoUpdateTick(uint32_t now) {
 // about to restart and the copying the wipe does ran the heap dry without
 // it. Afterwards the screens draw straight to the panel, the fallback a
 // failed rotate already uses.
-static void releaseFrameBuffer(const char* who) {
+static void releaseFrameBuffer(const char* who, bool clearPanel = true) {
 #if !defined(CYD35)
     if (!frameBufferOk) return;
     frame.deleteSprite();
     frameBufferOk = false;
     canvas = &tft;
-    tft.fillScreen(Theme::BG);
+    // A saved-network USE check must not blank the LCD when freeing the
+    // framebuffer: that used to cause an obvious full-screen flash at tap.
+    if (clearPanel) tft.fillScreen(Theme::BG);
     Serial.printf("[%s] frame buffer released: largest block %lu\n", who,
                   (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
 #else
@@ -1680,14 +1683,20 @@ static bool s_frameLent = false;
 // can make 76.8 KB / 38.4 KB contiguous allocations impossible. Recover
 // with the smallest power-of-two band count that fits: 2, 4, 8, or 16.
 // Every supported 240x320 / 320x240 rotation divides evenly by those counts.
-static void lendFrameToDownload() {
+static void lendFrameToDownload(bool preservePanel) {
     if (!frameBufferOk) return;
-    releaseFrameBuffer("ota");
+    releaseFrameBuffer(preservePanel ? "wifi-use" : "ota", !preservePanel);
     s_recoveryBands = 1;
     s_frameLent = true;
 }
 static void restoreFrameBuffer() {
     if (!s_frameLent) return;
+#if defined(CYD32)
+    // USE temporarily lends the full ~77KB sprite so FreeRTOS and the
+    // WiFi STA driver can allocate during association. Do not steal the
+    // memory back before its worker finishes and radio detection resumes.
+    if (OtaWifi::savedTestState() != OtaWifi::SavedTest::IDLE) return;
+#endif
 #if defined(CYD35)
     // CYD35 keeps its half-screen sprite during OTA: nothing to allocate.
     s_frameLent = false;
@@ -5916,7 +5925,16 @@ void loop() {
             lastTouch = now;
             // The board redraws only what changed, so it is the same with the
             // frame buffer and without it (given up for a download).
-            drawTwoBand([&](TFT_eSPI& t, bool) { uiWifiPassTick(t, now); });
+#if defined(CYD32)
+            if (WifiScreenPolicy::keyboardDirectPanel(frameBufferOk, s_recoveryBands)) {
+                // A 3.2-inch board may be unbuffered, or may have recovered
+                // only a partial-height sprite after WiFi USE. In either
+                // case draw once on the full-size panel, with atomic
+                // key patches and no repeated whole-keyboard redraws.
+                uiWifiPassTick(tft, now, true);
+            } else
+#endif
+                drawTwoBand([&](TFT_eSPI& t, bool) { uiWifiPassTick(t, now); });
             if (touchJustDown)    uiWifiPassTouch(tp.x, tp.y, now, WifiPassTouch::DOWN);
             else if (tp.valid)    uiWifiPassTouch(tp.x, tp.y, now, WifiPassTouch::MOVE);
             else if (touchJustUp) uiWifiPassTouch(tp.x, tp.y, now, WifiPassTouch::UP);
@@ -5948,6 +5966,11 @@ void loop() {
             else if (test != OtaWifi::SavedTest::IDLE) {
                 OtaWifi::clearSavedTest();
                 engine.stopUpdateRadio();
+#if defined(CYD32)
+                // Recovery can choose smaller bands if the WiFi heap is
+                // fragmented. Never hold the large framebuffer during USE.
+                restoreFrameBuffer();
+#endif
                 switch (test) {
                     case OtaWifi::SavedTest::JOINED:       Theme::showToast("WIFI CONNECTED", "Verified; scanning resumed", Theme::GREEN); break;
                     case OtaWifi::SavedTest::BAD_PASSWORD: Theme::showToast("AUTH FAILED", "Check saved password", Theme::AMBER); break;
@@ -5955,7 +5978,16 @@ void loop() {
                     default:                               Theme::showToast("CONNECTION FAILED", "Try again or move closer", Theme::AMBER); break;
                 }
             }
-            drawTwoBand([&](TFT_eSPI& t, bool) { uiWifiNetsTick(t, now); });
+#if defined(CYD32)
+            // When 3.2-inch WiFi has lent its framebuffer (or recovered
+            // only a small sprite band), don't clear/repaint the full LCD
+            // for every finger down/up. The incremental painter updates only
+            // the rows, buttons and toast region whose content changed.
+            if (WifiScreenPolicy::networksDirectPanel(frameBufferOk, s_recoveryBands))
+                uiWifiNetsTickDirect(tft, now);
+            else
+#endif
+                drawTwoBand([&](TFT_eSPI& t, bool) { uiWifiNetsTick(t, now); });
             if (test == OtaWifi::SavedTest::CONNECTING) break;
             if (touchJustDown) {
                 int row = -1;
@@ -5969,11 +6001,22 @@ void loop() {
                             } else {
                                 OtaWifi::useSaved((uint8_t)s);
                                 engine.startUpdateRadio();
+#if defined(CYD32)
+                                // Boot WiFi succeeds before UI/frame allocation.
+                                // USE previously tried to create a 6KB task
+                                // with the 77KB sprite still resident; failure
+                                // was mislabeled WIFI BUSY. Match OTA's proven
+                                // framebuffer loan on this board only.
+                                lendFrameToDownload(true);
+#endif
                                 if (OtaWifi::testSavedAt((uint8_t)s))
                                     Theme::showToast("CONNECTING", "Testing saved WiFi only", Theme::CYAN);
                                 else {
                                     engine.stopUpdateRadio();
-                                    Theme::showToast("WIFI BUSY", "Try again shortly", Theme::AMBER);
+#if defined(CYD32)
+                                    restoreFrameBuffer();
+#endif
+                                    Theme::showToast("WIFI CAN'T START", OtaWifi::savedTestStartIssue(), Theme::AMBER);
                                 }
                             }
                         }

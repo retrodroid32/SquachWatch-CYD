@@ -38,6 +38,23 @@ int main() {
     assert(savedResult((uint8_t)bad) == SavedResult::BAD_PASSWORD);
     clearSavedTest();
     assert(savedTestState() == SavedTest::IDLE);
+
+    // Regression: after a reported failure the same selected saved network
+    // must be testable again without reboot. The previous test's worker or
+    // terminal state must not leave a permanent WIFI BUSY condition.
+    assert(testSavedAt((uint8_t)bad));
+    assert(savedTestState() == SavedTest::CONNECTING);
+    SimClock::nowMs += 1600;
+    assert(savedTestState() == SavedTest::BAD_PASSWORD);
+    clearSavedTest();
+    assert(savedTestState() == SavedTest::IDLE);
+
+    // A previous success must be retryable too, not only failures.
+    assert(testSavedAt(original));
+    SimClock::nowMs += 1600;
+    assert(savedTestState() == SavedTest::JOINED);
+    clearSavedTest();
+    assert(savedTestState() == SavedTest::IDLE);
     assert(!testSavedAt(SAVED_MAX));
     std::puts("PASS: USE tests selected WiFi, records join/failure, and prevents overlapping attempts");
     return 0;

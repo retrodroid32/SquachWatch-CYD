@@ -207,6 +207,7 @@ SavedTest   savedTestState() {
     return s_test;
 }
 void        clearSavedTest() { if (s_test != SavedTest::CONNECTING) s_test = SavedTest::IDLE; }
+const char* savedTestStartIssue() { return "WiFi test worker active"; }
 void        printSaved() {}
 void        connectSavedAt(uint8_t i) { connect(i < s_n ? s_list[i].ssid : "SquachNet", "", false); }
 

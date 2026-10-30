@@ -86,6 +86,9 @@ enum class SavedTest : uint8_t { IDLE, CONNECTING, JOINED, BAD_PASSWORD, NOT_FOU
 bool       testSavedAt(uint8_t i);
 SavedTest  savedTestState();
 void       clearSavedTest();
+// Explains why the latest USE test could not START (not its join result).
+// Intended for a short screen toast; never contains the saved password.
+const char* savedTestStartIssue();
 
 uint8_t     savedCount();
 const char* savedSsidAt(uint8_t i);
