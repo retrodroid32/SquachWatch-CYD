@@ -47,6 +47,8 @@ static const uint8_t SD_MAX_FILES = 2;
 
 bool SdLog::begin() {
     if (_ready) return true;
+    ++_mountAttempts;
+    _statusDetail = "TRYING SD MOUNT";
     // Do not turn a detected unplug (red) back to gray during unsuccessful
     // remount attempts: the user must see the latched error until recovery.
 #if defined(TWATCH_S3)
@@ -109,11 +111,15 @@ bool SdLog::begin() {
         // way to tell was to pull the card and look.
         Serial.println("[sd] no card, or it did not answer: nothing will be logged");
         _ready = false;
+        _statusDetail = "MOUNT FAILED";
+        Serial.printf("[sd] mount failed: attempt %lu, card previously seen=%d\n",
+                      (unsigned long)_mountAttempts, (int)_everMounted);
         return false;
     }
     Serial.printf("[sd] card mounted: %llu MB\n", (unsigned long long)(SD.cardSize() >> 20));
     _ready = true;
     _everMounted = true;
+    _statusDetail = "SD READY";
     _pendingLen = 0;   // old RAM queue was associated with the old card
     _filename[0] = '\0';
     Theme::setSdStatus(Theme::SdStatus::READY);
@@ -133,6 +139,7 @@ void SdLog::disableAfterIoFailure(const char* operation) {
     Serial.printf("[sd] %s failed; disabling SD logging until reboot (pending %u bytes discarded)\n",
                   operation, (unsigned)_pendingLen);
     _ready = false;
+    _statusDetail = "CARD REMOVED / IO FAILED";
     Theme::setSdStatus(Theme::SdStatus::ERROR);
     _pendingLen = 0;
     _filename[0] = '\0';
@@ -151,8 +158,11 @@ void SdLog::monitorEntry(void* ctx) {
     SdLog* self = static_cast<SdLog*>(ctx);
     uint8_t* sector = static_cast<uint8_t*>(malloc(512));
     for (;;) {
-        vTaskDelay(pdMS_TO_TICKS(2500));
-        if (!self || !sector) continue;
+        if (!self) { vTaskDelay(pdMS_TO_TICKS(2500)); continue; }
+        // RESCAN interrupts the regular 2.5 second delay. It does not
+        // call synchronous FAT/SPI APIs on the touchscreen/UI thread.
+        const uint32_t signalled = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(2500));
+        if (!sector) continue;
         const SemaphoreHandle_t m = static_cast<SemaphoreHandle_t>(self->_ioMutex);
         if (!m || xSemaphoreTake(m, pdMS_TO_TICKS(150)) != pdTRUE) continue;
         // A file browser can be open while a card is removed/reinserted.
@@ -170,15 +180,28 @@ void SdLog::monitorEntry(void* ctx) {
                 // When the card is put back, clear Arduino's stale disk
                 // handle before mounting it again. Never do this inside
                 // the frame or from the title-bar icon.
+                self->_remounting = true;
+                self->_statusDetail = "REINITIALIZING SD";
                 SD.end();
 #if defined(CYD) && !defined(RLPHANTOM) && !defined(RLPHANTOM_R) && !defined(CYD35)
                 // This is a dedicated SPI bus on CYD 2.8/3.2, not the
                 // TFT/touch instance. Reset the bus after a disappeared card,
                 // as Arduino SDFS::end() only detaches the FAT volume.
                 SPI.end();
+                // A physically reinserted card needs its CS deasserted and
+                // >= 74 clocks before CMD0; allow the socket contacts to
+                // settle and issue the idle clocks on the dedicated SD bus.
+                pinMode(SD_CS_PIN, OUTPUT);
+                digitalWrite(SD_CS_PIN, HIGH);
+                vTaskDelay(pdMS_TO_TICKS(120));
+                SPI.begin(18, 19, 23, SD_CS_PIN);
+                SPI.beginTransaction(SPISettings(400000, MSBFIRST, SPI_MODE0));
+                for (uint8_t k = 0; k < 12; ++k) SPI.transfer(0xFF);
+                SPI.endTransaction();
 #endif
                 const bool mounted = self->begin();
-                if (!mounted && self->_requestRescan)
+                self->_remounting = false;
+                if (!mounted && (self->_requestRescan || signalled))
                     Serial.println("[sd] RESCAN attempted, SD still offline");
                 self->_requestRescan = false;
             }
@@ -222,7 +245,8 @@ bool SdLog::rescan() {
     // Do not manipulate SPI/FAT on the UI thread. The monitor wakes up
     // independently and makes the next remount attempt under its own lock.
     _requestRescan = true;
-    return true;
+    if (_monitorTask) xTaskNotifyGive(static_cast<TaskHandle_t>(_monitorTask));
+    return _monitorTask != nullptr;
 }
 
 // Destructive operation ONLY after the user's double confirmation.

@@ -21,6 +21,9 @@ public:
     bool rescan();            // request async remount from SD monitor
     bool formatCard();        // real FAT formatting, double-confirmed by browser
     const char* formatError() const { return _formatError; }
+    const char* statusDetail() const { return _statusDetail; }
+    uint32_t mountAttempts() const { return _mountAttempts; }
+    bool remounting() const { return _remounting; }
     void startMonitor();       // mount-state monitor on a separate task (CYD boards)  // an explicit browse I/O failure (never polled)
     void logEvent(const Detection& d);
     void tick();               // buffered flush / housekeeping (called from loop)
@@ -40,6 +43,9 @@ private:
     volatile bool _ready = false;
     volatile bool _browsing = false;
     volatile bool _requestRescan = false;
+    volatile bool _remounting = false;
+    volatile uint32_t _mountAttempts = 0;
+    const char* volatile _statusDetail = "NO SD CARD";
     bool _everMounted = false;
     char _formatError[40] = {0};
     void* _ioMutex = nullptr;   // FreeRTOS semaphore, opaque for PC emulator headers

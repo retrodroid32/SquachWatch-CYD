@@ -138,7 +138,16 @@ void draw(TFT_eSPI& t) {
         line(t, 8, 85, formatResult == 1 ? "Card is ready" : logger->formatError(), Theme::WHITE);
     } else if (!logger || !logger->ready()) {
         line(t, 8, 55, "SD OFFLINE", Theme::RED);
-        line(t, 8, 78, "Insert SD card", Theme::AMBER);
+        line(t, 8, 78, logger && logger->remounting() ? "REMOUNTING..." :
+             logger ? logger->statusDetail() : "NO SD LOGGER", Theme::AMBER);
+        // Show actual mount attempt count for a useful on-device failure
+        // report even if USB serial is not connected.
+        if (logger) {
+            char attempts[40];
+            snprintf(attempts, sizeof attempts, "ATTEMPTS: %lu",
+                     (unsigned long)logger->mountAttempts());
+            line(t, 8, 103, attempts, Theme::CYAN);
+        }
         line(t, 8, h - 59, "RESCAN >", Theme::CYAN);
     } else if (formatStage) {
         line(t, 8, 57, formatStage == 1 ? "FORMAT SD CARD?" : "ERASE ALL FILES?", Theme::RED);
@@ -193,7 +202,7 @@ bool tap(int x, int y, int w, int h) {
     if (!logger->ready()) {
         // An explicit RESCAN works even when the monitor is unavailable.
         if (y >= h - 68 && y < h - 30) {
-            logger->rescan(); // async; monitor remounts, screen auto-refreshes
+            logger->rescan(); // wake monitor immediately; file list reloads on mount
         }
         return false;
     }
