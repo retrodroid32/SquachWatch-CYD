@@ -231,6 +231,7 @@ static void drawCrashCard(TFT_eSPI& t) {
 #include "ui_watchalert.h"
 #include "watch_alert_actions.h"
 #include "ui_settings.h"
+#include "ui_sd_browser.h"
 #include "ui_diagnostics.h"
 #include "ui_hunt.h"
 #include "ui_colorcheck.h"
@@ -1482,6 +1483,20 @@ static void enterDesk() {
     state = AppState::DESK;
     transitionStart = millis();
     uiDeskInit(*canvas);
+}
+
+static bool s_sdFilesDirty = true;
+static uint16_t s_sdFilesLastW = 0, s_sdFilesLastH = 0;
+static bool s_sdFilesLastReady = false;
+static bool s_sdFilesNeedsReload = false;
+static uint32_t s_sdFilesNextStatusDraw = 0;
+static void enterSdFiles() {
+    s_sdFilesDirty = true;
+    s_sdFilesNeedsReload = false;
+    s_sdFilesLastReady = engine.sd().ready();
+    state = AppState::SD_FILES;
+    transitionStart = millis();
+    SdBrowser::begin(engine.sd());
 }
 
 static void enterDiagnostics() {
@@ -5756,6 +5771,7 @@ void loop() {
                         case SettingsRow::CHECK_COLORS: enterColorCheck(true); break;
                         case SettingsRow::DIAGNOSTICS:  enterDiagnostics(); break;
                         case SettingsRow::WIFI_NETWORKS: enterWifiNets(); break;
+                        case SettingsRow::SD_FILES: enterSdFiles(); break;
                         case SettingsRow::DESK_MODE:    uiSettingsOpenPage(SettingsPage::DESK); break;
                         case SettingsRow::DESK_OPEN:
                             // Settings' BACK from the desk comes back to it;
@@ -6846,6 +6862,51 @@ void loop() {
             }
             break;
         }
+        case AppState::SD_FILES: {
+            // Unlike a static file listing, an offline mount status evolves
+            // on a separate task. Refresh sparingly while offline so RESCAN
+            // attempts/errors are visible without touching or repainting
+            // every animation frame.
+            if (!engine.sd().ready() && (int32_t)(now - s_sdFilesNextStatusDraw) >= 0) {
+                s_sdFilesDirty = true;
+                s_sdFilesNextStatusDraw = now + 1200u;
+            }
+            const bool resized = s_sdFilesLastW != tft.width() || s_sdFilesLastH != tft.height();
+            const bool mounted = engine.sd().ready();
+            if (mounted != s_sdFilesLastReady) {
+                s_sdFilesLastReady = mounted;
+                if (mounted) s_sdFilesNeedsReload = true;
+                s_sdFilesDirty = true;
+            }
+            if (mounted && s_sdFilesNeedsReload) {
+                if (SdBrowser::reloadMountedCard()) s_sdFilesNeedsReload = false;
+                s_sdFilesDirty = true;
+            }
+            if (resized) {
+                s_sdFilesLastW = tft.width(); s_sdFilesLastH = tft.height();
+                s_sdFilesDirty = true;
+            }
+#if defined(CYD32)
+            // Always render this non-animated filesystem menu directly to
+            // the real TFT on the 3.2", independent of recovery-band layout.
+            // A small/stale sprite can otherwise leave 25% of CLEAR visible.
+            if (s_sdFilesDirty) SdBrowser::draw(tft);
+#else
+            if (s_sdFilesDirty)
+                drawTwoBand([&](TFT_eSPI& t, bool) { SdBrowser::draw(t); });
+#endif
+            s_sdFilesDirty = false;
+            if (touchJustDown && tp.valid &&
+                now - lastTouch > TOUCH_DEBOUNCE_MS) {
+                lastTouch = now;
+                if (SdBrowser::tap(tp.x, tp.y, tft.width(), tft.height())) {
+                    SdBrowser::end();
+                    enterSettings();
+                    uiSettingsOpenPage(SettingsPage::SYSTEM);
+                } else s_sdFilesDirty = true;
+            }
+            break;
+        }
         case AppState::DIAGNOSTICS: {
             DiagnosticsInfo info;
             {
@@ -7046,7 +7107,11 @@ void loop() {
     // straight at tft and every draw this frame already landed on the
     // real screen -- pushing `frame` here would just paint stale data
     // from the sprite we stopped using back over the top of it.
-    if (frameBufferOk && s_recoveryBands == 1 && renderedThisLoop) {
+    if (frameBufferOk && s_recoveryBands == 1 && renderedThisLoop
+#if defined(CYD32)
+        && state != AppState::SD_FILES  // direct-panel file browser owns the glass
+#endif
+        ) {
         const bool targetRoster =
             state == AppState::HUNT_LIST || state == AppState::WATCH_LIST;
         if (!targetRoster && now - transitionStart < TRANSITION_MS) {

@@ -357,7 +357,8 @@ enum class AppState : uint8_t {
     DEX              = 37, // the SQUACHY-DEX, from Settings' row. See ui_dex.h.
     ALERT_RULES      = 38, // per-type alert/log-only/confidence/repeats/cooldown/wake
     WATCH_LIST       = 39, // manually opened multi-target WATCH roster
-    HUNT_LIST        = 40  // manually opened ranked multi-target HUNT roster
+    HUNT_LIST        = 40, // manually opened ranked multi-target HUNT roster
+    SD_FILES         = 41  // read-only browse, preview and confirmed file deletion
 };
 
 enum class ButtonId : uint8_t {

@@ -11,6 +11,21 @@ class SdLog {
 public:
     bool begin();              // returns true if card mounted
     bool ready() const { return _ready; }
+    // The browser holds the filesystem lock for its entire session.
+    // Mount/monitor activity must not interleave with file navigation.
+    void browseBegin();
+    void browseEnd();
+    void browseFault();
+    bool browseLock();        // nonblocking: never wait for an SD timeout on UI task
+    void browseUnlock();
+    bool rescan();            // request async remount from SD monitor
+    bool formatCard();        // real FAT formatting, double-confirmed by browser
+    const char* formatError() const { return _formatError; }
+    const char* statusDetail() const { return _statusDetail; }
+    uint32_t mountAttempts() const { return _mountAttempts; }
+    uint32_t probeFailures() const { return _probeFailures; }
+    bool remounting() const { return _remounting; }
+    void startMonitor();       // mount-state monitor on a separate task (CYD boards)  // an explicit browse I/O failure (never polled)
     void logEvent(const Detection& d);
     void tick();               // buffered flush / housekeeping (called from loop)
     // Deletes every squachwatch log file on the card. For the security wipe --
@@ -26,7 +41,17 @@ private:
     static constexpr size_t WRITE_BUFFER_FLUSH_AT = 384;
 
     // Latched off on first write/open error; no repeated SPI retries.
-    bool     _ready = false;
+    volatile bool _ready = false;
+    volatile bool _browsing = false;
+    volatile bool _requestRescan = false;
+    volatile bool _remounting = false;
+    volatile uint32_t _mountAttempts = 0;
+    volatile uint32_t _probeFailures = 0;
+    const char* volatile _statusDetail = "NO SD CARD";
+    bool _everMounted = false;
+    char _formatError[40] = {0};
+    void* _ioMutex = nullptr;   // FreeRTOS semaphore, opaque for PC emulator headers
+    void* _monitorTask = nullptr;
     uint32_t _lastFlush = 0;
     uint32_t _flushFailures = 0;
     uint32_t _droppedLines = 0;
@@ -36,5 +61,7 @@ private:
 
     void openDaily();
     bool flushPending();
+    bool flushPendingLocked();
+    static void monitorEntry(void* ctx);
     void disableAfterIoFailure(const char* operation);
 };
