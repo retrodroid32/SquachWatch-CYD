@@ -1,3 +1,7 @@
-WATCH149-LANDBACK
-# Experimental LAB build after landscape WATCH BACK touch fix.
-# Triggered only on explicit user hardware regression report.
+pr155-sd-status-browser-r1-20261030
+# LAB ONLY / DRAFT PR155 (stacked on PR141 SD hot-unplug R3)
+# SD health icon beside Wi-Fi, System > SD CARD explorer, folders,
+# paged text preview, confirmed individual file deletion.
+# FORMAT is visibly unavailable pending a verified Arduino SD format backend.
+# 2.8-inch ST7789 and 3.2-inch ST7798, standard and optional 80MHz.
+# Source 619787eeb0f873ed3432df91f414ddf4197df383; no merge, no production tag/release.
