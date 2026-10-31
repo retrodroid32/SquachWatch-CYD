@@ -1,3 +1,13 @@
-WATCH149-LANDBACK
-# Experimental LAB build after landscape WATCH BACK touch fix.
-# Triggered only on explicit user hardware regression report.
+pr155-sd-mount-diagnostic-r9-20261031
+# DIAGNOSTICS ONLY: R8 user reported "CMD0 OK; FAT MOUNT FAIL".
+# This R8 error label is ambiguous: SDFS::begin() can fail at init,
+# sector reads, FAT or VFS registration, all with same return false.
+# R9 diagnoses after failed SDFS begin through READ-ONLY temporary
+# diskio registration on the exact physical SD slot, dispatches full
+# SD init, reads sector zero, probes FatFs f_mount on temporary drive,
+# cleans up. Shows "SD FULL INIT FAILED", "SD SECTOR READ FAILED",
+# "FAT NOT RECOGNIZED", or "FAT OK; VFS MOUNT FAIL".
+# Protect current no-lag removal handling, avoid on-screen SD I/O,
+# preserve file browser and format user confirmations unchanged.
+# No merge, production tag or release. Test 2.8 ST7789/3.2 ST7798.
+# Source 7a346e325da0cba566e1045244c5e7d7e038d7db
