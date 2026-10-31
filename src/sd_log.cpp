@@ -13,6 +13,7 @@
 #include <freertos/semphr.h>
 #include <ff.h>
 #include <esp_system.h>
+#include <esp_idf_version.h>
 // The Phantoms define CYD (they ARE a CYD) but still need this reference,
 // because their touch shares the display's bus and SdLog::begin() has to hand
 // SD the display's own SPI instance -- see the comment on that branch below.
@@ -249,8 +250,15 @@ bool SdLog::formatCard() {
     // preview strings, never a live File handle between taps.
     BYTE* work = static_cast<BYTE*>(malloc(FF_MAX_SS));
     if (!work) { SD.remove(marker); return false; }
+    // PlatformIO espressif32@6.5.0 ships Arduino 2.0.14 / ESP-IDF 4.4:
+    // FatFs 0.13 has the FIVE-argument f_mkfs signature, while IDF 5.1+
+    // (FatFs 0.14) uses MKFS_PARM. Compile both intentionally.
+#if ESP_IDF_VERSION < ESP_IDF_VERSION_VAL(5, 1, 0)
+    const FRESULT fr = f_mkfs(drive, (BYTE)FM_ANY, 0, work, FF_MAX_SS);
+#else
     const MKFS_PARM opt = { (BYTE)FM_ANY, 0, 0, 0, 0 };
     const FRESULT fr = f_mkfs(drive, &opt, work, FF_MAX_SS);
+#endif
     free(work);
     Serial.printf("[sd] format FAT %s result %d\n", drive, (int)fr);
     _ready = false;
