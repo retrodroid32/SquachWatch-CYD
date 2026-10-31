@@ -6297,10 +6297,22 @@ void loop() {
                             enterMeshPhrase();
                             break;
                         }
+                        if (!Settings::meshDetect()) {
+                            Theme::showToast("DETECT IS OFF", "Enable DETECT on both boards", Theme::AMBER, 4500);
+                            break;
+                        }
+                        if (!Settings::messagesOn()) {
+                            // Public invite frames are deliberately discarded
+                            // by Mesh::onManufacturerData() while MESSAGES is
+                            // disabled. A phrase and TRANSMIT alone cannot
+                            // complete the two-way handshake.
+                            Theme::showToast("MESSAGES OFF", "Enable MESSAGES on both boards", Theme::AMBER, 4500);
+                            break;
+                        }
                         if (!Settings::meshTransmit()) {
-                            // Do not silently enable RF transmission (an
-                            // explicit user preference). Show its setting.
-                            enterMeshMenu();
+                            // Never silently enable an explicitly gated radio
+                            // setting. Explain what needs user consent.
+                            Theme::showToast("TRANSMIT OFF", "Enable TRANSMIT to invite", Theme::AMBER, 4500);
                             break;
                         }
                         const MeshTalk::Send r = MeshTalk::inviteStart(mac, uiSquadSelectedName(), now);
