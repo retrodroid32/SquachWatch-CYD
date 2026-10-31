@@ -11,11 +11,14 @@ class SdLog {
 public:
     bool begin();              // returns true if card mounted
     bool ready() const { return _ready; }
-    // File browser owns the SD card while open: no background log writes
-    // while it reads directories, previews, or deletes an entry.
-    void browseBegin() { _browsing = true; _pendingLen = 0; }
-    void browseEnd() { _browsing = false; }
-    void browseFault();  // an explicit browse I/O failure (never polled)
+    // The browser holds the filesystem lock for its entire session.
+    // Mount/monitor activity must not interleave with file navigation.
+    void browseBegin();
+    void browseEnd();
+    void browseFault();
+    bool rescan();             // request an immediate SD remount, never from draw()
+    bool formatCard();         // true FAT filesystem format, called only while browsing
+    void startMonitor();       // mount-state monitor on a separate task (CYD boards)  // an explicit browse I/O failure (never polled)
     void logEvent(const Detection& d);
     void tick();               // buffered flush / housekeeping (called from loop)
     // Deletes every squachwatch log file on the card. For the security wipe --
@@ -31,8 +34,10 @@ private:
     static constexpr size_t WRITE_BUFFER_FLUSH_AT = 384;
 
     // Latched off on first write/open error; no repeated SPI retries.
-    bool     _ready = false;
-    bool     _browsing = false;
+    volatile bool _ready = false;
+    volatile bool _browsing = false;
+    void* _ioMutex = nullptr;   // FreeRTOS semaphore, opaque for PC emulator headers
+    void* _monitorTask = nullptr;
     uint32_t _lastFlush = 0;
     uint32_t _flushFailures = 0;
     uint32_t _droppedLines = 0;
@@ -42,5 +47,7 @@ private:
 
     void openDaily();
     bool flushPending();
+    bool flushPendingLocked();
+    static void monitorEntry(void* ctx);
     void disableAfterIoFailure(const char* operation);
 };

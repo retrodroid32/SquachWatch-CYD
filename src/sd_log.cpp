@@ -7,6 +7,12 @@
 #include <time.h>
 #include <SD.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
+#include <freertos/semphr.h>
+#include <ff.h>
+#include <esp_system.h>
 // The Phantoms define CYD (they ARE a CYD) but still need this reference,
 // because their touch shares the display's bus and SdLog::begin() has to hand
 // SD the display's own SPI instance -- see the comment on that branch below.
@@ -40,7 +46,8 @@ static const uint8_t SD_MAX_FILES = 2;
 
 bool SdLog::begin() {
     if (_ready) return true;
-    Theme::setSdStatus(Theme::SdStatus::ABSENT);
+    // Do not turn a detected unplug (red) back to gray during unsuccessful
+    // remount attempts: the user must see the latched error until recovery.
 #if defined(TWATCH_S3)
     return false;   // no card slot; GPIO19/20 are the S3's USB pins
 #endif
@@ -105,6 +112,8 @@ bool SdLog::begin() {
     }
     Serial.printf("[sd] card mounted: %llu MB\n", (unsigned long long)(SD.cardSize() >> 20));
     _ready = true;
+    _pendingLen = 0;   // old RAM queue was associated with the old card
+    _filename[0] = '\0';
     Theme::setSdStatus(Theme::SdStatus::READY);
     openDaily();
     _lastFlush = millis();
@@ -131,6 +140,131 @@ void SdLog::browseFault() {
     disableAfterIoFailure("browser I/O");
 }
 
+
+// Monitor once per few seconds in its own FreeRTOS task. No SD SPI
+// transaction occurs in title-bar painting or the main animation loop.
+// SD.readRAW() is the SDFS wrapper around a real 512-byte sector read:
+// unlike SD.cardType()/cardSize(), it is NOT a cached presence flag.
+void SdLog::monitorEntry(void* ctx) {
+    SdLog* self = static_cast<SdLog*>(ctx);
+    uint8_t* sector = static_cast<uint8_t*>(malloc(512));
+    for (;;) {
+        vTaskDelay(pdMS_TO_TICKS(3000));
+        if (!self || !sector) continue;
+        const SemaphoreHandle_t m = static_cast<SemaphoreHandle_t>(self->_ioMutex);
+        if (!m || xSemaphoreTake(m, pdMS_TO_TICKS(150)) != pdTRUE) continue;
+        if (!self->_browsing) {
+            if (self->_ready) {
+                const uint32_t started = millis();
+                const bool ok = SD.readRAW(sector, 0);
+                const uint32_t elapsed = (uint32_t)(millis() - started);
+                if (!ok || elapsed >= 500u) {
+                    self->disableAfterIoFailure(ok ? "SD health timeout" : "card removed");
+                }
+            } else {
+                // When the card is put back, clear Arduino's stale disk
+                // handle before mounting it again. Never do this inside
+                // the frame or from the title-bar icon.
+                SD.end();
+                self->begin();
+            }
+        }
+        xSemaphoreGive(m);
+    }
+}
+
+void SdLog::startMonitor() {
+#if defined(CYD) && !defined(TWATCH_S3)
+    if (_monitorTask) return;
+    if (!_ioMutex) _ioMutex = xSemaphoreCreateMutex();
+    if (!_ioMutex) { Serial.println("[sd] monitor unavailable: no mutex"); return; }
+    TaskHandle_t task = nullptr;
+    if (xTaskCreatePinnedToCore(monitorEntry, "sd_presence", 4096, this, 1,
+                                &task, 0) == pdPASS)
+        _monitorTask = task;
+    else Serial.println("[sd] monitor task allocation failed");
+#endif
+}
+
+void SdLog::browseBegin() {
+    const SemaphoreHandle_t m = static_cast<SemaphoreHandle_t>(_ioMutex);
+    if (m) xSemaphoreTake(m, portMAX_DELAY);
+    _browsing = true;
+    // A browser opening on an absent card must never flush previously queued
+    // detections into a replacement card with a different filesystem.
+    _pendingLen = 0;
+}
+void SdLog::browseEnd() {
+    _browsing = false;
+    const SemaphoreHandle_t m = static_cast<SemaphoreHandle_t>(_ioMutex);
+    if (m) xSemaphoreGive(m);
+}
+bool SdLog::rescan() {
+    if (!_browsing) return false;
+    _ready = false;
+    _pendingLen = 0;
+    _filename[0] = '\0';
+    SD.end();
+    return begin();
+}
+
+// Destructive operation ONLY after the user's double confirmation.
+// On Arduino SDFS the FAT volume number is protected/private. Rather than
+// blindly formatting "0:" (which might be another mounted filesystem),
+// create a unique probe file via the SD object and prove the exact matching
+// FatFs drive using f_stat on every candidate. Refuse ambiguous matches.
+// We never use esp_vfs_fat_sdcard_format here: this SDFS is mounted by the
+// Arduino SPI driver, not by esp_vfs_fat_sdspi_mount, so there is no IDF
+// sdmmc_card_t* owned by the wrapper.
+bool SdLog::formatCard() {
+    if (!_browsing || !_ready || SD.cardType() == CARD_NONE) return false;
+    char marker[32];
+    snprintf(marker, sizeof marker, "/SWFMT%08lX.TMP",
+             (unsigned long)esp_random());
+    {
+        File probe = SD.open(marker, FILE_WRITE);
+        if (!probe) return false;
+        const uint8_t token[4] = {'S','Q','F','T'};
+        const size_t n = probe.write(token, sizeof token);
+        probe.close();
+        if (n != sizeof token) return false;
+    }
+    char drive[4] = "";
+    unsigned matched = 0;
+    for (int i = 0; i < FF_VOLUMES && i <= 9; ++i) {
+        char path[48];
+        snprintf(path, sizeof path, "%d:%s", i, marker);
+        FILINFO info = {};
+        if (f_stat(path, &info) == FR_OK && info.fsize == 4) {
+            snprintf(drive, sizeof drive, "%d:", i);
+            ++matched;
+        }
+    }
+    if (matched != 1) {
+        SD.remove(marker);
+        Serial.printf("[sd] format refused: %u matching FAT drives\n", matched);
+        return false;
+    }
+    // No files/directories are held open: the browser caches listings and
+    // preview strings, never a live File handle between taps.
+    BYTE* work = static_cast<BYTE*>(malloc(FF_MAX_SS));
+    if (!work) { SD.remove(marker); return false; }
+    const MKFS_PARM opt = { (BYTE)FM_ANY, 0, 0, 0, 0 };
+    const FRESULT fr = f_mkfs(drive, &opt, work, FF_MAX_SS);
+    free(work);
+    Serial.printf("[sd] format FAT %s result %d\n", drive, (int)fr);
+    _ready = false;
+    _pendingLen = 0;
+    _filename[0] = '\0';
+    SD.end();
+    const bool mounted = begin();
+    if (fr != FR_OK || !mounted) {
+        Theme::setSdStatus(Theme::SdStatus::ERROR);
+        return false;
+    }
+    return true;
+}
+
 void SdLog::openDaily() {
     if (!_ready) return;
     if (Clock::trusted()) {
@@ -145,8 +279,17 @@ void SdLog::openDaily() {
     }
 }
 
+// UI thread never waits for the monitor task's raw read/remount:
+ // any flush that would contend simply stays queued until the next tick.
 bool SdLog::flushPending() {
-    if (!_ready || _pendingLen == 0) return true;
+    const SemaphoreHandle_t m = static_cast<SemaphoreHandle_t>(_ioMutex);
+    if (m && xSemaphoreTake(m, 0) != pdTRUE) return false;
+    const bool ok = flushPendingLocked();
+    if (m) xSemaphoreGive(m);
+    return ok;
+}
+bool SdLog::flushPendingLocked() {
+    if (!_ready || _pendingLen == 0 || _browsing) return true;
     if (_filename[0] == '\0') openDaily();
     if (_filename[0] == '\0') return false;
 
@@ -236,7 +379,11 @@ void SdLog::logEvent(const Detection& d) {
 }
 
 void SdLog::wipe() {
-    if (!_ready) return;
+    if (!_ready || _browsing) return;
+    const SemaphoreHandle_t m = static_cast<SemaphoreHandle_t>(_ioMutex);
+    if (m && xSemaphoreTake(m, portMAX_DELAY) != pdTRUE) return;
+    // RAII releases mutex through every exit from this multi-pass wipe.
+    struct Unlock { SemaphoreHandle_t sem; ~Unlock() { if (sem) xSemaphoreGive(sem); } } unlock{m};
 
     // A wipe means "forget it", including rows not yet committed to the card.
     // Never flush these first or a detection queued just before a duress wipe

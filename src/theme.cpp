@@ -292,7 +292,7 @@ static int lockIconX(int w) {
 
 static const int WIFI_ICON_W = 26;
 static const int SD_ICON_W = 24;
-static SdStatus s_sdStatus = SdStatus::ABSENT;
+static volatile SdStatus s_sdStatus = SdStatus::ABSENT;
 void setSdStatus(SdStatus status) { s_sdStatus = status; }
 SdStatus sdStatus() { return s_sdStatus; }
 // Reserve the Wi-Fi badge to the LEFT of the lock/rotate icon, including
