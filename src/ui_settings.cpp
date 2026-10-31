@@ -838,7 +838,10 @@ static void rowContent(SettingsRow r, const DetectionEngine& eng, char* valBuf, 
             break;
         case SettingsRow::SNOOZE_MANAGER:
             label = "SNOOZED DEVICES";
-            snprintf(valBuf, valBufN, "%u ACTIVE >", (unsigned)IgnoreList::snoozeCount());
+            // Show the count without making the entire row smaller than its
+            // neighbours. At size 2, the old "N ACTIVE >" overlapped the
+            // full label; the compact override shrank just this row.
+            snprintf(valBuf, valBufN, "%u >", (unsigned)IgnoreList::snoozeCount());
             value = valBuf;
             break;
         case SettingsRow::SNOOZE_EMPTY:
@@ -1157,7 +1160,7 @@ switch (Settings::background()) {
                                items[idx].row == SettingsRow::DESK_BACKGROUND);
             } else {
                 drawRow(t, w, y, itemH, label, value, danger, groupColor(items[idx].group),
-                        h > w || items[idx].row == SettingsRow::SNOOZE_MANAGER);
+                        h > w);
             }
         }
         }
