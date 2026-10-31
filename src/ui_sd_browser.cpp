@@ -15,7 +15,9 @@ static uint16_t offset = 0;
 static bool more = false;
 static char folder[96] = "/";
 static SdLog* logger = nullptr;
-static bool preview = false, askDelete = false, formatHelp = false;
+static bool preview = false, askDelete = false;
+static uint8_t formatStage = 0; // 0 none, 1 confirm, 2 irreversible confirmation
+static uint8_t formatResult = 0; // 0 none, 1 formatted, 2 failed
 static char chosen[96] = "";
 static char title[56] = "";
 static char lines[7][33];
@@ -96,7 +98,8 @@ bool bottom(int y, int h) { return y >= h - 29; }
 void begin(SdLog& sd) {
     logger = &sd; sd.browseBegin();
     strcpy(folder, "/");
-    offset = 0; preview = askDelete = formatHelp = false;
+    offset = 0; preview = askDelete = false;
+    formatStage = formatResult = 0;
     chosen[0] = 0; error = false;
     list();
 }
@@ -106,14 +109,22 @@ void draw(TFT_eSPI& t) {
     const int w = t.width(), h = t.height();
     t.fillScreen(Theme::BG);
     Theme::drawTitleBar(t, "SD FILES");
-    line(t, 7, 26, formatHelp ? "FORMAT SD" : preview ? "FILE VIEW" : "SD FILES", Theme::CYAN);
+    line(t, 7, 26, formatStage ? "FORMAT SD" : preview ? "FILE VIEW" : "SD FILES", Theme::CYAN);
     if (!logger || !logger->ready()) {
         line(t, 8, 55, "SD OFFLINE", Theme::RED);
-        line(t, 8, 78, "Insert card, reboot", Theme::AMBER);
-    } else if (formatHelp) {
-        line(t, 8, 58, "FORMAT UNAVAILABLE", Theme::AMBER);
-        line(t, 8, 85, "Use a computer to", Theme::WHITE);
-        line(t, 8, 108, "format this card.", Theme::WHITE);
+        line(t, 8, 78, "Insert SD card", Theme::AMBER);
+        line(t, 8, h - 59, "RESCAN >", Theme::CYAN);
+    } else if (formatStage) {
+        line(t, 8, 57, formatStage == 1 ? "FORMAT SD CARD?" : "ERASE ALL FILES?", Theme::RED);
+        line(t, 8, 81, formatStage == 1 ? "All data will be lost" : "Cannot be undone!", Theme::WHITE);
+        line(t, 8, 102, formatStage == 1 ? "Continue?" : "Final confirmation", Theme::AMBER);
+        Theme::drawButton(t, 4, h - 62, w / 2 - 8, 28, "CANCEL", false, 1);
+        Theme::drawButton(t, w / 2 + 4, h - 62, w / 2 - 8, 28,
+                          formatStage == 1 ? "NEXT" : "FORMAT", false, 1);
+    } else if (formatResult) {
+        line(t, 8, 60, formatResult == 1 ? "FORMAT SUCCESS" : "FORMAT FAILED",
+             formatResult == 1 ? Theme::GREEN : Theme::RED);
+        line(t, 8, 85, formatResult == 1 ? "Card is ready" : "Check SD card", Theme::WHITE);
     } else if (askDelete) {
         line(t, 8, 54, "DELETE THIS FILE?", Theme::RED);
         line(t, 8, 77, title, Theme::WHITE);
@@ -145,7 +156,8 @@ void draw(TFT_eSPI& t) {
 bool tap(int x, int y, int w, int h) {
     if (!logger) return true;
     if (bottom(y, h)) {
-        if (formatHelp) { formatHelp = false; return false; }
+        if (formatStage) { formatStage = 0; return false; }
+        if (formatResult) { formatResult = 0; list(); return false; }
         if (askDelete) { askDelete = false; return false; }
         if (preview) { preview = false; list(); return false; }
         if (strcmp(folder, "/") != 0) {
@@ -156,8 +168,31 @@ bool tap(int x, int y, int w, int h) {
         }
         return true;
     }
-    if (!logger->ready()) return false;
-    if (formatHelp) return false;
+    if (!logger->ready()) {
+        // An explicit RESCAN works even when the monitor is unavailable.
+        if (y >= h - 68 && y < h - 30) {
+            if (logger->rescan()) { offset = 0; list(); }
+        }
+        return false;
+    }
+    if (formatResult) return false;
+    if (formatStage) {
+        if (y >= h - 66 && y < h - 30) {
+            if (x < w / 2) formatStage = 0;
+            else if (formatStage == 1) formatStage = 2;
+            else {
+                const bool ok = logger->formatCard();
+                formatStage = 0;
+                formatResult = ok ? 1 : 2;
+                if (ok) {
+                    strcpy(folder, "/"); offset = 0;
+                    preview = askDelete = false; chosen[0] = 0;
+                    list();
+                }
+            }
+        }
+        return false;
+    }
     if (askDelete) {
         if (y >= h - 64 && y < h - 32) {
             if (x >= w / 2 && chosen[0]) {
@@ -177,7 +212,7 @@ bool tap(int x, int y, int w, int h) {
         return false;
     }
     if (y >= h - 65 && y < h - 31) {
-        if (x < w / 3) { formatHelp = true; return false; }
+        if (x < w / 3) { formatStage = 1; return false; }
         if (x < 2 * w / 3 && offset >= 5) offset -= 5;
         else if (x >= 2 * w / 3 && more) offset += 5;
         list(); return false;
