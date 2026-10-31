@@ -2,6 +2,7 @@
 #include "sd_log.h"
 #include "clock.h"
 #include "sd_timestamp.h"
+#include "sd_io_policy.h"
 #include <time.h>
 #include <SD.h>
 #include <stdio.h>
@@ -144,6 +145,7 @@ bool SdLog::flushPending() {
     // Rate-limit retry attempts when a card disappears or temporarily stops
     // answering. A successful close() commits FatFS' cached sector metadata.
     _lastFlush = millis();
+    const uint32_t ioStartedAt = _lastFlush;
     File f = SD.open(_filename, FILE_APPEND);
     if (!f) {
         disableAfterIoFailure("open");
@@ -151,13 +153,18 @@ bool SdLog::flushPending() {
     }
 
     const size_t written = f.write((const uint8_t*)_pending, _pendingLen);
+    // The Arduino File::close() API returns no error status, although the FAT
+    // sync may be the very operation that stalls after hot removal. Measure
+    // the COMPLETE append, including close(), to catch this case as well.
     f.close();
-
-    // A short/zero write means media I/O is no longer dependable. Do
-    // not retry in this display/radio loop: repeated SPI timeouts freeze
-    // touch input and animation on a physically removed card.
-    if (written != _pendingLen) {
+    const uint32_t elapsedMs = (uint32_t)(millis() - ioStartedAt);
+    const auto verdict = SdIoPolicy::evaluate(true, _pendingLen, written, elapsedMs);
+    if (verdict == SdIoPolicy::Verdict::SHORT_WRITE) {
         disableAfterIoFailure("write");
+        return false;
+    }
+    if (verdict == SdIoPolicy::Verdict::SLOW_IO) {
+        disableAfterIoFailure("slow SD append");
         return false;
     }
     _pendingLen = 0;
