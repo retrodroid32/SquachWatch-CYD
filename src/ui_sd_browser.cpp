@@ -121,7 +121,9 @@ void line(TFT_eSPI& t, int x, int y, const char* s, uint16_t color) {
     t.setTextColor(color, Theme::BG);
     t.setCursor(x, y); t.print(s);
 }
-bool bottom(int y, int h) { return y >= h - 29; }
+// Include the full 30-pixel BACK button and a small margin above it.
+// Other action buttons end at h-36 or higher, so h-33 cannot steal them.
+bool bottom(int y, int h) { return y >= h - 33; }
 } // namespace
 
 void begin(SdLog& sd) {
