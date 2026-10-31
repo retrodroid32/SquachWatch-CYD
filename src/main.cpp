@@ -6896,8 +6896,12 @@ void loop() {
                 drawTwoBand([&](TFT_eSPI& t, bool) { SdBrowser::draw(t); });
 #endif
             s_sdFilesDirty = false;
-            if (touchJustDown && tp.valid &&
-                now - lastTouch > TOUCH_DEBOUNCE_MS) {
+            // SD browser already uses the physical press edge. Applying the
+            // unrelated 200 ms global lastTouch cooldown here swallowed an
+            // entire BACK tap (the touch edge only lasts one frame), forcing
+            // users to lift and tap again. Let each new press through once.
+            // This is local to SD_FILES and leaves other screens unchanged.
+            if (touchJustDown && tp.valid) {
                 lastTouch = now;
                 if (SdBrowser::tap(tp.x, tp.y, tft.width(), tft.height())) {
                     SdBrowser::end();
