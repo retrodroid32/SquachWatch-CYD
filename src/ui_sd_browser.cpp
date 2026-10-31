@@ -226,7 +226,52 @@ bool tap(int x, int y, int w, int h) {
         if (wipeStage) { wipeStage = 0; return false; }
         if (wipeResult) { wipeResult = 0; list(); return false; }
         if (askDelete) { askDelete = false; return false; }
-        if (preview) {
+        if (preview) { preview = false; list(); return false; }
+        if (strcmp(folder, "/") != 0) {
+            char* slash = strrchr(folder, '/');
+            if (slash == folder) folder[1] = '\0';
+            else if (slash) *slash = '\0';
+            offset = 0; list(); return false;
+        }
+        return true;
+    }
+    if (wipeResult) return false;
+    if (wipeStage) {
+        if (y >= h - 66 && y < h - 30) {
+            if (x < w / 2) wipeStage = 0;
+            else if (wipeStage == 1) wipeStage = 2;
+            else {
+                const bool ok = logger->wipeAllFiles();
+                wipeStage = 0;
+                wipeResult = ok ? 1 : 2;
+                if (ok) {
+                    strcpy(folder, "/"); offset = 0;
+                    preview = askDelete = false; chosen[0] = 0;
+                    list();
+                }
+            }
+        }
+        return false;
+    }
+    // File wiping needs a mounted FAT filesystem; when offline only RESCAN.
+    if (!logger->ready()) {
+        if (y >= h - 68 && y < h - 30 && x >= w / 2) logger->rescan();
+        return false;
+    }
+    if (askDelete) {
+        if (y >= h - 64 && y < h - 32) {
+            if (x >= w / 2 && chosen[0]) {
+                CardGuard guard(logger);
+                if (!guard.locked || !logger->ready()) error = true;
+                else if (!SD.remove(chosen)) { error = true; logger->browseFault(); }
+                else { preview = false; offset = 0; }
+            }
+            askDelete = false;
+            list();
+        }
+        return false;
+    }
+    if (preview) {
         if (y >= h - 100 && y < h - 67) {
             const uint16_t step = previewCols > 12 ? previewCols - 8 : 8;
             if (x < w / 2) {
