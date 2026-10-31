@@ -1,3 +1,4 @@
-WATCH149-LANDBACK
-# Experimental LAB build after landscape WATCH BACK touch fix.
-# Triggered only on explicit user hardware regression report.
+pr155-sd-bootsafe-r11-20261031
+# R11 boot recovery. Roll back forced R10 VFS unregister.
+# Passive startup when SD did not mount; allow manual RESCAN.
+# This is a LAB hardware test build, not a production release.
