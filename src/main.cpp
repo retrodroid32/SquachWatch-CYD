@@ -6253,7 +6253,12 @@ void loop() {
         }
         case AppState::SQUAD: {
             drawTwoBand([&](TFT_eSPI& t, bool advance) { uiSquadTick(t, now, engine, advance); });
-            if (touchJustDown && (now - lastTouch) > TOUCH_DEBOUNCE_MS) {
+            // Same lost-tap bug fixed in SD_FILES (R14): the physical DOWN
+            // edge happens once. If the unrelated global 200 ms cooldown
+            // rejects it, holding the button cannot ever register ADD.
+            // Process every fresh DOWN exactly once, without changing any
+            // other menu or allowing held touches to repeat.
+            if (touchJustDown && tp.valid) {
                 lastTouch = now;
                 switch (uiSquadTouch(tp.x, tp.y, now)) {
                     case SquadHit::BACK:    if (uiSquadRosterMode()) enterMeshMenu(); else enterClear(); break;
@@ -6274,11 +6279,30 @@ void loop() {
                         const uint8_t* mac = uiSquadSelectedMac();
                         if (!mac) break;
                         // A tap reached ADD even if an invite cannot start.
-                        // Log the prerequisite flags, not the private phrase.
+                        // Never log or generate the private squad phrase here.
                         Serial.printf("[mesh-ui] ADD tapped: phrase=%u crypto=%u tx=%u\n",
                                       (unsigned)MeshTalk::havePhrase(),
                                       (unsigned)MeshTalk::selfTestOk(),
                                       (unsigned)Settings::meshTransmit());
+                        if (!MeshTalk::selfTestOk()) {
+                            Theme::showToast("CRYPTO TEST FAILED", "Cannot share a squad phrase", Theme::AMBER);
+                            break;
+                        }
+                        if (!MeshTalk::havePhrase()) {
+                            // ERASE ALL clears the saved squad phrase. The old
+                            // ADD only showed a transient toast even though
+                            // invitation cannot start without a phrase.
+                            // Open its existing setup instead of silently
+                            // failing, without changing or leaking any key.
+                            enterMeshPhrase();
+                            break;
+                        }
+                        if (!Settings::meshTransmit()) {
+                            // Do not silently enable RF transmission (an
+                            // explicit user preference). Show its setting.
+                            enterMeshMenu();
+                            break;
+                        }
                         const MeshTalk::Send r = MeshTalk::inviteStart(mac, uiSquadSelectedName(), now);
                         if (r == MeshTalk::Send::OK)            enterInvite();
                         else if (r == MeshTalk::Send::NOT_READY) {
