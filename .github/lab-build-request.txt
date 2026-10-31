@@ -1,3 +1,11 @@
-WATCH149-LANDBACK
-# Experimental LAB build after landscape WATCH BACK touch fix.
-# Triggered only on explicit user hardware regression report.
+pr155-sd-recovery-diagnostics-r6-20261031
+# PR155 R6 HARDWARE DIAGNOSTIC BUILD (stacked on PR141, draft/unmerged).
+# R4 verified on real CYD: red SD removal icon, no lag, 3.2 full-width explorer.
+# R5 failures reported again: hot reinsertion stays offline; format fails.
+# R6: manual RESCAN wakes SD worker immediately via FreeRTOS notification;
+# warm up dedicated CYD SD SPI with 96 idle clocks before repeat mount;
+# expose mount status/attempt count on offline SD FILES screen, 1.2s refresh.
+# On format failure, report the specific marker/drive/FatFs/remount stage.
+# R6 does not change destructive FAT target matching rules; use spare card.
+# 2.8 ST7789 and 3.2 ST7798, standard first; optional 80MHz.
+# No production version/tag, no merge, no branch deletion.
