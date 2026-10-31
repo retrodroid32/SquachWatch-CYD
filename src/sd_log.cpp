@@ -7,6 +7,7 @@
 #include <time.h>
 #include <SD.h>
 #include <sd_diskio.h>
+#include <diskio.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <freertos/FreeRTOS.h>
@@ -183,6 +184,68 @@ static uint8_t sdRemountProbeCmd0() {
 }
 #endif
 
+
+// R9 post-failure differential diagnosis, performed only when the ordinary
+// Arduino SDFS mount fails AFTER the physical CMD0 probe answered 0x01.
+// The Arduino core's SD.begin() returns the same false for failures in
+// card initialization, sector reads, FAT and VFS registration. The former
+// "CMD0 OK; FAT MOUNT FAIL" label falsely blamed FAT for all four.
+//
+// This probe registers exactly the CYD SD CS/SPI as a TEMPORARY diskio drive,
+// initializes it through the pinned Arduino-ESP32 SD driver's own dispatch,
+// reads sector zero, mounts that SAME raw drive read-only via FatFs, unmounts
+// it again, then unregisters the temporary drive. No writes or formatting.
+// SD SPI and FS operations are serialized by the worker's _ioMutex.
+// Returns a durable literal for rendering by the UI without a live buffer.
+static const char* sdDiagnosePostCmd0MountFailure(uint8_t* sector) {
+#if defined(CYD) && !defined(CYD35) && !defined(RLPHANTOM) && !defined(RLPHANTOM_R)
+    const uint8_t pdrv = sdcard_init(SD_CS_PIN, &SPI, 4000000);
+    if (pdrv == 0xFF || pdrv >= FF_VOLUMES || pdrv > 9) {
+        Serial.printf("[sd diag] raw driver registration FAILED: pdrv=%u\n", (unsigned)pdrv);
+        return "RAW DRIVER REGISTER FAIL";
+    }
+    const DSTATUS status = disk_initialize(pdrv);
+    Serial.printf("[sd diag] physical disk_initialize(pdrv=%u) status=0x%02X\n",
+                  (unsigned)pdrv, (unsigned)status);
+    const char* stage = nullptr;
+    if (status & STA_NOINIT) {
+        stage = "SD FULL INIT FAILED";
+    } else if (disk_read(pdrv, sector, 0, 1) != RES_OK) {
+        stage = "SD SECTOR READ FAILED";
+        Serial.println("[sd diag] sector 0 read FAILED");
+    } else {
+        // Read-only FAT test: f_mount() may read metadata but does not
+        // format or alter the user card. Unregister it before leaving.
+        FATFS* fs = static_cast<FATFS*>(calloc(1, sizeof(FATFS)));
+        if (!fs) {
+            stage = "FAT TEST NO MEMORY";
+        } else {
+            const char drive[3] = {char('0' + pdrv), ':', '\0'};
+            const FRESULT fr = f_mount(fs, drive, 1);
+            Serial.printf("[sd diag] raw f_mount(%s) result=%d, MBR/boot signature=%02X%02X\n",
+                          drive, (int)fr, (unsigned)sector[511], (unsigned)sector[510]);
+            if (fr == FR_OK)
+                stage = "FAT OK; VFS MOUNT FAIL";
+            else if (fr == FR_NO_FILESYSTEM)
+                stage = "FAT NOT RECOGNIZED";
+            else if (fr == FR_DISK_ERR || fr == FR_NOT_READY)
+                stage = "FAT READ/READY ERROR";
+            else
+                stage = "FAT MOUNT ERROR";
+            // Avoid unregistering the diskio driver while the temporary
+            // FatFs instance is still registered. This never calls mkfs.
+            f_mount(nullptr, drive, 0);
+            free(fs);
+        }
+    }
+    sdcard_uninit(pdrv);
+    return stage ? stage : "MOUNT DIAG UNKNOWN";
+#else
+    (void)sector;
+    return "SD MOUNT FAILED";
+#endif
+}
+
 // Monitor once per few seconds in its own FreeRTOS task. No SD SPI
 // transaction occurs in title-bar painting or the main animation loop.
 // SD.readRAW() is the SDFS wrapper around a real 512-byte sector read:
@@ -245,8 +308,13 @@ void SdLog::monitorEntry(void* ctx) {
 #endif
                 const bool mounted = self->begin();
                 self->_remounting = false;
-                if (!mounted)
-                    self->_statusDetail = "CMD0 OK; FAT MOUNT FAIL";
+                if (!mounted) {
+                    // The driver can fail AFTER CMD0 but BEFORE FAT. Probe
+                    // the same SD slot using the raw diskio driver, then
+                    // expose the precise stage to the on-device screen.
+                    self->_statusDetail = sdDiagnosePostCmd0MountFailure(sector);
+                    Serial.printf("[sd diag] remount stage: %s\n", self->_statusDetail);
+                }
                 if (!mounted && (self->_requestRescan || signalled))
                     Serial.println("[sd] RESCAN attempted, SD still offline");
                 self->_requestRescan = false;
