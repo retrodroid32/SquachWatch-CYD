@@ -324,6 +324,16 @@ bool SdLog::flushPendingLocked() {
 
 void SdLog::logEvent(const Detection& d) {
     if (!_ready || _browsing) return;
+    // Monitor may invalidate/remount media on core 0. Protect the entire
+    // formatting/enqueue operation, not just the eventual flush: it also
+    // clears the pending buffer and filename on a card-state transition.
+    const SemaphoreHandle_t m = static_cast<SemaphoreHandle_t>(_ioMutex);
+    if (m && xSemaphoreTake(m, 0) != pdTRUE) return;
+    struct Unlock {
+        SemaphoreHandle_t m;
+        ~Unlock() { if (m) xSemaphoreGive(m); }
+    } unlock{m};
+    if (!_ready || _browsing) return;
     if (_filename[0] == '\0') openDaily();
 
     char line[128];
@@ -374,7 +384,7 @@ void SdLog::logEvent(const Detection& d) {
     // Batch normal traffic, but do not let a busy room fill the whole sector.
     // The 50 ms guard avoids hammering a failing card once per detection.
     if (_pendingLen >= WRITE_BUFFER_FLUSH_AT && millis() - _lastFlush >= 50) {
-        flushPending();
+        flushPendingLocked(); // mutex already held by logEvent()
     }
 }
 
