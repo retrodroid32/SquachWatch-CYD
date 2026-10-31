@@ -1,3 +1,9 @@
-WATCH149-LANDBACK
-# Experimental LAB build after landscape WATCH BACK touch fix.
-# Triggered only on explicit user hardware regression report.
+pr141-hotunplug-guard-r2-20261030
+# LAB only: PR #141 UTC SD timestamp and SD hot-removal one-way fault latch.
+# Tested head b83ecb03ece5e03a4b47812ee8a8b23840437afc
+# Standard 2.8 ST7789 + 3.2 ST7798; 80MHz variants compiled as usual.
+# On SD file open or short write error: stop logging and clear the pending buffer,
+# avoiding repeated synchronous SPI timeouts that lag the scan/UI loop.
+# No automatic reinsertion: reboot with card installed to restart logging.
+# Video of the original failure is pending from hardware tester.
+# No PR merge, public production release, version tag, or branch deletion.
