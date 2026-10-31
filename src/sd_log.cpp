@@ -6,6 +6,7 @@
 #include "sd_io_policy.h"
 #include <time.h>
 #include <SD.h>
+#include <sd_diskio.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <freertos/FreeRTOS.h>
@@ -258,106 +259,90 @@ bool SdLog::rescan() {
 // Arduino SPI driver, not by esp_vfs_fat_sdspi_mount, so there is no IDF
 // sdmmc_card_t* owned by the wrapper.
 bool SdLog::formatCard() {
-    // The file browser no longer holds the SD mutex continuously. Format
-    // exclusively owns it for its entire destructive operation. NEVER
-    // begin a format if a concurrent mount is in progress.
     const SemaphoreHandle_t m = static_cast<SemaphoreHandle_t>(_ioMutex);
     if (m && xSemaphoreTake(m, 0) != pdTRUE) {
         snprintf(_formatError, sizeof _formatError, "SD BUSY - RETRY");
         return false;
     }
     struct Unlock { SemaphoreHandle_t m; ~Unlock() { if (m) xSemaphoreGive(m); } } unlock{m};
-    if (!_browsing || !_ready || SD.cardType() == CARD_NONE) {
-        snprintf(_formatError, sizeof _formatError, "SD NOT MOUNTED");
+    if (!_browsing) {
+        snprintf(_formatError, sizeof _formatError, "OPEN SD MENU FIRST");
         return false;
     }
-    snprintf(_formatError, sizeof _formatError, "FORMAT STARTED");
-
-    // Generate an 8.3 FAT filename: original SWFMT%08X.TMP was too long
-    // for a card/volume where long-file-name support is unavailable.
-    // The marker proves exactly which FatFs drive is Arduino's SD slot.
-    char marker[24];
-    snprintf(marker, sizeof marker, "/SWF%05lX.TMP",
-             (unsigned long)(esp_random() & 0xFFFFFu));
-    {
-        File probe = SD.open(marker, FILE_WRITE);
-        if (!probe) {
-            snprintf(_formatError, sizeof _formatError, "MARKER OPEN FAILED");
-            return false;
-        }
-        const uint8_t token[4] = {'S','Q','F','T'};
-        const size_t n = probe.write(token, sizeof token);
-        probe.flush();
-        probe.close();
-        if (n != sizeof token || !SD.exists(marker)) {
-            snprintf(_formatError, sizeof _formatError, "MARKER WRITE FAILED");
-            SD.remove(marker);
-            return false;
-        }
-    }
-    char drive[4] = "";
-    unsigned matched = 0;
-    for (int i = 0; i < FF_VOLUMES && i <= 9; ++i) {
-        char path[48];
-        snprintf(path, sizeof path, "%d:%s", i, marker);
-        FILINFO info = {};
-        const FRESULT fr = f_stat(path, &info);
-        Serial.printf("[sd] format drive %d probe -> %d", i, (int)fr);
-        if (fr == FR_OK) Serial.printf(" size=%lu", (unsigned long)info.fsize);
-        Serial.println();
-        if (fr == FR_OK && info.fsize == 4) {
-            snprintf(drive, sizeof drive, "%d:", i);
-            ++matched;
-        }
-    }
-    if (matched != 1) {
-        SD.remove(marker);
-        snprintf(_formatError, sizeof _formatError, "DRIVE ID FAILED");
-        Serial.printf("[sd] refused format: %u matching FAT drives\n", matched);
-        return false; // Never format an unverified volume.
-    }
+#if !defined(CYD) || defined(CYD35) || defined(RLPHANTOM) || defined(RLPHANTOM_R)
+    snprintf(_formatError, sizeof _formatError, "FORMAT UNSUPPORTED");
+    return false;
+#else
+    // IMPORTANT: a card can be physically present but have no FAT volume,
+    // so Arduino SDFS::begin() refuses to mount it. Formatting must not
+    // require _ready=true or invent a drive number via FAT filenames.
+    // Arduino core 2.0.14 ships sdcard_init() as an actual SD SPI driver API:
+    // it returns the physical drive registered for *our* SD CS and SPI bus.
+    // Format ONLY that exact returned pdrv after user confirms TWICE.
     BYTE* work = static_cast<BYTE*>(malloc(FF_MAX_SS));
     if (!work) {
-        SD.remove(marker);
         snprintf(_formatError, sizeof _formatError, "NO FORMAT MEMORY");
-        return false;
-    }
-    Serial.printf("[sd] confirmed target FAT drive %s; formatting...\n", drive);
-#if ESP_IDF_VERSION < ESP_IDF_VERSION_VAL(5, 1, 0)
-    const FRESULT fr = f_mkfs(drive, (BYTE)FM_ANY, 0, work, FF_MAX_SS);
-#else
-    const MKFS_PARM opt = { (BYTE)FM_ANY, 0, 0, 0, 0 };
-    const FRESULT fr = f_mkfs(drive, &opt, work, FF_MAX_SS);
-#endif
-    free(work);
-    Serial.printf("[sd] f_mkfs(%s): %d\n", drive, (int)fr);
-    if (fr != FR_OK) {
-        // FatFs may have invalidated its mounted volume even on an error.
-        // Remount to restore normal browsing instead of stranding the UI.
-        _ready = false;
-        SD.end();
-#if defined(CYD) && !defined(RLPHANTOM) && !defined(RLPHANTOM_R) && !defined(CYD35)
-        SPI.end();
-#endif
-        begin();
-        snprintf(_formatError, sizeof _formatError, "FAT ERROR %d", (int)fr);
         return false;
     }
     _ready = false;
     _pendingLen = 0;
     _filename[0] = '\0';
+    Theme::setSdStatus(Theme::SdStatus::ERROR);
+    _statusDetail = "FORMATTING SD";
     SD.end();
-#if defined(CYD) && !defined(RLPHANTOM) && !defined(RLPHANTOM_R) && !defined(CYD35)
     SPI.end();
+    pinMode(SD_CS_PIN, OUTPUT);
+    digitalWrite(SD_CS_PIN, HIGH);
+    vTaskDelay(pdMS_TO_TICKS(120));
+    SPI.begin(18, 19, 23, SD_CS_PIN);
+    SPI.beginTransaction(SPISettings(400000, MSBFIRST, SPI_MODE0));
+    for (uint8_t i = 0; i < 12; ++i) SPI.transfer(0xFF);
+    SPI.endTransaction();
+
+    const uint8_t pdrv = sdcard_init(SD_CS_PIN, &SPI, 4000000);
+    if (pdrv == 0xFF || pdrv >= FF_VOLUMES || pdrv > 9) {
+        snprintf(_formatError, sizeof _formatError, "RAW SD INIT FAILED");
+        Serial.printf("[sd] format: sdcard_init failed (drive=%u)\n", (unsigned)pdrv);
+        // If an invalid non-0xFF ID were ever returned, refuse to use
+        // it for formatting rather than making up a target drive.
+        free(work);
+        SPI.end();
+        return false;
+    }
+    char drive[4] = {char('0' + pdrv), ':', '\0', '\0'};
+    Serial.printf("[sd] format: physical drive=%s CS=%u, start f_mkfs\n",
+                  drive, (unsigned)SD_CS_PIN);
+#if ESP_IDF_VERSION < ESP_IDF_VERSION_VAL(5, 1, 0)
+    const FRESULT fr = f_mkfs(drive, (BYTE)FM_ANY, 0, work, FF_MAX_SS);
+#else
+    const MKFS_PARM opt = {(BYTE)FM_ANY, 0, 0, 0, 0};
+    const FRESULT fr = f_mkfs(drive, &opt, work, FF_MAX_SS);
 #endif
-    const bool mounted = begin();
+    free(work);
+    Serial.printf("[sd] format: f_mkfs(%s)=%d\n", drive, (int)fr);
+
+    // This raw driver was registered without a VFS mount. sdcard_uninit()
+    // removes exactly this driver's diskio registration; no f_mount()
+    // or esp_vfs_fat_unregister_path is needed for it.
+    sdcard_uninit(pdrv);
+    SPI.end();
+    vTaskDelay(pdMS_TO_TICKS(100));
+
+    if (fr != FR_OK) {
+        snprintf(_formatError, sizeof _formatError, "FAT ERROR %d", (int)fr);
+        _statusDetail = "FAT FORMAT FAILED";
+        return false;
+    }
+
+    const bool mounted = begin(); // original 2.8/3.2 SD SPI wiring
     if (!mounted) {
-        Theme::setSdStatus(Theme::SdStatus::ERROR);
-        snprintf(_formatError, sizeof _formatError, "REMOUNT FAILED");
+        snprintf(_formatError, sizeof _formatError, "FAT OK - MOUNT FAILED");
+        _statusDetail = "FAT OK; MOUNT FAILED";
         return false;
     }
     snprintf(_formatError, sizeof _formatError, "FORMAT OK");
     return true;
+#endif
 }
 
 void SdLog::openDaily() {

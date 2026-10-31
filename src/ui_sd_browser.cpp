@@ -136,6 +136,13 @@ void draw(TFT_eSPI& t) {
         line(t, 8, 60, formatResult == 1 ? "FORMAT SUCCESS" : "FORMAT FAILED",
              formatResult == 1 ? Theme::GREEN : Theme::RED);
         line(t, 8, 85, formatResult == 1 ? "Card is ready" : logger->formatError(), Theme::WHITE);
+    } else if (formatStage) {
+        line(t, 8, 57, formatStage == 1 ? "FORMAT SD CARD?" : "ERASE ALL FILES?", Theme::RED);
+        line(t, 8, 81, formatStage == 1 ? "All data will be lost" : "Cannot be undone!", Theme::WHITE);
+        line(t, 8, 102, formatStage == 1 ? "Continue?" : "Final confirmation", Theme::AMBER);
+        Theme::drawButton(t, 4, h - 62, w / 2 - 8, 28, "CANCEL", false, 1);
+        Theme::drawButton(t, w / 2 + 4, h - 62, w / 2 - 8, 28,
+                          formatStage == 1 ? "NEXT" : "FORMAT", false, 1);
     } else if (!logger || !logger->ready()) {
         line(t, 8, 55, "SD OFFLINE", Theme::RED);
         line(t, 8, 78, logger && logger->remounting() ? "REMOUNTING..." :
@@ -148,14 +155,8 @@ void draw(TFT_eSPI& t) {
                      (unsigned long)logger->mountAttempts());
             line(t, 8, 103, attempts, Theme::CYAN);
         }
-        line(t, 8, h - 59, "RESCAN >", Theme::CYAN);
-    } else if (formatStage) {
-        line(t, 8, 57, formatStage == 1 ? "FORMAT SD CARD?" : "ERASE ALL FILES?", Theme::RED);
-        line(t, 8, 81, formatStage == 1 ? "All data will be lost" : "Cannot be undone!", Theme::WHITE);
-        line(t, 8, 102, formatStage == 1 ? "Continue?" : "Final confirmation", Theme::AMBER);
-        Theme::drawButton(t, 4, h - 62, w / 2 - 8, 28, "CANCEL", false, 1);
-        Theme::drawButton(t, w / 2 + 4, h - 62, w / 2 - 8, 28,
-                          formatStage == 1 ? "NEXT" : "FORMAT", false, 1);
+        line(t, 8, h - 59, "FORMAT", Theme::AMBER);
+        line(t, w / 2, h - 59, "RESCAN >", Theme::CYAN);
     } else if (askDelete) {
         line(t, 8, 54, "DELETE THIS FILE?", Theme::RED);
         line(t, 8, 77, title, Theme::WHITE);
@@ -189,7 +190,14 @@ bool tap(int x, int y, int w, int h) {
     if (bottom(y, h)) {
         if (formatStage) { formatStage = 0; return false; }
         if (formatResult) { formatResult = 0; list(); return false; }
-        if (askDelete) { askDelete = false; return false; }
+        if (!logger->ready()) {
+        if (y >= h - 68 && y < h - 30) {
+            if (x < w / 2) formatStage = 1; // recovery FAT format on unformatted card
+            else logger->rescan();
+        }
+        return false;
+    }
+    if (askDelete) { askDelete = false; return false; }
         if (preview) { preview = false; list(); return false; }
         if (strcmp(folder, "/") != 0) {
             char* slash = strrchr(folder, '/');
@@ -198,13 +206,6 @@ bool tap(int x, int y, int w, int h) {
             offset = 0; list(); return false;
         }
         return true;
-    }
-    if (!logger->ready()) {
-        // An explicit RESCAN works even when the monitor is unavailable.
-        if (y >= h - 68 && y < h - 30) {
-            logger->rescan(); // wake monitor immediately; file list reloads on mount
-        }
-        return false;
     }
     if (formatResult) return false;
     if (formatStage) {
