@@ -1,3 +1,7 @@
-WATCH149-LANDBACK
-# Experimental LAB build after landscape WATCH BACK touch fix.
-# Triggered only on explicit user hardware regression report.
+pr141-sd-hotplug-r3-20261030
+# LAB ONLY PR141: SD card hot-unplug UI lag fix R3.
+# Source a75de905283a0f1e90328fb06a0ceb64add91279, includes UTC SD timestamps, R2 fail-close + first error latch,
+# and R3 slow SD.append open/write/close threshold guard with host tests.
+# No periodic SPI retry after failure; insert card + reboot to resume logging.
+# For CYD 2.8 ST7789 and CYD 3.2 ST7798 (standard + 80MHz experimental).
+# Keep PR141 unmerged, no production version/tag, no branch deletion.
