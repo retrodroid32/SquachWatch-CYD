@@ -201,17 +201,14 @@ void SdLog::startMonitor() {
 }
 
 void SdLog::browseBegin() {
-    const SemaphoreHandle_t m = static_cast<SemaphoreHandle_t>(_ioMutex);
-    if (m) xSemaphoreTake(m, portMAX_DELAY);
+    // No SD operation here: opening the menu must not wait for a hot-unplug
+    // SPI timeout in the worker. Each actual browser file operation takes
+    // the mutex separately (try-lock, never blocks the display task).
     _browsing = true;
     _pendingLen = 0;
-    if (m) xSemaphoreGive(m); // NEVER hold mutex for the entire menu visit
 }
 void SdLog::browseEnd() {
-    const SemaphoreHandle_t m = static_cast<SemaphoreHandle_t>(_ioMutex);
-    if (m) xSemaphoreTake(m, portMAX_DELAY);
     _browsing = false;
-    if (m) xSemaphoreGive(m);
 }
 bool SdLog::browseLock() {
     const SemaphoreHandle_t m = static_cast<SemaphoreHandle_t>(_ioMutex);

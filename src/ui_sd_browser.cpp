@@ -122,7 +122,11 @@ void draw(TFT_eSPI& t) {
     t.fillScreen(Theme::BG);
     Theme::drawTitleBar(t, "SD FILES");
     line(t, 7, 26, formatStage ? "FORMAT SD" : preview ? "FILE VIEW" : "SD FILES", Theme::CYAN);
-    if (!logger || !logger->ready()) {
+    if (formatResult) {
+        line(t, 8, 60, formatResult == 1 ? "FORMAT SUCCESS" : "FORMAT FAILED",
+             formatResult == 1 ? Theme::GREEN : Theme::RED);
+        line(t, 8, 85, formatResult == 1 ? "Card is ready" : logger->formatError(), Theme::WHITE);
+    } else if (!logger || !logger->ready()) {
         line(t, 8, 55, "SD OFFLINE", Theme::RED);
         line(t, 8, 78, "Insert SD card", Theme::AMBER);
         line(t, 8, h - 59, "RESCAN >", Theme::CYAN);
@@ -133,10 +137,6 @@ void draw(TFT_eSPI& t) {
         Theme::drawButton(t, 4, h - 62, w / 2 - 8, 28, "CANCEL", false, 1);
         Theme::drawButton(t, w / 2 + 4, h - 62, w / 2 - 8, 28,
                           formatStage == 1 ? "NEXT" : "FORMAT", false, 1);
-    } else if (formatResult) {
-        line(t, 8, 60, formatResult == 1 ? "FORMAT SUCCESS" : "FORMAT FAILED",
-             formatResult == 1 ? Theme::GREEN : Theme::RED);
-        line(t, 8, 85, formatResult == 1 ? "Card is ready" : logger->formatError(), Theme::WHITE);
     } else if (askDelete) {
         line(t, 8, 54, "DELETE THIS FILE?", Theme::RED);
         line(t, 8, 77, title, Theme::WHITE);
