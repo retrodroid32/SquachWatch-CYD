@@ -250,14 +250,11 @@ bool SdLog::rescan() {
     return _monitorTask != nullptr;
 }
 
-// Destructive operation ONLY after the user's double confirmation.
-// On Arduino SDFS the FAT volume number is protected/private. Rather than
-// blindly formatting "0:" (which might be another mounted filesystem),
-// create a unique probe file via the SD object and prove the exact matching
-// FatFs drive using f_stat on every candidate. Refuse ambiguous matches.
-// We never use esp_vfs_fat_sdcard_format here: this SDFS is mounted by the
-// Arduino SPI driver, not by esp_vfs_fat_sdspi_mount, so there is no IDF
-// sdmmc_card_t* owned by the wrapper.
+// Destructive operation ONLY after two on-device confirmations.
+// The pinned Arduino SD SPI disk I/O API provides sdcard_init(): a physical
+// drive ID tied to our SD CS/SPI instance. Mount-independent raw formatting
+// is required to recover cards with a damaged or missing FAT filesystem.
+// Never select a guessed drive number or format the ESP32's internal flash.
 bool SdLog::formatCard() {
     const SemaphoreHandle_t m = static_cast<SemaphoreHandle_t>(_ioMutex);
     if (m && xSemaphoreTake(m, 0) != pdTRUE) {

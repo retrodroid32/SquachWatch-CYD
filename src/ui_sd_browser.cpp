@@ -190,14 +190,7 @@ bool tap(int x, int y, int w, int h) {
     if (bottom(y, h)) {
         if (formatStage) { formatStage = 0; return false; }
         if (formatResult) { formatResult = 0; list(); return false; }
-        if (!logger->ready()) {
-        if (y >= h - 68 && y < h - 30) {
-            if (x < w / 2) formatStage = 1; // recovery FAT format on unformatted card
-            else logger->rescan();
-        }
-        return false;
-    }
-    if (askDelete) { askDelete = false; return false; }
+        if (askDelete) { askDelete = false; return false; }
         if (preview) { preview = false; list(); return false; }
         if (strcmp(folder, "/") != 0) {
             char* slash = strrchr(folder, '/');
@@ -222,6 +215,15 @@ bool tap(int x, int y, int w, int h) {
                     list();
                 }
             }
+        }
+        return false;
+    }
+    // Allow a user-confirmed recovery FAT format even when no filesystem
+    // can mount. RESCAN remains available on the other half of the row.
+    if (!logger->ready()) {
+        if (y >= h - 68 && y < h - 30) {
+            if (x < w / 2) formatStage = 1;
+            else logger->rescan();
         }
         return false;
     }
