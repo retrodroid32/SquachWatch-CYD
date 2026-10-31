@@ -1,3 +1,8 @@
-WATCH149-LANDBACK
-# Experimental LAB build after landscape WATCH BACK touch fix.
-# Triggered only on explicit user hardware regression report.
+pr155-sd-hotswap-format-r5-20261031
+# LAB TEST ONLY / PR155 draft stacked on PR141. Source 3dba92779cea3a52c898540268352acd8e7df197.
+# R4 hardware verified: red on removal, no lag, 3.2 file explorer full width.
+# R5 fixes no automatic reinsertion: release browser SD mutex between actions,
+# dedicated SPI reset for remount, auto list repopulate when mounted.
+# R5 format error report: 8.3 short FAT marker, precise drive/format/remount errors.
+# Test 2.8 ST7789 / 3.2 ST7798, standard first; optional 80MHz.
+# Format on disposable backed-up card only. No merge, no prod release/tag.
