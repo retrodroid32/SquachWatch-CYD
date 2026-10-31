@@ -11,8 +11,8 @@ class SdLog {
 public:
     bool begin();              // returns true if card mounted
     bool ready() const { return _ready; }
-    // The browser holds the filesystem lock for its entire session.
-    // Mount/monitor activity must not interleave with file navigation.
+    // Browser and monitor serialize individual SD I/O operations.
+    // The browser must not hold the mutex for its entire screen visit.
     void browseBegin();
     void browseEnd();
     void browseFault();
@@ -24,7 +24,6 @@ public:
     const char* statusDetail() const { return _statusDetail; }
     uint32_t mountAttempts() const { return _mountAttempts; }
     uint32_t probeFailures() const { return _probeFailures; }
-    uint32_t staleVfsClears() const { return _staleVfsClears; }
     bool remounting() const { return _remounting; }
     void startMonitor();       // mount-state monitor on a separate task (CYD boards)  // an explicit browse I/O failure (never polled)
     void logEvent(const Detection& d);
@@ -48,7 +47,6 @@ private:
     volatile bool _remounting = false;
     volatile uint32_t _mountAttempts = 0;
     volatile uint32_t _probeFailures = 0;
-    volatile uint32_t _staleVfsClears = 0;
     const char* volatile _statusDetail = "NO SD CARD";
     bool _everMounted = false;
     char _formatError[40] = {0};
