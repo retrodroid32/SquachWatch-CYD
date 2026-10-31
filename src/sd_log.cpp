@@ -16,8 +16,6 @@
 #include <freertos/semphr.h>
 #include <esp_system.h>
 #include <esp_idf_version.h>
-#include <esp_vfs_fat.h>
-#include <esp_err.h>
 // The Phantoms define CYD (they ARE a CYD) but still need this reference,
 // because their touch shares the display's bus and SdLog::begin() has to hand
 // SD the display's own SPI instance -- see the comment on that branch below.
@@ -266,6 +264,17 @@ void SdLog::monitorEntry(void* ctx) {
         // A file browser can be open while a card is removed/reinserted.
         // Skip raw reads while browsing, but ALWAYS allow an offline remount.
         // The browser borrows the same mutex only around individual I/O.
+        // Boot-safe fallback: a failed initial SD mount (including an empty
+        // socket) must not launch the expensive FAT/SPI recovery path forever.
+        // Until a card has actually mounted once, only an explicit RESCAN
+        // requests a recovery attempt. After a successful initial mount,
+        // existing removal detection and automatic reinsert attempts remain.
+        if (!self->_ready && !self->_everMounted &&
+            !self->_requestRescan && !signalled) {
+            self->_statusDetail = "SD OFFLINE - TAP RESCAN";
+            xSemaphoreGive(m);
+            continue;
+        }
         if (!self->_browsing || !self->_ready) {
             if (self->_ready) {
                 const uint32_t started = millis();
@@ -282,28 +291,12 @@ void SdLog::monitorEntry(void* ctx) {
                 self->_statusDetail = "REINITIALIZING SD";
                 SD.end();
 #if defined(CYD) && !defined(RLPHANTOM) && !defined(RLPHANTOM_R) && !defined(CYD35)
-                // Arduino SDFS::end() unmounts its FATFS and unregisters its
-                // /sd VFS context via sdcard_uninit(). When an SD disappears
-                // during I/O, a leftover VFS context prevents the next
-                // esp_vfs_fat_register("/sd") from succeeding even though
-                // physical CMD0, sector reads and raw FatFs all work.
-                //
-                // The SD worker owns the I/O mutex here. This app uniquely
-                // owns the /sd VFS path, and SD.end() has already detached
-                // the old SDFS handle. Reclaim ONLY that path; never touch
-                // another mounted filesystem or internal flash.
-                const esp_err_t cleanup = esp_vfs_fat_unregister_path("/sd");
-                if (cleanup == ESP_OK) {
-                    ++self->_staleVfsClears;
-                    Serial.printf("[sd] recovered STALE /sd VFS registration, total=%lu\n",
-                                  (unsigned long)self->_staleVfsClears);
-                } else if (cleanup == ESP_ERR_INVALID_STATE) {
-                    Serial.println("[sd] /sd VFS context already cleared");
-                } else {
-                    Serial.printf("[sd] /sd VFS cleanup failed: %s (0x%x)\n",
-                                  esp_err_to_name(cleanup), (unsigned)cleanup);
-                    self->_statusDetail = "VFS CLEANUP ERROR";
-                }
+                // Do not forcibly unregister /sd from here. The Arduino
+                // SDFS owner must release its own FAT/VFS bookkeeping; a
+                // second unregister from this worker can invalidate a FATFS
+                // object still referenced by SDFS after an I/O failure.
+                // R10's unconditional external cleanup is rolled back until
+                // there is verified proof that a stale registration exists.
                 // This is a dedicated SPI bus on CYD 2.8/3.2, not the
                 // TFT/touch instance. Reset the bus after a disappeared card,
                 // as Arduino SDFS::end() only detaches the FAT volume.
@@ -332,10 +325,6 @@ void SdLog::monitorEntry(void* ctx) {
 #endif
                 const bool mounted = self->begin();
                 self->_remounting = false;
-#if defined(CYD) && !defined(RLPHANTOM) && !defined(RLPHANTOM_R) && !defined(CYD35)
-                if (mounted && cleanup == ESP_OK)
-                    Serial.println("[sd] hot remount SUCCEEDED after stale VFS cleanup");
-#endif
                 if (!mounted) {
                     // The driver can fail AFTER CMD0 but BEFORE FAT. Probe
                     // the same SD slot using the raw diskio driver, then
