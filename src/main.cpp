@@ -1489,6 +1489,7 @@ static bool s_sdFilesDirty = true;
 static uint16_t s_sdFilesLastW = 0, s_sdFilesLastH = 0;
 static bool s_sdFilesLastReady = false;
 static bool s_sdFilesNeedsReload = false;
+static uint32_t s_sdFilesNextStatusDraw = 0;
 static void enterSdFiles() {
     s_sdFilesDirty = true;
     s_sdFilesNeedsReload = false;
@@ -6862,6 +6863,14 @@ void loop() {
             break;
         }
         case AppState::SD_FILES: {
+            // Unlike a static file listing, an offline mount status evolves
+            // on a separate task. Refresh sparingly while offline so RESCAN
+            // attempts/errors are visible without touching or repainting
+            // every animation frame.
+            if (!engine.sd().ready() && (int32_t)(now - s_sdFilesNextStatusDraw) >= 0) {
+                s_sdFilesDirty = true;
+                s_sdFilesNextStatusDraw = now + 1200u;
+            }
             const bool resized = s_sdFilesLastW != tft.width() || s_sdFilesLastH != tft.height();
             const bool mounted = engine.sd().ready();
             if (mounted != s_sdFilesLastReady) {
