@@ -1,3 +1,11 @@
-WATCH149-LANDBACK
-# Experimental LAB build after landscape WATCH BACK touch fix.
-# Triggered only on explicit user hardware regression report.
+pr155-sd-vfs-recovery-r10-20261031
+# PR155 LAB R10: user's R9b hot-remount result FAT OK; VFS MOUNT FAIL.
+# After SD.end under the SD worker mutex, explicitly clean up ONLY a
+# stale /sd VFS context with esp_vfs_fat_unregister_path("/sd").
+# Logs: stale /sd registration recovered or context already cleared.
+# Then retry standard Arduino SD.begin; preserve raw failure diagnosis.
+# R4 hardware passes preserved (red removal icon, no lag, full SD browser).
+# Format feature unchanged, still hardware-unverified; DO NOT format card
+# for remount test. Test 2.8 ST7789 and 3.2 ST7798 standard profiles.
+# No merges/releases/version tags; PR155 stacked on draft PR141.
+# Source b029d8e354324af0fcd9f3dc794a94d9a0f0a16f
