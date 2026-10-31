@@ -186,11 +186,13 @@ void draw(TFT_eSPI& t) {
         Theme::drawButton(t, w / 2 + 4, h - 62, w / 2 - 8, 28, "DELETE", false, 1);
     } else if (preview) {
         const uint8_t cols = (uint8_t)((w - 16) / 6 < 53 ? (w - 16) / 6 : 53);
-        const uint8_t rows = h < 280 ? 5 : 7;
+        const uint8_t rows = h < 280 ? 4 : 7;
         if (previewCols != cols || previewRows != rows) {
             previewCols = cols; previewRows = rows; loadPreview();
         }
-        smallLine(t, 8, 48, title, Theme::AMBER);
+        char shortTitle[54];
+        snprintf(shortTitle, sizeof shortTitle, "%.*s", (int)previewCols, title);
+        smallLine(t, 8, 48, shortTitle, Theme::AMBER);
         for (unsigned i = 0; i < previewRows; ++i)
             smallLine(t, 8, 69 + 14 * i, lines[i], Theme::WHITE);
         char range[30];
@@ -311,7 +313,7 @@ bool tap(int x, int y, int w, int h) {
         snprintf(title, sizeof title, "%s", entries[row].name);
         previewPos = 0; previewShift = 0; preview = true; error = false;
         previewCols = (uint8_t)((w - 16) / 6 < 53 ? (w - 16) / 6 : 53);
-        previewRows = h < 280 ? 5 : 7;
+        previewRows = h < 280 ? 4 : 7;
         loadPreview();
     }
     return false;
