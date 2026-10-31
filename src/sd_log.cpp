@@ -264,17 +264,6 @@ void SdLog::monitorEntry(void* ctx) {
         // A file browser can be open while a card is removed/reinserted.
         // Skip raw reads while browsing, but ALWAYS allow an offline remount.
         // The browser borrows the same mutex only around individual I/O.
-        // Boot-safe fallback: a failed initial SD mount (including an empty
-        // socket) must not launch the expensive FAT/SPI recovery path forever.
-        // Until a card has actually mounted once, only an explicit RESCAN
-        // requests a recovery attempt. After a successful initial mount,
-        // existing removal detection and automatic reinsert attempts remain.
-        if (!self->_ready && !self->_everMounted &&
-            !self->_requestRescan && !signalled) {
-            self->_statusDetail = "SD OFFLINE - TAP RESCAN";
-            xSemaphoreGive(m);
-            continue;
-        }
         if (!self->_browsing || !self->_ready) {
             if (self->_ready) {
                 const uint32_t started = millis();
@@ -291,12 +280,6 @@ void SdLog::monitorEntry(void* ctx) {
                 self->_statusDetail = "REINITIALIZING SD";
                 SD.end();
 #if defined(CYD) && !defined(RLPHANTOM) && !defined(RLPHANTOM_R) && !defined(CYD35)
-                // Do not forcibly unregister /sd from here. The Arduino
-                // SDFS owner must release its own FAT/VFS bookkeeping; a
-                // second unregister from this worker can invalidate a FATFS
-                // object still referenced by SDFS after an I/O failure.
-                // R10's unconditional external cleanup is rolled back until
-                // there is verified proof that a stale registration exists.
                 // This is a dedicated SPI bus on CYD 2.8/3.2, not the
                 // TFT/touch instance. Reset the bus after a disappeared card,
                 // as Arduino SDFS::end() only detaches the FAT volume.
