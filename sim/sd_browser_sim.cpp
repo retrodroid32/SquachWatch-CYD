@@ -7,6 +7,7 @@ class SdLog;
 namespace SdBrowser {
 void begin(SdLog&) {}
 void end() {}
+bool reloadMountedCard() { return false; } // emulator has no physical card
 void draw(TFT_eSPI& t) {
     t.fillScreen(Theme::BG);
     Theme::drawTitleBar(t, "SD FILES");
