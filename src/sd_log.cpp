@@ -387,8 +387,13 @@ bool SdLog::rescan() {
 // Never select a guessed drive number or format the ESP32's internal flash.
 bool SdLog::formatCard() {
     const SemaphoreHandle_t m = static_cast<SemaphoreHandle_t>(_ioMutex);
-    if (m && xSemaphoreTake(m, 0) != pdTRUE) {
+    // Only on the user's second FORMAT confirmation: wait briefly for the
+    // 2.5-second monitor's current sector read to finish. A zero-timeout
+    // lock spuriously failed FORMAT when the user tapped during that read.
+    // Bound the wait to keep the UI responsive if the SD bus is wedged.
+    if (m && xSemaphoreTake(m, pdMS_TO_TICKS(500)) != pdTRUE) {
         snprintf(_formatError, sizeof _formatError, "SD BUSY - RETRY");
+        Serial.println("[sd fmt] monitor owns SD I/O mutex; format deferred");
         return false;
     }
     struct Unlock { SemaphoreHandle_t m; ~Unlock() { if (m) xSemaphoreGive(m); } } unlock{m};
