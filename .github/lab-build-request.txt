@@ -1,3 +1,3 @@
-pr155-r14-sd-back-20261031
-# R13 SD WIPE ALL + compact log viewer kept unchanged.
-# SD file browser BACK first tap fix and full hit area; unmerged LAB only.
+pr155-r15-squad-snooze-20261031
+# R14 + Snoozed Devices matching font + one-press Squad ADD prerequisite guidance.
+# Preserve R14 SD functionality. LAB only; no merge, tag, or production release.
