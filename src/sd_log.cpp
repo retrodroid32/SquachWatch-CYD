@@ -428,16 +428,59 @@ bool SdLog::formatCard() {
 
     const uint8_t pdrv = sdcard_init(SD_CS_PIN, &SPI, 4000000);
     if (pdrv == 0xFF || pdrv >= FF_VOLUMES || pdrv > 9) {
-        snprintf(_formatError, sizeof _formatError, "RAW SD INIT FAILED");
-        Serial.printf("[sd] format: sdcard_init failed (drive=%u)\n", (unsigned)pdrv);
-        // If an invalid non-0xFF ID were ever returned, refuse to use
-        // it for formatting rather than making up a target drive.
+        snprintf(_formatError, sizeof _formatError, "RAW DRIVER FULL (%u)", (unsigned)pdrv);
+        _statusDetail = "FORMAT DRIVER REGISTER FAIL";
+        Serial.printf("[sd fmt] raw driver registration failed: pdrv=%u\n", (unsigned)pdrv);
         free(work);
         SPI.end();
         return false;
     }
-    char drive[4] = {char('0' + pdrv), ':', '\0', '\0'};
-    Serial.printf("[sd] format: physical drive=%s CS=%u, start f_mkfs\n",
+    const char drive[3] = {char('0' + pdrv), ':', '\0'};
+    // Preflight is READ-ONLY. A successful registration is not proof the
+    // physical card initialized, that its sector geometry is meaningful,
+    // or that sector zero can be read. Refuse to destroy anything until
+    // all three are true. In particular, FatFs f_mkfs() needs a working
+    // GET_SECTOR_COUNT implementation to calculate the new FAT geometry.
+    const DSTATUS initStatus = disk_initialize(pdrv);
+    Serial.printf("[sd fmt] drive=%s init=0x%02X\n",
+                  drive, (unsigned)initStatus);
+    if (initStatus & (STA_NOINIT | STA_NODISK)) {
+        snprintf(_formatError, sizeof _formatError, "CARD INIT ERR 0x%02X", (unsigned)initStatus);
+        _statusDetail = "FORMAT CARD INIT FAILED";
+        sdcard_uninit(pdrv);
+        SPI.end();
+        free(work);
+        return false;
+    }
+    DWORD sectors = 0;
+    const DRESULT geo = disk_ioctl(pdrv, GET_SECTOR_COUNT, &sectors);
+    Serial.printf("[sd fmt] sector count result=%d sectors=%lu (%.1f MiB)\n",
+                  (int)geo, (unsigned long)sectors, (double)sectors / 2048.0);
+    if (geo != RES_OK || sectors < 2048) {
+        snprintf(_formatError, sizeof _formatError, "CARD SIZE INVALID (%lu)",
+                 (unsigned long)sectors);
+        _statusDetail = "FORMAT CAPACITY CHECK FAIL";
+        sdcard_uninit(pdrv);
+        SPI.end();
+        free(work);
+        return false;
+    }
+    const DRESULT read0 = disk_read(pdrv, work, 0, 1);
+    Serial.printf("[sd fmt] sector 0 read=%d, sig=%02X%02X\n",
+                  (int)read0, (unsigned)work[510], (unsigned)work[511]);
+    if (read0 != RES_OK) {
+        snprintf(_formatError, sizeof _formatError, "SECTOR 0 READ ERROR %d", (int)read0);
+        _statusDetail = "FORMAT PRECHECK READ FAIL";
+        sdcard_uninit(pdrv);
+        SPI.end();
+        free(work);
+        return false;
+    }
+
+    // The user's explicit two-step confirmation above is the only point
+    // authorizing destructive writes. Never substitute a guessed pdrv.
+    // FM_ANY preserves FatFs's normal SD partitioning behavior.
+    Serial.printf("[sd fmt] preflight OK: physical drive=%s CS=%u; f_mkfs\n",
                   drive, (unsigned)SD_CS_PIN);
 #if ESP_IDF_VERSION < ESP_IDF_VERSION_VAL(5, 1, 0)
     const FRESULT fr = f_mkfs(drive, (BYTE)FM_ANY, 0, work, FF_MAX_SS);
@@ -446,17 +489,16 @@ bool SdLog::formatCard() {
     const FRESULT fr = f_mkfs(drive, &opt, work, FF_MAX_SS);
 #endif
     free(work);
-    Serial.printf("[sd] format: f_mkfs(%s)=%d\n", drive, (int)fr);
+    Serial.printf("[sd fmt] f_mkfs(%s) result=%d\n", drive, (int)fr);
 
-    // This raw driver was registered without a VFS mount. sdcard_uninit()
-    // removes exactly this driver's diskio registration; no f_mount()
-    // or esp_vfs_fat_unregister_path is needed for it.
+    // The temporary raw diskio drive has no VFS path. Remove only that
+    // driver, never attempt the unsafe R10 VFS unregister.
     sdcard_uninit(pdrv);
     SPI.end();
     vTaskDelay(pdMS_TO_TICKS(100));
 
     if (fr != FR_OK) {
-        snprintf(_formatError, sizeof _formatError, "FAT ERROR %d", (int)fr);
+        snprintf(_formatError, sizeof _formatError, "FAT MKFS ERR %d", (int)fr);
         _statusDetail = "FAT FORMAT FAILED";
         return false;
     }
