@@ -332,8 +332,10 @@ void SdLog::monitorEntry(void* ctx) {
 #endif
                 const bool mounted = self->begin();
                 self->_remounting = false;
+#if defined(CYD) && !defined(RLPHANTOM) && !defined(RLPHANTOM_R) && !defined(CYD35)
                 if (mounted && cleanup == ESP_OK)
                     Serial.println("[sd] hot remount SUCCEEDED after stale VFS cleanup");
+#endif
                 if (!mounted) {
                     // The driver can fail AFTER CMD0 but BEFORE FAT. Probe
                     // the same SD slot using the raw diskio driver, then
