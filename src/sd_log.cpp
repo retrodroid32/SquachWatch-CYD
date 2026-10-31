@@ -151,6 +151,38 @@ void SdLog::browseFault() {
 }
 
 
+
+// Send a real low-speed SD SPI CMD0 before attempting SDFS's full mount.
+// Merely sending 0xFF idle clocks (R7) cannot distinguish an empty socket,
+// a card that does not answer, and a card with an invalid FAT volume.
+// This is used ONLY in the background remount worker, under _ioMutex.
+// Return 0x01 for SD-idle ACK, or the actual response/0xFF for no ACK.
+#if defined(CYD) && !defined(RLPHANTOM) && !defined(RLPHANTOM_R) && !defined(CYD35)
+static uint8_t sdRemountProbeCmd0() {
+    static const uint8_t cmd0[6] = {0x40, 0x00, 0x00, 0x00, 0x00, 0x95};
+    uint8_t reply = 0xFF;
+    SPI.beginTransaction(SPISettings(400000, MSBFIRST, SPI_MODE0));
+    digitalWrite(SD_CS_PIN, HIGH);
+    for (int i = 0; i < 16; ++i) SPI.transfer(0xFF); // >=128 idle clocks
+    for (int attempt = 0; attempt < 3; ++attempt) {
+        digitalWrite(SD_CS_PIN, LOW);
+        SPI.transfer(0xFF);
+        for (uint8_t byte : cmd0) SPI.transfer(byte);
+        reply = 0xFF;
+        for (int i = 0; i < 12; ++i) {
+            const uint8_t b = SPI.transfer(0xFF);
+            if ((b & 0x80u) == 0) { reply = b; break; }
+        }
+        digitalWrite(SD_CS_PIN, HIGH);
+        SPI.transfer(0xFF);
+        if (reply == 0x01) break;
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
+    SPI.endTransaction();
+    return reply;
+}
+#endif
+
 // Monitor once per few seconds in its own FreeRTOS task. No SD SPI
 // transaction occurs in title-bar painting or the main animation loop.
 // SD.readRAW() is the SDFS wrapper around a real 512-byte sector read:
@@ -196,12 +228,25 @@ void SdLog::monitorEntry(void* ctx) {
                 digitalWrite(SD_CS_PIN, HIGH);
                 vTaskDelay(pdMS_TO_TICKS(120));
                 SPI.begin(18, 19, 23, SD_CS_PIN);
-                SPI.beginTransaction(SPISettings(400000, MSBFIRST, SPI_MODE0));
-                for (uint8_t k = 0; k < 12; ++k) SPI.transfer(0xFF);
-                SPI.endTransaction();
+                const uint8_t ack = sdRemountProbeCmd0();
+                if (ack != 0x01) {
+                    self->_remounting = false;
+                    self->_statusDetail = ack == 0xFF ? "NO CMD0 RESPONSE" : "CMD0 REJECTED";
+                    ++self->_probeFailures;
+                    Serial.printf("[sd] remount probe FAILED: CMD0=0x%02X, count=%lu (no FAT attempt)\n",
+                                  (unsigned)ack, (unsigned long)self->_probeFailures);
+                    SPI.end();
+                    self->_requestRescan = false;
+                    xSemaphoreGive(m);
+                    continue;
+                }
+                self->_statusDetail = "CMD0 OK; MOUNTING";
+                Serial.println("[sd] remount probe: CMD0=0x01 (card SPI responsive)");
 #endif
                 const bool mounted = self->begin();
                 self->_remounting = false;
+                if (!mounted)
+                    self->_statusDetail = "CMD0 OK; FAT MOUNT FAIL";
                 if (!mounted && (self->_requestRescan || signalled))
                     Serial.println("[sd] RESCAN attempted, SD still offline");
                 self->_requestRescan = false;

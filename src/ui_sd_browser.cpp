@@ -154,6 +154,12 @@ void draw(TFT_eSPI& t) {
             snprintf(attempts, sizeof attempts, "ATTEMPTS: %lu",
                      (unsigned long)logger->mountAttempts());
             line(t, 8, 103, attempts, Theme::CYAN);
+            if (logger->probeFailures()) {
+                char probe[40];
+                snprintf(probe, sizeof probe, "CMD0 FAILS: %lu",
+                         (unsigned long)logger->probeFailures());
+                line(t, 8, 126, probe, Theme::AMBER);
+            }
         }
         line(t, 8, h - 59, "FORMAT", Theme::AMBER);
         line(t, w / 2, h - 59, "RESCAN >", Theme::CYAN);
