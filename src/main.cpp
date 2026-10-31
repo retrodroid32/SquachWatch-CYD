@@ -6864,17 +6864,14 @@ void loop() {
                 s_sdFilesDirty = true;
             }
 #if defined(CYD32)
-            if (!frameBufferOk || s_recoveryBands > 1) {
-                // A recovered sprite may hold only a quarter of the height.
-                // Draw onto the physical TFT, once per interaction, rather
-                // than leaving stale main-screen pixels on the right edge.
-                if (s_sdFilesDirty) SdBrowser::draw(tft);
-            } else
+            // Always render this non-animated filesystem menu directly to
+            // the real TFT on the 3.2", independent of recovery-band layout.
+            // A small/stale sprite can otherwise leave 25% of CLEAR visible.
+            if (s_sdFilesDirty) SdBrowser::draw(tft);
+#else
+            if (s_sdFilesDirty)
+                drawTwoBand([&](TFT_eSPI& t, bool) { SdBrowser::draw(t); });
 #endif
-            {
-                if (s_sdFilesDirty)
-                    drawTwoBand([&](TFT_eSPI& t, bool) { SdBrowser::draw(t); });
-            }
             s_sdFilesDirty = false;
             if (touchJustDown && tp.valid &&
                 now - lastTouch > TOUCH_DEBOUNCE_MS) {
@@ -7087,7 +7084,11 @@ void loop() {
     // straight at tft and every draw this frame already landed on the
     // real screen -- pushing `frame` here would just paint stale data
     // from the sprite we stopped using back over the top of it.
-    if (frameBufferOk && s_recoveryBands == 1 && renderedThisLoop) {
+    if (frameBufferOk && s_recoveryBands == 1 && renderedThisLoop
+#if defined(CYD32)
+        && state != AppState::SD_FILES  // direct-panel file browser owns the glass
+#endif
+        ) {
         const bool targetRoster =
             state == AppState::HUNT_LIST || state == AppState::WATCH_LIST;
         if (!targetRoster && now - transitionStart < TRANSITION_MS) {
