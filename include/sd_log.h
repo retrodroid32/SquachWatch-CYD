@@ -16,8 +16,11 @@ public:
     void browseBegin();
     void browseEnd();
     void browseFault();
-    bool rescan();             // request an immediate SD remount, never from draw()
-    bool formatCard();         // true FAT filesystem format, called only while browsing
+    bool browseLock();        // nonblocking: never wait for an SD timeout on UI task
+    void browseUnlock();
+    bool rescan();            // request async remount from SD monitor
+    bool formatCard();        // real FAT formatting, double-confirmed by browser
+    const char* formatError() const { return _formatError; }
     void startMonitor();       // mount-state monitor on a separate task (CYD boards)  // an explicit browse I/O failure (never polled)
     void logEvent(const Detection& d);
     void tick();               // buffered flush / housekeeping (called from loop)
@@ -36,6 +39,9 @@ private:
     // Latched off on first write/open error; no repeated SPI retries.
     volatile bool _ready = false;
     volatile bool _browsing = false;
+    volatile bool _requestRescan = false;
+    bool _everMounted = false;
+    char _formatError[40] = {0};
     void* _ioMutex = nullptr;   // FreeRTOS semaphore, opaque for PC emulator headers
     void* _monitorTask = nullptr;
     uint32_t _lastFlush = 0;

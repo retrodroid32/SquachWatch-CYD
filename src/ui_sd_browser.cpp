@@ -24,6 +24,12 @@ static char lines[7][33];
 static uint32_t previewPos = 0, previewNext = 0;
 static bool previewMore = false;
 static bool error = false;
+struct CardGuard {
+    SdLog* log;
+    bool locked;
+    explicit CardGuard(SdLog* s) : log(s), locked(s && s->browseLock()) {}
+    ~CardGuard() { if (locked) log->browseUnlock(); }
+};
 
 bool joined(const char* name, char* out, size_t cap) {
     if (!name || !*name || strstr(name, "..") || strchr(name, '\\')) return false;
@@ -42,6 +48,9 @@ const char* baseName(const char* path) {
 void list() {
     count = 0; more = false; error = false;
     if (!logger || !logger->ready()) return;
+    CardGuard guard(logger);
+    if (!guard.locked) { error = true; return; }
+    if (!logger->ready()) return;
     File d = SD.open(folder);
     if (!d || !d.isDirectory()) {
         if (d) d.close();
@@ -68,6 +77,9 @@ void loadPreview() {
     memset(lines, 0, sizeof lines);
     previewMore = false;
     if (!logger || !logger->ready()) return;
+    CardGuard guard(logger);
+    if (!guard.locked) { error = true; return; }
+    if (!logger->ready()) return;
     File f = SD.open(chosen, FILE_READ);
     if (!f || f.isDirectory()) { if (f) f.close(); logger->browseFault(); error = true; return; }
     if (!f.seek(previewPos)) { error = true; f.close(); logger->browseFault(); return; }
@@ -124,7 +136,7 @@ void draw(TFT_eSPI& t) {
     } else if (formatResult) {
         line(t, 8, 60, formatResult == 1 ? "FORMAT SUCCESS" : "FORMAT FAILED",
              formatResult == 1 ? Theme::GREEN : Theme::RED);
-        line(t, 8, 85, formatResult == 1 ? "Card is ready" : "Check SD card", Theme::WHITE);
+        line(t, 8, 85, formatResult == 1 ? "Card is ready" : logger->formatError(), Theme::WHITE);
     } else if (askDelete) {
         line(t, 8, 54, "DELETE THIS FILE?", Theme::RED);
         line(t, 8, 77, title, Theme::WHITE);
@@ -171,7 +183,7 @@ bool tap(int x, int y, int w, int h) {
     if (!logger->ready()) {
         // An explicit RESCAN works even when the monitor is unavailable.
         if (y >= h - 68 && y < h - 30) {
-            if (logger->rescan()) { offset = 0; list(); }
+            logger->rescan(); // async; monitor remounts, screen auto-refreshes
         }
         return false;
     }
@@ -196,7 +208,9 @@ bool tap(int x, int y, int w, int h) {
     if (askDelete) {
         if (y >= h - 64 && y < h - 32) {
             if (x >= w / 2 && chosen[0]) {
-                if (!SD.remove(chosen)) { error = true; logger->browseFault(); }
+                CardGuard guard(logger);
+                if (!guard.locked || !logger->ready()) error = true;
+                else if (!SD.remove(chosen)) { error = true; logger->browseFault(); }
                 else { preview = false; offset = 0; }
             }
             askDelete = false;

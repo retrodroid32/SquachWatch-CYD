@@ -1487,6 +1487,7 @@ static void enterDesk() {
 
 static bool s_sdFilesDirty = true;
 static uint16_t s_sdFilesLastW = 0, s_sdFilesLastH = 0;
+static bool s_sdFilesLastReady = false;
 static void enterSdFiles() {
     s_sdFilesDirty = true;
     state = AppState::SD_FILES;
@@ -6859,6 +6860,11 @@ void loop() {
         }
         case AppState::SD_FILES: {
             const bool resized = s_sdFilesLastW != tft.width() || s_sdFilesLastH != tft.height();
+            const bool mounted = engine.sd().ready();
+            if (mounted != s_sdFilesLastReady) {
+                s_sdFilesLastReady = mounted;
+                s_sdFilesDirty = true;
+            }
             if (resized) {
                 s_sdFilesLastW = tft.width(); s_sdFilesLastH = tft.height();
                 s_sdFilesDirty = true;

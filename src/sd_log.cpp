@@ -113,6 +113,7 @@ bool SdLog::begin() {
     }
     Serial.printf("[sd] card mounted: %llu MB\n", (unsigned long long)(SD.cardSize() >> 20));
     _ready = true;
+    _everMounted = true;
     _pendingLen = 0;   // old RAM queue was associated with the old card
     _filename[0] = '\0';
     Theme::setSdStatus(Theme::SdStatus::READY);
@@ -150,11 +151,14 @@ void SdLog::monitorEntry(void* ctx) {
     SdLog* self = static_cast<SdLog*>(ctx);
     uint8_t* sector = static_cast<uint8_t*>(malloc(512));
     for (;;) {
-        vTaskDelay(pdMS_TO_TICKS(3000));
+        vTaskDelay(pdMS_TO_TICKS(2500));
         if (!self || !sector) continue;
         const SemaphoreHandle_t m = static_cast<SemaphoreHandle_t>(self->_ioMutex);
         if (!m || xSemaphoreTake(m, pdMS_TO_TICKS(150)) != pdTRUE) continue;
-        if (!self->_browsing) {
+        // A file browser can be open while a card is removed/reinserted.
+        // Skip raw reads while browsing, but ALWAYS allow an offline remount.
+        // The browser borrows the same mutex only around individual I/O.
+        if (!self->_browsing || !self->_ready) {
             if (self->_ready) {
                 const uint32_t started = millis();
                 const bool ok = SD.readRAW(sector, 0);
@@ -167,7 +171,16 @@ void SdLog::monitorEntry(void* ctx) {
                 // handle before mounting it again. Never do this inside
                 // the frame or from the title-bar icon.
                 SD.end();
-                self->begin();
+#if defined(CYD) && !defined(RLPHANTOM) && !defined(RLPHANTOM_R) && !defined(CYD35)
+                // This is a dedicated SPI bus on CYD 2.8/3.2, not the
+                // TFT/touch instance. Reset the bus after a disappeared card,
+                // as Arduino SDFS::end() only detaches the FAT volume.
+                SPI.end();
+#endif
+                const bool mounted = self->begin();
+                if (!mounted && self->_requestRescan)
+                    Serial.println("[sd] RESCAN attempted, SD still offline");
+                self->_requestRescan = false;
             }
         }
         xSemaphoreGive(m);
@@ -191,22 +204,28 @@ void SdLog::browseBegin() {
     const SemaphoreHandle_t m = static_cast<SemaphoreHandle_t>(_ioMutex);
     if (m) xSemaphoreTake(m, portMAX_DELAY);
     _browsing = true;
-    // A browser opening on an absent card must never flush previously queued
-    // detections into a replacement card with a different filesystem.
     _pendingLen = 0;
+    if (m) xSemaphoreGive(m); // NEVER hold mutex for the entire menu visit
 }
 void SdLog::browseEnd() {
+    const SemaphoreHandle_t m = static_cast<SemaphoreHandle_t>(_ioMutex);
+    if (m) xSemaphoreTake(m, portMAX_DELAY);
     _browsing = false;
+    if (m) xSemaphoreGive(m);
+}
+bool SdLog::browseLock() {
+    const SemaphoreHandle_t m = static_cast<SemaphoreHandle_t>(_ioMutex);
+    return !m || xSemaphoreTake(m, 0) == pdTRUE;
+}
+void SdLog::browseUnlock() {
     const SemaphoreHandle_t m = static_cast<SemaphoreHandle_t>(_ioMutex);
     if (m) xSemaphoreGive(m);
 }
 bool SdLog::rescan() {
-    if (!_browsing) return false;
-    _ready = false;
-    _pendingLen = 0;
-    _filename[0] = '\0';
-    SD.end();
-    return begin();
+    // Do not manipulate SPI/FAT on the UI thread. The monitor wakes up
+    // independently and makes the next remount attempt under its own lock.
+    _requestRescan = true;
+    return true;
 }
 
 // Destructive operation ONLY after the user's double confirmation.
@@ -375,7 +394,7 @@ void SdLog::logEvent(const Detection& d) {
     // If the buffer is full, try to commit the older rows first; if the card
     // is unavailable, retain those older rows and drop the newest one.
     if ((size_t)_pendingLen + lineLen > WRITE_BUFFER_CAP) {
-        flushPending();
+        flushPendingLocked(); // logEvent already owns the SD mutex
     }
     if ((size_t)_pendingLen + lineLen > WRITE_BUFFER_CAP) {
         _droppedLines++;
@@ -445,12 +464,16 @@ void SdLog::wipe() {
 
 void SdLog::tick() {
     if (!_ready || _browsing) return;
+    const SemaphoreHandle_t m = static_cast<SemaphoreHandle_t>(_ioMutex);
+    if (m && xSemaphoreTake(m, 0) != pdTRUE) return;
+    struct Unlock { SemaphoreHandle_t m; ~Unlock() { if (m) xSemaphoreGive(m); } } unlock{m};
+    if (!_ready || _browsing) return;
     const uint32_t now = millis();
 
     // Commit sparse traffic within one second. Dense traffic usually reaches
     // WRITE_BUFFER_FLUSH_AT first and flushes from logEvent().
     if (_pendingLen && now - _lastFlush >= 1000) {
-        flushPending();
+        flushPendingLocked();
     }
 
     // Re-evaluate the daily filename once an hour, preserving the previous
@@ -459,7 +482,7 @@ void SdLog::tick() {
     // next successful retry can rotate immediately afterward.
     static uint32_t lastDayCheck = 0;
     if (now - lastDayCheck >= 3600000) {
-        if (_pendingLen == 0 || (now - _lastFlush >= 1000 && flushPending())) {
+        if (_pendingLen == 0 || (now - _lastFlush >= 1000 && flushPendingLocked())) {
             lastDayCheck = now;
             openDaily();
         }
