@@ -1,3 +1,3 @@
-pr155-r11-sd-format-r12-20261031
+pr155-r13-sd-browser-20261031
 # Exact R11 base + isolated SD-format preflight & mutex fix.
 # Preserve R11 LAB and PR155 R9b rollback, no production release.
