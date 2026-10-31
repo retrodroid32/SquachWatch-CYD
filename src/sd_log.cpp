@@ -1,6 +1,8 @@
 // SquachWatch-CYD — SD log implementation
 #include "sd_log.h"
 #include "clock.h"
+#include "sd_timestamp.h"
+#include "sd_io_policy.h"
 #include <time.h>
 #include <SD.h>
 #include <stdio.h>
@@ -106,6 +108,21 @@ bool SdLog::begin() {
     return true;
 }
 
+// A removed card can make SD.open()/File.write()/File.close() wait for SPI
+// timeouts. Repeated retry in the UI loop makes the whole device stutter.
+// A failed flush therefore latches logging off until reboot. There is no
+// reliable card-detect input on the supported CYDs; guessing that the card
+// has been reinserted would reintroduce the stalls during normal scanning.
+void SdLog::disableAfterIoFailure(const char* operation) {
+    if (!_ready) return;
+    ++_flushFailures;
+    Serial.printf("[sd] %s failed; disabling SD logging until reboot (pending %u bytes discarded)\n",
+                  operation, (unsigned)_pendingLen);
+    _ready = false;
+    _pendingLen = 0;
+    _filename[0] = '\0';
+}
+
 void SdLog::openDaily() {
     if (!_ready) return;
     if (Clock::trusted()) {
@@ -128,41 +145,40 @@ bool SdLog::flushPending() {
     // Rate-limit retry attempts when a card disappears or temporarily stops
     // answering. A successful close() commits FatFS' cached sector metadata.
     _lastFlush = millis();
+    const uint32_t ioStartedAt = _lastFlush;
     File f = SD.open(_filename, FILE_APPEND);
     if (!f) {
-        _flushFailures++;
-        if (_flushFailures == 1 || ((_flushFailures & (_flushFailures - 1)) == 0)) {
-            Serial.printf("[sd] buffered flush open failed (%lu total, %u bytes pending)\n",
-                          (unsigned long)_flushFailures, (unsigned)_pendingLen);
-        }
+        disableAfterIoFailure("open");
         return false;
     }
 
     const size_t written = f.write((const uint8_t*)_pending, _pendingLen);
+    // The Arduino File::close() API returns no error status, although the FAT
+    // sync may be the very operation that stalls after hot removal. Measure
+    // the COMPLETE append, including close(), to catch this case as well.
     f.close();
-
-    if (written > 0) {
-        const size_t consumed = written > _pendingLen ? _pendingLen : written;
-        const size_t remain = _pendingLen - consumed;
-        if (remain) memmove(_pending, _pending + consumed, remain);
-        _pendingLen = (uint16_t)remain;
+    const uint32_t elapsedMs = (uint32_t)(millis() - ioStartedAt);
+    const auto verdict = SdIoPolicy::evaluate(true, _pendingLen, written, elapsedMs);
+    if (verdict == SdIoPolicy::Verdict::SHORT_WRITE) {
+        disableAfterIoFailure("write");
+        return false;
     }
-
-    if (_pendingLen == 0) return true;
-
-    _flushFailures++;
-    if (_flushFailures == 1 || ((_flushFailures & (_flushFailures - 1)) == 0)) {
-        Serial.printf("[sd] buffered flush short write (%lu total, %u bytes remain)\n",
-                      (unsigned long)_flushFailures, (unsigned)_pendingLen);
+    if (verdict == SdIoPolicy::Verdict::SLOW_IO) {
+        disableAfterIoFailure("slow SD append");
+        return false;
     }
-    return false;
+    _pendingLen = 0;
+    return true;
 }
 
 void SdLog::logEvent(const Detection& d) {
     if (!_ready) return;
     if (_filename[0] == '\0') openDaily();
 
-    char line[96];
+    char line[128];
+    char timestamp[28];
+    SdTimestamp::format(timestamp, sizeof timestamp, Clock::trusted(),
+                        Clock::nowEpoch(), millis());
     char mac[18];
     snprintf(mac, sizeof(mac), "%02X:%02X:%02X:%02X:%02X:%02X",
              d.mac[0], d.mac[1], d.mac[2], d.mac[3], d.mac[4], d.mac[5]);
@@ -174,8 +190,8 @@ void SdLog::logEvent(const Detection& d) {
     for (char* p = nameSafe;   *p; p++) if (*p == ',') *p = '.';
 
     const int n = snprintf(line, sizeof(line),
-                           "%lu,%s,%d,%s,%u,%s,%s\n",
-                           (unsigned long)millis(),
+                           "%s,%s,%d,%s,%u,%s,%s\n",
+                           timestamp,
                            detectionTypeName(d.type),
                            d.rssi,
                            mac,
