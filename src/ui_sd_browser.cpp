@@ -9,7 +9,7 @@
 namespace SdBrowser {
 namespace {
 struct Entry { char name[56]; uint32_t bytes; bool dir; };
-static Entry entries[10];    // do not retain hundreds of names on tiny CYDs
+static Entry entries[5];     // five rows fit the smallest 240px screen
 static uint8_t count = 0;
 static uint16_t offset = 0;
 static bool more = false;
@@ -50,7 +50,7 @@ void list() {
     uint16_t i = 0;
     while (File f = d.openNextFile()) {
         if (i++ < offset) { f.close(); continue; }
-        if (count >= 10) { more = true; f.close(); break; }
+        if (count >= 5) { more = true; f.close(); break; }
         char path[96];
         if (joined(f.name(), path, sizeof path)) {
             Entry& e = entries[count++];
@@ -67,8 +67,8 @@ void loadPreview() {
     previewMore = false;
     if (!logger || !logger->ready()) return;
     File f = SD.open(chosen, FILE_READ);
-    if (!f || f.isDirectory()) { if (f) f.close(); error = true; return; }
-    if (!f.seek(previewPos)) { error = true; f.close(); return; }
+    if (!f || f.isDirectory()) { if (f) f.close(); logger->browseFault(); error = true; return; }
+    if (!f.seek(previewPos)) { error = true; f.close(); logger->browseFault(); return; }
     int line = 0, col = 0;
     while (line < 7 && f.available()) {
         const int v = f.read();
@@ -128,7 +128,7 @@ void draw(TFT_eSPI& t) {
         line(t, w / 2, h - 59, previewMore ? "NEXT >" : "END", Theme::CYAN);
     } else {
         line(t, 8, 48, folder, Theme::AMBER);
-        const int rows = (h - 116) / 22 < 10 ? (h - 116) / 22 : 10;
+        const int rows = (h - 116) / 22 < 5 ? (h - 116) / 22 : 5;
         for (int i = 0; i < rows && i < count; i++) {
             char label[41];
             snprintf(label, sizeof label, "%s %.31s", entries[i].dir ? ">" : "-", entries[i].name);
@@ -161,7 +161,7 @@ bool tap(int x, int y, int w, int h) {
     if (askDelete) {
         if (y >= h - 64 && y < h - 32) {
             if (x >= w / 2 && chosen[0]) {
-                if (!SD.remove(chosen)) error = true;
+                if (!SD.remove(chosen)) { error = true; logger->browseFault(); }
                 else { preview = false; offset = 0; }
             }
             askDelete = false;
@@ -178,12 +178,12 @@ bool tap(int x, int y, int w, int h) {
     }
     if (y >= h - 65 && y < h - 31) {
         if (x < w / 3) { formatHelp = true; return false; }
-        if (x < 2 * w / 3 && offset >= 10) offset -= 10;
-        else if (x >= 2 * w / 3 && more) offset += 10;
+        if (x < 2 * w / 3 && offset >= 5) offset -= 5;
+        else if (x >= 2 * w / 3 && more) offset += 5;
         list(); return false;
     }
     const int row = (y - 70) / 22;
-    const int rows = (h - 116) / 22 < 10 ? (h - 116) / 22 : 10;
+    const int rows = (h - 116) / 22 < 5 ? (h - 116) / 22 : 5;
     if (y < 70 || row < 0 || row >= rows || row >= count) return false;
     char next[96];
     if (!joined(entries[row].name, next, sizeof next)) return false;
