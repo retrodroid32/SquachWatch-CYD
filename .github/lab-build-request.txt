@@ -1,3 +1,9 @@
-WATCH149-LANDBACK
-# Experimental LAB build after landscape WATCH BACK touch fix.
-# Triggered only on explicit user hardware regression report.
+pr155-sd-browser-hotplug-format-r3-20261030
+# TEST FIRMWARE. PR155 head 17b8b89fd154a6b42f0b05cc7f8fe33ecf0aedee; stacked on PR141.
+# SD icon hot-removal checked via real raw-sector read on background core.
+# Auto-mount after reinsertion / manual RESCAN; nonblocking SD logging + race lock.
+# Full panel CYD32 browser (not stale 25% sprite); bubbles stay out of status icons.
+# FAT FORMAT is actual f_mkfs on uniquely identified mounted SD volume;
+# two confirmation prompts. USE ONLY A DISPOSABLE BACKED-UP CARD.
+# Both 2.8 ST7789 and 3.2 ST7798, standard first; optional 80MHz.
+# No production release, version tag, or PR merge.
