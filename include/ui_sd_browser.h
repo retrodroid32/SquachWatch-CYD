@@ -6,6 +6,7 @@ class SdLog;
 namespace SdBrowser {
     void begin(SdLog& sd);
     void end();
+    bool reloadMountedCard(); // clear stale directory/preview and reload root
     void draw(TFT_eSPI& t);
     bool tap(int x, int y, int screenW, int screenH); // true => leave screen
 }

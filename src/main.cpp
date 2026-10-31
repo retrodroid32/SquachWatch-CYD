@@ -1488,8 +1488,11 @@ static void enterDesk() {
 static bool s_sdFilesDirty = true;
 static uint16_t s_sdFilesLastW = 0, s_sdFilesLastH = 0;
 static bool s_sdFilesLastReady = false;
+static bool s_sdFilesNeedsReload = false;
 static void enterSdFiles() {
     s_sdFilesDirty = true;
+    s_sdFilesNeedsReload = false;
+    s_sdFilesLastReady = engine.sd().ready();
     state = AppState::SD_FILES;
     transitionStart = millis();
     SdBrowser::begin(engine.sd());
@@ -6863,6 +6866,11 @@ void loop() {
             const bool mounted = engine.sd().ready();
             if (mounted != s_sdFilesLastReady) {
                 s_sdFilesLastReady = mounted;
+                if (mounted) s_sdFilesNeedsReload = true;
+                s_sdFilesDirty = true;
+            }
+            if (mounted && s_sdFilesNeedsReload) {
+                if (SdBrowser::reloadMountedCard()) s_sdFilesNeedsReload = false;
                 s_sdFilesDirty = true;
             }
             if (resized) {

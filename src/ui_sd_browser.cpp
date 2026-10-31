@@ -45,18 +45,18 @@ const char* baseName(const char* path) {
     const char* p = strrchr(path, '/');
     return p ? p + 1 : path;
 }
-void list() {
+bool list() {
     count = 0; more = false; error = false;
-    if (!logger || !logger->ready()) return;
+    if (!logger || !logger->ready()) return false;
     CardGuard guard(logger);
-    if (!guard.locked) { error = true; return; }
-    if (!logger->ready()) return;
+    if (!guard.locked) { error = true; return false; }
+    if (!logger->ready()) return false;
     File d = SD.open(folder);
     if (!d || !d.isDirectory()) {
         if (d) d.close();
         logger->browseFault();
         error = true;
-        return;
+        return false;
     }
     uint16_t i = 0;
     while (File f = d.openNextFile()) {
@@ -72,6 +72,7 @@ void list() {
         f.close();
     }
     d.close();
+    return true;
 }
 void loadPreview() {
     memset(lines, 0, sizeof lines);
@@ -116,6 +117,15 @@ void begin(SdLog& sd) {
     list();
 }
 void end() { if (logger) logger->browseEnd(); logger = nullptr; }
+bool reloadMountedCard() {
+    if (!logger || !logger->ready()) return false;
+    strcpy(folder, "/");
+    chosen[0] = 0;
+    preview = askDelete = false;
+    formatStage = formatResult = 0;
+    offset = 0;
+    return list();
+}
 
 void draw(TFT_eSPI& t) {
     const int w = t.width(), h = t.height();
