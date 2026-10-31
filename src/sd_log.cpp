@@ -2,6 +2,7 @@
 #include "sd_log.h"
 #include "clock.h"
 #include "sd_timestamp.h"
+#include "theme.h"
 #include "sd_io_policy.h"
 #include <time.h>
 #include <SD.h>
@@ -39,6 +40,7 @@ static const uint8_t SD_MAX_FILES = 2;
 
 bool SdLog::begin() {
     if (_ready) return true;
+    Theme::setSdStatus(Theme::SdStatus::ABSENT);
 #if defined(TWATCH_S3)
     return false;   // no card slot; GPIO19/20 are the S3's USB pins
 #endif
@@ -103,6 +105,7 @@ bool SdLog::begin() {
     }
     Serial.printf("[sd] card mounted: %llu MB\n", (unsigned long long)(SD.cardSize() >> 20));
     _ready = true;
+    Theme::setSdStatus(Theme::SdStatus::READY);
     openDaily();
     _lastFlush = millis();
     return true;
@@ -119,8 +122,13 @@ void SdLog::disableAfterIoFailure(const char* operation) {
     Serial.printf("[sd] %s failed; disabling SD logging until reboot (pending %u bytes discarded)\n",
                   operation, (unsigned)_pendingLen);
     _ready = false;
+    Theme::setSdStatus(Theme::SdStatus::ERROR);
     _pendingLen = 0;
     _filename[0] = '\0';
+}
+
+void SdLog::browseFault() {
+    disableAfterIoFailure("browser I/O");
 }
 
 void SdLog::openDaily() {
@@ -172,7 +180,7 @@ bool SdLog::flushPending() {
 }
 
 void SdLog::logEvent(const Detection& d) {
-    if (!_ready) return;
+    if (!_ready || _browsing) return;
     if (_filename[0] == '\0') openDaily();
 
     char line[128];
@@ -271,7 +279,7 @@ void SdLog::wipe() {
 }
 
 void SdLog::tick() {
-    if (!_ready) return;
+    if (!_ready || _browsing) return;
     const uint32_t now = millis();
 
     // Commit sparse traffic within one second. Dense traffic usually reaches

@@ -291,6 +291,10 @@ static int lockIconX(int w) {
 }
 
 static const int WIFI_ICON_W = 26;
+static const int SD_ICON_W = 24;
+static SdStatus s_sdStatus = SdStatus::ABSENT;
+void setSdStatus(SdStatus status) { s_sdStatus = status; }
+SdStatus sdStatus() { return s_sdStatus; }
 // Reserve the Wi-Fi badge to the LEFT of the lock/rotate icon, including
 // when one or both buttons are hidden. Status only: never a tap target.
 static int wifiIconX(int w) {
@@ -298,7 +302,26 @@ static int wifiIconX(int w) {
                      rotateShown() ? w - ROTATE_ICON_W : w;
     return edge - WIFI_ICON_W;
 }
-int titleBarRightIconsX(int w) { return wifiIconX(w); }
+static int sdIconX(int w) { return wifiIconX(w) - SD_ICON_W; }
+int titleBarRightIconsX(int w) { return sdIconX(w); }
+
+static void drawSdIcon(TFT_eSPI& t, int w, int barH) {
+    const int x0 = sdIconX(w);
+    const int cx = x0 + SD_ICON_W / 2, cy = barH / 2;
+    t.fillRect(x0, 0, SD_ICON_W, barH, BG);
+    const uint16_t ink = s_sdStatus == SdStatus::READY ? GREEN :
+                         s_sdStatus == SdStatus::ERROR ? RED : W95_SHADOW;
+    // Familiar microSD card silhouette, with its clipped top-right corner.
+    t.fillRect(cx - 7, cy - 8, 12, 16, BG);
+    t.drawRect(cx - 7, cy - 8, 14, 16, ink);
+    t.fillTriangle(cx + 2, cy - 8, cx + 7, cy - 8, cx + 7, cy - 3, BG);
+    t.drawLine(cx + 2, cy - 8, cx + 7, cy - 3, ink);
+    t.drawFastHLine(cx - 4, cy - 3, 6, ink);
+    t.drawFastVLine(cx - 3, cy + 1, 4, ink);
+    if (s_sdStatus != SdStatus::READY) {
+        t.drawLine(cx - 4, cy + 5, cx + 3, cy - 2, ink);
+    }
+}
 
 static void drawWifiIcon(TFT_eSPI& t, int w, int barH) {
     const int x0 = wifiIconX(w), cx = x0 + WIFI_ICON_W / 2, cy = barH / 2;
@@ -467,6 +490,7 @@ void drawTitleBar(TFT_eSPI& t, const char* title) {
     // needed, unlike the rotate icon above, which predates that repaint.
     if (Security::enabled()) drawLockIcon(t, w, ICON_BOX_H);
     drawWifiIcon(t, w, ICON_BOX_H);
+    drawSdIcon(t, w, ICON_BOX_H);
 }
 
 uint8_t uiTextSize(TFT_eSPI& t, uint8_t base) {

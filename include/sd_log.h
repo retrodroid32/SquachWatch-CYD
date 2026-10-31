@@ -11,6 +11,11 @@ class SdLog {
 public:
     bool begin();              // returns true if card mounted
     bool ready() const { return _ready; }
+    // File browser owns the SD card while open: no background log writes
+    // while it reads directories, previews, or deletes an entry.
+    void browseBegin() { _browsing = true; _pendingLen = 0; }
+    void browseEnd() { _browsing = false; }
+    void browseFault();  // an explicit browse I/O failure (never polled)
     void logEvent(const Detection& d);
     void tick();               // buffered flush / housekeeping (called from loop)
     // Deletes every squachwatch log file on the card. For the security wipe --
@@ -27,6 +32,7 @@ private:
 
     // Latched off on first write/open error; no repeated SPI retries.
     bool     _ready = false;
+    bool     _browsing = false;
     uint32_t _lastFlush = 0;
     uint32_t _flushFailures = 0;
     uint32_t _droppedLines = 0;

@@ -231,6 +231,7 @@ static void drawCrashCard(TFT_eSPI& t) {
 #include "ui_watchalert.h"
 #include "watch_alert_actions.h"
 #include "ui_settings.h"
+#include "ui_sd_browser.h"
 #include "ui_diagnostics.h"
 #include "ui_hunt.h"
 #include "ui_colorcheck.h"
@@ -1482,6 +1483,12 @@ static void enterDesk() {
     state = AppState::DESK;
     transitionStart = millis();
     uiDeskInit(*canvas);
+}
+
+static void enterSdFiles() {
+    state = AppState::SD_FILES;
+    transitionStart = millis();
+    SdBrowser::begin(engine.sd());
 }
 
 static void enterDiagnostics() {
@@ -5756,6 +5763,7 @@ void loop() {
                         case SettingsRow::CHECK_COLORS: enterColorCheck(true); break;
                         case SettingsRow::DIAGNOSTICS:  enterDiagnostics(); break;
                         case SettingsRow::WIFI_NETWORKS: enterWifiNets(); break;
+                        case SettingsRow::SD_FILES: enterSdFiles(); break;
                         case SettingsRow::DESK_MODE:    uiSettingsOpenPage(SettingsPage::DESK); break;
                         case SettingsRow::DESK_OPEN:
                             // Settings' BACK from the desk comes back to it;
@@ -6842,6 +6850,19 @@ void loop() {
                     if (tp.x < ez) Settings::cyclePrevDeskBackground();
                     else           Settings::cycleDeskBackground();
                     Theme::showToast(Settings::backgroundName(Settings::background()), "DESK BACKGROUND", Theme::CYAN);
+                }
+            }
+            break;
+        }
+        case AppState::SD_FILES: {
+            drawTwoBand([&](TFT_eSPI& t, bool) { SdBrowser::draw(t); });
+            if (touchJustDown && tp.valid &&
+                now - lastTouch > TOUCH_DEBOUNCE_MS) {
+                lastTouch = now;
+                if (SdBrowser::tap(tp.x, tp.y, tft.width(), tft.height())) {
+                    SdBrowser::end();
+                    enterSettings();
+                    uiSettingsOpenPage(SettingsPage::SYSTEM);
                 }
             }
             break;
