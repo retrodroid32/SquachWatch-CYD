@@ -1,3 +1,9 @@
-WATCH149-LANDBACK
-# Experimental LAB build after landscape WATCH BACK touch fix.
-# Triggered only on explicit user hardware regression report.
+pr155-sd-browser-hotplug-format-r4-20261030
+# R4 ONLY — PR155 (unmerged), source fc7d77c2b785028e8d0e555ee131e40e53a69cbe, stacked on PR141.
+# Card health readRAW on background task, auto remount on reinsertion,
+# SD file browser full-panel 3.2 rendering, bubbles clear all icons.
+# Real FAT formatter (two confirmations, marker checks target drive),
+# matching actual Arduino 2.0.14 / ESP-IDF 4.4 FatFs 0.13 mkfs signature.
+# Use expendable/backup card for first FAT format test.
+# CYD2.8 ST7789 and CYD3.2 ST7798 both std and optional 80MHz.
+# Do not merge, tag or publish production firmware.
