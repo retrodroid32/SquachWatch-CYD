@@ -1,3 +1,9 @@
-WATCH149-LANDBACK
-# Experimental LAB build after landscape WATCH BACK touch fix.
-# Triggered only on explicit user hardware regression report.
+pr155-sd-browser-hotplug-format-r2-20261030
+# TEST ONLY: PR155 head 87d1c8818979179eaaf3e81f3234b9edc07594cd, stacked on PR141 SD UTC and R3 fail-stop.
+# Fix: speech bubbles clear all four right-hand status icons.
+# Fix: 3.2 ST7798 SD browser renders direct full-panel and never pushes stale sprite.
+# SD health: background raw-sector check every 3s, red on removal; auto-remount after insertion.
+# SD format: explicit double confirmation, select exact FAT drive via unique SD marker,
+# FatFS f_mkfs, Arduino SD remount; only validate on disposable backed-up cards.
+# Test CYD 2.8 ST7789 and 3.2 ST7798, standard first; optional 80MHz.
+# No production release, version tag or merge. User must approve.
