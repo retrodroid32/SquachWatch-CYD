@@ -7,13 +7,13 @@
 #include <time.h>
 #include <SD.h>
 #include <sd_diskio.h>
+#include <ff.h> // defines FatFs BYTE/DWORD/UINT used by diskio.h
 #include <diskio.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include <freertos/semphr.h>
-#include <ff.h>
 #include <esp_system.h>
 #include <esp_idf_version.h>
 // The Phantoms define CYD (they ARE a CYD) but still need this reference,
