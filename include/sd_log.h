@@ -11,8 +11,8 @@ class SdLog {
 public:
     bool begin();              // returns true if card mounted
     bool ready() const { return _ready; }
-    // Browser and monitor serialize individual SD I/O operations.
-    // The browser must not hold the mutex for its entire screen visit.
+    // The browser holds the filesystem lock for its entire session.
+    // Mount/monitor activity must not interleave with file navigation.
     void browseBegin();
     void browseEnd();
     void browseFault();
