@@ -1980,9 +1980,10 @@ static int risenBubbleTop(int topY, int bx, int bw, int screenW) {
     // a screen whose band started at 0.
     int ry = topY - BUBBLE_RISE;
     if (ry < 1)          ry = 1;        // always a pixel of air at the top
-    if (ry >= topY)      return topY;   // no room to rise; never sink
+    if (ry >= topY)      return topY < CORNER_H ? CORNER_H : topY;
     if (ry >= CORNER_H)  return ry;     // starts below the buttons anyway
-    if (bx < CORNER_W || bx + bw > screenW - CORNER_W) return topY;
+    if (bx < CORNER_W || bx + bw > Theme::titleBarRightIconsX(screenW) - 3)
+        return topY < CORNER_H ? CORNER_H : topY;
     return ry;
 }
 // Hang a pointer off the bottom of a bubble, aimed at whoever said it.
@@ -2052,7 +2053,8 @@ static void drawBubbleIn(TFT_eSPI& t, int cx, int topY, const char* text,
         int bx = cx - bw / 2;
         if (bx + bw > screenW - 2) bx = screenW - 2 - bw;
         if (bx < 2) bx = 2;
-        const int by = mayRise ? risenBubbleTop(topY, bx, bw, screenW) : topY;
+        const int by = mayRise ? risenBubbleTop(topY, bx, bw, screenW)
+        : (topY < CORNER_H ? CORNER_H : topY);
         if (bubblePop(t, bx, by, bw, bh, now)) return;
         t.fillRoundRect(bx, by, bw, bh, 3, Theme::BG);
         t.drawRoundRect(bx, by, bw, bh, 3, Theme::VAPOR_PINK);
@@ -2088,7 +2090,8 @@ static void drawBubbleIn(TFT_eSPI& t, int cx, int topY, const char* text,
     // always too wide to clear the corners, so this always returns topY.
     // Written as the same call rather than a hardcoded topY so that if the
     // wrap width ever narrows, this starts rising on its own.
-    const int by = mayRise ? risenBubbleTop(topY, bx, bw, screenW) : topY;
+    const int by = mayRise ? risenBubbleTop(topY, bx, bw, screenW)
+        : (topY < CORNER_H ? CORNER_H : topY);
     if (bubblePop(t, bx, by, bw, bh, now)) return;
     t.fillRoundRect(bx, by, bw, bh, 3, Theme::BG);
     t.drawRoundRect(bx, by, bw, bh, 3, Theme::VAPOR_PINK);

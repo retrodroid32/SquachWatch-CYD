@@ -1485,7 +1485,10 @@ static void enterDesk() {
     uiDeskInit(*canvas);
 }
 
+static bool s_sdFilesDirty = true;
+static uint16_t s_sdFilesLastW = 0, s_sdFilesLastH = 0;
 static void enterSdFiles() {
+    s_sdFilesDirty = true;
     state = AppState::SD_FILES;
     transitionStart = millis();
     SdBrowser::begin(engine.sd());
@@ -6855,7 +6858,24 @@ void loop() {
             break;
         }
         case AppState::SD_FILES: {
-            drawTwoBand([&](TFT_eSPI& t, bool) { SdBrowser::draw(t); });
+            const bool resized = s_sdFilesLastW != tft.width() || s_sdFilesLastH != tft.height();
+            if (resized) {
+                s_sdFilesLastW = tft.width(); s_sdFilesLastH = tft.height();
+                s_sdFilesDirty = true;
+            }
+#if defined(CYD32)
+            if (!frameBufferOk || s_recoveryBands > 1) {
+                // A recovered sprite may hold only a quarter of the height.
+                // Draw onto the physical TFT, once per interaction, rather
+                // than leaving stale main-screen pixels on the right edge.
+                if (s_sdFilesDirty) SdBrowser::draw(tft);
+            } else
+#endif
+            {
+                if (s_sdFilesDirty)
+                    drawTwoBand([&](TFT_eSPI& t, bool) { SdBrowser::draw(t); });
+            }
+            s_sdFilesDirty = false;
             if (touchJustDown && tp.valid &&
                 now - lastTouch > TOUCH_DEBOUNCE_MS) {
                 lastTouch = now;
@@ -6863,7 +6883,7 @@ void loop() {
                     SdBrowser::end();
                     enterSettings();
                     uiSettingsOpenPage(SettingsPage::SYSTEM);
-                }
+                } else s_sdFilesDirty = true;
             }
             break;
         }
