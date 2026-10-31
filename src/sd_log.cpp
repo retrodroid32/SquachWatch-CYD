@@ -107,6 +107,21 @@ bool SdLog::begin() {
     return true;
 }
 
+// A removed card can make SD.open()/File.write()/File.close() wait for SPI
+// timeouts. Repeated retry in the UI loop makes the whole device stutter.
+// A failed flush therefore latches logging off until reboot. There is no
+// reliable card-detect input on the supported CYDs; guessing that the card
+// has been reinserted would reintroduce the stalls during normal scanning.
+void SdLog::disableAfterIoFailure(const char* operation) {
+    if (!_ready) return;
+    ++_flushFailures;
+    Serial.printf("[sd] %s failed; disabling SD logging until reboot (pending %u bytes discarded)\n",
+                  operation, (unsigned)_pendingLen);
+    _ready = false;
+    _pendingLen = 0;
+    _filename[0] = '\0';
+}
+
 void SdLog::openDaily() {
     if (!_ready) return;
     if (Clock::trusted()) {
@@ -131,32 +146,22 @@ bool SdLog::flushPending() {
     _lastFlush = millis();
     File f = SD.open(_filename, FILE_APPEND);
     if (!f) {
-        _flushFailures++;
-        if (_flushFailures == 1 || ((_flushFailures & (_flushFailures - 1)) == 0)) {
-            Serial.printf("[sd] buffered flush open failed (%lu total, %u bytes pending)\n",
-                          (unsigned long)_flushFailures, (unsigned)_pendingLen);
-        }
+        disableAfterIoFailure("open");
         return false;
     }
 
     const size_t written = f.write((const uint8_t*)_pending, _pendingLen);
     f.close();
 
-    if (written > 0) {
-        const size_t consumed = written > _pendingLen ? _pendingLen : written;
-        const size_t remain = _pendingLen - consumed;
-        if (remain) memmove(_pending, _pending + consumed, remain);
-        _pendingLen = (uint16_t)remain;
+    // A short/zero write means media I/O is no longer dependable. Do
+    // not retry in this display/radio loop: repeated SPI timeouts freeze
+    // touch input and animation on a physically removed card.
+    if (written != _pendingLen) {
+        disableAfterIoFailure("write");
+        return false;
     }
-
-    if (_pendingLen == 0) return true;
-
-    _flushFailures++;
-    if (_flushFailures == 1 || ((_flushFailures & (_flushFailures - 1)) == 0)) {
-        Serial.printf("[sd] buffered flush short write (%lu total, %u bytes remain)\n",
-                      (unsigned long)_flushFailures, (unsigned)_pendingLen);
-    }
-    return false;
+    _pendingLen = 0;
+    return true;
 }
 
 void SdLog::logEvent(const Detection& d) {

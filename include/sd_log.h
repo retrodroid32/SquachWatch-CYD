@@ -25,6 +25,7 @@ private:
     static constexpr size_t WRITE_BUFFER_CAP = 512;
     static constexpr size_t WRITE_BUFFER_FLUSH_AT = 384;
 
+    // Latched off on first write/open error; no repeated SPI retries.
     bool     _ready = false;
     uint32_t _lastFlush = 0;
     uint32_t _flushFailures = 0;
@@ -35,4 +36,5 @@ private:
 
     void openDaily();
     bool flushPending();
+    void disableAfterIoFailure(const char* operation);
 };
