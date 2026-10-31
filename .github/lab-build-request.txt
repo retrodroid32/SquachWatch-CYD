@@ -1,3 +1,10 @@
-WATCH149-LANDBACK
-# Experimental LAB build after landscape WATCH BACK touch fix.
-# Triggered only on explicit user hardware regression report.
+pr155-sd-rawformat-hotplug-r7-20261031
+# LAB VALIDATION ONLY. PR155 head 48f95bc573a0d8c4ee7766552e91eeb8fee0e0ed, stacked on unmerged PR141.
+# Known R4 hardware passes: SD red on removal, no stutter, full-width SD browser.
+# R7: dedicated SD SPI reinitialization, immediate RESCAN worker wake,
+# visible remount status/attempt count, and direct physical-drive format.
+# Format obtains exact FF drive from sdcard_init(SD_CS_PIN,&SPI,4MHz),
+# f_mkfs on that drive; works on FAT-unmountable card, no guessed volume.
+# Format only after TWO irreversible confirmations; no fallback erase.
+# Must test on expendable/backed-up card. CYD 2.8 ST7789, CYD 3.2 ST7798.
+# No production tag/release, PR merge or branch deletion.
