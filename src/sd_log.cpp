@@ -376,7 +376,14 @@ void SdLog::monitorEntry(void* ctx) {
                 // the frame or from the title-bar icon.
                 self->_remounting = true;
                 self->_statusDetail = "REINITIALIZING SD";
-                SD.end();
+                // The old path called SD.end() on EVERY hot-remount,
+                // freeing the FAT/VFS context and forcing another large
+                // contiguous allocation amid active BLE/WiFi/display work.
+                // A detached retained drive already owns its FAT context;
+                // do NOT call SD.end() or SD.begin() for that drive.
+                const bool retained = self->_retainedDetached &&
+                                      self->_retainedFs != nullptr;
+                if (!retained) SD.end();
 #if defined(CYD) && !defined(RLPHANTOM) && !defined(RLPHANTOM_R) && !defined(CYD35)
                 // Do not forcibly unregister /sd from here. The Arduino
                 // SDFS owner must release its own FAT/VFS bookkeeping; a
@@ -402,6 +409,8 @@ void SdLog::monitorEntry(void* ctx) {
                     ++self->_probeFailures;
                     Serial.printf("[sd] remount probe FAILED: CMD0=0x%02X, count=%lu (no FAT attempt)\n",
                                   (unsigned)ack, (unsigned long)self->_probeFailures);
+                    // Preserve the retained VFS context even if no card is
+                    // in the slot. SPI is reinitialized on the next probe.
                     SPI.end();
                     self->_requestRescan = false;
                     xSemaphoreGive(m);
@@ -410,8 +419,10 @@ void SdLog::monitorEntry(void* ctx) {
                 self->_statusDetail = "CMD0 OK; MOUNTING";
                 Serial.println("[sd] remount probe: CMD0=0x01 (card SPI responsive)");
 #endif
-                bool mounted = self->begin();
-                if (!mounted) {
+                const bool mounted = retained
+                    ? self->remountRetained()
+                    : self->begin();
+                if (!mounted && !retained) {
                     // Raw FAT success only proves the card is readable. It
                     // does NOT prove that the previous SD.begin failed at the
                     // ESP-IDF VFS step. R3's alternate path was a false fix.
