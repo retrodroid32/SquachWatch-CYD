@@ -16,6 +16,8 @@
 #include <freertos/semphr.h>
 #include <esp_system.h>
 #include <esp_idf_version.h>
+#include <esp_vfs_fat.h>
+#include <esp_err.h>
 // The Phantoms define CYD (they ARE a CYD) but still need this reference,
 // because their touch shares the display's bus and SdLog::begin() has to hand
 // SD the display's own SPI instance -- see the comment on that branch below.
@@ -47,8 +49,7 @@ extern TFT_eSPI tft;
 // plus a directory handle while it prunes old days.
 static const uint8_t SD_MAX_FILES = 2;
 
-bool SdLog::begin(const char* mountpoint) {
-    if (!mountpoint || !*mountpoint) return false;
+bool SdLog::begin() {
     if (_ready) return true;
     ++_mountAttempts;
     _statusDetail = "TRYING SD MOUNT";
@@ -98,16 +99,16 @@ bool SdLog::begin(const char* mountpoint) {
     // no-op, and AWOK's touch chip is apparently more sensitive to
     // that than cyd35's) -- so it keeps the plain no-args SD.begin()
     // below, same as before this fix existed.
-    if (!SD.begin(SD_CS_PIN, tft.getSPIinstance(), 4000000, mountpoint, SD_MAX_FILES)) {
+    if (!SD.begin(SD_CS_PIN, tft.getSPIinstance(), 4000000, "/sd", SD_MAX_FILES)) {
 #elif defined(AWOK)
-    if (!SD.begin(SD_CS_PIN, SPI, 4000000, mountpoint, SD_MAX_FILES)) {
+    if (!SD.begin(SD_CS_PIN, SPI, 4000000, "/sd", SD_MAX_FILES)) {
 #else
     // Original board only: a genuinely separate, dedicated SD bus (not
     // shared with the display), so it does need its own explicit begin()
     // -- SD.begin()'s internal default-pin fallback happens to match
     // this board's real wiring too, but stay explicit for clarity.
     SPI.begin(18, 19, 23, SD_CS_PIN);  // SCK, MISO, MOSI, CS
-    if (!SD.begin(SD_CS_PIN, SPI, 4000000, mountpoint, SD_MAX_FILES)) {
+    if (!SD.begin(SD_CS_PIN, SPI, 4000000, "/sd", SD_MAX_FILES)) {
 #endif
         // Said out loud either way: a board with no card, or a card on the
         // wrong pins, ran exactly like one that was logging, and the only
@@ -326,37 +327,65 @@ void SdLog::monitorEntry(void* ctx) {
 #endif
                 bool mounted = self->begin();
                 if (!mounted) {
-                    // The raw FAT test is read-only and temporarily owns a
-                    // separate physical drive registration. It distinguishes
-                    // a genuinely unreadable card from Arduino SDFS / ESP-IDF
-                    // VFS registration trouble after removing a mounted card.
+                    // Raw FAT success only proves the card is readable. It
+                    // does NOT prove that the previous SD.begin failed at the
+                    // ESP-IDF VFS step. R3's alternate path was a false fix.
                     const char* stage = sdDiagnosePostCmd0MountFailure(sector);
                     self->_statusDetail = stage;
-                    Serial.printf("[sd diag] remount stage: %s\n", stage);
+                    Serial.printf("[sd diag] raw remount stage: %s\n", stage);
 
-                    // On Arduino-ESP32 2.0.14, SDFS::begin() registers both
-                    // the FAT drive and the VFS base path. After an abnormal
-                    // hot-removal, the old /sd VFS path can remain occupied
-                    // even though a fresh raw FAT mount succeeds. Calling
-                    // esp_vfs_fat_unregister_path("/sd") here previously
-                    // caused boot regressions: NEVER force-unregister a path
-                    // that SDFS may still own.
-                    //
-                    // The alternate name is strictly a mount *namespace*:
-                    // SD.open("/") and the file browser still address the
-                    // same unchanged FAT card through SDFS::mountpoint().
-                    // Only attempt the recovery for an already verified FAT
-                    // volume, not when CMD0/FAT/raw media tests fail.
                     if (strcmp(stage, "FAT OK; VFS MOUNT FAIL") == 0) {
-                        self->_statusDetail = "TRYING SAFE VFS RECOVERY";
-                        Serial.println("[sd] FAT OK; trying alternate VFS /sd-recovery (no unregister/format)");
-                        mounted = self->begin("/sd-recovery");
-                        if (mounted) {
-                            self->_statusDetail = "SD READY (VFS RECOVERED)";
-                            Serial.println("[sd] VFS recovery succeeded; card files available");
+                        // Pinned IDF 4.4.4: esp_vfs_fat_register returns
+                        // INVALID_STATE only when /sd is already registered;
+                        // NO_MEM can mean exhausted VFS contexts or heap.
+                        // This temporary probe NEVER mounts or alters media.
+                        FATFS* probeFs = nullptr;
+                        const esp_err_t reg = esp_vfs_fat_register(
+                            "/sd", "0:", 1, &probeFs);
+                        Serial.printf("[sd diag] VFS /sd register probe=0x%x, heap=%lu, maxblock=%lu\n",
+                                      (unsigned)reg, (unsigned long)ESP.getFreeHeap(),
+                                      (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
+
+                        if (reg == ESP_ERR_INVALID_STATE) {
+                            // Re-check SD ownership before cleaning: a live
+                            // Arduino SDFS mount must never be invalidated.
+                            // SD.begin() failed and reset _pdrv to 0xFF;
+                            // CARD_NONE is a defensive second check.
+                            if (SD.cardType() != CARD_NONE) {
+                                self->_statusDetail = "VFS OWNED - NO CLEANUP";
+                                Serial.println("[sd diag] SD still owns media; refusing VFS cleanup");
+                            } else {
+                                const esp_err_t cleared = esp_vfs_fat_unregister_path("/sd");
+                                Serial.printf("[sd diag] stale /sd context cleanup=0x%x\n",
+                                              (unsigned)cleared);
+                                if (cleared == ESP_OK) {
+                                    // A confirmed orphaned /sd context was
+                                    // removed. Retry only the canonical /sd
+                                    // mount, never another namespace, and only
+                                    // once in this worker cycle.
+                                    mounted = self->begin();
+                                    self->_statusDetail = mounted
+                                        ? "SD READY (VFS REPAIRED)"
+                                        : "VFS CLEARED; MOUNT FAIL";
+                                    Serial.printf("[sd diag] canonical /sd retry %s\n",
+                                                  mounted ? "SUCCESS" : "FAILED");
+                                } else {
+                                    self->_statusDetail = "VFS CLEANUP FAILED";
+                                }
+                            }
+                        } else if (reg == ESP_OK) {
+                            // It was NOT an occupied /sd mountpoint. Remove
+                            // only the probe context we just allocated.
+                            const esp_err_t unreg = esp_vfs_fat_unregister_path("/sd");
+                            Serial.printf("[sd diag] VFS probe unregister=0x%x\n",
+                                          (unsigned)unreg);
+                            self->_statusDetail = unreg == ESP_OK
+                                ? "VFS PATH FREE; SD FAIL"
+                                : "VFS PROBE CLEANUP FAIL";
+                        } else if (reg == ESP_ERR_NO_MEM) {
+                            self->_statusDetail = "VFS NO MEMORY / SLOTS";
                         } else {
-                            self->_statusDetail = "VFS RECOVERY FAILED";
-                            Serial.println("[sd] alternate VFS recovery failed; no cleanup forced");
+                            self->_statusDetail = "VFS PROBE ERROR";
                         }
                     }
                 }
