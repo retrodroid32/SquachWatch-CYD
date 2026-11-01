@@ -16,13 +16,15 @@ static bool more = false;
 static char folder[96] = "/";
 static SdLog* logger = nullptr;
 static bool preview = false, askDelete = false;
-static uint8_t formatStage = 0; // 0 none, 1 confirm, 2 irreversible confirmation
-static uint8_t formatResult = 0; // 0 none, 1 formatted, 2 failed
+static uint8_t wipeStage = 0; // 0 none, 1 confirm, 2 final confirmation
+static uint8_t wipeResult = 0; // 0 none, 1 success, 2 partial/failed
 static char chosen[96] = "";
 static char title[56] = "";
-static char lines[7][33];
+static char lines[7][54];
 static uint32_t previewPos = 0, previewNext = 0;
-static bool previewMore = false;
+static uint16_t previewShift = 0;
+static uint8_t previewCols = 37, previewRows = 5;
+static bool previewMore = false, previewRight = false;
 static bool error = false;
 struct CardGuard {
     SdLog* log;
@@ -74,45 +76,61 @@ bool list() {
     d.close();
     return true;
 }
+// Keep one physical log line per row. Read a horizontal window of each line.
 void loadPreview() {
     memset(lines, 0, sizeof lines);
-    previewMore = false;
+    previewMore = previewRight = false;
     if (!logger || !logger->ready()) return;
     CardGuard guard(logger);
     if (!guard.locked) { error = true; return; }
-    if (!logger->ready()) return;
     File f = SD.open(chosen, FILE_READ);
-    if (!f || f.isDirectory()) { if (f) f.close(); logger->browseFault(); error = true; return; }
-    if (!f.seek(previewPos)) { error = true; f.close(); logger->browseFault(); return; }
-    int line = 0, col = 0;
-    while (line < 7 && f.available()) {
-        const int v = f.read();
-        if (v < 0) break;
-        if (v == '\r') continue;
-        if (v == '\n' || col == 32) {
-            if (v != '\n' && col == 32) f.seek(f.position() - 1);
-            line++; col = 0;
-        } else {
-            lines[line][col++] = (v >= 32 && v < 127) ? (char)v : '.';
+    if (!f || f.isDirectory()) {
+        if (f) f.close(); error = true; logger->browseFault(); return;
+    }
+    if (!f.seek(previewPos)) {
+        error = true; f.close(); logger->browseFault(); return;
+    }
+    for (unsigned row = 0; row < previewRows && f.available(); ++row) {
+        uint32_t col = 0;
+        // Safety cap for files with no newline. Typical log rows are <128 chars.
+        while (f.available() && col < 8192) {
+            const int ch = f.read();
+            if (ch < 0) { error = true; break; }
+            if (ch == '\n') break;
+            if (ch == '\r') continue;
+            if (col >= previewShift && col < (uint32_t)previewShift + previewCols)
+                lines[row][col - previewShift] =
+                    (ch >= 32 && ch < 127) ? (char)ch : '.';
+            else if (col >= (uint32_t)previewShift + previewCols)
+                previewRight = true;
+            ++col;
         }
+        if (error) break;
     }
     previewNext = (uint32_t)f.position();
     previewMore = f.available() > 0;
     f.close();
+}
+void smallLine(TFT_eSPI& t, int x, int y, const char* s, uint16_t c) {
+    t.setTextFont(1); t.setTextSize(1); t.setTextWrap(false);
+    t.setTextColor(c, Theme::BG); t.setCursor(x, y); t.print(s);
+    t.setTextWrap(true);
 }
 void line(TFT_eSPI& t, int x, int y, const char* s, uint16_t color) {
     t.setTextFont(1); t.setTextSize(2);
     t.setTextColor(color, Theme::BG);
     t.setCursor(x, y); t.print(s);
 }
-bool bottom(int y, int h) { return y >= h - 29; }
+// Include the full 30-pixel BACK button and a small margin above it.
+// Other action buttons end at h-36 or higher, so h-33 cannot steal them.
+bool bottom(int y, int h) { return y >= h - 33; }
 } // namespace
 
 void begin(SdLog& sd) {
     logger = &sd; sd.browseBegin();
     strcpy(folder, "/");
-    offset = 0; preview = askDelete = false;
-    formatStage = formatResult = 0;
+    offset = 0; preview = askDelete = false; previewShift = 0;
+    wipeStage = wipeResult = 0;
     chosen[0] = 0; error = false;
     list();
 }
@@ -122,7 +140,7 @@ bool reloadMountedCard() {
     strcpy(folder, "/");
     chosen[0] = 0;
     preview = askDelete = false;
-    formatStage = formatResult = 0;
+    wipeStage = wipeResult = 0;
     offset = 0;
     return list();
 }
@@ -131,18 +149,18 @@ void draw(TFT_eSPI& t) {
     const int w = t.width(), h = t.height();
     t.fillScreen(Theme::BG);
     Theme::drawTitleBar(t, "SD FILES");
-    line(t, 7, 26, formatStage ? "FORMAT SD" : preview ? "FILE VIEW" : "SD FILES", Theme::CYAN);
-    if (formatResult) {
-        line(t, 8, 60, formatResult == 1 ? "FORMAT SUCCESS" : "FORMAT FAILED",
-             formatResult == 1 ? Theme::GREEN : Theme::RED);
-        line(t, 8, 85, formatResult == 1 ? "Card is ready" : logger->formatError(), Theme::WHITE);
-    } else if (formatStage) {
-        line(t, 8, 57, formatStage == 1 ? "FORMAT SD CARD?" : "ERASE ALL FILES?", Theme::RED);
-        line(t, 8, 81, formatStage == 1 ? "All data will be lost" : "Cannot be undone!", Theme::WHITE);
-        line(t, 8, 102, formatStage == 1 ? "Continue?" : "Final confirmation", Theme::AMBER);
+    line(t, 7, 26, wipeStage ? "WIPE SD" : preview ? "FILE VIEW" : "SD FILES", Theme::CYAN);
+    if (wipeResult) {
+        line(t, 8, 60, wipeResult == 1 ? "FILES DELETED" : "WIPE INCOMPLETE",
+             wipeResult == 1 ? Theme::GREEN : Theme::RED);
+        smallLine(t, 8, 90, logger->wipeError(), Theme::WHITE);
+    } else if (wipeStage) {
+        line(t, 8, 57, wipeStage == 1 ? "DELETE ALL FILES?" : "DELETE EVERYTHING?", Theme::RED);
+        smallLine(t, 8, 81, wipeStage == 1 ? "Files and folders will be deleted." : "Keeps FAT. Cannot undo!", Theme::WHITE);
+        line(t, 8, 102, wipeStage == 1 ? "Continue?" : "Final confirmation", Theme::AMBER);
         Theme::drawButton(t, 4, h - 62, w / 2 - 8, 28, "CANCEL", false, 1);
         Theme::drawButton(t, w / 2 + 4, h - 62, w / 2 - 8, 28,
-                          formatStage == 1 ? "NEXT" : "FORMAT", false, 1);
+                          wipeStage == 1 ? "NEXT" : "DELETE", false, 1);
     } else if (!logger || !logger->ready()) {
         line(t, 8, 55, "SD OFFLINE", Theme::RED);
         line(t, 8, 78, logger && logger->remounting() ? "REMOUNTING..." :
@@ -161,7 +179,7 @@ void draw(TFT_eSPI& t) {
                 line(t, 8, 126, probe, Theme::AMBER);
             }
         }
-        line(t, 8, h - 59, "FORMAT", Theme::AMBER);
+        line(t, 8, h - 59, "NO WIPE", Theme::AMBER);
         line(t, w / 2, h - 59, "RESCAN >", Theme::CYAN);
     } else if (askDelete) {
         line(t, 8, 54, "DELETE THIS FILE?", Theme::RED);
@@ -169,12 +187,27 @@ void draw(TFT_eSPI& t) {
         Theme::drawButton(t, 4, h - 62, w / 2 - 8, 28, "CANCEL", false, 1);
         Theme::drawButton(t, w / 2 + 4, h - 62, w / 2 - 8, 28, "DELETE", false, 1);
     } else if (preview) {
-        line(t, 8, 48, title, Theme::AMBER);
-        const int rows = (h - 120) / 16 < 7 ? (h - 120) / 16 : 7;
-        for (int i = 0; i < rows; i++)
-            line(t, 8, 69 + 16 * i, lines[i], Theme::WHITE);
-        line(t, 8, h - 59, "DEL", Theme::RED);
-        line(t, w / 2, h - 59, previewMore ? "NEXT >" : "END", Theme::CYAN);
+        const uint8_t cols = (uint8_t)((w - 16) / 6 < 53 ? (w - 16) / 6 : 53);
+        const uint8_t rows = h < 280 ? 4 : 7;
+        if (previewCols != cols || previewRows != rows) {
+            previewCols = cols; previewRows = rows; loadPreview();
+        }
+        char shortTitle[54];
+        snprintf(shortTitle, sizeof shortTitle, "%.*s", (int)previewCols, title);
+        smallLine(t, 8, 48, shortTitle, Theme::AMBER);
+        for (unsigned i = 0; i < previewRows; ++i)
+            smallLine(t, 8, 69 + 14 * i, lines[i], Theme::WHITE);
+        char range[30];
+        snprintf(range, sizeof range, "CHARS %u-%u",
+                 (unsigned)previewShift + 1, (unsigned)previewShift + previewCols);
+        smallLine(t, 8, h - 111, range, Theme::CYAN);
+        Theme::drawButton(t, 4, h - 96, w / 2 - 8, 26,
+                          previewShift ? "< LEFT" : "< START", false, 1);
+        Theme::drawButton(t, w / 2 + 4, h - 96, w / 2 - 8, 26,
+                          previewRight ? "RIGHT >" : "END >", false, 1);
+        Theme::drawButton(t, 4, h - 64, w / 2 - 8, 28, "DELETE", false, 1);
+        Theme::drawButton(t, w / 2 + 4, h - 64, w / 2 - 8, 28,
+                          previewMore ? "NEXT PAGE" : "END", false, 1);
     } else {
         line(t, 8, 48, folder, Theme::AMBER);
         const int rows = (h - 116) / 22 < 5 ? (h - 116) / 22 : 5;
@@ -184,7 +217,7 @@ void draw(TFT_eSPI& t) {
             line(t, 8, 70 + 22 * i, label, entries[i].dir ? Theme::CYAN : Theme::WHITE);
         }
         if (error) line(t, 8, 73, "READ ERROR", Theme::RED);
-        line(t, 8, h - 59, "FORMAT", Theme::AMBER);
+        line(t, 8, h - 59, "WIPE ALL", Theme::AMBER);
         if (offset) line(t, w / 2 - 55, h - 59, "< PREV", Theme::CYAN);
         if (more) line(t, w - 75, h - 59, "NEXT >", Theme::CYAN);
     }
@@ -194,8 +227,8 @@ void draw(TFT_eSPI& t) {
 bool tap(int x, int y, int w, int h) {
     if (!logger) return true;
     if (bottom(y, h)) {
-        if (formatStage) { formatStage = 0; return false; }
-        if (formatResult) { formatResult = 0; list(); return false; }
+        if (wipeStage) { wipeStage = 0; return false; }
+        if (wipeResult) { wipeResult = 0; list(); return false; }
         if (askDelete) { askDelete = false; return false; }
         if (preview) { preview = false; list(); return false; }
         if (strcmp(folder, "/") != 0) {
@@ -206,15 +239,15 @@ bool tap(int x, int y, int w, int h) {
         }
         return true;
     }
-    if (formatResult) return false;
-    if (formatStage) {
+    if (wipeResult) return false;
+    if (wipeStage) {
         if (y >= h - 66 && y < h - 30) {
-            if (x < w / 2) formatStage = 0;
-            else if (formatStage == 1) formatStage = 2;
+            if (x < w / 2) wipeStage = 0;
+            else if (wipeStage == 1) wipeStage = 2;
             else {
-                const bool ok = logger->formatCard();
-                formatStage = 0;
-                formatResult = ok ? 1 : 2;
+                const bool ok = logger->wipeAllFiles();
+                wipeStage = 0;
+                wipeResult = ok ? 1 : 2;
                 if (ok) {
                     strcpy(folder, "/"); offset = 0;
                     preview = askDelete = false; chosen[0] = 0;
@@ -224,13 +257,9 @@ bool tap(int x, int y, int w, int h) {
         }
         return false;
     }
-    // Allow a user-confirmed recovery FAT format even when no filesystem
-    // can mount. RESCAN remains available on the other half of the row.
+    // File wiping needs a mounted FAT filesystem; when offline only RESCAN.
     if (!logger->ready()) {
-        if (y >= h - 68 && y < h - 30) {
-            if (x < w / 2) formatStage = 1;
-            else logger->rescan();
-        }
+        if (y >= h - 68 && y < h - 30 && x >= w / 2) logger->rescan();
         return false;
     }
     if (askDelete) {
@@ -247,14 +276,28 @@ bool tap(int x, int y, int w, int h) {
         return false;
     }
     if (preview) {
-        if (y >= h - 68 && y < h - 31) {
+        if (y >= h - 100 && y < h - 67) {
+            const uint16_t step = previewCols > 12 ? previewCols - 8 : 8;
+            if (x < w / 2) {
+                previewShift = previewShift > step ? previewShift - step : 0;
+                loadPreview();
+            } else if (previewRight && previewShift < 8192 - step) {
+                previewShift += step;
+                loadPreview();
+            }
+            return false;
+        }
+        if (y >= h - 66 && y < h - 30) {
             if (x < w / 2) { askDelete = true; return false; }
-            if (previewMore) { previewPos = previewNext; loadPreview(); }
+            if (previewMore) {
+                previewPos = previewNext; previewShift = 0;
+                loadPreview();
+            }
         }
         return false;
     }
     if (y >= h - 65 && y < h - 31) {
-        if (x < w / 3) { formatStage = 1; return false; }
+        if (x < w / 3) { wipeStage = 1; return false; }
         if (x < 2 * w / 3 && offset >= 5) offset -= 5;
         else if (x >= 2 * w / 3 && more) offset += 5;
         list(); return false;
@@ -270,7 +313,10 @@ bool tap(int x, int y, int w, int h) {
     } else {
         snprintf(chosen, sizeof chosen, "%s", next);
         snprintf(title, sizeof title, "%s", entries[row].name);
-        previewPos = 0; preview = true; error = false; loadPreview();
+        previewPos = 0; previewShift = 0; preview = true; error = false;
+        previewCols = (uint8_t)((w - 16) / 6 < 53 ? (w - 16) / 6 : 53);
+        previewRows = h < 280 ? 4 : 7;
+        loadPreview();
     }
     return false;
 }

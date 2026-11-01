@@ -1,3 +1,3 @@
-pr155-r9b-rollback-20261031
-# Rollback LAB: exact R9b source, revert R10/R11 after boot-reset report.
-# Rebuild only; draft PR remains unmerged. No production version or tag.
+WATCH149-LANDBACK
+# Experimental LAB build after landscape WATCH BACK touch fix.
+# Triggered only on explicit user hardware regression report.

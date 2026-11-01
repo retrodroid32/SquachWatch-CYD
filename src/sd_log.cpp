@@ -264,6 +264,17 @@ void SdLog::monitorEntry(void* ctx) {
         // A file browser can be open while a card is removed/reinserted.
         // Skip raw reads while browsing, but ALWAYS allow an offline remount.
         // The browser borrows the same mutex only around individual I/O.
+        // Boot-safe fallback: a failed initial SD mount (including an empty
+        // socket) must not launch the expensive FAT/SPI recovery path forever.
+        // Until a card has actually mounted once, only an explicit RESCAN
+        // requests a recovery attempt. After a successful initial mount,
+        // existing removal detection and automatic reinsert attempts remain.
+        if (!self->_ready && !self->_everMounted &&
+            !self->_requestRescan && !signalled) {
+            self->_statusDetail = "SD OFFLINE - TAP RESCAN";
+            xSemaphoreGive(m);
+            continue;
+        }
         if (!self->_browsing || !self->_ready) {
             if (self->_ready) {
                 const uint32_t started = millis();
@@ -280,6 +291,12 @@ void SdLog::monitorEntry(void* ctx) {
                 self->_statusDetail = "REINITIALIZING SD";
                 SD.end();
 #if defined(CYD) && !defined(RLPHANTOM) && !defined(RLPHANTOM_R) && !defined(CYD35)
+                // Do not forcibly unregister /sd from here. The Arduino
+                // SDFS owner must release its own FAT/VFS bookkeeping; a
+                // second unregister from this worker can invalidate a FATFS
+                // object still referenced by SDFS after an I/O failure.
+                // R10's unconditional external cleanup is rolled back until
+                // there is verified proof that a stale registration exists.
                 // This is a dedicated SPI bus on CYD 2.8/3.2, not the
                 // TFT/touch instance. Reset the bus after a disappeared card,
                 // as Arduino SDFS::end() only detaches the FAT volume.
@@ -363,96 +380,108 @@ bool SdLog::rescan() {
     return _monitorTask != nullptr;
 }
 
-// Destructive operation ONLY after two on-device confirmations.
-// The pinned Arduino SD SPI disk I/O API provides sdcard_init(): a physical
-// drive ID tied to our SD CS/SPI instance. Mount-independent raw formatting
-// is required to recover cards with a damaged or missing FAT filesystem.
-// Never select a guessed drive number or format the ESP32's internal flash.
-bool SdLog::formatCard() {
+// File deletion deliberately replaces FAT formatting. It operates only on an
+// already mounted card, using the same SD.remove() path the browser verifies.
+// It never touches the partition table, FAT geometry, NVS, or SPI registration.
+//
+// OpenNextFile uses a second file handle. Close BOTH handles before deleting or
+// descending into a child: SD_MAX_FILES is intentionally only 2. Re-open the
+// parent each iteration to safely find the first remaining entry after delete.
+static bool sdEraseDirectory(const char* folder, unsigned depth,
+                             uint32_t& files, uint32_t& dirs,
+                             char* failure, size_t failCap) {
+    if (depth >= 12) {
+        snprintf(failure, failCap, "TOO MANY FOLDER LEVELS");
+        return false;
+    }
+    for (;;) {
+        File parent = SD.open(folder, FILE_READ);
+        if (!parent || !parent.isDirectory()) {
+            if (parent) parent.close();
+            snprintf(failure, failCap, "CANNOT OPEN FOLDER");
+            return false;
+        }
+        File item = parent.openNextFile();
+        if (!item) {
+            parent.close();
+            return true; // all entries deleted, including nested folders
+        }
+        const char* rawName = item.name();
+        const char* base = rawName ? strrchr(rawName, '/') : nullptr;
+        base = base ? base + 1 : rawName;
+        const bool isDir = item.isDirectory();
+        char path[192];
+        const bool safeName = base && *base && strcmp(base, ".") != 0 &&
+                              strcmp(base, "..") != 0 && !strchr(base, '\\');
+        const int n = safeName
+            ? snprintf(path, sizeof path, "%s%s%s",
+                       strcmp(folder, "/") == 0 ? "" : folder, "/", base)
+            : -1;
+        item.close();
+        parent.close();
+        if (!safeName || n <= 0 || (size_t)n >= sizeof path) {
+            snprintf(failure, failCap, "INVALID OR LONG FILENAME");
+            return false; // never use a truncated or synthetic path
+        }
+        if (isDir) {
+            if (!sdEraseDirectory(path, depth + 1, files, dirs, failure, failCap))
+                return false;
+            if (!SD.rmdir(path)) {
+                snprintf(failure, failCap, "REMOVE FOLDER FAILED");
+                Serial.printf("[sd wipe] rmdir failed: %s\n", path);
+                return false;
+            }
+            ++dirs;
+        } else {
+            if (!SD.remove(path)) {
+                snprintf(failure, failCap, "DELETE FILE FAILED");
+                Serial.printf("[sd wipe] remove failed: %s\n", path);
+                return false;
+            }
+            ++files;
+        }
+        // A large card can take a while. Yield so the ESP32 watchdog and radio
+        // tasks continue running instead of resetting during file deletion.
+        vTaskDelay(pdMS_TO_TICKS(1));
+    }
+}
+
+// Double-confirmed from the browser. A card with a broken/unmounted FAT
+// volume cannot be wiped by SD.remove(); request a computer reformat instead.
+bool SdLog::wipeAllFiles() {
     const SemaphoreHandle_t m = static_cast<SemaphoreHandle_t>(_ioMutex);
-    if (m && xSemaphoreTake(m, 0) != pdTRUE) {
-        snprintf(_formatError, sizeof _formatError, "SD BUSY - RETRY");
+    if (m && xSemaphoreTake(m, pdMS_TO_TICKS(500)) != pdTRUE) {
+        snprintf(_wipeError, sizeof _wipeError, "SD BUSY - RETRY");
         return false;
     }
     struct Unlock { SemaphoreHandle_t m; ~Unlock() { if (m) xSemaphoreGive(m); } } unlock{m};
-    if (!_browsing) {
-        snprintf(_formatError, sizeof _formatError, "OPEN SD MENU FIRST");
+    if (!_browsing || !_ready) {
+        snprintf(_wipeError, sizeof _wipeError, "INSERT / MOUNT SD FIRST");
         return false;
     }
-#if !defined(CYD) || defined(CYD35) || defined(RLPHANTOM) || defined(RLPHANTOM_R)
-    snprintf(_formatError, sizeof _formatError, "FORMAT UNSUPPORTED");
-    return false;
-#else
-    // IMPORTANT: a card can be physically present but have no FAT volume,
-    // so Arduino SDFS::begin() refuses to mount it. Formatting must not
-    // require _ready=true or invent a drive number via FAT filenames.
-    // Arduino core 2.0.14 ships sdcard_init() as an actual SD SPI driver API:
-    // it returns the physical drive registered for *our* SD CS and SPI bus.
-    // Format ONLY that exact returned pdrv after user confirms TWICE.
-    BYTE* work = static_cast<BYTE*>(malloc(FF_MAX_SS));
-    if (!work) {
-        snprintf(_formatError, sizeof _formatError, "NO FORMAT MEMORY");
-        return false;
-    }
-    _ready = false;
+
+    // Clear buffered rows: don't recreate a just-deleted log on the next
+    // timer tick. A new detection may start a fresh file later, as expected.
     _pendingLen = 0;
     _filename[0] = '\0';
-    Theme::setSdStatus(Theme::SdStatus::ERROR);
-    _statusDetail = "FORMATTING SD";
-    SD.end();
-    SPI.end();
-    pinMode(SD_CS_PIN, OUTPUT);
-    digitalWrite(SD_CS_PIN, HIGH);
-    vTaskDelay(pdMS_TO_TICKS(120));
-    SPI.begin(18, 19, 23, SD_CS_PIN);
-    SPI.beginTransaction(SPISettings(400000, MSBFIRST, SPI_MODE0));
-    for (uint8_t i = 0; i < 12; ++i) SPI.transfer(0xFF);
-    SPI.endTransaction();
+    _lastFlush = millis();
 
-    const uint8_t pdrv = sdcard_init(SD_CS_PIN, &SPI, 4000000);
-    if (pdrv == 0xFF || pdrv >= FF_VOLUMES || pdrv > 9) {
-        snprintf(_formatError, sizeof _formatError, "RAW SD INIT FAILED");
-        Serial.printf("[sd] format: sdcard_init failed (drive=%u)\n", (unsigned)pdrv);
-        // If an invalid non-0xFF ID were ever returned, refuse to use
-        // it for formatting rather than making up a target drive.
-        free(work);
-        SPI.end();
+    uint32_t files = 0, dirs = 0;
+    char failure[48] = {0};
+    const bool ok = sdEraseDirectory("/", 0, files, dirs, failure, sizeof failure);
+    if (!ok) {
+        snprintf(_wipeError, sizeof _wipeError, "%s", failure);
+        Serial.printf("[sd wipe] failed after %lu files, %lu dirs: %s\n",
+                      (unsigned long)files, (unsigned long)dirs, failure);
+        // Do not claim that nothing was deleted: the operation is NOT atomic.
+        // Keep the mounted card available to the browser for inspection.
         return false;
     }
-    char drive[4] = {char('0' + pdrv), ':', '\0', '\0'};
-    Serial.printf("[sd] format: physical drive=%s CS=%u, start f_mkfs\n",
-                  drive, (unsigned)SD_CS_PIN);
-#if ESP_IDF_VERSION < ESP_IDF_VERSION_VAL(5, 1, 0)
-    const FRESULT fr = f_mkfs(drive, (BYTE)FM_ANY, 0, work, FF_MAX_SS);
-#else
-    const MKFS_PARM opt = {(BYTE)FM_ANY, 0, 0, 0, 0};
-    const FRESULT fr = f_mkfs(drive, &opt, work, FF_MAX_SS);
-#endif
-    free(work);
-    Serial.printf("[sd] format: f_mkfs(%s)=%d\n", drive, (int)fr);
-
-    // This raw driver was registered without a VFS mount. sdcard_uninit()
-    // removes exactly this driver's diskio registration; no f_mount()
-    // or esp_vfs_fat_unregister_path is needed for it.
-    sdcard_uninit(pdrv);
-    SPI.end();
-    vTaskDelay(pdMS_TO_TICKS(100));
-
-    if (fr != FR_OK) {
-        snprintf(_formatError, sizeof _formatError, "FAT ERROR %d", (int)fr);
-        _statusDetail = "FAT FORMAT FAILED";
-        return false;
-    }
-
-    const bool mounted = begin(); // original 2.8/3.2 SD SPI wiring
-    if (!mounted) {
-        snprintf(_formatError, sizeof _formatError, "FAT OK - MOUNT FAILED");
-        _statusDetail = "FAT OK; MOUNT FAILED";
-        return false;
-    }
-    snprintf(_formatError, sizeof _formatError, "FORMAT OK");
+    snprintf(_wipeError, sizeof _wipeError, "%lu FILES, %lu FOLDERS",
+             (unsigned long)files, (unsigned long)dirs);
+    Serial.printf("[sd wipe] complete: %lu files, %lu folders deleted\n",
+                  (unsigned long)files, (unsigned long)dirs);
     return true;
-#endif
 }
 
 void SdLog::openDaily() {

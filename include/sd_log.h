@@ -11,16 +11,16 @@ class SdLog {
 public:
     bool begin();              // returns true if card mounted
     bool ready() const { return _ready; }
-    // The browser holds the filesystem lock for its entire session.
-    // Mount/monitor activity must not interleave with file navigation.
+    // Browser and monitor serialize individual SD I/O operations.
+    // The browser must not hold the mutex for its entire screen visit.
     void browseBegin();
     void browseEnd();
     void browseFault();
     bool browseLock();        // nonblocking: never wait for an SD timeout on UI task
     void browseUnlock();
     bool rescan();            // request async remount from SD monitor
-    bool formatCard();        // real FAT formatting, double-confirmed by browser
-    const char* formatError() const { return _formatError; }
+    bool wipeAllFiles();      // recursive file deletion; keeps FAT intact, double-confirmed
+    const char* wipeError() const { return _wipeError; }
     const char* statusDetail() const { return _statusDetail; }
     uint32_t mountAttempts() const { return _mountAttempts; }
     uint32_t probeFailures() const { return _probeFailures; }
@@ -49,7 +49,7 @@ private:
     volatile uint32_t _probeFailures = 0;
     const char* volatile _statusDetail = "NO SD CARD";
     bool _everMounted = false;
-    char _formatError[40] = {0};
+    char _wipeError[40] = {0};
     void* _ioMutex = nullptr;   // FreeRTOS semaphore, opaque for PC emulator headers
     void* _monitorTask = nullptr;
     uint32_t _lastFlush = 0;
