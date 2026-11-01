@@ -335,16 +335,22 @@ void SdLog::monitorEntry(void* ctx) {
                     Serial.printf("[sd diag] raw remount stage: %s\n", stage);
 
                     if (strcmp(stage, "FAT OK; VFS MOUNT FAIL") == 0) {
-                        // Pinned IDF 4.4.4: esp_vfs_fat_register returns
-                        // INVALID_STATE only when /sd is already registered;
-                        // NO_MEM can mean exhausted VFS contexts or heap.
-                        // This temporary probe NEVER mounts or alters media.
+                        // IMPORTANT: the real SD mount reserves
+                        // SD_MAX_FILES (=2) file slots. R4 probed only 1:
+                        // its successful registration never ruled out a
+                        // failed two-file allocation. Match the real VFS
+                        // context allocation exactly; no f_mount, writes,
+                        // card reinitialization or formatting here.
                         FATFS* probeFs = nullptr;
+                        const size_t largestBefore =
+                            heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
                         const esp_err_t reg = esp_vfs_fat_register(
-                            "/sd", "0:", 1, &probeFs);
-                        Serial.printf("[sd diag] VFS /sd register probe=0x%x, heap=%lu, maxblock=%lu\n",
-                                      (unsigned)reg, (unsigned long)ESP.getFreeHeap(),
-                                      (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
+                            "/sd", "0:", SD_MAX_FILES, &probeFs);
+                        Serial.printf("[sd diag] VFS /sd probe files=%u, result=0x%x, FIL=%u B, heap=%lu, largest=%lu B\n",
+                                      (unsigned)SD_MAX_FILES, (unsigned)reg,
+                                      (unsigned)sizeof(FIL),
+                                      (unsigned long)ESP.getFreeHeap(),
+                                      (unsigned long)largestBefore);
 
                         if (reg == ESP_ERR_INVALID_STATE) {
                             // Re-check SD ownership before cleaning: a live
@@ -383,7 +389,25 @@ void SdLog::monitorEntry(void* ctx) {
                                 ? "VFS PATH FREE; SD FAIL"
                                 : "VFS PROBE CLEANUP FAIL";
                         } else if (reg == ESP_ERR_NO_MEM) {
-                            self->_statusDetail = "VFS NO MEMORY / SLOTS";
+                            // A single-slot probe is diagnostic ONLY.
+                            // If one slot works but the real two-slot VFS
+                            // allocation fails, this indicates memory
+                            // fragmentation or pressure, not a stale path.
+                            FATFS* oneSlotFs = nullptr;
+                            const esp_err_t oneSlot = esp_vfs_fat_register(
+                                "/sd", "0:", 1, &oneSlotFs);
+                            Serial.printf("[sd diag] VFS one-slot comparison=0x%x, heap=%lu, largest=%lu B\n",
+                                          (unsigned)oneSlot,
+                                          (unsigned long)ESP.getFreeHeap(),
+                                          (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
+                            if (oneSlot == ESP_OK) {
+                                const esp_err_t undo = esp_vfs_fat_unregister_path("/sd");
+                                self->_statusDetail = undo == ESP_OK
+                                    ? "SD 2-FILE ALLOC FAILED"
+                                    : "VFS PROBE CLEANUP FAIL";
+                            } else {
+                                self->_statusDetail = "VFS NO MEMORY / SLOTS";
+                            }
                         } else {
                             self->_statusDetail = "VFS PROBE ERROR";
                         }
