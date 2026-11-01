@@ -124,7 +124,7 @@ static const uint8_t WATCH_ROWS_N = sizeof(WATCH_ROWS) / sizeof(WATCH_ROWS[0]);
 static const SettingsRow SYSTEM_ROWS[] = {
     SettingsRow::PRIVACY,
     SettingsRow::CALIBRATE, SettingsRow::CHECK_COLORS,
-    SettingsRow::DIAGNOSTICS, SettingsRow::UPDATE_FIRMWARE, SettingsRow::UPDATE_CHECK, SettingsRow::WIFI_NETWORKS,
+    SettingsRow::DIAGNOSTICS, SettingsRow::UPDATE_FIRMWARE, SettingsRow::UPDATE_CHECK, SettingsRow::WIFI_NETWORKS, SettingsRow::SD_FILES,
     SettingsRow::RESET_STATS,
 };
 static const uint8_t SYSTEM_ROWS_N = sizeof(SYSTEM_ROWS) / sizeof(SYSTEM_ROWS[0]);
@@ -838,7 +838,10 @@ static void rowContent(SettingsRow r, const DetectionEngine& eng, char* valBuf, 
             break;
         case SettingsRow::SNOOZE_MANAGER:
             label = "SNOOZED DEVICES";
-            snprintf(valBuf, valBufN, "%u ACTIVE >", (unsigned)IgnoreList::snoozeCount());
+            // Show the count without making the entire row smaller than its
+            // neighbours. At size 2, the old "N ACTIVE >" overlapped the
+            // full label; the compact override shrank just this row.
+            snprintf(valBuf, valBufN, "%u >", (unsigned)IgnoreList::snoozeCount());
             value = valBuf;
             break;
         case SettingsRow::SNOOZE_EMPTY:
@@ -929,6 +932,9 @@ static void rowContent(SettingsRow r, const DetectionEngine& eng, char* valBuf, 
             break;
         case SettingsRow::UPDATE_CHECK:
             label = "UPDATE CHECK"; value = Settings::updateCheck() ? "AT BOOT" : "OFF";
+            break;
+        case SettingsRow::SD_FILES:
+            label = "SD CARD"; value = "FILES >";
             break;
         case SettingsRow::WIFI_NETWORKS:
             label = "WIFI NETWORKS";
@@ -1154,7 +1160,7 @@ switch (Settings::background()) {
                                items[idx].row == SettingsRow::DESK_BACKGROUND);
             } else {
                 drawRow(t, w, y, itemH, label, value, danger, groupColor(items[idx].group),
-                        h > w || items[idx].row == SettingsRow::SNOOZE_MANAGER);
+                        h > w);
             }
         }
         }

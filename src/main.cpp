@@ -231,6 +231,7 @@ static void drawCrashCard(TFT_eSPI& t) {
 #include "ui_watchalert.h"
 #include "watch_alert_actions.h"
 #include "ui_settings.h"
+#include "ui_sd_browser.h"
 #include "ui_diagnostics.h"
 #include "ui_hunt.h"
 #include "ui_colorcheck.h"
@@ -1482,6 +1483,20 @@ static void enterDesk() {
     state = AppState::DESK;
     transitionStart = millis();
     uiDeskInit(*canvas);
+}
+
+static bool s_sdFilesDirty = true;
+static uint16_t s_sdFilesLastW = 0, s_sdFilesLastH = 0;
+static bool s_sdFilesLastReady = false;
+static bool s_sdFilesNeedsReload = false;
+static uint32_t s_sdFilesNextStatusDraw = 0;
+static void enterSdFiles() {
+    s_sdFilesDirty = true;
+    s_sdFilesNeedsReload = false;
+    s_sdFilesLastReady = engine.sd().ready();
+    state = AppState::SD_FILES;
+    transitionStart = millis();
+    SdBrowser::begin(engine.sd());
 }
 
 static void enterDiagnostics() {
@@ -5756,6 +5771,7 @@ void loop() {
                         case SettingsRow::CHECK_COLORS: enterColorCheck(true); break;
                         case SettingsRow::DIAGNOSTICS:  enterDiagnostics(); break;
                         case SettingsRow::WIFI_NETWORKS: enterWifiNets(); break;
+                        case SettingsRow::SD_FILES: enterSdFiles(); break;
                         case SettingsRow::DESK_MODE:    uiSettingsOpenPage(SettingsPage::DESK); break;
                         case SettingsRow::DESK_OPEN:
                             // Settings' BACK from the desk comes back to it;
@@ -6237,7 +6253,12 @@ void loop() {
         }
         case AppState::SQUAD: {
             drawTwoBand([&](TFT_eSPI& t, bool advance) { uiSquadTick(t, now, engine, advance); });
-            if (touchJustDown && (now - lastTouch) > TOUCH_DEBOUNCE_MS) {
+            // Same lost-tap bug fixed in SD_FILES (R14): the physical DOWN
+            // edge happens once. If the unrelated global 200 ms cooldown
+            // rejects it, holding the button cannot ever register ADD.
+            // Process every fresh DOWN exactly once, without changing any
+            // other menu or allowing held touches to repeat.
+            if (touchJustDown && tp.valid) {
                 lastTouch = now;
                 switch (uiSquadTouch(tp.x, tp.y, now)) {
                     case SquadHit::BACK:    if (uiSquadRosterMode()) enterMeshMenu(); else enterClear(); break;
@@ -6258,11 +6279,42 @@ void loop() {
                         const uint8_t* mac = uiSquadSelectedMac();
                         if (!mac) break;
                         // A tap reached ADD even if an invite cannot start.
-                        // Log the prerequisite flags, not the private phrase.
+                        // Never log or generate the private squad phrase here.
                         Serial.printf("[mesh-ui] ADD tapped: phrase=%u crypto=%u tx=%u\n",
                                       (unsigned)MeshTalk::havePhrase(),
                                       (unsigned)MeshTalk::selfTestOk(),
                                       (unsigned)Settings::meshTransmit());
+                        if (!MeshTalk::selfTestOk()) {
+                            Theme::showToast("CRYPTO TEST FAILED", "Cannot share a squad phrase", Theme::AMBER);
+                            break;
+                        }
+                        if (!MeshTalk::havePhrase()) {
+                            // ERASE ALL clears the saved squad phrase. The old
+                            // ADD only showed a transient toast even though
+                            // invitation cannot start without a phrase.
+                            // Open its existing setup instead of silently
+                            // failing, without changing or leaking any key.
+                            enterMeshPhrase();
+                            break;
+                        }
+                        if (!Settings::meshDetect()) {
+                            Theme::showToast("DETECT IS OFF", "Enable DETECT on both boards", Theme::AMBER, 4500);
+                            break;
+                        }
+                        if (!Settings::messagesOn()) {
+                            // Public invite frames are deliberately discarded
+                            // by Mesh::onManufacturerData() while MESSAGES is
+                            // disabled. A phrase and TRANSMIT alone cannot
+                            // complete the two-way handshake.
+                            Theme::showToast("MESSAGES OFF", "Enable MESSAGES on both boards", Theme::AMBER, 4500);
+                            break;
+                        }
+                        if (!Settings::meshTransmit()) {
+                            // Never silently enable an explicitly gated radio
+                            // setting. Explain what needs user consent.
+                            Theme::showToast("TRANSMIT OFF", "Enable TRANSMIT to invite", Theme::AMBER, 4500);
+                            break;
+                        }
                         const MeshTalk::Send r = MeshTalk::inviteStart(mac, uiSquadSelectedName(), now);
                         if (r == MeshTalk::Send::OK)            enterInvite();
                         else if (r == MeshTalk::Send::NOT_READY) {
@@ -6846,6 +6898,55 @@ void loop() {
             }
             break;
         }
+        case AppState::SD_FILES: {
+            // Unlike a static file listing, an offline mount status evolves
+            // on a separate task. Refresh sparingly while offline so RESCAN
+            // attempts/errors are visible without touching or repainting
+            // every animation frame.
+            if (!engine.sd().ready() && (int32_t)(now - s_sdFilesNextStatusDraw) >= 0) {
+                s_sdFilesDirty = true;
+                s_sdFilesNextStatusDraw = now + 1200u;
+            }
+            const bool resized = s_sdFilesLastW != tft.width() || s_sdFilesLastH != tft.height();
+            const bool mounted = engine.sd().ready();
+            if (mounted != s_sdFilesLastReady) {
+                s_sdFilesLastReady = mounted;
+                if (mounted) s_sdFilesNeedsReload = true;
+                s_sdFilesDirty = true;
+            }
+            if (mounted && s_sdFilesNeedsReload) {
+                if (SdBrowser::reloadMountedCard()) s_sdFilesNeedsReload = false;
+                s_sdFilesDirty = true;
+            }
+            if (resized) {
+                s_sdFilesLastW = tft.width(); s_sdFilesLastH = tft.height();
+                s_sdFilesDirty = true;
+            }
+#if defined(CYD32)
+            // Always render this non-animated filesystem menu directly to
+            // the real TFT on the 3.2", independent of recovery-band layout.
+            // A small/stale sprite can otherwise leave 25% of CLEAR visible.
+            if (s_sdFilesDirty) SdBrowser::draw(tft);
+#else
+            if (s_sdFilesDirty)
+                drawTwoBand([&](TFT_eSPI& t, bool) { SdBrowser::draw(t); });
+#endif
+            s_sdFilesDirty = false;
+            // SD browser already uses the physical press edge. Applying the
+            // unrelated 200 ms global lastTouch cooldown here swallowed an
+            // entire BACK tap (the touch edge only lasts one frame), forcing
+            // users to lift and tap again. Let each new press through once.
+            // This is local to SD_FILES and leaves other screens unchanged.
+            if (touchJustDown && tp.valid) {
+                lastTouch = now;
+                if (SdBrowser::tap(tp.x, tp.y, tft.width(), tft.height())) {
+                    SdBrowser::end();
+                    enterSettings();
+                    uiSettingsOpenPage(SettingsPage::SYSTEM);
+                } else s_sdFilesDirty = true;
+            }
+            break;
+        }
         case AppState::DIAGNOSTICS: {
             DiagnosticsInfo info;
             {
@@ -7046,7 +7147,11 @@ void loop() {
     // straight at tft and every draw this frame already landed on the
     // real screen -- pushing `frame` here would just paint stale data
     // from the sprite we stopped using back over the top of it.
-    if (frameBufferOk && s_recoveryBands == 1 && renderedThisLoop) {
+    if (frameBufferOk && s_recoveryBands == 1 && renderedThisLoop
+#if defined(CYD32)
+        && state != AppState::SD_FILES  // direct-panel file browser owns the glass
+#endif
+        ) {
         const bool targetRoster =
             state == AppState::HUNT_LIST || state == AppState::WATCH_LIST;
         if (!targetRoster && now - transitionStart < TRANSITION_MS) {

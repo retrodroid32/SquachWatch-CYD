@@ -123,6 +123,10 @@ namespace Theme {
     // and the padlock, whichever are showing right now. The screen width
     // when neither is. The watch's corner clock stands just left of it.
     int  titleBarRightIconsX(int w);
+    // Last known mounted/logging state, not a card-pin poll on every frame.
+    enum class SdStatus : uint8_t { ABSENT, READY, ERROR };
+    void setSdStatus(SdStatus status);
+    SdStatus sdStatus();
 
     // The chrome every list screen BELOW Settings shares, so they read as
     // one family with it: a small heading at the top in the colour of the

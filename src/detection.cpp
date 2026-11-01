@@ -862,6 +862,7 @@ bool DetectionEngine::init() {
 
     // 5. SD card (best-effort), now that the radios have what they need.
     _sd.begin();
+    _sd.startMonitor();  // raw-sector SD presence checks off the display thread
 
     return true;
 }

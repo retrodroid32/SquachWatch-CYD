@@ -2,10 +2,20 @@
 #include "sd_log.h"
 #include "clock.h"
 #include "sd_timestamp.h"
+#include "theme.h"
 #include "sd_io_policy.h"
 #include <time.h>
 #include <SD.h>
+#include <sd_diskio.h>
+#include <ff.h> // defines FatFs BYTE/DWORD/UINT used by diskio.h
+#include <diskio.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
+#include <freertos/semphr.h>
+#include <esp_system.h>
+#include <esp_idf_version.h>
 // The Phantoms define CYD (they ARE a CYD) but still need this reference,
 // because their touch shares the display's bus and SdLog::begin() has to hand
 // SD the display's own SPI instance -- see the comment on that branch below.
@@ -39,6 +49,10 @@ static const uint8_t SD_MAX_FILES = 2;
 
 bool SdLog::begin() {
     if (_ready) return true;
+    ++_mountAttempts;
+    _statusDetail = "TRYING SD MOUNT";
+    // Do not turn a detected unplug (red) back to gray during unsuccessful
+    // remount attempts: the user must see the latched error until recovery.
 #if defined(TWATCH_S3)
     return false;   // no card slot; GPIO19/20 are the S3's USB pins
 #endif
@@ -99,10 +113,18 @@ bool SdLog::begin() {
         // way to tell was to pull the card and look.
         Serial.println("[sd] no card, or it did not answer: nothing will be logged");
         _ready = false;
+        _statusDetail = "MOUNT FAILED";
+        Serial.printf("[sd] mount failed: attempt %lu, card previously seen=%d\n",
+                      (unsigned long)_mountAttempts, (int)_everMounted);
         return false;
     }
     Serial.printf("[sd] card mounted: %llu MB\n", (unsigned long long)(SD.cardSize() >> 20));
     _ready = true;
+    _everMounted = true;
+    _statusDetail = "SD READY";
+    _pendingLen = 0;   // old RAM queue was associated with the old card
+    _filename[0] = '\0';
+    Theme::setSdStatus(Theme::SdStatus::READY);
     openDaily();
     _lastFlush = millis();
     return true;
@@ -119,8 +141,347 @@ void SdLog::disableAfterIoFailure(const char* operation) {
     Serial.printf("[sd] %s failed; disabling SD logging until reboot (pending %u bytes discarded)\n",
                   operation, (unsigned)_pendingLen);
     _ready = false;
+    _statusDetail = "CARD REMOVED / IO FAILED";
+    Theme::setSdStatus(Theme::SdStatus::ERROR);
     _pendingLen = 0;
     _filename[0] = '\0';
+}
+
+void SdLog::browseFault() {
+    disableAfterIoFailure("browser I/O");
+}
+
+
+
+// Send a real low-speed SD SPI CMD0 before attempting SDFS's full mount.
+// Merely sending 0xFF idle clocks (R7) cannot distinguish an empty socket,
+// a card that does not answer, and a card with an invalid FAT volume.
+// This is used ONLY in the background remount worker, under _ioMutex.
+// Return 0x01 for SD-idle ACK, or the actual response/0xFF for no ACK.
+#if defined(CYD) && !defined(RLPHANTOM) && !defined(RLPHANTOM_R) && !defined(CYD35)
+static uint8_t sdRemountProbeCmd0() {
+    static const uint8_t cmd0[6] = {0x40, 0x00, 0x00, 0x00, 0x00, 0x95};
+    uint8_t reply = 0xFF;
+    SPI.beginTransaction(SPISettings(400000, MSBFIRST, SPI_MODE0));
+    digitalWrite(SD_CS_PIN, HIGH);
+    for (int i = 0; i < 16; ++i) SPI.transfer(0xFF); // >=128 idle clocks
+    for (int attempt = 0; attempt < 3; ++attempt) {
+        digitalWrite(SD_CS_PIN, LOW);
+        SPI.transfer(0xFF);
+        for (uint8_t byte : cmd0) SPI.transfer(byte);
+        reply = 0xFF;
+        for (int i = 0; i < 12; ++i) {
+            const uint8_t b = SPI.transfer(0xFF);
+            if ((b & 0x80u) == 0) { reply = b; break; }
+        }
+        digitalWrite(SD_CS_PIN, HIGH);
+        SPI.transfer(0xFF);
+        if (reply == 0x01) break;
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
+    SPI.endTransaction();
+    return reply;
+}
+#endif
+
+
+// R9 post-failure differential diagnosis, performed only when the ordinary
+// Arduino SDFS mount fails AFTER the physical CMD0 probe answered 0x01.
+// The Arduino core's SD.begin() returns the same false for failures in
+// card initialization, sector reads, FAT and VFS registration. The former
+// "CMD0 OK; FAT MOUNT FAIL" label falsely blamed FAT for all four.
+//
+// This probe registers exactly the CYD SD CS/SPI as a TEMPORARY diskio drive,
+// initializes it through the pinned Arduino-ESP32 SD driver's own dispatch,
+// reads sector zero, mounts that SAME raw drive read-only via FatFs, unmounts
+// it again, then unregisters the temporary drive. No writes or formatting.
+// SD SPI and FS operations are serialized by the worker's _ioMutex.
+// Returns a durable literal for rendering by the UI without a live buffer.
+static const char* sdDiagnosePostCmd0MountFailure(uint8_t* sector) {
+#if defined(CYD) && !defined(CYD35) && !defined(RLPHANTOM) && !defined(RLPHANTOM_R)
+    const uint8_t pdrv = sdcard_init(SD_CS_PIN, &SPI, 4000000);
+    if (pdrv == 0xFF || pdrv >= FF_VOLUMES || pdrv > 9) {
+        Serial.printf("[sd diag] raw driver registration FAILED: pdrv=%u\n", (unsigned)pdrv);
+        return "RAW DRIVER REGISTER FAIL";
+    }
+    const DSTATUS status = disk_initialize(pdrv);
+    Serial.printf("[sd diag] physical disk_initialize(pdrv=%u) status=0x%02X\n",
+                  (unsigned)pdrv, (unsigned)status);
+    const char* stage = nullptr;
+    if (status & STA_NOINIT) {
+        stage = "SD FULL INIT FAILED";
+    } else if (disk_read(pdrv, sector, 0, 1) != RES_OK) {
+        stage = "SD SECTOR READ FAILED";
+        Serial.println("[sd diag] sector 0 read FAILED");
+    } else {
+        // Read-only FAT test: f_mount() may read metadata but does not
+        // format or alter the user card. Unregister it before leaving.
+        FATFS* fs = static_cast<FATFS*>(calloc(1, sizeof(FATFS)));
+        if (!fs) {
+            stage = "FAT TEST NO MEMORY";
+        } else {
+            const char drive[3] = {char('0' + pdrv), ':', '\0'};
+            const FRESULT fr = f_mount(fs, drive, 1);
+            Serial.printf("[sd diag] raw f_mount(%s) result=%d, MBR/boot signature=%02X%02X\n",
+                          drive, (int)fr, (unsigned)sector[511], (unsigned)sector[510]);
+            if (fr == FR_OK)
+                stage = "FAT OK; VFS MOUNT FAIL";
+            else if (fr == FR_NO_FILESYSTEM)
+                stage = "FAT NOT RECOGNIZED";
+            else if (fr == FR_DISK_ERR || fr == FR_NOT_READY)
+                stage = "FAT READ/READY ERROR";
+            else
+                stage = "FAT MOUNT ERROR";
+            // Avoid unregistering the diskio driver while the temporary
+            // FatFs instance is still registered. This never calls mkfs.
+            f_mount(nullptr, drive, 0);
+            free(fs);
+        }
+    }
+    sdcard_uninit(pdrv);
+    return stage ? stage : "MOUNT DIAG UNKNOWN";
+#else
+    (void)sector;
+    return "SD MOUNT FAILED";
+#endif
+}
+
+// Monitor once per few seconds in its own FreeRTOS task. No SD SPI
+// transaction occurs in title-bar painting or the main animation loop.
+// SD.readRAW() is the SDFS wrapper around a real 512-byte sector read:
+// unlike SD.cardType()/cardSize(), it is NOT a cached presence flag.
+void SdLog::monitorEntry(void* ctx) {
+    SdLog* self = static_cast<SdLog*>(ctx);
+    uint8_t* sector = static_cast<uint8_t*>(malloc(512));
+    for (;;) {
+        if (!self) { vTaskDelay(pdMS_TO_TICKS(2500)); continue; }
+        // RESCAN interrupts the regular 2.5 second delay. It does not
+        // call synchronous FAT/SPI APIs on the touchscreen/UI thread.
+        const uint32_t signalled = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(2500));
+        if (!sector) continue;
+        const SemaphoreHandle_t m = static_cast<SemaphoreHandle_t>(self->_ioMutex);
+        if (!m || xSemaphoreTake(m, pdMS_TO_TICKS(150)) != pdTRUE) continue;
+        // A file browser can be open while a card is removed/reinserted.
+        // Skip raw reads while browsing, but ALWAYS allow an offline remount.
+        // The browser borrows the same mutex only around individual I/O.
+        // Boot-safe fallback: a failed initial SD mount (including an empty
+        // socket) must not launch the expensive FAT/SPI recovery path forever.
+        // Until a card has actually mounted once, only an explicit RESCAN
+        // requests a recovery attempt. After a successful initial mount,
+        // existing removal detection and automatic reinsert attempts remain.
+        if (!self->_ready && !self->_everMounted &&
+            !self->_requestRescan && !signalled) {
+            self->_statusDetail = "SD OFFLINE - TAP RESCAN";
+            xSemaphoreGive(m);
+            continue;
+        }
+        if (!self->_browsing || !self->_ready) {
+            if (self->_ready) {
+                const uint32_t started = millis();
+                const bool ok = SD.readRAW(sector, 0);
+                const uint32_t elapsed = (uint32_t)(millis() - started);
+                if (!ok || elapsed >= 500u) {
+                    self->disableAfterIoFailure(ok ? "SD health timeout" : "card removed");
+                }
+            } else {
+                // When the card is put back, clear Arduino's stale disk
+                // handle before mounting it again. Never do this inside
+                // the frame or from the title-bar icon.
+                self->_remounting = true;
+                self->_statusDetail = "REINITIALIZING SD";
+                SD.end();
+#if defined(CYD) && !defined(RLPHANTOM) && !defined(RLPHANTOM_R) && !defined(CYD35)
+                // Do not forcibly unregister /sd from here. The Arduino
+                // SDFS owner must release its own FAT/VFS bookkeeping; a
+                // second unregister from this worker can invalidate a FATFS
+                // object still referenced by SDFS after an I/O failure.
+                // R10's unconditional external cleanup is rolled back until
+                // there is verified proof that a stale registration exists.
+                // This is a dedicated SPI bus on CYD 2.8/3.2, not the
+                // TFT/touch instance. Reset the bus after a disappeared card,
+                // as Arduino SDFS::end() only detaches the FAT volume.
+                SPI.end();
+                // A physically reinserted card needs its CS deasserted and
+                // >= 74 clocks before CMD0; allow the socket contacts to
+                // settle and issue the idle clocks on the dedicated SD bus.
+                pinMode(SD_CS_PIN, OUTPUT);
+                digitalWrite(SD_CS_PIN, HIGH);
+                vTaskDelay(pdMS_TO_TICKS(120));
+                SPI.begin(18, 19, 23, SD_CS_PIN);
+                const uint8_t ack = sdRemountProbeCmd0();
+                if (ack != 0x01) {
+                    self->_remounting = false;
+                    self->_statusDetail = ack == 0xFF ? "NO CMD0 RESPONSE" : "CMD0 REJECTED";
+                    ++self->_probeFailures;
+                    Serial.printf("[sd] remount probe FAILED: CMD0=0x%02X, count=%lu (no FAT attempt)\n",
+                                  (unsigned)ack, (unsigned long)self->_probeFailures);
+                    SPI.end();
+                    self->_requestRescan = false;
+                    xSemaphoreGive(m);
+                    continue;
+                }
+                self->_statusDetail = "CMD0 OK; MOUNTING";
+                Serial.println("[sd] remount probe: CMD0=0x01 (card SPI responsive)");
+#endif
+                const bool mounted = self->begin();
+                self->_remounting = false;
+                if (!mounted) {
+                    // The driver can fail AFTER CMD0 but BEFORE FAT. Probe
+                    // the same SD slot using the raw diskio driver, then
+                    // expose the precise stage to the on-device screen.
+                    self->_statusDetail = sdDiagnosePostCmd0MountFailure(sector);
+                    Serial.printf("[sd diag] remount stage: %s\n", self->_statusDetail);
+                }
+                if (!mounted && (self->_requestRescan || signalled))
+                    Serial.println("[sd] RESCAN attempted, SD still offline");
+                self->_requestRescan = false;
+            }
+        }
+        xSemaphoreGive(m);
+    }
+}
+
+void SdLog::startMonitor() {
+#if defined(CYD) && !defined(TWATCH_S3)
+    if (_monitorTask) return;
+    if (!_ioMutex) _ioMutex = xSemaphoreCreateMutex();
+    if (!_ioMutex) { Serial.println("[sd] monitor unavailable: no mutex"); return; }
+    TaskHandle_t task = nullptr;
+    if (xTaskCreatePinnedToCore(monitorEntry, "sd_presence", 4096, this, 1,
+                                &task, 0) == pdPASS)
+        _monitorTask = task;
+    else Serial.println("[sd] monitor task allocation failed");
+#endif
+}
+
+void SdLog::browseBegin() {
+    // No SD operation here: opening the menu must not wait for a hot-unplug
+    // SPI timeout in the worker. Each actual browser file operation takes
+    // the mutex separately (try-lock, never blocks the display task).
+    _browsing = true;
+    _pendingLen = 0;
+}
+void SdLog::browseEnd() {
+    _browsing = false;
+}
+bool SdLog::browseLock() {
+    const SemaphoreHandle_t m = static_cast<SemaphoreHandle_t>(_ioMutex);
+    return !m || xSemaphoreTake(m, 0) == pdTRUE;
+}
+void SdLog::browseUnlock() {
+    const SemaphoreHandle_t m = static_cast<SemaphoreHandle_t>(_ioMutex);
+    if (m) xSemaphoreGive(m);
+}
+bool SdLog::rescan() {
+    // Do not manipulate SPI/FAT on the UI thread. The monitor wakes up
+    // independently and makes the next remount attempt under its own lock.
+    _requestRescan = true;
+    if (_monitorTask) xTaskNotifyGive(static_cast<TaskHandle_t>(_monitorTask));
+    return _monitorTask != nullptr;
+}
+
+// File deletion deliberately replaces FAT formatting. It operates only on an
+// already mounted card, using the same SD.remove() path the browser verifies.
+// It never touches the partition table, FAT geometry, NVS, or SPI registration.
+//
+// OpenNextFile uses a second file handle. Close BOTH handles before deleting or
+// descending into a child: SD_MAX_FILES is intentionally only 2. Re-open the
+// parent each iteration to safely find the first remaining entry after delete.
+static bool sdEraseDirectory(const char* folder, unsigned depth,
+                             uint32_t& files, uint32_t& dirs,
+                             char* failure, size_t failCap) {
+    if (depth >= 12) {
+        snprintf(failure, failCap, "TOO MANY FOLDER LEVELS");
+        return false;
+    }
+    for (;;) {
+        File parent = SD.open(folder, FILE_READ);
+        if (!parent || !parent.isDirectory()) {
+            if (parent) parent.close();
+            snprintf(failure, failCap, "CANNOT OPEN FOLDER");
+            return false;
+        }
+        File item = parent.openNextFile();
+        if (!item) {
+            parent.close();
+            return true; // all entries deleted, including nested folders
+        }
+        const char* rawName = item.name();
+        const char* base = rawName ? strrchr(rawName, '/') : nullptr;
+        base = base ? base + 1 : rawName;
+        const bool isDir = item.isDirectory();
+        char path[192];
+        const bool safeName = base && *base && strcmp(base, ".") != 0 &&
+                              strcmp(base, "..") != 0 && !strchr(base, '\\');
+        const int n = safeName
+            ? snprintf(path, sizeof path, "%s%s%s",
+                       strcmp(folder, "/") == 0 ? "" : folder, "/", base)
+            : -1;
+        item.close();
+        parent.close();
+        if (!safeName || n <= 0 || (size_t)n >= sizeof path) {
+            snprintf(failure, failCap, "INVALID OR LONG FILENAME");
+            return false; // never use a truncated or synthetic path
+        }
+        if (isDir) {
+            if (!sdEraseDirectory(path, depth + 1, files, dirs, failure, failCap))
+                return false;
+            if (!SD.rmdir(path)) {
+                snprintf(failure, failCap, "REMOVE FOLDER FAILED");
+                Serial.printf("[sd wipe] rmdir failed: %s\n", path);
+                return false;
+            }
+            ++dirs;
+        } else {
+            if (!SD.remove(path)) {
+                snprintf(failure, failCap, "DELETE FILE FAILED");
+                Serial.printf("[sd wipe] remove failed: %s\n", path);
+                return false;
+            }
+            ++files;
+        }
+        // A large card can take a while. Yield so the ESP32 watchdog and radio
+        // tasks continue running instead of resetting during file deletion.
+        vTaskDelay(pdMS_TO_TICKS(1));
+    }
+}
+
+// Double-confirmed from the browser. A card with a broken/unmounted FAT
+// volume cannot be wiped by SD.remove(); request a computer reformat instead.
+bool SdLog::wipeAllFiles() {
+    const SemaphoreHandle_t m = static_cast<SemaphoreHandle_t>(_ioMutex);
+    if (m && xSemaphoreTake(m, pdMS_TO_TICKS(500)) != pdTRUE) {
+        snprintf(_wipeError, sizeof _wipeError, "SD BUSY - RETRY");
+        return false;
+    }
+    struct Unlock { SemaphoreHandle_t m; ~Unlock() { if (m) xSemaphoreGive(m); } } unlock{m};
+    if (!_browsing || !_ready) {
+        snprintf(_wipeError, sizeof _wipeError, "INSERT / MOUNT SD FIRST");
+        return false;
+    }
+
+    // Clear buffered rows: don't recreate a just-deleted log on the next
+    // timer tick. A new detection may start a fresh file later, as expected.
+    _pendingLen = 0;
+    _filename[0] = '\0';
+    _lastFlush = millis();
+
+    uint32_t files = 0, dirs = 0;
+    char failure[48] = {0};
+    const bool ok = sdEraseDirectory("/", 0, files, dirs, failure, sizeof failure);
+    if (!ok) {
+        snprintf(_wipeError, sizeof _wipeError, "%s", failure);
+        Serial.printf("[sd wipe] failed after %lu files, %lu dirs: %s\n",
+                      (unsigned long)files, (unsigned long)dirs, failure);
+        // Do not claim that nothing was deleted: the operation is NOT atomic.
+        // Keep the mounted card available to the browser for inspection.
+        return false;
+    }
+    snprintf(_wipeError, sizeof _wipeError, "%lu FILES, %lu FOLDERS",
+             (unsigned long)files, (unsigned long)dirs);
+    Serial.printf("[sd wipe] complete: %lu files, %lu folders deleted\n",
+                  (unsigned long)files, (unsigned long)dirs);
+    return true;
 }
 
 void SdLog::openDaily() {
@@ -137,8 +498,17 @@ void SdLog::openDaily() {
     }
 }
 
+// UI thread never waits for the monitor task's raw read/remount:
+ // any flush that would contend simply stays queued until the next tick.
 bool SdLog::flushPending() {
-    if (!_ready || _pendingLen == 0) return true;
+    const SemaphoreHandle_t m = static_cast<SemaphoreHandle_t>(_ioMutex);
+    if (m && xSemaphoreTake(m, 0) != pdTRUE) return false;
+    const bool ok = flushPendingLocked();
+    if (m) xSemaphoreGive(m);
+    return ok;
+}
+bool SdLog::flushPendingLocked() {
+    if (!_ready || _pendingLen == 0 || _browsing) return true;
     if (_filename[0] == '\0') openDaily();
     if (_filename[0] == '\0') return false;
 
@@ -172,7 +542,17 @@ bool SdLog::flushPending() {
 }
 
 void SdLog::logEvent(const Detection& d) {
-    if (!_ready) return;
+    if (!_ready || _browsing) return;
+    // Monitor may invalidate/remount media on core 0. Protect the entire
+    // formatting/enqueue operation, not just the eventual flush: it also
+    // clears the pending buffer and filename on a card-state transition.
+    const SemaphoreHandle_t m = static_cast<SemaphoreHandle_t>(_ioMutex);
+    if (m && xSemaphoreTake(m, 0) != pdTRUE) return;
+    struct Unlock {
+        SemaphoreHandle_t m;
+        ~Unlock() { if (m) xSemaphoreGive(m); }
+    } unlock{m};
+    if (!_ready || _browsing) return;
     if (_filename[0] == '\0') openDaily();
 
     char line[128];
@@ -206,7 +586,7 @@ void SdLog::logEvent(const Detection& d) {
     // If the buffer is full, try to commit the older rows first; if the card
     // is unavailable, retain those older rows and drop the newest one.
     if ((size_t)_pendingLen + lineLen > WRITE_BUFFER_CAP) {
-        flushPending();
+        flushPendingLocked(); // logEvent already owns the SD mutex
     }
     if ((size_t)_pendingLen + lineLen > WRITE_BUFFER_CAP) {
         _droppedLines++;
@@ -223,12 +603,16 @@ void SdLog::logEvent(const Detection& d) {
     // Batch normal traffic, but do not let a busy room fill the whole sector.
     // The 50 ms guard avoids hammering a failing card once per detection.
     if (_pendingLen >= WRITE_BUFFER_FLUSH_AT && millis() - _lastFlush >= 50) {
-        flushPending();
+        flushPendingLocked(); // mutex already held by logEvent()
     }
 }
 
 void SdLog::wipe() {
-    if (!_ready) return;
+    if (!_ready || _browsing) return;
+    const SemaphoreHandle_t m = static_cast<SemaphoreHandle_t>(_ioMutex);
+    if (m && xSemaphoreTake(m, portMAX_DELAY) != pdTRUE) return;
+    // RAII releases mutex through every exit from this multi-pass wipe.
+    struct Unlock { SemaphoreHandle_t sem; ~Unlock() { if (sem) xSemaphoreGive(sem); } } unlock{m};
 
     // A wipe means "forget it", including rows not yet committed to the card.
     // Never flush these first or a detection queued just before a duress wipe
@@ -271,13 +655,17 @@ void SdLog::wipe() {
 }
 
 void SdLog::tick() {
-    if (!_ready) return;
+    if (!_ready || _browsing) return;
+    const SemaphoreHandle_t m = static_cast<SemaphoreHandle_t>(_ioMutex);
+    if (m && xSemaphoreTake(m, 0) != pdTRUE) return;
+    struct Unlock { SemaphoreHandle_t m; ~Unlock() { if (m) xSemaphoreGive(m); } } unlock{m};
+    if (!_ready || _browsing) return;
     const uint32_t now = millis();
 
     // Commit sparse traffic within one second. Dense traffic usually reaches
     // WRITE_BUFFER_FLUSH_AT first and flushes from logEvent().
     if (_pendingLen && now - _lastFlush >= 1000) {
-        flushPending();
+        flushPendingLocked();
     }
 
     // Re-evaluate the daily filename once an hour, preserving the previous
@@ -286,7 +674,7 @@ void SdLog::tick() {
     // next successful retry can rotate immediately afterward.
     static uint32_t lastDayCheck = 0;
     if (now - lastDayCheck >= 3600000) {
-        if (_pendingLen == 0 || (now - _lastFlush >= 1000 && flushPending())) {
+        if (_pendingLen == 0 || (now - _lastFlush >= 1000 && flushPendingLocked())) {
             lastDayCheck = now;
             openDaily();
         }

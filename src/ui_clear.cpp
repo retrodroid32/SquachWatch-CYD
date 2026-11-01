@@ -1580,7 +1580,7 @@ static void drawRedBubble(TFT_eSPI& t, int cx, int headTop, const char* from, co
     if (bx < 4) bx = 4;
     if (bx + bw > w - 4) bx = w - 4 - bw;
     int by = headTop - bh - 6;
-    if (by < 18) by = 18;                     // clear of the corner icons
+    if (by < Theme::TITLE_ICON_BAND_H) by = Theme::TITLE_ICON_BAND_H; // clear of corner icons
     t.fillRoundRect(bx, by, bw, bh, 4, Theme::RED);
     int tx = cx;
     if (tx < bx + 6) tx = bx + 6;
