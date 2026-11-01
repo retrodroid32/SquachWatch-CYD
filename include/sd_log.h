@@ -27,6 +27,13 @@ public:
     bool remounting() const { return _remounting; }
     void startMonitor();       // mount-state monitor on a separate task (CYD boards)  // an explicit browse I/O failure (never polled)
     void logEvent(const Detection& d);
+    // Optional, loop-task-only WATCH/HUNT and EVIL TWIN forensic CSV rows.
+    // Uses the same bounded SD mutex and fail-closed I/O policy as logEvent.
+    void logTargetEvidence(const Detection& d, bool watched, bool hunted);
+    // WATCH-only BLE advertisement copy, max 64 bytes, queued from NimBLE
+    // and consumed on the loop task. No callbacks perform SD operations.
+    void logWatchAdvertisement(const uint8_t mac[6], const uint8_t* bytes,
+                               uint8_t len, uint16_t originalLen, int8_t rssi);
     void tick();               // buffered flush / housekeeping (called from loop)
     // Deletes every squachwatch log file on the card. For the security wipe --
     // the phrase and the ignore list live in NVS, but the detection history a
@@ -49,6 +56,12 @@ private:
     volatile uint32_t _probeFailures = 0;
     const char* volatile _statusDetail = "NO SD CARD";
     bool _everMounted = false;
+    // Original CYD only: keep Arduino SDFS's registered FAT/VFS context
+    // allocated across physical card removal. The underlying diskio drive
+    // and FATFS object remain owned by SDFS, never freed by this class.
+    uint8_t _retainedPdrv = 0xFF;
+    void* _retainedFs = nullptr;
+    bool _retainedDetached = false;
     char _wipeError[40] = {0};
     void* _ioMutex = nullptr;   // FreeRTOS semaphore, opaque for PC emulator headers
     void* _monitorTask = nullptr;
@@ -60,6 +73,7 @@ private:
     uint16_t _pendingLen = 0;
 
     void openDaily();
+    bool remountRetained();   // same FAT/VFS context; reinitialize disk only
     bool flushPending();
     bool flushPendingLocked();
     static void monitorEntry(void* ctx);
