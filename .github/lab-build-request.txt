@@ -1,3 +1,4 @@
-WATCH149-LANDBACK
-# Experimental LAB build after landscape WATCH BACK touch fix.
-# Triggered only on explicit user hardware regression report.
+pr160-sd-retained-vfs-r7-20261101
+# R7 SD hot-swap: retain original FAT/VFS allocation and re-mount FatFs in place.
+# Diagnostic and hardware-only: five repeated swaps, file browser, BLE WiFi and mesh.
+# No format/erase; no production tag or release.
