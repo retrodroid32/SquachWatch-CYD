@@ -1,3 +1,4 @@
-WATCH149-LANDBACK
-# Experimental LAB build after landscape WATCH BACK touch fix.
-# Triggered only on explicit user hardware regression report.
+pr158-sd-2slot-r5-20261101
+# LAB-only diagnostic: reproduce actual 2-slot /sd VFS allocation without writing card.
+# Based on PR #158 (R4 recovery plus 2-slot memory instrumentation).
+# Do not merge, release, tag or run Erase All.
