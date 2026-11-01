@@ -607,6 +607,81 @@ void SdLog::logEvent(const Detection& d) {
     }
 }
 
+// One evidence file per watched/hunted MAC, or classified Evil Twin MAC.
+// A successful evidence write is capped at one per target/type every five
+// seconds. No radio callback ever invokes this method or touches SD.
+void SdLog::logTargetEvidence(const Detection& d, bool watched, bool hunted) {
+    const bool rogue = d.type == DetectionType::EVILTWIN;
+    if ((!watched && !hunted && !rogue) || !_ready || _browsing) return;
+    const uint32_t now = millis();
+    struct Recent { uint32_t key, at; bool used; };
+    static Recent recent[8] = {};
+    uint32_t key = 2166136261u ^ (uint32_t)d.type ^ (rogue ? 0xEEu : watched ? 0x57u : 0x48u);
+    for (uint8_t i = 0; i < 6; i++) key = (key ^ d.mac[i]) * 16777619u;
+    Recent& slot = recent[key % 8];
+    if (slot.used && slot.key == key && now - slot.at < 5000u) return;
+
+    char path[40];
+    snprintf(path, sizeof path,
+             rogue ? "/evilportal-%02X%02X%02X%02X%02X%02X.log"
+                   : "/scan-%02X%02X%02X%02X%02X%02X.log",
+             d.mac[0], d.mac[1], d.mac[2], d.mac[3], d.mac[4], d.mac[5]);
+    char ts[28];
+    SdTimestamp::format(ts, sizeof ts, Clock::trusted(), Clock::nowEpoch(), now);
+    char mac[18];
+    snprintf(mac, sizeof mac, "%02X:%02X:%02X:%02X:%02X:%02X",
+             d.mac[0], d.mac[1], d.mac[2], d.mac[3], d.mac[4], d.mac[5]);
+    char safe[sizeof d.name] = {};
+    for (size_t i = 0; i + 1 < sizeof safe && d.name[i]; ++i) {
+        const unsigned char c = (unsigned char)d.name[i];
+        safe[i] = c < 32 || c > 126 || c == ',' || c == '"' ? '.' : (char)c;
+    }
+    if (safe[0] == '=' || safe[0] == '+' || safe[0] == '-' || safe[0] == '@')
+        safe[0] = '_';
+    const char* mode = rogue ? "EVILTWIN" : watched && hunted ? "WATCH+HUNT"
+                       : watched ? "WATCH" : "HUNT";
+    char row[160];
+    const int n = snprintf(row, sizeof row, "%s,%s,%s,%s,%d,%u,%s\\n",
+                           ts, mode, detectionTypeName(d.type), mac,
+                           (int)d.rssi, (unsigned)d.channel, safe);
+    if (n <= 0 || (size_t)n >= sizeof row) return;
+
+    // The monitor owns the dedicated SD SPI bus on another task. A failed
+    // immediate lock acquisition drops optional evidence, never stalls UI.
+    const SemaphoreHandle_t mutex = static_cast<SemaphoreHandle_t>(_ioMutex);
+    if (mutex && xSemaphoreTake(mutex, 0) != pdTRUE) return;
+    struct Unlock { SemaphoreHandle_t mutex; ~Unlock() { if (mutex) xSemaphoreGive(mutex); } } unlock{mutex};
+    if (!_ready || _browsing) return;
+    const uint32_t started = millis();
+    const bool existed = SD.exists(path);
+    File out = SD.open(path, FILE_APPEND);
+    if (!out) { disableAfterIoFailure("evidence open"); return; }
+    bool ok = true;
+    if (!existed) {
+        static const char hdr[] = "timestamp,mode,type,mac,rssi,channel,name\\n";
+        ok = out.write((const uint8_t*)hdr, sizeof hdr - 1) == sizeof hdr - 1;
+    }
+    if (ok) ok = out.write((const uint8_t*)row, (size_t)n) == (size_t)n;
+    out.close();
+    if (!ok || (uint32_t)(millis() - started) >= 500u) {
+        disableAfterIoFailure(ok ? "slow evidence write" : "evidence write");
+        return;
+    }
+    slot = {key, now, true};
+}
+
+// Duress wipe only touches exact application-owned file patterns. It never
+// deletes a human's file such as scan-notes.log.
+static bool isOwnedEvidenceFilename(const char* name, const char* prefix) {
+    const size_t p = strlen(prefix);
+    if (strncmp(name, prefix, p) != 0 || strlen(name) != p + 12u + 4u) return false;
+    for (size_t i = 0; i < 12u; i++) {
+        const char c = name[p + i];
+        if (!((c >= '0' && c <= '9') || (c >= 'A' && c <= 'F'))) return false;
+    }
+    return strcmp(name + p + 12u, ".log") == 0;
+}
+
 void SdLog::wipe() {
     if (!_ready || _browsing) return;
     const SemaphoreHandle_t m = static_cast<SemaphoreHandle_t>(_ioMutex);
@@ -639,7 +714,9 @@ void SdLog::wipe() {
             const char* nm = f.name();
             const char* base = nm;
             for (const char* p = nm; *p; p++) if (*p == '/') base = p + 1;
-            if (strncmp(base, "squachwatch-", 12) == 0) {
+            if (strncmp(base, "squachwatch-", 12) == 0 ||
+                isOwnedEvidenceFilename(base, "scan-") ||
+                isOwnedEvidenceFilename(base, "evilportal-")) {
                 snprintf(victims[n], sizeof victims[n], "/%s", base);
                 n++;
             }
