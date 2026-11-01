@@ -56,6 +56,12 @@ private:
     volatile uint32_t _probeFailures = 0;
     const char* volatile _statusDetail = "NO SD CARD";
     bool _everMounted = false;
+    // Original CYD only: keep Arduino SDFS's registered FAT/VFS context
+    // allocated across physical card removal. The underlying diskio drive
+    // and FATFS object remain owned by SDFS, never freed by this class.
+    uint8_t _retainedPdrv = 0xFF;
+    void* _retainedFs = nullptr;
+    bool _retainedDetached = false;
     char _wipeError[40] = {0};
     void* _ioMutex = nullptr;   // FreeRTOS semaphore, opaque for PC emulator headers
     void* _monitorTask = nullptr;
@@ -67,6 +73,7 @@ private:
     uint16_t _pendingLen = 0;
 
     void openDaily();
+    bool remountRetained();   // same FAT/VFS context; reinitialize disk only
     bool flushPending();
     bool flushPendingLocked();
     static void monitorEntry(void* ctx);
