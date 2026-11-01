@@ -1,3 +1,4 @@
-WATCH149-LANDBACK
-# Experimental LAB build after landscape WATCH BACK touch fix.
-# Triggered only on explicit user hardware regression report.
+pr159-sd-singlefile-r6-20261101
+# LAB-only: use one VFS FIL slot after R5 proved 2-slot allocation fails.
+# Preserve SD browser/WIPE ALL and SD hot-swap; must hardware validate.
+# Do not erase, format, release or tag.
