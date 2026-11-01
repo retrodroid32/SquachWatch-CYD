@@ -1,3 +1,4 @@
-WATCH149-LANDBACK
-# Experimental LAB build after landscape WATCH BACK touch fix.
-# Triggered only on explicit user hardware regression report.
+pr160-sd-retained-vfs-r7b-20261101
+# R7b: persistent FAT/VFS hot-swap and compile correction; independent-SPI CYDs only.
+# LAB hardware verification required, five hot swaps, BLE/WiFi & Squad messaging.
+# No format, erase-all, release, merge or production tag.
