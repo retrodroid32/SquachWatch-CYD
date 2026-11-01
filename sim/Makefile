@@ -145,7 +145,8 @@ LIVE_SRCS := $(SRC)/main.cpp \
              $(SRC)/cap_touch.cpp \
              $(SRC)/touch_cal.cpp \
              $(SIM_DIR)/main_live.cpp \
-             $(SIM_DIR)/detection_sim.cpp
+             $(SIM_DIR)/detection_sim.cpp \
+             $(SIM_DIR)/sd_browser_sim.cpp
 # -include Arduino.h mirrors what the Arduino build system does for
 # every translation unit: cap_touch.cpp and friends call pinMode/delay
 # without including it themselves and rely on that being implicit.

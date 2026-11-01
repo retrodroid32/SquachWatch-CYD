@@ -338,6 +338,7 @@ public:
         RssiTrend trend = RssiTrend::UNKNOWN;
         uint32_t  lastSeenMs = 0;
         bool      seen = false;
+        bool      needsAcknowledgement = false;
     };
     enum class WatchToggle : uint8_t { ADDED, REMOVED, FULL };
 
@@ -348,6 +349,10 @@ public:
     bool        watchTargetInfo(uint8_t idx, WatchTargetInfo& out) const;
     bool        activateWatchTarget(uint8_t idx);
     void        deactivateWatch();
+    // A watch hit remains visible on the WATCH pill after its full-screen
+    // card is minimized; it is removed only by ACK or UNWATCH.
+    void        acknowledgeWatch();
+    uint8_t     watchUnacknowledgedCount() const;
     void        clearWatch();     // remove active alert target only
     void        clearWatches();   // remove every selected WATCH target
 
@@ -654,6 +659,7 @@ private:
         uint32_t  lastSeenMs = 0;
         uint32_t  lastHitMs = 0;
         bool      pending = false;
+        bool      unacknowledged = false;
     };
     WatchEntry _watchTargets[WATCH_TARGET_CAP] = {};
     uint8_t    _watchTargetCount = 0;
