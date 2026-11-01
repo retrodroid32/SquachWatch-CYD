@@ -1392,7 +1392,14 @@ void DetectionEngine::loop() {
     saveLifetime(millis());
     drainBlackBox(millis());
     if (_sdQTail != _sdQHead) {
-        _sd.logEvent(_sdQ[_sdQTail]);
+        // Radio callbacks only enqueue detections. Evidence and ordinary
+        // event logging are both handled by this loop-task consumer.
+        const Detection& event = _sdQ[_sdQTail];
+        _sd.logEvent(event);
+        const bool watched = isWatched(event.mac, true) || isWatched(event.mac, false);
+        const bool hunted = isHunted(event.mac, true) || isHunted(event.mac, false);
+        if (watched || hunted || event.type == DetectionType::EVILTWIN)
+            _sd.logTargetEvidence(event, watched, hunted);
         _sdQTail = (uint8_t)((_sdQTail + 1) % SD_Q_CAP);
     }
     _sd.tick();
