@@ -888,6 +888,21 @@ Send inviteConfirm(uint32_t now) {
         const Send r = invitePut(MeshMsg::KIND_INVITE_KEY, blob, INVITE_KEY_MS, now);
         memset(blob, 0, sizeof blob);
         if (r != Send::OK) { inviteFail("Could not send the phrase", now); return r; }
+        // This exact peer has just been physically verified via the same
+        // four-digit ephemeral DH code on BOTH boards. If their flash was
+        // erased since we last heard them, their new group-message counters
+        // can be lower than our persisted replay high-water mark. R16 fixed
+        // replay handling for invitations but that older record still
+        // blocked their HELLO and all messages after pairing.
+        //
+        // Only discard the chosen peer's stale high-water mark; persist the
+        // change immediately. Every other peer and all later normal message
+        // traffic still use the existing authenticated replay protection.
+        // No reset on ADD alone, incoming offers, or unmatched digits.
+        if (s_replay.forgetPeer(s_invPeerMac)) {
+            saveReplay();
+            Serial.println("[invite] cleared matched peer's old message replay epoch");
+        }
         inviteTo(InviteState::SENDING, now);
         s_invConfirmed = false;
         for (uint8_t i = 0; i < SQUAD_N; i++)
