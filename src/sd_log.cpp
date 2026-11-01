@@ -124,6 +124,31 @@ bool SdLog::begin() {
         return false;
     }
     Serial.printf("[sd] card mounted: %llu MB\n", (unsigned long long)(SD.cardSize() >> 20));
+#if defined(CYD) && !defined(AWOK) && !defined(CYD35) && !defined(RLPHANTOM) && !defined(RLPHANTOM_R) && !defined(TWATCH_S3)
+    // Capture the FATFS object SDFS already registered. Never create
+    // another one on card removal: repeated malloc/free of this FAT/VFS
+    // context was exhausting or fragmenting the small internal heap.
+    // f_getfree also ensures the selected drive is a mounted FAT SD card.
+    if (!_retainedFs) {
+        for (uint8_t pd = 0; pd < FF_VOLUMES; ++pd) {
+            if (sdcard_type(pd) == CARD_NONE) continue;
+            char drive[3] = {static_cast<char>('0' + pd), ':', 0};
+            FATFS* fs = nullptr;
+            DWORD freeClusters = 0;
+            const FRESULT fr = f_getfree(drive, &freeClusters, &fs);
+            if (fr == FR_OK && fs) {
+                _retainedPdrv = pd;
+                _retainedFs = fs;
+                _retainedDetached = false;
+                Serial.printf("[sd] retained FAT/VFS context on drive %u for hot swap\n", (unsigned)pd);
+                break;
+            }
+            Serial.printf("[sd] retained FAT probe drive %u result %d\n", (unsigned)pd, (int)fr);
+        }
+        if (!_retainedFs)
+            Serial.println("[sd] WARNING: no retained FAT context; legacy full remount only");
+    }
+#endif
     _ready = true;
     _everMounted = true;
     _statusDetail = "SD READY";
@@ -140,12 +165,69 @@ bool SdLog::begin() {
 // A failed flush therefore latches logging off until reboot. There is no
 // reliable card-detect input on the supported CYDs; guessing that the card
 // has been reinserted would reintroduce the stalls during normal scanning.
+// Do not tear down and reallocate SDFS/VFS when the card is physically
+// swapped. sdcard_unmount() only marks the registered disk uninitialized and
+// detaches the logical FAT volume; it does NOT sdcard_uninit(), unregister
+// /sd, or free the existing SDFS object. disk_initialize() then performs
+// the full new-card handshake, and f_mount() reuses the retained FATFS.
+bool SdLog::remountRetained() {
+#if defined(CYD) && !defined(AWOK) && !defined(CYD35) && !defined(RLPHANTOM) && !defined(RLPHANTOM_R) && !defined(TWATCH_S3)
+    if (!_retainedFs || !_retainedDetached || _retainedPdrv >= FF_VOLUMES)
+        return false;
+    const uint8_t pd = _retainedPdrv;
+    const char drive[3] = {static_cast<char>('0' + pd), ':', 0};
+    const DSTATUS state = disk_initialize(pd);
+    Serial.printf("[sd] retained drive %u disk_initialize status=0x%02X\n",
+                  (unsigned)pd, (unsigned)state);
+    if (state & STA_NOINIT) {
+        _statusDetail = "SD REINSERT INIT FAILED";
+        return false;
+    }
+    const FRESULT fr = f_mount(static_cast<FATFS*>(_retainedFs), drive, 1);
+    Serial.printf("[sd] retained FAT mount result=%d, freeheap=%lu\n",
+                  (int)fr, (unsigned long)ESP.getFreeHeap());
+    if (fr != FR_OK) {
+        // A failed f_mount must leave the existing context detached.
+        // Nothing is freed and no volume data is modified.
+        sdcard_unmount(pd);
+        _statusDetail = fr == FR_NO_FILESYSTEM ? "SD FAT NOT RECOGNIZED"
+                     : fr == FR_NOT_READY ? "SD CARD NOT READY"
+                     : "SD RETAINED FAT FAIL";
+        return false;
+    }
+    _retainedDetached = false;
+    _ready = true;
+    _everMounted = true;
+    _pendingLen = 0;
+    _filename[0] = '\0';
+    _statusDetail = "SD READY (REUSED VFS)";
+    Theme::setSdStatus(Theme::SdStatus::READY);
+    _lastFlush = millis();
+    openDaily();
+    Serial.println("[sd] hot reinsertion succeeded without VFS realloc");
+    return true;
+#else
+    return false;
+#endif
+}
+
 void SdLog::disableAfterIoFailure(const char* operation) {
     if (!_ready) return;
     ++_flushFailures;
     Serial.printf("[sd] %s failed; disabling SD logging until reboot (pending %u bytes discarded)\n",
                   operation, (unsigned)_pendingLen);
     _ready = false;
+#if defined(CYD) && !defined(AWOK) && !defined(CYD35) && !defined(RLPHANTOM) && !defined(RLPHANTOM_R) && !defined(TWATCH_S3)
+    if (_retainedFs && !_retainedDetached && _retainedPdrv < FF_VOLUMES) {
+        // This path runs inside the SD worker or under the existing SD
+        // mutex after a completed file close. No other task may be
+        // using a file while FatFs is detached.
+        sdcard_unmount(_retainedPdrv);
+        _retainedDetached = true;
+        Serial.printf("[sd] hot-swap: kept VFS allocation for drive %u\n",
+                      (unsigned)_retainedPdrv);
+    }
+#endif
     _statusDetail = "CARD REMOVED / IO FAILED";
     Theme::setSdStatus(Theme::SdStatus::ERROR);
     _pendingLen = 0;
