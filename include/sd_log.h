@@ -9,10 +9,7 @@
 
 class SdLog {
 public:
-    // mountpoint is the ESP-IDF VFS name, not a card filesystem path.
-    // The worker can retry on a separate, verified-safe VFS name if the
-    // normal mount cannot re-register after a physical hot removal.
-    bool begin(const char* mountpoint = "/sd");  // returns true if card mounted
+    bool begin();              // returns true if card mounted
     bool ready() const { return _ready; }
     // Browser and monitor serialize individual SD I/O operations.
     // The browser must not hold the mutex for its entire screen visit.
