@@ -340,6 +340,9 @@ static const char* sdDiagnosePostCmd0MountFailure(uint8_t* sector) {
 void SdLog::monitorEntry(void* ctx) {
     SdLog* self = static_cast<SdLog*>(ctx);
     uint8_t* sector = static_cast<uint8_t*>(malloc(512));
+    // Avoid repeated full SDFS allocations after a failed *first*
+    // mount. Re-arm only after a physical absence is observed.
+    bool coldCardPresenceLatched = false;
     for (;;) {
         if (!self) { vTaskDelay(pdMS_TO_TICKS(2500)); continue; }
         // RESCAN interrupts the regular 2.5 second delay. It does not
@@ -351,16 +354,45 @@ void SdLog::monitorEntry(void* ctx) {
         // A file browser can be open while a card is removed/reinserted.
         // Skip raw reads while browsing, but ALWAYS allow an offline remount.
         // The browser borrows the same mutex only around individual I/O.
-        // Boot-safe fallback: a failed initial SD mount (including an empty
-        // socket) must not launch the expensive FAT/SPI recovery path forever.
-        // Until a card has actually mounted once, only an explicit RESCAN
-        // requests a recovery attempt. After a successful initial mount,
-        // existing removal detection and automatic reinsert attempts remain.
+        // R8: cold-boot with no SD used to stay offline until RESCAN,
+        // because repeatedly calling SD.begin() without a card allocates
+        // and frees a large FAT/VFS context. On the independent SPI CYDs,
+        // probe physical presence via low-speed CMD0 ONLY (no FAT or VFS
+        // allocations) every 2.5 seconds. First positive response triggers
+        // the existing first-mount path; once it succeeds R7b's retained
+        // FAT/VFS hot-swap takes over unchanged.
+        //
+        // If the first full mount fails with the card present, do NOT
+        // repeatedly allocate/free VFS on a timer. An explicit RESCAN or
+        // a confirmed absence followed by reinsertion permits another try.
         if (!self->_ready && !self->_everMounted &&
             !self->_requestRescan && !signalled) {
+#if defined(CYD) && !defined(AWOK) && !defined(CYD35) && !defined(RLPHANTOM) && !defined(RLPHANTOM_R) && !defined(TWATCH_S3)
+            pinMode(SD_CS_PIN, OUTPUT);
+            digitalWrite(SD_CS_PIN, HIGH);
+            SPI.begin(18, 19, 23, SD_CS_PIN);
+            const uint8_t coldAck = sdRemountProbeCmd0();
+            if (coldAck != 0x01) {
+                // No card: do not call SD.end(), SD.begin(), or f_mount().
+                // Re-arm auto detect when the slot becomes empty again.
+                coldCardPresenceLatched = false;
+                self->_statusDetail = "SD OFFLINE - AUTO DETECT";
+                xSemaphoreGive(m);
+                continue;
+            }
+            if (coldCardPresenceLatched) {
+                self->_statusDetail = "SD SEEN - TAP RESCAN";
+                xSemaphoreGive(m);
+                continue;
+            }
+            coldCardPresenceLatched = true;
+            Serial.println("[sd] first SD insertion detected by CMD0; attempting initial mount");
+#else
+            // Shared-SPI variants retain their prior manual RESCAN policy.
             self->_statusDetail = "SD OFFLINE - TAP RESCAN";
             xSemaphoreGive(m);
             continue;
+#endif
         }
         if (!self->_browsing || !self->_ready) {
             if (self->_ready) {
