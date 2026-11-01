@@ -1,3 +1,3 @@
-pr155-r16-mesh-invite-replay-20261031
-# R15b font/ADD + R14 working SD; fix invite replay after one peer Erase All.
-# Local on-screen offer RX/parts/replay counters for hardware diagnosis. LAB only.
+pr155-r17-postinvite-replay-20261031
+# R16 two-way invite + R15 font + R14 SD; peer-only replay reset after four-digit MATCHES.
+# No erase-all needed. Test new ADD handshake once after flashing. LAB only.
