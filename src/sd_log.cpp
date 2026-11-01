@@ -670,6 +670,61 @@ void SdLog::logTargetEvidence(const Detection& d, bool watched, bool hunted) {
     slot = {key, now, true};
 }
 
+// Best-effort evidence from the bounded NimBLE mailbox. SD I/O never runs
+// inside NimBLE callbacks. Exact duplicate payloads are paced for five seconds
+// to limit flash churn and keep scanning/UI responsive.
+void SdLog::logWatchAdvertisement(const uint8_t mac[6], const uint8_t* bytes,
+                                   uint8_t len, uint16_t originalLen, int8_t rssi) {
+    if (!_ready || _browsing || !mac || !bytes || len == 0 || len > 64) return;
+    const uint32_t now = millis();
+    static struct { uint32_t hash, at; bool used; } recent[8] = {};
+    uint32_t hash = 2166136261u;
+    for (uint8_t i = 0; i < 6; i++) hash = (hash ^ mac[i]) * 16777619u;
+    for (uint8_t i = 0; i < len; i++) hash = (hash ^ bytes[i]) * 16777619u;
+    hash = (hash ^ len) * 16777619u;
+    hash = (hash ^ originalLen) * 16777619u;
+    auto& slot = recent[hash % 8];
+    if (slot.used && slot.hash == hash && now - slot.at < 5000u) return;
+
+    char path[40];
+    snprintf(path, sizeof path, "/watchadv-%02X%02X%02X%02X%02X%02X.log",
+             mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+    char timestamp[28];
+    SdTimestamp::format(timestamp, sizeof timestamp, Clock::trusted(), Clock::nowEpoch(), now);
+    static const char hexDigits[] = "0123456789ABCDEF";
+    char hex[129];
+    for (uint8_t i = 0; i < len; i++) {
+        hex[2 * i] = hexDigits[bytes[i] >> 4];
+        hex[2 * i + 1] = hexDigits[bytes[i] & 0x0F];
+    }
+    hex[2 * len] = '\0';
+    char row[210];
+    const int n = snprintf(row, sizeof row, "%s,%d,%u,%u,%s\\n",
+                           timestamp, (int)rssi, (unsigned)originalLen, (unsigned)len, hex);
+    if (n <= 0 || (size_t)n >= sizeof row) return;
+
+    const SemaphoreHandle_t mutex = static_cast<SemaphoreHandle_t>(_ioMutex);
+    if (mutex && xSemaphoreTake(mutex, 0) != pdTRUE) return;
+    struct Unlock { SemaphoreHandle_t mutex; ~Unlock() { if (mutex) xSemaphoreGive(mutex); } } unlock{mutex};
+    if (!_ready || _browsing) return;
+    const uint32_t started = millis();
+    const bool existed = SD.exists(path);
+    File out = SD.open(path, FILE_APPEND);
+    if (!out) { disableAfterIoFailure("watched BLE advert open"); return; }
+    bool ok = true;
+    if (!existed) {
+        static const char hdr[] = "timestamp,rssi,original_bytes,captured_bytes,ad_hex\\n";
+        ok = out.write((const uint8_t*)hdr, sizeof hdr - 1) == sizeof hdr - 1;
+    }
+    if (ok) ok = out.write((const uint8_t*)row, (size_t)n) == (size_t)n;
+    out.close();
+    if (!ok || (uint32_t)(millis() - started) >= 500u) {
+        disableAfterIoFailure(ok ? "slow watched BLE advert write" : "watched BLE advert write");
+        return;
+    }
+    slot = {hash, now, true};
+}
+
 // Duress wipe only touches exact application-owned file patterns. It never
 // deletes a human's file such as scan-notes.log.
 static bool isOwnedEvidenceFilename(const char* name, const char* prefix) {
@@ -716,7 +771,8 @@ void SdLog::wipe() {
             for (const char* p = nm; *p; p++) if (*p == '/') base = p + 1;
             if (strncmp(base, "squachwatch-", 12) == 0 ||
                 isOwnedEvidenceFilename(base, "scan-") ||
-                isOwnedEvidenceFilename(base, "evilportal-")) {
+                isOwnedEvidenceFilename(base, "evilportal-") ||
+                isOwnedEvidenceFilename(base, "watchadv-")) {
                 snprintf(victims[n], sizeof victims[n], "/%s", base);
                 n++;
             }
