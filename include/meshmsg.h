@@ -422,6 +422,10 @@ struct Replay {
     uint32_t stamp = 0;
     bool fresh(const uint8_t mac[6], uint32_t counter) const;
     void record(const uint8_t mac[6], uint32_t counter);
+    // After a user-confirmed fresh pairing, discard ONLY the selected
+    // peer's old epoch/high-water mark. The other senders stay protected.
+    // Returns false if this peer had no remembered high-water mark.
+    bool forgetPeer(const uint8_t mac[6]);
     size_t save(uint8_t out[BYTES]) const;
     // Anything that is not exactly what save() writes loads as an empty table
     // and returns false: a table nobody wrote is not one to trust.

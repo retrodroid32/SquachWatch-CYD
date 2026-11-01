@@ -20,6 +20,8 @@ enum class WifiAddHit  : uint8_t { NONE, ROW, RESCAN, BACK };
 
 void        uiWifiNetsInit(TFT_eSPI& t);
 void        uiWifiNetsTick(TFT_eSPI& t, uint32_t now);
+// CYD32 direct-panel fallback: only modified rows/buttons/toast region.
+void        uiWifiNetsTickDirect(TFT_eSPI& t, uint32_t now);
 // The row index comes back in *row for ROW.
 WifiNetsHit uiWifiNetsHit(TFT_eSPI& t, int x, int y, int* row);
 void        uiWifiNetsSelect(int row);   // -1 clears the highlight

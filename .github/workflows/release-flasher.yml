@@ -31,6 +31,14 @@ on:
       # Pages deployment is owned by publish-pages.yml, so this build workflow
       # does not need a github-pages environment policy for lab tags.
       - "lab-*"
+    branches:
+      # Only the dedicated request file starts a LAB build from a branch.
+      - 'feature/**'
+      - 'fix/**'
+      - 'lab/**'
+      - 'integrate/**'
+    paths:
+      - '.github/lab-build-request.txt'
   workflow_dispatch:
     inputs:
       lab:
@@ -101,7 +109,14 @@ jobs:
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
 
           IS_LAB=false
-          if [ "${{ inputs.lab }}" = "true" ]; then
+          if [ "${GITHUB_EVENT_NAME}" = "push" ] && [ "${GITHUB_REF_TYPE}" = "branch" ]; then
+            # A branch push reaches this workflow only via the request-file
+            # path filter. Never treat it as a production release.
+            test -s .github/lab-build-request.txt || {
+              echo "::error::Missing LAB request file"; exit 1;
+            }
+            IS_LAB=true
+          elif [ "${{ inputs.lab }}" = "true" ]; then
             IS_LAB=true
           else
             case "$TAG" in
@@ -112,9 +127,13 @@ jobs:
 
           if [ "$IS_LAB" = "true" ]; then
             LABEL="$(echo "${{ inputs.label }}" | tr -cd 'A-Za-z0-9-' | tr 'A-Z' 'a-z')"
+            if [ "${GITHUB_EVENT_NAME}" = "push" ] && [ "${GITHUB_REF_TYPE}" = "branch" ]; then
+              LABEL="$(head -n 1 .github/lab-build-request.txt | tr -cd 'A-Za-z0-9-' | tr 'A-Z' 'a-z' | cut -c1-40)"
+              test -n "$LABEL" || { echo "::error::Empty LAB label"; exit 1; }
+            fi
             if [ -n "$LABEL" ]; then
               VERSION="lab-$LABEL"
-              DISPLAY="${{ inputs.label }}"
+              DISPLAY="$LABEL"
             elif [[ "$TAG" == lab-* ]]; then
               VERSION="$TAG"
               DISPLAY="${TAG#lab-}"

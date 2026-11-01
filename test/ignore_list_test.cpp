@@ -2,6 +2,7 @@
 #include "ignore_list.h"
 #include "test_util.h"
 #include <Preferences.h>
+#include <Arduino.h>
 #include <cstdlib>
 #include <filesystem>
 
@@ -20,6 +21,9 @@ int main() {
     std::filesystem::create_directory(dir);
     setenv("SQUACHSIM_NVS", dir, 1);
     unsetenv("SQUACHSIM_NVS_FAIL_PUTBYTES_KEY");
+    SimClock::virtualTime = true;
+    SimClock::nowMs = 100;
+
 
     suite("Compact device policies");
     ck("set IGNORE", IgnoreList::setPolicy(A, DetectionType::FLOCK, IgnoreList::Policy::IGNORE));
@@ -33,7 +37,7 @@ int main() {
     ck("update to ALWAYS ALERT", IgnoreList::setPolicy(B, DetectionType::RING, IgnoreList::Policy::ALWAYS_ALERT));
     ck("record size unchanged on update", bytesOnDisk() == 16);
     ck("always-alert helper", IgnoreList::alwaysAlert(B));
-    IgnoreList::snooze(B);
+    IgnoreList::snooze(B, IgnoreList::SnoozeDuration::MIN_10);
     ck("always-alert bypasses snooze", !IgnoreList::silenced(B));
 
     suite("Removal persists");
@@ -63,6 +67,57 @@ int main() {
         ck("canonical address inherits ignore", IgnoreList::contains(fwd));
         ck("canonical unignore removes legacy entry", IgnoreList::remove(fwd) && !IgnoreList::contains(oldOrder));
     }
+
+    suite("Timed and persistent snoozes");
+    const uint8_t C[6] = {0x12,0x34,0x56,0x78,0x9A,0xBC};
+    SimClock::nowMs = 100;
+    ck("10 minute snooze inserted", IgnoreList::snooze(A, IgnoreList::SnoozeDuration::MIN_10));
+    ck("selected device is snoozed", IgnoreList::snoozed(A));
+    ck("does not silence unrelated MAC", !IgnoreList::snoozed(C));
+    uint8_t shown[6]; uint32_t remaining = 0; bool forever = false;
+    ck("entry info includes address and timer",
+       IgnoreList::snoozeInfo(0, shown, remaining, forever) &&
+       memcmp(shown, A, 6) == 0 && !forever && remaining == 600000);
+    SimClock::nowMs += 599999;
+    ck("10 minute snooze active before deadline", IgnoreList::snoozed(A));
+    SimClock::nowMs += 1;
+    ck("10 minute snooze automatically expires", !IgnoreList::snoozed(A) && IgnoreList::snoozeCount() == 0);
+    ck("30 minute snooze inserted", IgnoreList::snooze(A, IgnoreList::SnoozeDuration::MIN_30));
+    SimClock::nowMs += 1800000;
+    ck("30 minute deadline expires", !IgnoreList::snoozed(A));
+    ck("one hour snooze inserted", IgnoreList::snooze(A, IgnoreList::SnoozeDuration::HOUR_1));
+    SimClock::nowMs += 3600000;
+    ck("one hour deadline expires", !IgnoreList::snoozed(A));
+    SimClock::nowMs = UINT32_MAX - 1000;
+    ck("wraparound snooze accepted", IgnoreList::snooze(A, IgnoreList::SnoozeDuration::MIN_10));
+    SimClock::nowMs += 599999;
+    ck("wraparound active just before expiry", IgnoreList::snoozed(A));
+    SimClock::nowMs++;
+    ck("wraparound expires correctly", !IgnoreList::snoozed(A));
+
+    ck("ALWAYS snooze persists as MAC-only key", IgnoreList::snooze(A, IgnoreList::SnoozeDuration::ALWAYS) && bytesOnDisk("snz") == 6);
+    ck("ALWAYS entry has no expiry", IgnoreList::snoozeInfo(0, shown, remaining, forever) && forever && remaining == 0);
+    SimClock::nowMs += 3600000;
+    ck("ALWAYS unaffected by elapsed time", IgnoreList::snoozed(A));
+    ck("unsnooze individual permanent", IgnoreList::unsnooze(A) && !IgnoreList::snoozed(A));
+    ck("unsnooze removes persisted key", bytesOnDisk("snz") == 0);
+    ck("permanent-to-timed removes NVS key", IgnoreList::snooze(A, IgnoreList::SnoozeDuration::ALWAYS) &&
+       IgnoreList::snooze(A, IgnoreList::SnoozeDuration::MIN_10) && bytesOnDisk("snz") == 0);
+    ck("manual timed unsnooze works", IgnoreList::unsnooze(A) && !IgnoreList::snoozed(A));
+
+    // Exhaust the bounded list: the 33rd cannot silently evict another user choice.
+    for (uint8_t i = 0; i < IgnoreList::SNOOZE_MAX; i++) {
+        uint8_t mac[6] = {0x42,0x43,0x44,0x45,0x46,i};
+        IgnoreList::snooze(mac, IgnoreList::SnoozeDuration::HOUR_1);
+    }
+    ck("all 32 fit", IgnoreList::snoozeCount() == IgnoreList::SNOOZE_MAX);
+    ck("33rd reports full", !IgnoreList::snooze(C, IgnoreList::SnoozeDuration::HOUR_1));
+    const uint8_t first[6] = {0x42,0x43,0x44,0x45,0x46,0x00};
+    ck("remove then add new entry", IgnoreList::unsnooze(first) &&
+       IgnoreList::snooze(C, IgnoreList::SnoozeDuration::HOUR_1) &&
+       IgnoreList::snoozeCount() == IgnoreList::SNOOZE_MAX);
+    IgnoreList::clear();
+    ck("clear erases active snooze list", IgnoreList::snoozeCount() == 0);
 
     std::filesystem::remove_all(dir);
     return report();

@@ -3,6 +3,7 @@
 #include "serial_flush.h"
 #include "signatures.h"
 #include "settings.h"
+#include "ignore_list.h"
 #include "blackbox.h"
 #include "bingo.h"
 #include "dex.h"
@@ -25,6 +26,7 @@
 #endif
 #if SQUACH_MESH
 #include "squachmesh.h"
+#include "meshmsg.h"
 #include "squachy.h"
 #include "settings.h"
 #endif
@@ -41,11 +43,8 @@ static DetectionEngine* g_engine = nullptr;
 // into DetectionEngine's fixed mailbox and applied by loop(); this mux protects
 // only the tiny head/tail/copy operation, never log processing or flash I/O.
 static portMUX_TYPE s_bleQMutex = portMUX_INITIALIZER_UNLOCKED;
- 
-// Best-effort bounded record of *raw* advertising fields for explicitly
-// WATCHed BLE targets (upstream issue #49). Never write to SD on NimBLE's
-// host task, and never capture SquachMesh's encrypted manufacturer data.
-// This 8-entry mailbox costs under 700 bytes, with no heap allocation.
+// Radio callback -> loop-task mailbox for explicitly WATCHed BLE advertising
+// data. Fixed storage; no filesystem, I/O, or heap allocations in NimBLE.
 struct WatchAdvRecord {
     uint8_t mac[6];
     int8_t rssi;
@@ -57,30 +56,29 @@ static WatchAdvRecord s_watchAdv[8] = {};
 static uint8_t s_watchAdvHead = 0, s_watchAdvTail = 0;
 static portMUX_TYPE s_watchAdvMutex = portMUX_INITIALIZER_UNLOCKED;
 
-static void enqueueWatchAdvert(const uint8_t* mac,
+static void enqueueWatchAdvert(const uint8_t mac[6],
                                const std::vector<uint8_t>& payload, int8_t rssi) {
     if (!mac || payload.empty()) return;
     WatchAdvRecord rec = {};
     memcpy(rec.mac, mac, 6);
     rec.rssi = rssi;
     rec.total = (uint16_t)(payload.size() > 65535u ? 65535u : payload.size());
-    rec.len = (uint8_t)(payload.size() > sizeof(rec.bytes) ? sizeof(rec.bytes) : payload.size());
+    rec.len = (uint8_t)(payload.size() > sizeof rec.bytes ? sizeof rec.bytes : payload.size());
     memcpy(rec.bytes, payload.data(), rec.len);
     portENTER_CRITICAL(&s_watchAdvMutex);
-    const uint8_t next = (uint8_t)((s_watchAdvHead + 1) % 8);
+    const uint8_t next = (uint8_t)((s_watchAdvHead + 1u) % 8u);
     if (next != s_watchAdvTail) {
         s_watchAdv[s_watchAdvHead] = rec;
         s_watchAdvHead = next;
     }
     portEXIT_CRITICAL(&s_watchAdvMutex);
 }
-
 static bool dequeueWatchAdvert(WatchAdvRecord& out) {
     bool got = false;
     portENTER_CRITICAL(&s_watchAdvMutex);
     if (s_watchAdvTail != s_watchAdvHead) {
         out = s_watchAdv[s_watchAdvTail];
-        s_watchAdvTail = (uint8_t)((s_watchAdvTail + 1) % 8);
+        s_watchAdvTail = (uint8_t)((s_watchAdvTail + 1u) % 8u);
         got = true;
     }
     portEXIT_CRITICAL(&s_watchAdvMutex);
@@ -422,10 +420,32 @@ class BleScanCallbacks : public NimBLEScanCallbacks {
         int8_t rssi = (int8_t)adv->getRSSI();
         g_engine->checkWatchBle(mac, rssi);
         g_engine->checkHuntBle(mac, rssi);
-        // Opt-in via the existing WATCH selection, excluding mesh peers
-        // (they already returned above). Copy at most 64 payload bytes.
-        if (g_engine->isWatched(mac, true))
+#if SQUACH_MESH
+        // Do not capture an encrypted SquachMesh frame merely because DETECT
+        // was disabled (which makes Mesh::onManufacturerData return false).
+        // A legacy advertisement can have multiple manufacturer fields.
+        bool hasMeshPayload = false;
+        for (uint8_t i = 0;; ++i) {
+            AdvFieldView md;
+            if (!advFieldAt(payload, BLE_HS_ADV_TYPE_MFG_DATA, i, md)) break;
+            if (md.len >= 2 && (uint16_t)(md.data[0] | ((uint16_t)md.data[1] << 8)) == SquachMesh::COMPANY_ID &&
+                (MeshMsg::isFrame(md.data + 2, md.len - 2) ||
+                 (md.len >= 2 + SquachMesh::LEN_INDEXED &&
+                  md.data[2] == SquachMesh::MAGIC[0] &&
+                  md.data[3] == SquachMesh::MAGIC[1] &&
+                  md.data[4] == SquachMesh::MAGIC[2] &&
+                  md.data[5] == SquachMesh::MAGIC[3]))) {
+                hasMeshPayload = true;
+                break;
+            }
+        }
+        if (!hasMeshPayload && g_rawMode != RawScanMode::UPDATE && g_rawMode != RawScanMode::WIFI &&
+            g_engine->isWatched(mac, true))
             enqueueWatchAdvert(mac, payload, rssi);
+#else
+        if (g_rawMode != RawScanMode::UPDATE && g_rawMode != RawScanMode::WIFI && g_engine->isWatched(mac, true))
+            enqueueWatchAdvert(mac, payload, rssi);
+#endif
         // The radio is dedicated to a WiFi sweep or a firmware update right now.
         if (g_rawMode == RawScanMode::WIFI || g_rawMode == RawScanMode::UPDATE) return;
         if (g_rawMode == RawScanMode::BLE) {
@@ -911,6 +931,7 @@ bool DetectionEngine::init() {
 
     // 5. SD card (best-effort), now that the radios have what they need.
     _sd.begin();
+    _sd.startMonitor();  // raw-sector SD presence checks off the display thread
 
     return true;
 }
@@ -1440,15 +1461,18 @@ void DetectionEngine::loop() {
     saveLifetime(millis());
     drainBlackBox(millis());
     if (_sdQTail != _sdQHead) {
-        // SD work stays on the loop task, never the WiFi/BLE callbacks.
+        // Radio callbacks only enqueue detections. Evidence and ordinary
+        // event logging are both handled by this loop-task consumer.
         const Detection& event = _sdQ[_sdQTail];
         _sd.logEvent(event);
         const bool watched = isWatched(event.mac, true) || isWatched(event.mac, false);
-        const bool hunted  = isHunted(event.mac, true) || isHunted(event.mac, false);
+        const bool hunted = isHunted(event.mac, true) || isHunted(event.mac, false);
         if (watched || hunted || event.type == DetectionType::EVILTWIN)
             _sd.logTargetEvidence(event, watched, hunted);
         _sdQTail = (uint8_t)((_sdQTail + 1) % SD_Q_CAP);
     }
+    // Drain at most one record per loop; the queue drops excess traffic
+    // rather than holding NimBLE or consuming unlimited RAM.
     WatchAdvRecord watched = {};
     if (dequeueWatchAdvert(watched))
         _sd.logWatchAdvertisement(watched.mac, watched.bytes,
@@ -2246,6 +2270,7 @@ bool DetectionEngine::watchTargetInfo(uint8_t idx, WatchTargetInfo& out) const {
     out.samples = e.rssiCount;
     out.lastSeenMs = e.lastSeenMs;
     out.seen = e.rssiCount > 0;
+    out.needsAcknowledgement = e.unacknowledged;
     if (e.rssiCount) {
         out.rssi = watchEntryRssiAt(e, (uint8_t)(e.rssiCount - 1));
         out.previousRssi = e.rssiCount >= 2
@@ -2271,6 +2296,25 @@ void DetectionEngine::deactivateWatch() {
     _watchKind = WatchKind::NONE;
     memset(_watchMac, 0, sizeof _watchMac);
     _watchLabel[0] = 0;
+}
+
+void DetectionEngine::acknowledgeWatch() {
+    const int8_t idx = findWatchTarget(_watchMac, _watchKind);
+    if (idx >= 0) {
+        _watchTargets[(uint8_t)idx].unacknowledged = false;
+        _watchTargets[(uint8_t)idx].pending = false;
+    }
+    deactivateWatch();
+}
+
+uint8_t DetectionEngine::watchUnacknowledgedCount() const {
+    uint8_t count = 0;
+    for (uint8_t i = 0; i < _watchTargetCount; i++) {
+        const WatchEntry& e = _watchTargets[i];
+        if (e.unacknowledged && (!IgnoreList::snoozed(e.mac) || IgnoreList::alwaysAlert(e.mac)))
+            count++;
+    }
+    return count;
 }
 
 void DetectionEngine::clearWatch() {
@@ -2327,7 +2371,9 @@ void DetectionEngine::checkWatchBle(const uint8_t* mac, int8_t rssi) {
         noteWatchRssi(e, rssi);
         if (e.lastHitMs && now - e.lastHitMs < WATCH_COOLDOWN_MS) return;
         e.lastHitMs = now;
-        e.pending = true;
+        // A minimized but unacknowledged hit already has a visible WATCH
+        // pill notice. Avoid repeatedly reopening its card every cooldown.
+        if (!e.unacknowledged) e.pending = true;
         return;
     }
 }
@@ -2340,7 +2386,7 @@ void DetectionEngine::checkWatchWifi(const uint8_t* mac, int8_t rssi) {
         noteWatchRssi(e, rssi);
         if (e.lastHitMs && now - e.lastHitMs < WATCH_COOLDOWN_MS) return;
         e.lastHitMs = now;
-        e.pending = true;
+        if (!e.unacknowledged) e.pending = true;
         return;
     }
 }
@@ -2349,8 +2395,15 @@ bool DetectionEngine::watchHitPending() {
     int8_t best = -1;
     uint32_t newest = 0;
     for (uint8_t i = 0; i < _watchTargetCount; i++) {
-        const WatchEntry& e = _watchTargets[i];
-        if (!e.pending) continue;
+        WatchEntry& e = _watchTargets[i];
+        // Explicit SNOOZE removes old notices too; otherwise an alert
+        // minimized yesterday can reappear when a timed snooze expires.
+        if (IgnoreList::snoozed(e.mac) && !IgnoreList::alwaysAlert(e.mac)) {
+            e.pending = false;
+            e.unacknowledged = false;
+            continue;
+        }
+        if (!e.pending || e.unacknowledged) continue;
         if (best < 0 || (int32_t)(e.lastSeenMs - newest) > 0) {
             best = (int8_t)i;
             newest = e.lastSeenMs;
@@ -2358,6 +2411,7 @@ bool DetectionEngine::watchHitPending() {
     }
     if (best < 0) return false;
     _watchTargets[(uint8_t)best].pending = false;
+    _watchTargets[(uint8_t)best].unacknowledged = true;
     return activateWatchTarget((uint8_t)best);
 }
 
