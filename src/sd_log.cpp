@@ -699,7 +699,7 @@ void SdLog::logWatchAdvertisement(const uint8_t mac[6], const uint8_t* bytes,
     }
     hex[2 * len] = '\0';
     char row[210];
-    const int n = snprintf(row, sizeof row, "%s,%d,%u,%u,%s\\n",
+    const int n = snprintf(row, sizeof row, "%s,%d,%u,%u,%s\n",
                            timestamp, (int)rssi, (unsigned)originalLen, (unsigned)len, hex);
     if (n <= 0 || (size_t)n >= sizeof row) return;
 
@@ -713,7 +713,7 @@ void SdLog::logWatchAdvertisement(const uint8_t mac[6], const uint8_t* bytes,
     if (!out) { disableAfterIoFailure("watched BLE advert open"); return; }
     bool ok = true;
     if (!existed) {
-        static const char hdr[] = "timestamp,rssi,original_bytes,captured_bytes,ad_hex\\n";
+        static const char hdr[] = "timestamp,rssi,original_bytes,captured_bytes,ad_hex\n";
         ok = out.write((const uint8_t*)hdr, sizeof hdr - 1) == sizeof hdr - 1;
     }
     if (ok) ok = out.write((const uint8_t*)row, (size_t)n) == (size_t)n;
