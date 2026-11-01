@@ -21,7 +21,7 @@
 #include <cstring>
 
 // ---- SdLog: no card, ever -------------------------------------------
-bool SdLog::begin() { _ready = false; return false; }
+bool SdLog::begin(const char*) { _ready = false; return false; }
 void SdLog::logEvent(const Detection&) {}
 void SdLog::tick() {}
 void SdLog::wipe() {}
