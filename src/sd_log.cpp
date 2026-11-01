@@ -419,7 +419,7 @@ void SdLog::monitorEntry(void* ctx) {
                 self->_statusDetail = "CMD0 OK; MOUNTING";
                 Serial.println("[sd] remount probe: CMD0=0x01 (card SPI responsive)");
 #endif
-                const bool mounted = retained
+                bool mounted = retained
                     ? self->remountRetained()
                     : self->begin();
                 if (!mounted && !retained) {
