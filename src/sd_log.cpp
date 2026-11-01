@@ -42,12 +42,15 @@ extern TFT_eSPI tft;
     #define SD_CS_PIN 5
 #endif
 
-// Room for two open files, not the library's default five. The FAT driver
-// reserves a 4 KB sector buffer per file slot up front, so five slots want a
-// 25 KB block -- more than is left once both radios are up (largest block
-// measured at 18 KB on the RL Phantom). This log has one file open at a time,
-// plus a directory handle while it prunes old days.
-static const uint8_t SD_MAX_FILES = 2;
+// A single open FILE is sufficient for all SD operations in this firmware.
+// Directory iterators use FatFs DIR (opendir/readdir), not VFS FIL slots.
+// The browser holds a directory while opening at most one child FILE;
+// the logger pauses while browsing and every other SD operation is
+// serialized by the SD mutex. A second VFS FIL slot demands a much larger
+// contiguous allocation and has been demonstrated to fail on reinsert
+// even though one slot can be registered (R5 hardware diagnosis).
+// Do not increase without redesigning and verifying hot-insert allocation.
+static const uint8_t SD_MAX_FILES = 1;
 
 bool SdLog::begin() {
     if (_ready) return true;
@@ -335,12 +338,11 @@ void SdLog::monitorEntry(void* ctx) {
                     Serial.printf("[sd diag] raw remount stage: %s\n", stage);
 
                     if (strcmp(stage, "FAT OK; VFS MOUNT FAIL") == 0) {
-                        // IMPORTANT: the real SD mount reserves
-                        // SD_MAX_FILES (=2) file slots. R4 probed only 1:
-                        // its successful registration never ruled out a
-                        // failed two-file allocation. Match the real VFS
-                        // context allocation exactly; no f_mount, writes,
-                        // card reinitialization or formatting here.
+                        // R5 hardware proved two VFS FILE slots fail to
+                        // allocate while one succeeds. This R6 build uses
+                        // one slot for both SD.begin and this diagnostic.
+                        // A directory handle does not use a VFS FIL slot.
+                        // No f_mount, card writes, or formatting here.
                         FATFS* probeFs = nullptr;
                         const size_t largestBefore =
                             heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
@@ -389,25 +391,7 @@ void SdLog::monitorEntry(void* ctx) {
                                 ? "VFS PATH FREE; SD FAIL"
                                 : "VFS PROBE CLEANUP FAIL";
                         } else if (reg == ESP_ERR_NO_MEM) {
-                            // A single-slot probe is diagnostic ONLY.
-                            // If one slot works but the real two-slot VFS
-                            // allocation fails, this indicates memory
-                            // fragmentation or pressure, not a stale path.
-                            FATFS* oneSlotFs = nullptr;
-                            const esp_err_t oneSlot = esp_vfs_fat_register(
-                                "/sd", "0:", 1, &oneSlotFs);
-                            Serial.printf("[sd diag] VFS one-slot comparison=0x%x, heap=%lu, largest=%lu B\n",
-                                          (unsigned)oneSlot,
-                                          (unsigned long)ESP.getFreeHeap(),
-                                          (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
-                            if (oneSlot == ESP_OK) {
-                                const esp_err_t undo = esp_vfs_fat_unregister_path("/sd");
-                                self->_statusDetail = undo == ESP_OK
-                                    ? "SD 2-FILE ALLOC FAILED"
-                                    : "VFS PROBE CLEANUP FAIL";
-                            } else {
-                                self->_statusDetail = "VFS NO MEMORY / SLOTS";
-                            }
+                            self->_statusDetail = "SD 1-FILE ALLOC FAILED";
                         } else {
                             self->_statusDetail = "VFS PROBE ERROR";
                         }
@@ -466,9 +450,10 @@ bool SdLog::rescan() {
 // already mounted card, using the same SD.remove() path the browser verifies.
 // It never touches the partition table, FAT geometry, NVS, or SPI registration.
 //
-// OpenNextFile uses a second file handle. Close BOTH handles before deleting or
-// descending into a child: SD_MAX_FILES is intentionally only 2. Re-open the
-// parent each iteration to safely find the first remaining entry after delete.
+// The parent uses a DIR iterator; openNextFile opens at most one FIL.
+// Close both before deleting or descending; the VFS needs only one FILE
+// slot. Re-open the parent each iteration to find the first remaining
+// entry after delete.
 static bool sdEraseDirectory(const char* folder, unsigned depth,
                              uint32_t& files, uint32_t& dirs,
                              char* failure, size_t failCap) {
