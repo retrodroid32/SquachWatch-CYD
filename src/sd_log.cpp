@@ -47,7 +47,8 @@ extern TFT_eSPI tft;
 // plus a directory handle while it prunes old days.
 static const uint8_t SD_MAX_FILES = 2;
 
-bool SdLog::begin() {
+bool SdLog::begin(const char* mountpoint) {
+    if (!mountpoint || !*mountpoint) return false;
     if (_ready) return true;
     ++_mountAttempts;
     _statusDetail = "TRYING SD MOUNT";
@@ -97,16 +98,16 @@ bool SdLog::begin() {
     // no-op, and AWOK's touch chip is apparently more sensitive to
     // that than cyd35's) -- so it keeps the plain no-args SD.begin()
     // below, same as before this fix existed.
-    if (!SD.begin(SD_CS_PIN, tft.getSPIinstance(), 4000000, "/sd", SD_MAX_FILES)) {
+    if (!SD.begin(SD_CS_PIN, tft.getSPIinstance(), 4000000, mountpoint, SD_MAX_FILES)) {
 #elif defined(AWOK)
-    if (!SD.begin(SD_CS_PIN, SPI, 4000000, "/sd", SD_MAX_FILES)) {
+    if (!SD.begin(SD_CS_PIN, SPI, 4000000, mountpoint, SD_MAX_FILES)) {
 #else
     // Original board only: a genuinely separate, dedicated SD bus (not
     // shared with the display), so it does need its own explicit begin()
     // -- SD.begin()'s internal default-pin fallback happens to match
     // this board's real wiring too, but stay explicit for clarity.
     SPI.begin(18, 19, 23, SD_CS_PIN);  // SCK, MISO, MOSI, CS
-    if (!SD.begin(SD_CS_PIN, SPI, 4000000, "/sd", SD_MAX_FILES)) {
+    if (!SD.begin(SD_CS_PIN, SPI, 4000000, mountpoint, SD_MAX_FILES)) {
 #endif
         // Said out loud either way: a board with no card, or a card on the
         // wrong pins, ran exactly like one that was logging, and the only
@@ -323,15 +324,43 @@ void SdLog::monitorEntry(void* ctx) {
                 self->_statusDetail = "CMD0 OK; MOUNTING";
                 Serial.println("[sd] remount probe: CMD0=0x01 (card SPI responsive)");
 #endif
-                const bool mounted = self->begin();
-                self->_remounting = false;
+                bool mounted = self->begin();
                 if (!mounted) {
-                    // The driver can fail AFTER CMD0 but BEFORE FAT. Probe
-                    // the same SD slot using the raw diskio driver, then
-                    // expose the precise stage to the on-device screen.
-                    self->_statusDetail = sdDiagnosePostCmd0MountFailure(sector);
-                    Serial.printf("[sd diag] remount stage: %s\n", self->_statusDetail);
+                    // The raw FAT test is read-only and temporarily owns a
+                    // separate physical drive registration. It distinguishes
+                    // a genuinely unreadable card from Arduino SDFS / ESP-IDF
+                    // VFS registration trouble after removing a mounted card.
+                    const char* stage = sdDiagnosePostCmd0MountFailure(sector);
+                    self->_statusDetail = stage;
+                    Serial.printf("[sd diag] remount stage: %s\n", stage);
+
+                    // On Arduino-ESP32 2.0.14, SDFS::begin() registers both
+                    // the FAT drive and the VFS base path. After an abnormal
+                    // hot-removal, the old /sd VFS path can remain occupied
+                    // even though a fresh raw FAT mount succeeds. Calling
+                    // esp_vfs_fat_unregister_path("/sd") here previously
+                    // caused boot regressions: NEVER force-unregister a path
+                    // that SDFS may still own.
+                    //
+                    // The alternate name is strictly a mount *namespace*:
+                    // SD.open("/") and the file browser still address the
+                    // same unchanged FAT card through SDFS::mountpoint().
+                    // Only attempt the recovery for an already verified FAT
+                    // volume, not when CMD0/FAT/raw media tests fail.
+                    if (strcmp(stage, "FAT OK; VFS MOUNT FAIL") == 0) {
+                        self->_statusDetail = "TRYING SAFE VFS RECOVERY";
+                        Serial.println("[sd] FAT OK; trying alternate VFS /sd-recovery (no unregister/format)");
+                        mounted = self->begin("/sd-recovery");
+                        if (mounted) {
+                            self->_statusDetail = "SD READY (VFS RECOVERED)";
+                            Serial.println("[sd] VFS recovery succeeded; card files available");
+                        } else {
+                            self->_statusDetail = "VFS RECOVERY FAILED";
+                            Serial.println("[sd] alternate VFS recovery failed; no cleanup forced");
+                        }
+                    }
                 }
+                self->_remounting = false;
                 if (!mounted && (self->_requestRescan || signalled))
                     Serial.println("[sd] RESCAN attempted, SD still offline");
                 self->_requestRescan = false;
