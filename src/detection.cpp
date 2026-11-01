@@ -26,6 +26,7 @@
 #endif
 #if SQUACH_MESH
 #include "squachmesh.h"
+#include "meshmsg.h"
 #include "squachy.h"
 #include "settings.h"
 #endif
@@ -431,16 +432,18 @@ class BleScanCallbacks : public NimBLEScanCallbacks {
                 (MeshMsg::isFrame(md.data + 2, md.len - 2) ||
                  (md.len >= 2 + SquachMesh::LEN_INDEXED &&
                   md.data[2] == SquachMesh::MAGIC[0] &&
-                  md.data[3] == SquachMesh::MAGIC[1]))) {
+                  md.data[3] == SquachMesh::MAGIC[1] &&
+                  md.data[4] == SquachMesh::MAGIC[2] &&
+                  md.data[5] == SquachMesh::MAGIC[3]))) {
                 hasMeshPayload = true;
                 break;
             }
         }
-        if (!hasMeshPayload && g_rawMode != RawScanMode::UPDATE &&
+        if (!hasMeshPayload && g_rawMode != RawScanMode::UPDATE && g_rawMode != RawScanMode::WIFI &&
             g_engine->isWatched(mac, true))
             enqueueWatchAdvert(mac, payload, rssi);
 #else
-        if (g_rawMode != RawScanMode::UPDATE && g_engine->isWatched(mac, true))
+        if (g_rawMode != RawScanMode::UPDATE && g_rawMode != RawScanMode::WIFI && g_engine->isWatched(mac, true))
             enqueueWatchAdvert(mac, payload, rssi);
 #endif
         // The radio is dedicated to a WiFi sweep or a firmware update right now.
