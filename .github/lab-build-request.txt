@@ -1,3 +1,3 @@
-WATCH149-LANDBACK
-# Experimental LAB build after landscape WATCH BACK touch fix.
-# Triggered only on explicit user hardware regression report.
+pr146-sd-vfs-r4-20261101
+# R4 SD hot-remount: prove VFS cause; clean ONLY confirmed orphan /sd registration.
+# Supersedes failed R3b alternate-mount fallback. No format, erase-all, or release.
