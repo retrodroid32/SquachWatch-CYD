@@ -1,0 +1,38 @@
+# Validation-only branch workflow for PR #164.
+# Does NOT publish Pages, create a release, tag, or alter production firmware.
+name: Validate PR164 WebAssembly firmware version
+
+on:
+  push:
+    branches:
+      - lab/validate-pr164-wasm-version-20261102
+    paths:
+      - .github/workflows/validate-pr164-wasm.yml
+
+permissions:
+  contents: read
+
+jobs:
+  compile-wasm-version:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Set up pinned Emscripten toolchain
+        uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: 6.0.9
+          actions-cache-folder: emsdk-cache
+      - name: Compile WebAssembly emulator with exact version
+        shell: bash
+        run: |
+          set -euo pipefail
+          em++ --version | head -1
+          make -C sim wasm WASM_VERSION=v99.88.77-pr164
+          test -s sim/web/squachsim.js
+          test -s sim/web/squachsim.wasm
+          test "$(stat -c%s sim/web/squachsim.wasm)" -gt 200000
+          grep -aFq 'v99.88.77-pr164' sim/web/squachsim.wasm || {
+            echo "::error::Expected firmware version is absent from the compiled WASM!"
+            exit 1
+          }
+          echo "PASS: version v99.88.77-pr164 embedded in generated WASM."
