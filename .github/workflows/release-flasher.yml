@@ -411,7 +411,10 @@ jobs:
         run: |
           set -euo pipefail
           em++ --version | head -1
-          make -C sim wasm
+          # Only real tagged releases compile WASM; LAB builds reuse the
+          # previously published emulator (both this step and its toolchain
+          # setup are skipped for LAB).
+          make -C sim wasm WASM_VERSION="v${{ steps.ver.outputs.version }}"
           ls -l sim/web/squachsim.js sim/web/squachsim.wasm
           # An empty or tiny output means the link quietly failed; the site
           # would then serve a page that loads nothing and sits there blank.
