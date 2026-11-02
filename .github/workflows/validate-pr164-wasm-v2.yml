@@ -1,0 +1,37 @@
+# Validation-only job for refreshed PR #164 after fixing sd_browser_sim linking.
+# No firmware publication, version tag, Pages deployment or production release.
+name: Validate PR164 WebAssembly version and SD simulator link (v2)
+
+on:
+  push:
+    branches:
+      - lab/validate-pr164-wasm-v2-20261102
+    paths:
+      - .github/workflows/validate-pr164-wasm-v2.yml
+
+permissions:
+  contents: read
+
+jobs:
+  compile-wasm-version:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Set up pinned Emscripten toolchain
+        uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: 6.0.9
+          actions-cache-folder: emsdk-cache
+      - name: Compile WebAssembly and verify embedded version
+        shell: bash
+        run: |
+          set -euo pipefail
+          make -C sim wasm WASM_VERSION=v99.88.77-pr164
+          test -s sim/web/squachsim.js
+          test -s sim/web/squachsim.wasm
+          test "$(stat -c%s sim/web/squachsim.wasm)" -gt 200000
+          grep -aFq 'v99.88.77-pr164' sim/web/squachsim.wasm || {
+            echo "::error::Version string is absent from compiled WebAssembly binary"
+            exit 1
+          }
+          echo "PASS: sd_browser_sim linked and version embedded in WASM."
