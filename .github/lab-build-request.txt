@@ -1,3 +1,4 @@
-WATCH149-LANDBACK
-# Experimental LAB build after landscape WATCH BACK touch fix.
-# Triggered only on explicit user hardware regression report.
+CYD166-167-R8-20261102
+# Dedicated lab firmware for 2.8 ST7789 and 3.2 ST7798 CYDs.
+# Integrates PR #166 signature classifier with PR #167 compile-only S3 profile.
+# No production release, VERSION change, or version tag. Keep original branches.
