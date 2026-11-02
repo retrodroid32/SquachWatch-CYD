@@ -16,6 +16,8 @@
 #include <freertos/semphr.h>
 #include <esp_system.h>
 #include <esp_idf_version.h>
+#include <esp_vfs_fat.h>
+#include <esp_err.h>
 // The Phantoms define CYD (they ARE a CYD) but still need this reference,
 // because their touch shares the display's bus and SdLog::begin() has to hand
 // SD the display's own SPI instance -- see the comment on that branch below.
@@ -40,12 +42,15 @@ extern TFT_eSPI tft;
     #define SD_CS_PIN 5
 #endif
 
-// Room for two open files, not the library's default five. The FAT driver
-// reserves a 4 KB sector buffer per file slot up front, so five slots want a
-// 25 KB block -- more than is left once both radios are up (largest block
-// measured at 18 KB on the RL Phantom). This log has one file open at a time,
-// plus a directory handle while it prunes old days.
-static const uint8_t SD_MAX_FILES = 2;
+// A single open FILE is sufficient for all SD operations in this firmware.
+// Directory iterators use FatFs DIR (opendir/readdir), not VFS FIL slots.
+// The browser holds a directory while opening at most one child FILE;
+// the logger pauses while browsing and every other SD operation is
+// serialized by the SD mutex. A second VFS FIL slot demands a much larger
+// contiguous allocation and has been demonstrated to fail on reinsert
+// even though one slot can be registered (R5 hardware diagnosis).
+// Do not increase without redesigning and verifying hot-insert allocation.
+static const uint8_t SD_MAX_FILES = 1;
 
 bool SdLog::begin() {
     if (_ready) return true;
@@ -119,6 +124,31 @@ bool SdLog::begin() {
         return false;
     }
     Serial.printf("[sd] card mounted: %llu MB\n", (unsigned long long)(SD.cardSize() >> 20));
+#if defined(CYD) && !defined(AWOK) && !defined(CYD35) && !defined(RLPHANTOM) && !defined(RLPHANTOM_R) && !defined(TWATCH_S3)
+    // Capture the FATFS object SDFS already registered. Never create
+    // another one on card removal: repeated malloc/free of this FAT/VFS
+    // context was exhausting or fragmenting the small internal heap.
+    // f_getfree also ensures the selected drive is a mounted FAT SD card.
+    if (!_retainedFs) {
+        for (uint8_t pd = 0; pd < FF_VOLUMES; ++pd) {
+            if (sdcard_type(pd) == CARD_NONE) continue;
+            char drive[3] = {static_cast<char>('0' + pd), ':', 0};
+            FATFS* fs = nullptr;
+            DWORD freeClusters = 0;
+            const FRESULT fr = f_getfree(drive, &freeClusters, &fs);
+            if (fr == FR_OK && fs) {
+                _retainedPdrv = pd;
+                _retainedFs = fs;
+                _retainedDetached = false;
+                Serial.printf("[sd] retained FAT/VFS context on drive %u for hot swap\n", (unsigned)pd);
+                break;
+            }
+            Serial.printf("[sd] retained FAT probe drive %u result %d\n", (unsigned)pd, (int)fr);
+        }
+        if (!_retainedFs)
+            Serial.println("[sd] WARNING: no retained FAT context; legacy full remount only");
+    }
+#endif
     _ready = true;
     _everMounted = true;
     _statusDetail = "SD READY";
@@ -135,12 +165,69 @@ bool SdLog::begin() {
 // A failed flush therefore latches logging off until reboot. There is no
 // reliable card-detect input on the supported CYDs; guessing that the card
 // has been reinserted would reintroduce the stalls during normal scanning.
+// Do not tear down and reallocate SDFS/VFS when the card is physically
+// swapped. sdcard_unmount() only marks the registered disk uninitialized and
+// detaches the logical FAT volume; it does NOT sdcard_uninit(), unregister
+// /sd, or free the existing SDFS object. disk_initialize() then performs
+// the full new-card handshake, and f_mount() reuses the retained FATFS.
+bool SdLog::remountRetained() {
+#if defined(CYD) && !defined(AWOK) && !defined(CYD35) && !defined(RLPHANTOM) && !defined(RLPHANTOM_R) && !defined(TWATCH_S3)
+    if (!_retainedFs || !_retainedDetached || _retainedPdrv >= FF_VOLUMES)
+        return false;
+    const uint8_t pd = _retainedPdrv;
+    const char drive[3] = {static_cast<char>('0' + pd), ':', 0};
+    const DSTATUS state = disk_initialize(pd);
+    Serial.printf("[sd] retained drive %u disk_initialize status=0x%02X\n",
+                  (unsigned)pd, (unsigned)state);
+    if (state & STA_NOINIT) {
+        _statusDetail = "SD REINSERT INIT FAILED";
+        return false;
+    }
+    const FRESULT fr = f_mount(static_cast<FATFS*>(_retainedFs), drive, 1);
+    Serial.printf("[sd] retained FAT mount result=%d, freeheap=%lu\n",
+                  (int)fr, (unsigned long)ESP.getFreeHeap());
+    if (fr != FR_OK) {
+        // A failed f_mount must leave the existing context detached.
+        // Nothing is freed and no volume data is modified.
+        sdcard_unmount(pd);
+        _statusDetail = fr == FR_NO_FILESYSTEM ? "SD FAT NOT RECOGNIZED"
+                     : fr == FR_NOT_READY ? "SD CARD NOT READY"
+                     : "SD RETAINED FAT FAIL";
+        return false;
+    }
+    _retainedDetached = false;
+    _ready = true;
+    _everMounted = true;
+    _pendingLen = 0;
+    _filename[0] = '\0';
+    _statusDetail = "SD READY (REUSED VFS)";
+    Theme::setSdStatus(Theme::SdStatus::READY);
+    _lastFlush = millis();
+    openDaily();
+    Serial.println("[sd] hot reinsertion succeeded without VFS realloc");
+    return true;
+#else
+    return false;
+#endif
+}
+
 void SdLog::disableAfterIoFailure(const char* operation) {
     if (!_ready) return;
     ++_flushFailures;
     Serial.printf("[sd] %s failed; disabling SD logging until reboot (pending %u bytes discarded)\n",
                   operation, (unsigned)_pendingLen);
     _ready = false;
+#if defined(CYD) && !defined(AWOK) && !defined(CYD35) && !defined(RLPHANTOM) && !defined(RLPHANTOM_R) && !defined(TWATCH_S3)
+    if (_retainedFs && !_retainedDetached && _retainedPdrv < FF_VOLUMES) {
+        // This path runs inside the SD worker or under the existing SD
+        // mutex after a completed file close. No other task may be
+        // using a file while FatFs is detached.
+        sdcard_unmount(_retainedPdrv);
+        _retainedDetached = true;
+        Serial.printf("[sd] hot-swap: kept VFS allocation for drive %u\n",
+                      (unsigned)_retainedPdrv);
+    }
+#endif
     _statusDetail = "CARD REMOVED / IO FAILED";
     Theme::setSdStatus(Theme::SdStatus::ERROR);
     _pendingLen = 0;
@@ -253,6 +340,9 @@ static const char* sdDiagnosePostCmd0MountFailure(uint8_t* sector) {
 void SdLog::monitorEntry(void* ctx) {
     SdLog* self = static_cast<SdLog*>(ctx);
     uint8_t* sector = static_cast<uint8_t*>(malloc(512));
+    // Avoid repeated full SDFS allocations after a failed *first*
+    // mount. Re-arm only after a physical absence is observed.
+    bool coldCardPresenceLatched = false;
     for (;;) {
         if (!self) { vTaskDelay(pdMS_TO_TICKS(2500)); continue; }
         // RESCAN interrupts the regular 2.5 second delay. It does not
@@ -264,16 +354,45 @@ void SdLog::monitorEntry(void* ctx) {
         // A file browser can be open while a card is removed/reinserted.
         // Skip raw reads while browsing, but ALWAYS allow an offline remount.
         // The browser borrows the same mutex only around individual I/O.
-        // Boot-safe fallback: a failed initial SD mount (including an empty
-        // socket) must not launch the expensive FAT/SPI recovery path forever.
-        // Until a card has actually mounted once, only an explicit RESCAN
-        // requests a recovery attempt. After a successful initial mount,
-        // existing removal detection and automatic reinsert attempts remain.
+        // R8: cold-boot with no SD used to stay offline until RESCAN,
+        // because repeatedly calling SD.begin() without a card allocates
+        // and frees a large FAT/VFS context. On the independent SPI CYDs,
+        // probe physical presence via low-speed CMD0 ONLY (no FAT or VFS
+        // allocations) every 2.5 seconds. First positive response triggers
+        // the existing first-mount path; once it succeeds R7b's retained
+        // FAT/VFS hot-swap takes over unchanged.
+        //
+        // If the first full mount fails with the card present, do NOT
+        // repeatedly allocate/free VFS on a timer. An explicit RESCAN or
+        // a confirmed absence followed by reinsertion permits another try.
         if (!self->_ready && !self->_everMounted &&
             !self->_requestRescan && !signalled) {
+#if defined(CYD) && !defined(AWOK) && !defined(CYD35) && !defined(RLPHANTOM) && !defined(RLPHANTOM_R) && !defined(TWATCH_S3)
+            pinMode(SD_CS_PIN, OUTPUT);
+            digitalWrite(SD_CS_PIN, HIGH);
+            SPI.begin(18, 19, 23, SD_CS_PIN);
+            const uint8_t coldAck = sdRemountProbeCmd0();
+            if (coldAck != 0x01) {
+                // No card: do not call SD.end(), SD.begin(), or f_mount().
+                // Re-arm auto detect when the slot becomes empty again.
+                coldCardPresenceLatched = false;
+                self->_statusDetail = "SD OFFLINE - AUTO DETECT";
+                xSemaphoreGive(m);
+                continue;
+            }
+            if (coldCardPresenceLatched) {
+                self->_statusDetail = "SD SEEN - TAP RESCAN";
+                xSemaphoreGive(m);
+                continue;
+            }
+            coldCardPresenceLatched = true;
+            Serial.println("[sd] first SD insertion detected by CMD0; attempting initial mount");
+#else
+            // Shared-SPI variants retain their prior manual RESCAN policy.
             self->_statusDetail = "SD OFFLINE - TAP RESCAN";
             xSemaphoreGive(m);
             continue;
+#endif
         }
         if (!self->_browsing || !self->_ready) {
             if (self->_ready) {
@@ -289,7 +408,14 @@ void SdLog::monitorEntry(void* ctx) {
                 // the frame or from the title-bar icon.
                 self->_remounting = true;
                 self->_statusDetail = "REINITIALIZING SD";
-                SD.end();
+                // The old path called SD.end() on EVERY hot-remount,
+                // freeing the FAT/VFS context and forcing another large
+                // contiguous allocation amid active BLE/WiFi/display work.
+                // A detached retained drive already owns its FAT context;
+                // do NOT call SD.end() or SD.begin() for that drive.
+                const bool retained = self->_retainedDetached &&
+                                      self->_retainedFs != nullptr;
+                if (!retained) SD.end();
 #if defined(CYD) && !defined(RLPHANTOM) && !defined(RLPHANTOM_R) && !defined(CYD35)
                 // Do not forcibly unregister /sd from here. The Arduino
                 // SDFS owner must release its own FAT/VFS bookkeeping; a
@@ -315,6 +441,8 @@ void SdLog::monitorEntry(void* ctx) {
                     ++self->_probeFailures;
                     Serial.printf("[sd] remount probe FAILED: CMD0=0x%02X, count=%lu (no FAT attempt)\n",
                                   (unsigned)ack, (unsigned long)self->_probeFailures);
+                    // Preserve the retained VFS context even if no card is
+                    // in the slot. SPI is reinitialized on the next probe.
                     SPI.end();
                     self->_requestRescan = false;
                     xSemaphoreGive(m);
@@ -323,15 +451,78 @@ void SdLog::monitorEntry(void* ctx) {
                 self->_statusDetail = "CMD0 OK; MOUNTING";
                 Serial.println("[sd] remount probe: CMD0=0x01 (card SPI responsive)");
 #endif
-                const bool mounted = self->begin();
-                self->_remounting = false;
-                if (!mounted) {
-                    // The driver can fail AFTER CMD0 but BEFORE FAT. Probe
-                    // the same SD slot using the raw diskio driver, then
-                    // expose the precise stage to the on-device screen.
-                    self->_statusDetail = sdDiagnosePostCmd0MountFailure(sector);
-                    Serial.printf("[sd diag] remount stage: %s\n", self->_statusDetail);
+                bool mounted = retained
+                    ? self->remountRetained()
+                    : self->begin();
+                if (!mounted && !retained) {
+                    // Raw FAT success only proves the card is readable. It
+                    // does NOT prove that the previous SD.begin failed at the
+                    // ESP-IDF VFS step. R3's alternate path was a false fix.
+                    const char* stage = sdDiagnosePostCmd0MountFailure(sector);
+                    self->_statusDetail = stage;
+                    Serial.printf("[sd diag] raw remount stage: %s\n", stage);
+
+                    if (strcmp(stage, "FAT OK; VFS MOUNT FAIL") == 0) {
+                        // R5 hardware proved two VFS FILE slots fail to
+                        // allocate while one succeeds. This R6 build uses
+                        // one slot for both SD.begin and this diagnostic.
+                        // A directory handle does not use a VFS FIL slot.
+                        // No f_mount, card writes, or formatting here.
+                        FATFS* probeFs = nullptr;
+                        const size_t largestBefore =
+                            heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
+                        const esp_err_t reg = esp_vfs_fat_register(
+                            "/sd", "0:", SD_MAX_FILES, &probeFs);
+                        Serial.printf("[sd diag] VFS /sd probe files=%u, result=0x%x, FIL=%u B, heap=%lu, largest=%lu B\n",
+                                      (unsigned)SD_MAX_FILES, (unsigned)reg,
+                                      (unsigned)sizeof(FIL),
+                                      (unsigned long)ESP.getFreeHeap(),
+                                      (unsigned long)largestBefore);
+
+                        if (reg == ESP_ERR_INVALID_STATE) {
+                            // Re-check SD ownership before cleaning: a live
+                            // Arduino SDFS mount must never be invalidated.
+                            // SD.begin() failed and reset _pdrv to 0xFF;
+                            // CARD_NONE is a defensive second check.
+                            if (SD.cardType() != CARD_NONE) {
+                                self->_statusDetail = "VFS OWNED - NO CLEANUP";
+                                Serial.println("[sd diag] SD still owns media; refusing VFS cleanup");
+                            } else {
+                                const esp_err_t cleared = esp_vfs_fat_unregister_path("/sd");
+                                Serial.printf("[sd diag] stale /sd context cleanup=0x%x\n",
+                                              (unsigned)cleared);
+                                if (cleared == ESP_OK) {
+                                    // A confirmed orphaned /sd context was
+                                    // removed. Retry only the canonical /sd
+                                    // mount, never another namespace, and only
+                                    // once in this worker cycle.
+                                    mounted = self->begin();
+                                    self->_statusDetail = mounted
+                                        ? "SD READY (VFS REPAIRED)"
+                                        : "VFS CLEARED; MOUNT FAIL";
+                                    Serial.printf("[sd diag] canonical /sd retry %s\n",
+                                                  mounted ? "SUCCESS" : "FAILED");
+                                } else {
+                                    self->_statusDetail = "VFS CLEANUP FAILED";
+                                }
+                            }
+                        } else if (reg == ESP_OK) {
+                            // It was NOT an occupied /sd mountpoint. Remove
+                            // only the probe context we just allocated.
+                            const esp_err_t unreg = esp_vfs_fat_unregister_path("/sd");
+                            Serial.printf("[sd diag] VFS probe unregister=0x%x\n",
+                                          (unsigned)unreg);
+                            self->_statusDetail = unreg == ESP_OK
+                                ? "VFS PATH FREE; SD FAIL"
+                                : "VFS PROBE CLEANUP FAIL";
+                        } else if (reg == ESP_ERR_NO_MEM) {
+                            self->_statusDetail = "SD 1-FILE ALLOC FAILED";
+                        } else {
+                            self->_statusDetail = "VFS PROBE ERROR";
+                        }
+                    }
                 }
+                self->_remounting = false;
                 if (!mounted && (self->_requestRescan || signalled))
                     Serial.println("[sd] RESCAN attempted, SD still offline");
                 self->_requestRescan = false;
@@ -384,9 +575,10 @@ bool SdLog::rescan() {
 // already mounted card, using the same SD.remove() path the browser verifies.
 // It never touches the partition table, FAT geometry, NVS, or SPI registration.
 //
-// OpenNextFile uses a second file handle. Close BOTH handles before deleting or
-// descending into a child: SD_MAX_FILES is intentionally only 2. Re-open the
-// parent each iteration to safely find the first remaining entry after delete.
+// The parent uses a DIR iterator; openNextFile opens at most one FIL.
+// Close both before deleting or descending; the VFS needs only one FILE
+// slot. Re-open the parent each iteration to find the first remaining
+// entry after delete.
 static bool sdEraseDirectory(const char* folder, unsigned depth,
                              uint32_t& files, uint32_t& dirs,
                              char* failure, size_t failCap) {
@@ -607,6 +799,136 @@ void SdLog::logEvent(const Detection& d) {
     }
 }
 
+// One evidence file per watched/hunted MAC, or classified Evil Twin MAC.
+// A successful evidence write is capped at one per target/type every five
+// seconds. No radio callback ever invokes this method or touches SD.
+void SdLog::logTargetEvidence(const Detection& d, bool watched, bool hunted) {
+    const bool rogue = d.type == DetectionType::EVILTWIN;
+    if ((!watched && !hunted && !rogue) || !_ready || _browsing) return;
+    const uint32_t now = millis();
+    struct Recent { uint32_t key, at; bool used; };
+    static Recent recent[8] = {};
+    uint32_t key = 2166136261u ^ (uint32_t)d.type ^ (rogue ? 0xEEu : watched ? 0x57u : 0x48u);
+    for (uint8_t i = 0; i < 6; i++) key = (key ^ d.mac[i]) * 16777619u;
+    Recent& slot = recent[key % 8];
+    if (slot.used && slot.key == key && now - slot.at < 5000u) return;
+
+    char path[40];
+    snprintf(path, sizeof path,
+             rogue ? "/evilportal-%02X%02X%02X%02X%02X%02X.log"
+                   : "/scan-%02X%02X%02X%02X%02X%02X.log",
+             d.mac[0], d.mac[1], d.mac[2], d.mac[3], d.mac[4], d.mac[5]);
+    char ts[28];
+    SdTimestamp::format(ts, sizeof ts, Clock::trusted(), Clock::nowEpoch(), now);
+    char mac[18];
+    snprintf(mac, sizeof mac, "%02X:%02X:%02X:%02X:%02X:%02X",
+             d.mac[0], d.mac[1], d.mac[2], d.mac[3], d.mac[4], d.mac[5]);
+    char safe[sizeof d.name] = {};
+    for (size_t i = 0; i + 1 < sizeof safe && d.name[i]; ++i) {
+        const unsigned char c = (unsigned char)d.name[i];
+        safe[i] = c < 32 || c > 126 || c == ',' || c == '"' ? '.' : (char)c;
+    }
+    if (safe[0] == '=' || safe[0] == '+' || safe[0] == '-' || safe[0] == '@')
+        safe[0] = '_';
+    const char* mode = rogue ? "EVILTWIN" : watched && hunted ? "WATCH+HUNT"
+                       : watched ? "WATCH" : "HUNT";
+    char row[160];
+    const int n = snprintf(row, sizeof row, "%s,%s,%s,%s,%d,%u,%s\n",
+                           ts, mode, detectionTypeName(d.type), mac,
+                           (int)d.rssi, (unsigned)d.channel, safe);
+    if (n <= 0 || (size_t)n >= sizeof row) return;
+
+    // The monitor owns the dedicated SD SPI bus on another task. A failed
+    // immediate lock acquisition drops optional evidence, never stalls UI.
+    const SemaphoreHandle_t mutex = static_cast<SemaphoreHandle_t>(_ioMutex);
+    if (mutex && xSemaphoreTake(mutex, 0) != pdTRUE) return;
+    struct Unlock { SemaphoreHandle_t mutex; ~Unlock() { if (mutex) xSemaphoreGive(mutex); } } unlock{mutex};
+    if (!_ready || _browsing) return;
+    const uint32_t started = millis();
+    const bool existed = SD.exists(path);
+    File out = SD.open(path, FILE_APPEND);
+    if (!out) { disableAfterIoFailure("evidence open"); return; }
+    bool ok = true;
+    if (!existed) {
+        static const char hdr[] = "timestamp,mode,type,mac,rssi,channel,name\n";
+        ok = out.write((const uint8_t*)hdr, sizeof hdr - 1) == sizeof hdr - 1;
+    }
+    if (ok) ok = out.write((const uint8_t*)row, (size_t)n) == (size_t)n;
+    out.close();
+    if (!ok || (uint32_t)(millis() - started) >= 500u) {
+        disableAfterIoFailure(ok ? "slow evidence write" : "evidence write");
+        return;
+    }
+    slot = {key, now, true};
+}
+
+// Best-effort evidence from the bounded NimBLE mailbox. SD I/O never runs
+// inside NimBLE callbacks. Exact duplicate payloads are paced for five seconds
+// to limit flash churn and keep scanning/UI responsive.
+void SdLog::logWatchAdvertisement(const uint8_t mac[6], const uint8_t* bytes,
+                                   uint8_t len, uint16_t originalLen, int8_t rssi) {
+    if (!_ready || _browsing || !mac || !bytes || len == 0 || len > 64) return;
+    const uint32_t now = millis();
+    static struct { uint32_t hash, at; bool used; } recent[8] = {};
+    uint32_t hash = 2166136261u;
+    for (uint8_t i = 0; i < 6; i++) hash = (hash ^ mac[i]) * 16777619u;
+    for (uint8_t i = 0; i < len; i++) hash = (hash ^ bytes[i]) * 16777619u;
+    hash = (hash ^ len) * 16777619u;
+    hash = (hash ^ originalLen) * 16777619u;
+    auto& slot = recent[hash % 8];
+    if (slot.used && slot.hash == hash && now - slot.at < 5000u) return;
+
+    char path[40];
+    snprintf(path, sizeof path, "/watchadv-%02X%02X%02X%02X%02X%02X.log",
+             mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+    char timestamp[28];
+    SdTimestamp::format(timestamp, sizeof timestamp, Clock::trusted(), Clock::nowEpoch(), now);
+    static const char hexDigits[] = "0123456789ABCDEF";
+    char hex[129];
+    for (uint8_t i = 0; i < len; i++) {
+        hex[2 * i] = hexDigits[bytes[i] >> 4];
+        hex[2 * i + 1] = hexDigits[bytes[i] & 0x0F];
+    }
+    hex[2 * len] = '\0';
+    char row[210];
+    const int n = snprintf(row, sizeof row, "%s,%d,%u,%u,%s\n",
+                           timestamp, (int)rssi, (unsigned)originalLen, (unsigned)len, hex);
+    if (n <= 0 || (size_t)n >= sizeof row) return;
+
+    const SemaphoreHandle_t mutex = static_cast<SemaphoreHandle_t>(_ioMutex);
+    if (mutex && xSemaphoreTake(mutex, 0) != pdTRUE) return;
+    struct Unlock { SemaphoreHandle_t mutex; ~Unlock() { if (mutex) xSemaphoreGive(mutex); } } unlock{mutex};
+    if (!_ready || _browsing) return;
+    const uint32_t started = millis();
+    const bool existed = SD.exists(path);
+    File out = SD.open(path, FILE_APPEND);
+    if (!out) { disableAfterIoFailure("watched BLE advert open"); return; }
+    bool ok = true;
+    if (!existed) {
+        static const char hdr[] = "timestamp,rssi,original_bytes,captured_bytes,ad_hex\n";
+        ok = out.write((const uint8_t*)hdr, sizeof hdr - 1) == sizeof hdr - 1;
+    }
+    if (ok) ok = out.write((const uint8_t*)row, (size_t)n) == (size_t)n;
+    out.close();
+    if (!ok || (uint32_t)(millis() - started) >= 500u) {
+        disableAfterIoFailure(ok ? "slow watched BLE advert write" : "watched BLE advert write");
+        return;
+    }
+    slot = {hash, now, true};
+}
+
+// Duress wipe only touches exact application-owned file patterns. It never
+// deletes a human's file such as scan-notes.log.
+static bool isOwnedEvidenceFilename(const char* name, const char* prefix) {
+    const size_t p = strlen(prefix);
+    if (strncmp(name, prefix, p) != 0 || strlen(name) != p + 12u + 4u) return false;
+    for (size_t i = 0; i < 12u; i++) {
+        const char c = name[p + i];
+        if (!((c >= '0' && c <= '9') || (c >= 'A' && c <= 'F'))) return false;
+    }
+    return strcmp(name + p + 12u, ".log") == 0;
+}
+
 void SdLog::wipe() {
     if (!_ready || _browsing) return;
     const SemaphoreHandle_t m = static_cast<SemaphoreHandle_t>(_ioMutex);
@@ -639,7 +961,10 @@ void SdLog::wipe() {
             const char* nm = f.name();
             const char* base = nm;
             for (const char* p = nm; *p; p++) if (*p == '/') base = p + 1;
-            if (strncmp(base, "squachwatch-", 12) == 0) {
+            if (strncmp(base, "squachwatch-", 12) == 0 ||
+                isOwnedEvidenceFilename(base, "scan-") ||
+                isOwnedEvidenceFilename(base, "evilportal-") ||
+                isOwnedEvidenceFilename(base, "watchadv-")) {
                 snprintf(victims[n], sizeof victims[n], "/%s", base);
                 n++;
             }
