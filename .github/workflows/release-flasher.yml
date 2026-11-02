@@ -411,7 +411,13 @@ jobs:
         run: |
           set -euo pipefail
           em++ --version | head -1
-          make -C sim wasm
+          # Real releases identify the UI as vX.Y.Z; LAB builds use
+          # lab-<label> without a misleading extra "v" prefix.
+          WASM_VERSION="${{ steps.ver.outputs.version }}"
+          if [ "${{ steps.ver.outputs.is_lab }}" != "true" ]; then
+            WASM_VERSION="v${WASM_VERSION}"
+          fi
+          make -C sim wasm WASM_VERSION="${WASM_VERSION}"
           ls -l sim/web/squachsim.js sim/web/squachsim.wasm
           # An empty or tiny output means the link quietly failed; the site
           # would then serve a page that loads nothing and sits there blank.
