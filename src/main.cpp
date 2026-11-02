@@ -44,6 +44,9 @@
 #include "theme.h"            // the crash card on the splash
 #include "privacy.h"
 #include "clock.h"
+#if defined(LAB_GNSS169)
+#include "lab169.h"
+#endif
 
 // Written every second, read once on the next boot. RTC_NOINIT_ATTR is the
 // point: it survives a software reset WITHOUT being zeroed on the way back
@@ -3329,6 +3332,9 @@ void setup() {
     }
 #endif
     engine.init();
+#if defined(LAB_GNSS169)
+    Lab169::begin();
+#endif
     // After the engine: the card leans on the lifetime counts to pick which
     // type sits out, and those are read in init().
     Bingo::begin(engine);
@@ -3810,6 +3816,9 @@ void loop() {
         touchJustUp = false;
     }
     engine.loop();
+#if defined(LAB_GNSS169)
+    Lab169::tick(now);
+#endif
     floodTick();   // nothing outside a FLOOD_BENCH build
     // The heap at the first pass of loop(), for DIAGNOSTICS' BOOT line.
     static uint32_t s_loopHeapFree = 0, s_loopHeapLargest = 0;
@@ -3999,7 +4008,7 @@ void loop() {
         g_consoleAdc = false;
         const uint8_t pins[] = {
             34,
-#if !(defined(GPS_SUPPORT) && defined(GPS_RX_PIN) && GPS_RX_PIN == 35)
+#if !(defined(LAB_GNSS169) || (defined(GPS_SUPPORT) && defined(GPS_RX_PIN) && GPS_RX_PIN == 35))
             35,
 #endif
             36, 39

@@ -1,5 +1,9 @@
 // SquachWatch-CYD — on-device diagnostics screen implementation
 #include "ui_diagnostics.h"
+#if defined(LAB_GNSS169)
+#include "lab169.h"
+#include "wardrive.h"
+#endif
 #include "clock.h"
 #include "theme.h"
 #include "detection.h"
@@ -66,6 +70,41 @@ void uiDiagnosticsTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, co
 
     y = drawLine(t, y, Theme::CYAN, "BOARD:", "%s (%s)", info.boardName,
                  info.usingCapTouch ? "capacitive" : "resistive");
+#if defined(LAB_GNSS169)
+    // Lab-only real-UART PR #169 result, shown before lower-priority data.
+    {
+        const Lab169::Status g = Lab169::status(now);
+        y = drawLine(t, y, g.fresh ? Theme::GREEN : Theme::AMBER,
+                     "GPS169:", "%s %lu baud", g.fresh ? "FIX" :
+                     g.valid ? "STALE" : "NO FIX", (unsigned long)g.baud);
+        y = drawLine(t, y, Theme::CYAN, "NMEA:",
+                     "%lu bytes %lu ok %lu bad",
+                     (unsigned long)g.bytes, (unsigned long)g.good, (unsigned long)g.bad);
+        y = drawLine(t, y, Theme::CYAN, "SAT:",
+                     "%u used %u view %u heard",
+                     (unsigned)g.sats, (unsigned)g.view, (unsigned)g.heard);
+        if (g.fresh) {
+            const int64_t la = g.lat7, lo = g.lon7;
+            const uint64_t ala = (uint64_t)(la < 0 ? -la : la);
+            const uint64_t alo = (uint64_t)(lo < 0 ? -lo : lo);
+            y = drawLine(t, y, Theme::GREEN, "LAT:", "%s%lu.%07lu",
+                         la < 0 ? "-" : "", (unsigned long)(ala / 10000000ULL),
+                         (unsigned long)(ala % 10000000ULL));
+            y = drawLine(t, y, Theme::GREEN, "LON:", "%s%lu.%07lu",
+                         lo < 0 ? "-" : "", (unsigned long)(alo / 10000000ULL),
+                         (unsigned long)(alo % 10000000ULL));
+        }
+        if (g.epoch) {
+            char stamp[24];
+            Wardrive::utcStamp(g.epoch, stamp, sizeof stamp);
+            y = drawLine(t, y, Theme::CYAN, "UTC:", "%s", stamp);
+        }
+        y = drawLine(t, y, g.csvCount && g.csvPass ? Theme::GREEN : Theme::AMBER,
+                     "WIGLE:", "%s (%lu tests)",
+                     g.csvCount ? (g.csvPass ? "PASS" : "FAIL") : "WAIT GPS",
+                     (unsigned long)g.csvCount);
+    }
+#endif
     y = drawLine(t, y, Theme::CYAN, "RESET:", "%s", info.resetReason);
     // Only after an actual panic, and only when the breadcrumb survived. A
     // blank line here means a clean boot, not a missing feature.
