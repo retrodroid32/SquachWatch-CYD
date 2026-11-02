@@ -170,6 +170,20 @@
       "merged": false,
       "lab": false,
       "cyd28": false
+    },
+    {
+      "id": "freenove-s3",
+      "label": "Freenove ESP32-S3 2.8\" (compile-only)",
+      "manifest": null,
+      "visible": false,
+      "ci": true,
+      "release": false,
+      "sign": false,
+      "shared_esp32": false,
+      "merged": false,
+      "lab": false,
+      "cyd28": false,
+      "note": "Compile-validation profile for Freenove FNK0104B/FNK0104A; hardware validation required before publication."
     }
   ]
 }
