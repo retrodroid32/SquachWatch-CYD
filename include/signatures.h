@@ -49,6 +49,8 @@ DetectionType lookupOui(const uint8_t* mac, Confidence* conf = nullptr);
 const char* ouiVendorName(const uint8_t* mac);
 DetectionType lookupUuid(uint16_t uuid16);
 DetectionType lookupBtName(const char* name);
+// True only for the exact 10-digit serial form used by Penguin/Flock packs.
+bool isBareSerialName(const char* name);
 DetectionType lookupSsid(const char* ssid);   // case-insensitive prefix
 
 // Flock firmware/behavior corroboration helpers. 00:03:7F is Qualcomm's
