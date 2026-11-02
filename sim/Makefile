@@ -193,9 +193,10 @@ WASM_FLAGS := -std=c++17 -Os -I$(SIM_DIR) -I$(INC) -DSQUACH_MESH=1 \
               --closure 0
 
 # WebAssembly builds print their real firmware identity on the boot screen.
-# The tagged release workflow passes an explicit vX.Y.Z; LAB passes lab-*.
-# Local builds fall back to the closest Git tag/commit (or "unknown" when
-# built outside a Git repository). This affects only the browser emulator.
+# Tagged production releases pass their explicit vX.Y.Z; LAB builds reuse
+# the already published emulator and do not compile this target.
+# Local builds use git describe, or "unknown" outside a Git repository.
+# This affects only the browser emulator.
 WASM_VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo unknown)
 WASM_FLAGS   += -DFIRMWARE_VERSION='"$(WASM_VERSION)"'
 
