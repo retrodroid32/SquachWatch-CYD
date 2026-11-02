@@ -165,7 +165,8 @@ WASM_SRCS := $(UI_SRCS) \
              $(SRC)/cap_touch.cpp \
              $(SRC)/touch_cal.cpp \
              $(SIM_DIR)/main_wasm.cpp \
-             $(SIM_DIR)/detection_sim.cpp
+             $(SIM_DIR)/detection_sim.cpp \
+             $(SIM_DIR)/sd_browser_sim.cpp
 WASM_DIR  := web
 WASM_OUT  := $(WASM_DIR)/squachsim.js
 # -Os over -O2: this ships over the wire, and the emulator spends its
