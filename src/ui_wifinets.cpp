@@ -305,8 +305,23 @@ WifiNetsHit uiWifiNetsHit(TFT_eSPI& t, int x, int y, int* row) {
 
 // ---- adding one: the scan -----------------------------------------------------
 
+// The old ADD page silently clipped scan results to the first screenful.
+// Preserve the result count, and page through all entries without rescanning.
+static int s_wifiAddPage = 0;
+static int s_wifiAddFit = 1;
+static int s_wifiAddCount = 0;
+
 void uiWifiAddInit(TFT_eSPI& t) {
+    s_wifiAddPage = 0;
+    s_wifiAddFit = 1;
+    s_wifiAddCount = 0;
     t.fillRect(0, 0, t.width(), t.height(), Theme::BG);
+}
+
+void uiWifiAddPage(int direction) {
+    const int maxPage = s_wifiAddCount ? (s_wifiAddCount - 1) / s_wifiAddFit : 0;
+    const int next = s_wifiAddPage + (direction > 0 ? 1 : -1);
+    if (next >= 0 && next <= maxPage) s_wifiAddPage = next;
 }
 
 void uiWifiAddTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng) {
@@ -315,8 +330,14 @@ void uiWifiAddTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng) {
     t.setTextSize(1);
     t.setTextWrap(false);
     const int w = t.width();
-    const Bar b = bar(t, 2);
+    const Bar b = bar(t, 4);
     const int fit = rowsThatFit(t, b.y[0]);
+    const int count = (int)eng.rawWifiCount();
+    s_wifiAddFit = fit;
+    s_wifiAddCount = count;
+    const int maxPage = count ? (count - 1) / fit : 0;
+    if (s_wifiAddPage > maxPage) s_wifiAddPage = maxPage;
+    const int first = s_wifiAddPage * fit;
     if (eng.rawWifiScanFailed()) {
         paragraph(t, ROW_Y0 + 4, Theme::AMBER, "WiFi scan failed or timed out. Press RESCAN; no reboot required.");
     } else if (!eng.rawWifiScanDone()) {
@@ -327,12 +348,21 @@ void uiWifiAddTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng) {
     } else if (!eng.rawWifiCount()) {
         paragraph(t, ROW_Y0 + 4, Theme::WHITE, "No networks found. Move closer to the router and press RESCAN.");
     }
-    const uint8_t n = eng.rawWifiCount();
-    for (int i = 0; i < n && i < fit; i++) {
+    if (eng.rawWifiScanDone() && count > 0) {
+        char countText[40];
+        const int last = first + fit < count ? first + fit : count;
+        snprintf(countText, sizeof countText, "NETWORKS %d-%d OF %d",
+                 first + 1, last, count);
+        t.setTextColor(Theme::CYAN, Theme::BG);
+        t.setCursor(8, 21);
+        t.print(countText);
+    }
+    for (int i = 0; i < fit && first + i < count; i++) {
+        const int idx = first + i;
         const int y = ROW_Y0 + i * (ROW_H + ROW_GAP);
-        const char* ssid = eng.rawWifiSsid((uint8_t)i);
+        const char* ssid = eng.rawWifiSsid((uint8_t)idx);
         const bool saved = OtaWifi::savedIndexOf(ssid) >= 0;
-        const bool open  = eng.rawWifiOpen((uint8_t)i);
+        const bool open  = eng.rawWifiOpen((uint8_t)idx);
         t.fillRect(8, y, w - 16, ROW_H, Theme::TASKBAR);
         t.drawRect(8, y, w - 16, ROW_H, Theme::VAPOR_PURPLE);
         const char* tag  = saved ? "SAVED" : (open ? "OPEN" : "");
@@ -349,25 +379,30 @@ void uiWifiAddTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng) {
             t.setCursor(w - 16 - 20 - tagW, y + (ROW_H - t.fontHeight()) / 2);
             t.print(tag);
         }
-        signalBars(t, w - 16 - 16, y + ROW_H - 5, eng.rawWifiRssi((uint8_t)i));
+        signalBars(t, w - 16 - 16, y + ROW_H - 5, eng.rawWifiRssi((uint8_t)idx));
     }
-    Theme::drawWin95Button(t, b.x[0], b.y[0], b.w, BTN_H, "RESCAN", false);
-    Theme::drawWin95Button(t, b.x[1], b.y[1], b.w, BTN_H, "BACK",   false);
+    Theme::drawWin95Button(t, b.x[0], b.y[0], b.w, BTN_H, "PREV", s_wifiAddPage == 0);
+    Theme::drawWin95Button(t, b.x[1], b.y[1], b.w, BTN_H, "NEXT", s_wifiAddPage >= maxPage);
+    Theme::drawWin95Button(t, b.x[2], b.y[2], b.w, BTN_H, "RESCAN", false);
+    Theme::drawWin95Button(t, b.x[3], b.y[3], b.w, BTN_H, "BACK", false);
     Theme::drawToast(t, now);
 }
 
 WifiAddHit uiWifiAddHit(TFT_eSPI& t, int x, int y, const DetectionEngine& eng, int* row) {
-    const Bar b = bar(t, 2);
+    const Bar b = bar(t, 4);
     const int fit = rowsThatFit(t, b.y[0]);
-    const uint8_t n = eng.rawWifiScanDone() ? eng.rawWifiCount() : 0;
-    for (int i = 0; i < n && i < fit; i++) {
+    const int n = eng.rawWifiScanDone() ? (int)eng.rawWifiCount() : 0;
+    const int first = s_wifiAddPage * fit;
+    for (int i = 0; i < fit && first + i < n; i++) {
         const int ry = ROW_Y0 + i * (ROW_H + ROW_GAP);
         if (y >= ry && y < ry + ROW_H + ROW_GAP && x >= 8 && x <= t.width() - 8) {
-            if (row) *row = i;
+            if (row) *row = first + i;
             return WifiAddHit::ROW;
         }
     }
-    if (in(x, y, b.x[0], b.y[0], b.w, BTN_H)) return WifiAddHit::RESCAN;
-    if (in(x, y, b.x[1], b.y[1], b.w, BTN_H)) return WifiAddHit::BACK;
+    if (s_wifiAddPage > 0 && in(x, y, b.x[0], b.y[0], b.w, BTN_H)) return WifiAddHit::PREV;
+    if ((first + fit) < n && in(x, y, b.x[1], b.y[1], b.w, BTN_H)) return WifiAddHit::NEXT;
+    if (in(x, y, b.x[2], b.y[2], b.w, BTN_H)) return WifiAddHit::RESCAN;
+    if (in(x, y, b.x[3], b.y[3], b.w, BTN_H)) return WifiAddHit::BACK;
     return WifiAddHit::NONE;
 }
