@@ -95,6 +95,18 @@ enum class RawScanMode : uint8_t { NONE, BLE, WIFI, UPDATE, REST };
 static bool g_restBle = false;   // REST: is the BLE scan resting too?
 static RawScanMode g_rawMode        = RawScanMode::NONE;
 static uint32_t    g_rawBleStartMs  = 0;
+#if defined(GPS_SUPPORT) && defined(GPS_RX_PIN)
+// GPIO35 GPS firmware revealed raw WiFi and NimBLE competing for RF airtime.
+// Pause BLE on its host task before doing an active WiFi survey, with a
+// bounded wait and a single retry instead of SCANNING forever on an error.
+static volatile bool s_rawWifiBlePaused = false;
+static bool          s_rawWifiStarted = false;
+static bool          s_rawWifiFinished = false;
+static bool          s_rawWifiFailed = false;
+static uint8_t       s_rawWifiAttempts = 0;
+static uint32_t      s_rawWifiRequestMs = 0, s_rawWifiStartedMs = 0;
+static uint32_t      s_bleRecoveryAt = 0;
+#endif
 // How long a raw BLE sweep stays open before the UI is told it's
 // "done" -- a deliberately longer, focused dwell than the continuous
 // scan ever gives any one moment, which is the actual "more thorough"
@@ -1397,6 +1409,7 @@ static void scanFlushTick() {
     ble_npl_eventq_put(nimble_port_get_dflt_eventq(), &s_flushEv);
 }
 
+static void rawWifiScanTick();
 void DetectionEngine::loop() {
     // Bound radio work per pass so a dense RF burst cannot monopolise one UI
     // frame. When a mailbox is at least half full the allowance expands
@@ -1414,6 +1427,7 @@ void DetectionEngine::loop() {
     // raw-scan early return so a result queued just before a mode change is not
     // stranded until that scan ends.
     processBleQ(bleBudgetUs, bleMax);
+    rawWifiScanTick();
 
     // Resting radios still take the BLE side of the loop when BLE is up;
     // only the WiFi steps below are skipped, since WiFi is stopped.
@@ -1982,17 +1996,36 @@ static bool                 s_rawBleModeEvReady = false;
 
 static void rawBleModeOnHost(struct ble_npl_event*) {
     NimBLEScan* scan = NimBLEDevice::getScan();
+#if defined(GPS_SUPPORT) && defined(GPS_RX_PIN)
+    // The raw WiFi survey temporarily needs the shared 2.4 GHz radio.
+    // All NimBLE stop/start operations remain on the host task.
+    if (g_rawMode == RawScanMode::WIFI) {
+        if (scan && scan->isScanning()) scan->stop();
+        s_rawWifiBlePaused = true;
+        return;
+    }
+    if (g_rawMode == RawScanMode::UPDATE ||
+        (g_rawMode == RawScanMode::REST && g_restBle)) return;
+    if (!scan) return;
+    // Also recover a scan that unexpectedly stopped; the old guard
+    // returned without ever restarting, leaving BLE deaf until reboot.
+    const bool passive = (g_rawMode == RawScanMode::BLE) ? false : s_wantPassive;
+    if (scan->isScanning()) {
+        if (passive == s_passiveNow) return;
+        scan->stop();
+    }
+    scan->setActiveScan(!passive);
+    s_passiveNow = passive;
+    scan->start(0, false, true);
+#else
     if (!scan || !scan->isScanning()) return;
-
-    // BLE raw scan => active. Anything else => return to the detector's
-    // current AUTO/pinned choice.
     const bool passive = (g_rawMode == RawScanMode::BLE) ? false : s_wantPassive;
     if (passive == s_passiveNow) return;
-
     scan->stop();
     scan->setActiveScan(!passive);
     s_passiveNow = passive;
     scan->start(0, false, true);
+#endif
 }
 
 static void requestRawBleScanMode() {
@@ -2004,7 +2037,13 @@ static void requestRawBleScanMode() {
 }
 
 void DetectionEngine::startRawBleScan() {
-    if (g_rawMode == RawScanMode::WIFI) WiFi.scanDelete();
+    if (g_rawMode == RawScanMode::WIFI) {
+#if defined(GPS_SUPPORT) && defined(GPS_RX_PIN)
+        if (s_rawWifiStarted && !s_rawWifiFinished) esp_wifi_scan_stop();
+        s_rawWifiStarted = s_rawWifiFinished = s_rawWifiFailed = false;
+#endif
+        WiFi.scanDelete();
+    }
     _rawBleCount = 0;
     // The same indefinite NimBLE scanner is reused, but the focused manual
     // sweep temporarily forces ACTIVE scanning so Local Names carried in scan
@@ -2026,18 +2065,91 @@ const RawBleResult* DetectionEngine::rawBleAt(uint8_t idx) const {
 }
 
 void DetectionEngine::startRawWifiScan() {
-    // Gate the BLE callback off first (it'd otherwise still be live
-    // during the scan) before touching the radio.
     const bool leavingRawBle = (g_rawMode == RawScanMode::BLE);
-    _rawWifiCachedCount = 0;  // a deliberate new sweep replaces the snapshot
+#if defined(GPS_SUPPORT) && defined(GPS_RX_PIN)
+    if (g_rawMode == RawScanMode::WIFI && s_rawWifiStarted && !s_rawWifiFinished)
+        esp_wifi_scan_stop();
+    WiFi.scanDelete();
+    s_rawWifiBlePaused = false;
+    s_rawWifiStarted = s_rawWifiFinished = s_rawWifiFailed = false;
+    s_rawWifiAttempts = 0;
+    s_rawWifiRequestMs = millis();
+    s_rawWifiStartedMs = 0;
+#endif
+    _rawWifiCachedCount = 0;
     g_rawMode = RawScanMode::WIFI;
-    if (leavingRawBle) requestRawBleScanMode();
     esp_wifi_set_promiscuous(false);
+#if defined(GPS_SUPPORT) && defined(GPS_RX_PIN)
+    // Host-task acknowledgement prevents an active BLE scan from consuming
+    // 75% of airtime while WiFi surveys all the available 2.4 GHz channels.
+    requestRawBleScanMode();
+#else
+    if (leavingRawBle) requestRawBleScanMode();
     WiFi.scanNetworks(true /* async */);
+#endif
+}
+
+// Called from the regular loop, never from NimBLE callbacks or UI paint.
+static void rawWifiScanTick() {
+#if defined(GPS_SUPPORT) && defined(GPS_RX_PIN)
+    if (g_rawMode != RawScanMode::WIFI || s_rawWifiFinished) return;
+    const uint32_t now = millis();
+    if (!s_rawWifiStarted) {
+        // A dead BLE host must not prevent the WiFi survey indefinitely.
+        if (!s_rawWifiBlePaused && now - s_rawWifiRequestMs < 1500u) return;
+        if (s_rawWifiAttempts && now - s_rawWifiRequestMs < 350u) return;
+        if (!s_rawWifiBlePaused)
+            Serial.println("[raw-wifi] BLE pause unacknowledged after 1500 ms");
+        // Active directed probes discover ordinary broadcasting APs. Include
+        // hidden networks, use a longer bounded channel dwell than the old
+        // default, and do not change the ongoing promiscuous detector profile.
+        const int rc = WiFi.scanNetworks(true, true, false, 180);
+        ++s_rawWifiAttempts;
+        s_rawWifiStartedMs = now;
+        if (rc == -2) {
+            Serial.printf("[raw-wifi] start failed (try %u)\n", (unsigned)s_rawWifiAttempts);
+            WiFi.scanDelete();
+            if (s_rawWifiAttempts >= 2) { s_rawWifiFailed = s_rawWifiFinished = true; }
+            else s_rawWifiRequestMs = now;
+            return;
+        }
+        s_rawWifiStarted = true;
+        Serial.printf("[raw-wifi] scan started (try %u, BLE paused %u)\n",
+                      (unsigned)s_rawWifiAttempts, (unsigned)s_rawWifiBlePaused);
+    }
+    const int result = WiFi.scanComplete();
+    if (result >= 0) {
+        s_rawWifiFinished = true;
+        Serial.printf("[raw-wifi] scan complete: %d networks in %lu ms\n",
+                      result, (unsigned long)(now - s_rawWifiStartedMs));
+    } else if (result == -2 || now - s_rawWifiStartedMs >= 12000u) {
+        Serial.printf("[raw-wifi] scan %s (try %u, elapsed %lu ms)\n",
+                      result == -2 ? "failed" : "timed out",
+                      (unsigned)s_rawWifiAttempts,
+                      (unsigned long)(now - s_rawWifiStartedMs));
+        if (result == -1) esp_wifi_scan_stop();
+        WiFi.scanDelete();
+        s_rawWifiStarted = false;
+        if (s_rawWifiAttempts >= 2) s_rawWifiFailed = s_rawWifiFinished = true;
+        else s_rawWifiRequestMs = now;
+    }
+#endif
 }
 
 bool DetectionEngine::rawWifiScanDone() const {
+#if defined(GPS_SUPPORT) && defined(GPS_RX_PIN)
+    return g_rawMode == RawScanMode::WIFI && s_rawWifiFinished && !s_rawWifiFailed &&
+           WiFi.scanComplete() >= 0;
+#else
     return g_rawMode == RawScanMode::WIFI && WiFi.scanComplete() >= 0;
+#endif
+}
+bool DetectionEngine::rawWifiScanFailed() const {
+#if defined(GPS_SUPPORT) && defined(GPS_RX_PIN)
+    return g_rawMode == RawScanMode::WIFI && s_rawWifiFailed;
+#else
+    return g_rawMode == RawScanMode::WIFI && WiFi.scanComplete() == -2;
+#endif
 }
 
 uint8_t DetectionEngine::rawWifiCount() const {
@@ -2095,7 +2207,11 @@ const uint8_t* DetectionEngine::rawWifiBssid(uint8_t idx) const {
 
 void DetectionEngine::stopRawScan() {
     const bool leavingRawBle = (g_rawMode == RawScanMode::BLE);
+    const bool leavingRawWifi = (g_rawMode == RawScanMode::WIFI);
     if (g_rawMode == RawScanMode::WIFI) {
+#if defined(GPS_SUPPORT) && defined(GPS_RX_PIN)
+        if (s_rawWifiStarted && !s_rawWifiFinished) esp_wifi_scan_stop();
+#endif
         // A TRACK THIS TARGET action can temporarily leave this screen.
         // Copy the completed scan before freeing Arduino-WiFi's table so BACK
         // can restore the exact rows without another RF sweep.
@@ -2120,8 +2236,20 @@ void DetectionEngine::stopRawScan() {
         WiFi.scanDelete();
     }
     g_rawMode = RawScanMode::NONE;
+#if defined(GPS_SUPPORT) && defined(GPS_RX_PIN)
+    s_rawWifiStarted = s_rawWifiFinished = s_rawWifiFailed = false;
+    // Return the host-owned BLE scanner to its normal mode after WiFi has
+    // finished, even if the previous scan had already stopped unexpectedly.
+    if (leavingRawBle || leavingRawWifi) requestRawBleScanMode();
+#else
     if (leavingRawBle) requestRawBleScanMode();
-    esp_wifi_set_promiscuous(true);
+#endif
+    const esp_err_t rc = esp_wifi_set_promiscuous(true);
+#if defined(GPS_SUPPORT) && defined(GPS_RX_PIN)
+    if (rc != ESP_OK) Serial.printf("[raw-wifi] promiscuous restore failed (%d)\n", (int)rc);
+#else
+    (void)rc;
+#endif
 }
 
 // ---- Bluetooth update mode --------------------------------------------------
