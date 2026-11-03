@@ -1,3 +1,10 @@
-WATCH149-LANDBACK
-# Experimental LAB build after landscape WATCH BACK touch fix.
-# Triggered only on explicit user hardware regression report.
+CYD172-MIRROR28-RADIO-MEMSAFE-20261103
+# LAB firmware from PR172 head 79c095887f9e034c9df88fefeaa5b6a717117461.
+# 2.8 and 3.2 CYD use identical buffered WiFi/BLE screen and scan flow.
+# 3.2 ST7798 keeps two-band 8-bit display buffer (~38KB) at boot,
+# avoiding full-frame 77KB heap exhaustion and direct-LCD WiFi scanning flicker.
+# Raw BLE memory gate refreshed on scan entry/every 500ms; RADIO reports suppressions.
+# RADIO SCAN Arduino-ESP32 2.0.14 scan result ownership corrected.
+# GPS UBX/NMEA @115200 on UART2 GPIO35 unchanged; no synthetic WiGLE AP.
+# Hardware test 3.2 before merging. 2.8 regression validation required.
+# Preserve all branches. No merge/version tag/production release.
