@@ -5,8 +5,11 @@ namespace Ubx {
 namespace {
 enum State : uint8_t { IDLE, SYNC2, CLASS, ID, LEN0, LEN1, PAYLOAD, CKA, CKB };
 State state = IDLE;
-constexpr uint16_t MAX_PAYLOAD = 1536;
+// Store only small navigation messages (largest is NAV-PVT at 92 bytes).
+// Large NAV-SAT satellite blocks are counted incrementally as they stream.
+constexpr uint16_t MAX_PAYLOAD = 96;
 uint8_t payload[MAX_PAYLOAD];
+uint8_t satVersion=0, satNum=0, satView=0, satHeard=0;
 uint8_t cls = 0, id = 0, sumA = 0, sumB = 0, expectedA = 0;
 uint16_t len = 0, pos = 0;
 uint32_t lastByteMs = 0, ok = 0, fail = 0, pvtCount = 0, satCount = 0;
@@ -68,17 +71,14 @@ void navPvt(const uint8_t* p, uint16_t n, uint32_t nowMs) {
     position(getI32(p+24),getI32(p+28),getI32(p+36),
              get32(p+40),nowMs,timeValid?epoch:0);
 }
-void navSat(const uint8_t* p, uint16_t n) {
-    if (n < 8 || p[4] != 1 || n != (uint16_t)(8u + (uint16_t)p[5]*12u))
-        return;
+void navSat(const uint8_t*, uint16_t n) {
+    // Counts were computed while payload streamed, even if >96 bytes.
+    if (n < 8 || satVersion != 1 ||
+        (uint32_t)n != 8u + (uint32_t)satNum*12u) return;
     ++satCount;
-    uint8_t view=0,heard=0;
-    for (uint8_t i=0; i<p[5]; ++i) {
-        const uint16_t at = (uint16_t)(8u + (uint16_t)i*12u);
-        if (p[at+1]) ++view; // svId
-        if (p[at+2]) ++heard; // cno > 0
-    }
-    satellites.view = view; satellites.heard = heard; skyValid = true;
+    satellites.view = satView;
+    satellites.heard = satHeard;
+    skyValid = true;
 }
 void navStatus(const uint8_t* p, uint16_t n) {
     if (n != 16) return;
@@ -97,10 +97,13 @@ void navTimeUtc(const uint8_t* p, uint16_t n) {
 void dispatch(uint32_t nowMs) {
     ++ok;
     seenCls=cls; seenId=id;
-    if (len > MAX_PAYLOAD || cls != 0x01) return;
+    if (cls != 0x01) return;
+    // NAV-SAT is deliberately processed even when its payload exceeds the
+    // small cache: its satellite counts were streamed during PAYLOAD.
+    if (id == 0x35) { navSat(payload,len); return; }
+    if (len > MAX_PAYLOAD) return;
     switch (id) {
         case 0x07: navPvt(payload,len,nowMs); break;
-        case 0x35: navSat(payload,len); break;
         case 0x03: navStatus(payload,len); break;
         case 0x02: navPosLlh(payload,len,nowMs); break;
         case 0x21: navTimeUtc(payload,len); break;
@@ -127,9 +130,22 @@ bool feed(uint8_t b, uint32_t nowMs) {
         case LEN0: len=b; checksum(b); state=LEN1; return true;
         case LEN1:
             len |= (uint16_t)b << 8; checksum(b); pos=0;
+            satVersion=satNum=satView=satHeard=0;
+            // Invalid/oversize frames cannot consume the UART indefinitely.
+            // NAV-SAT messages for all constellations comfortably fit 4096.
+            if (len > 4096u) { ++fail; state=IDLE; return true; }
             state = len ? PAYLOAD : CKA; return true;
         case PAYLOAD:
             if (pos < MAX_PAYLOAD) payload[pos] = b;
+            if (cls == 0x01 && id == 0x35) {
+                if (pos == 4u) satVersion = b;
+                else if (pos == 5u) satNum = b;
+                else if (pos >= 8u && (pos - 8u) % 12u == 1u && b != 0) {
+                    if (satView < 255u) ++satView;
+                } else if (pos >= 8u && (pos - 8u) % 12u == 2u && b != 0) {
+                    if (satHeard < 255u) ++satHeard;
+                }
+            }
             ++pos; checksum(b);
             if (pos >= len) state = CKA;
             return true;
@@ -154,7 +170,9 @@ uint8_t lastId() { return seenId; }
 void reset() {
     state=IDLE; cls=id=sumA=sumB=expectedA=0; len=pos=0;
     lastByteMs=ok=fail=pvtCount=satCount=epoch=0;
-    seenCls=seenId=0; f=Gnss::Fix(); satellites=Gnss::Sky();
+    seenCls=seenId=0;
+    satVersion=satNum=satView=satHeard=0;
+    f=Gnss::Fix(); satellites=Gnss::Sky();
     skyValid=statusValid=false;
 }
 }

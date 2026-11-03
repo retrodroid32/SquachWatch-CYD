@@ -3,6 +3,7 @@
 // Real GPS positions drive a synthetic Wi-Fi WiGLE formatter verification row.
 #if defined(LAB_GNSS169)
 #include <Arduino.h>
+#include <esp_heap_caps.h>
 #include <stdio.h>
 #include <string.h>
 #include "lab169.h"
@@ -32,9 +33,10 @@ const uint8_t RSN[] = {
 void start(uint32_t now) {
     baud = GNSS_BAUD;
     Serial2.end();
-    // The previous 256-byte RX ring and 160-byte-per-frame draining could
-    // lose NMEA at high output rates. Configure BEFORE Serial2.begin().
-    const size_t actual = Serial2.setRxBufferSize(4096);
+    // 2048-byte RX buffer is ample for a 115200 UART with bounded,
+    // regularly drained reads, and returns 2 KB to the BLE/Wi-Fi heap.
+    // Set before Serial2.begin() as required by Arduino ESP32.
+    const size_t actual = Serial2.setRxBufferSize(2048);
     Serial2.begin(baud, SERIAL_8N1, 35, -1);
     (void)now; // Fixed 115200 baud; no automatic baud cycling.
     rateBytes = dollar = newlines = printable = binary = ubx = 0;
@@ -104,7 +106,13 @@ void formatCsv(const Gnss::Fix& f) {
 void begin() {
     bytes = lastPrint = lastCsv = csvCount = lastRawPrint = 0;
     csvPass = false;
+    Serial.printf("[LAB169] before GNSS UART: free heap=%lu, largest block=%lu\n",
+                  (unsigned long)ESP.getFreeHeap(),
+                  (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
     start(millis());
+    Serial.printf("[LAB169] after GNSS UART: free heap=%lu, largest block=%lu\n",
+                  (unsigned long)ESP.getFreeHeap(),
+                  (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
     Serial.println("[LAB169] Hardware test: SYSTEM > DIAGNOSTICS; UART raw counters; no SD writes.");
 }
 

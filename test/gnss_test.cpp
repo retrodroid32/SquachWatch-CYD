@@ -151,6 +151,19 @@ int main() {
     ck("UBX satellites in view and heard", Gnss::sky().view==2 &&
                                             Gnss::sky().heard==1);
 
+    suite("Large UBX NAV-SAT frame streaming without a 1536-byte buffer");
+    std::vector<uint8_t> lotsOfSat(8 + 40*12, 0);
+    lotsOfSat[4]=1; lotsOfSat[5]=40;
+    for (unsigned i=0; i<40; ++i) {
+        lotsOfSat[8+12*i+1] = (uint8_t)(i+1);  // svId
+        lotsOfSat[8+12*i+2] = (i%2 == 0) ? 40 : 0; // cno
+    }
+    uart(packet(0x01,0x35,lotsOfSat),8120);
+    ck("large NAV-SAT frame accepted with full checksum", Gnss::ubxSat()==2);
+    ck("40 viewed and 20 heard from streamed NAV-SAT", Gnss::sky().view==40 &&
+                                                       Gnss::sky().heard==20);
+
+
     suite("UBX corrupted checksum cannot corrupt fix");
     auto badUbx = packet(0x01,0x07,pvt);
     badUbx.back() ^= 0x40;
