@@ -1,4 +1,6 @@
-CYD169-UBX-MEMSAFE-20261103
-# LAB-only isolation build for 2.8 ST7789 and 3.2 ST7798 after new UBX/NMEA boot-loop regression.
-# NAV-SAT streaming, 96-byte UBX cache (was 1536); UART RX 2048 (was 4096).
-# Before/after UART heap diagnostics. Not hardware validated; no production release/tag or merge.
+CYD169-UBX-BOOTFIX-20261103
+# LAB-only 2.8 ST7789 / 3.2 ST7798 GPS hardware validation.
+# Critical user serial log: 4096-byte UART build boot loop, meshtalk self-test FAIL, 4-44-byte largest heap block.
+# Combined: UBX NAV-PVT/NAV-SAT and checksummed NMEA at 115200, 96-byte UBX cache, 2048-byte UART RX.
+# Order mesh crypto self-test ahead of GPS UART allocation; add guarded heap/stage logs. No cipher bypass.
+# CI builds are not hardware validation. No merge, no production version/tag or GitHub Release.
