@@ -28,9 +28,7 @@ void        uiWifiNetsSelect(int row);   // -1 clears the highlight
 int         uiWifiNetsSelected();
 
 void        uiWifiAddInit(TFT_eSPI& t);
-// direct=true avoids clearing the unbuffered 3.2 panel every loop
-// while its ~77 KB framebuffer is loaned to the Wi-Fi scan.
-void        uiWifiAddTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool direct = false);
+void        uiWifiAddTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng);
 WifiAddHit  uiWifiAddHit(TFT_eSPI& t, int x, int y, const DetectionEngine& eng, int* row);
 // Paged Wi-Fi scan results: every returned SSID remains selectable.
 void        uiWifiAddPage(int direction);
