@@ -5388,7 +5388,8 @@ void loop() {
         }
         case AppState::RAWSCAN: {
             const bool done = s_rawScanCachedView ||
-                              (s_rawScanIsBle ? engine.rawBleScanDone() : engine.rawWifiScanDone());
+                              (s_rawScanIsBle ? engine.rawBleScanDone() :
+                               (engine.rawWifiScanDone() || engine.rawWifiScanFailed()));
             drawTwoBand([&](TFT_eSPI& t, bool advance) {
                 uiRawScanTick(t, now, engine, s_rawScanIsBle, done, s_confirmPending, privLabel(s_confirmLabel),
                               engine.isWatched(s_confirmMac, s_rawScanIsBle),
