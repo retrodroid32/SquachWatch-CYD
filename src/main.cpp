@@ -6222,7 +6222,13 @@ void loop() {
                         }
                         break;
                     }
-                    case WifiAddHit::RESCAN: engine.stopRawScan(); engine.startRawWifiScan(); break;
+                    case WifiAddHit::PREV:   uiWifiAddPage(-1); break;
+                    case WifiAddHit::NEXT:   uiWifiAddPage(+1); break;
+                    case WifiAddHit::RESCAN:
+                        engine.stopRawScan();
+                        engine.startRawWifiScan();
+                        uiWifiAddInit(*canvas);
+                        break;
                     case WifiAddHit::BACK:   engine.stopRawScan(); enterWifiNets(); break;
                     default: break;
                 }
