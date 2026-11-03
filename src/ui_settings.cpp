@@ -130,7 +130,11 @@ static const SettingsRow SYSTEM_ROWS[] = {
 #endif
     SettingsRow::PRIVACY,
     SettingsRow::CALIBRATE, SettingsRow::CHECK_COLORS,
-    SettingsRow::DIAGNOSTICS, SettingsRow::UPDATE_FIRMWARE, SettingsRow::UPDATE_CHECK, SettingsRow::WIFI_NETWORKS, SettingsRow::SD_FILES,
+    SettingsRow::DIAGNOSTICS,
+#if defined(GPS_SUPPORT) && defined(GPS_RX_PIN)
+    SettingsRow::SYSTEM_PROPERTIES,
+#endif
+    SettingsRow::UPDATE_FIRMWARE, SettingsRow::UPDATE_CHECK, SettingsRow::WIFI_NETWORKS, SettingsRow::SD_FILES,
     SettingsRow::RESET_STATS,
 };
 static const uint8_t SYSTEM_ROWS_N = sizeof(SYSTEM_ROWS) / sizeof(SYSTEM_ROWS[0]);
@@ -935,6 +939,9 @@ static void rowContent(SettingsRow r, const DetectionEngine& eng, char* valBuf, 
             break;
         case SettingsRow::DIAGNOSTICS:
             label = "DIAGNOSTICS";
+            break;
+        case SettingsRow::SYSTEM_PROPERTIES:
+            label = "SYSTEM PROPERTIES"; value = "BOARD >";
             break;
         case SettingsRow::UPDATE_FIRMWARE:
             // The row names the newer version when one is known, so the boot
