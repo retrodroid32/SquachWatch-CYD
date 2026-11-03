@@ -292,18 +292,58 @@ static int lockIconX(int w) {
 
 static const int WIFI_ICON_W = 26;
 static const int SD_ICON_W = 24;
+static const int GPS_ICON_W = 24;
 static volatile SdStatus s_sdStatus = SdStatus::ABSENT;
+static volatile GpsIconStatus s_gpsStatus = GpsIconStatus::ABSENT;
 void setSdStatus(SdStatus status) { s_sdStatus = status; }
 SdStatus sdStatus() { return s_sdStatus; }
-// Reserve the Wi-Fi badge to the LEFT of the lock/rotate icon, including
-// when one or both buttons are hidden. Status only: never a tap target.
-static int wifiIconX(int w) {
-    const int edge = Security::enabled() ? lockIconX(w) :
-                     rotateShown() ? w - ROTATE_ICON_W : w;
-    return edge - WIFI_ICON_W;
+void setGpsIconStatus(GpsIconStatus status) { s_gpsStatus = status; }
+GpsIconStatus gpsIconStatus() { return s_gpsStatus; }
+// Compact only VISIBLE status indicators beside the PIN/rotation controls.
+// The GPS icon is on the left of SD; its box is not reserved until a real
+// GNSS stream has been decoded. Existing boards and hidden indicators get
+// their horizontal space back for status text and WATCH/HUNT content.
+static int statusRightX(int w) {
+    return Security::enabled() ? lockIconX(w) :
+           rotateShown() ? w - ROTATE_ICON_W : w;
 }
-static int sdIconX(int w) { return wifiIconX(w) - SD_ICON_W; }
-int titleBarRightIconsX(int w) { return sdIconX(w); }
+static int wifiIconX(int w) { return statusRightX(w) - WIFI_ICON_W; }
+static int sdIconX(int w) {
+    return statusRightX(w) - (Settings::showWifiIcon() ? WIFI_ICON_W : 0) - SD_ICON_W;
+}
+static int gpsIconX(int w) {
+    return statusRightX(w) - (Settings::showWifiIcon() ? WIFI_ICON_W : 0) -
+           (Settings::showSdIcon() ? SD_ICON_W : 0) - GPS_ICON_W;
+}
+int titleBarRightIconsX(int w) {
+#if defined(GPS_SUPPORT) && defined(GPS_RX_PIN)
+    if (Settings::showGpsIcon() && s_gpsStatus != GpsIconStatus::ABSENT)
+        return gpsIconX(w);
+#endif
+    if (Settings::showSdIcon()) return sdIconX(w);
+    if (Settings::showWifiIcon()) return wifiIconX(w);
+    return statusRightX(w);
+}
+
+static void drawGpsIcon(TFT_eSPI& t, int w, int barH) {
+#if defined(GPS_SUPPORT) && defined(GPS_RX_PIN)
+    if (!Settings::showGpsIcon() || s_gpsStatus == GpsIconStatus::ABSENT) return;
+    const int x0 = gpsIconX(w);
+    const int cx = x0 + GPS_ICON_W / 2, cy = barH / 2;
+    const uint16_t ink = s_gpsStatus == GpsIconStatus::FIX ? GREEN : AMBER;
+    t.fillRect(x0, 0, GPS_ICON_W, barH, BG);
+    // Compact satellite/position crosshair, not text that would change the
+    // caller's font size and disturb portrait/landscape layouts.
+    t.drawCircle(cx, cy, 6, ink);
+    t.fillCircle(cx, cy, 2, ink);
+    t.drawFastHLine(cx - 10, cy, 4, ink);
+    t.drawFastHLine(cx + 7, cy, 4, ink);
+    t.drawFastVLine(cx, cy - 9, 3, ink);
+    t.drawFastVLine(cx, cy + 7, 3, ink);
+#else
+    (void)t; (void)w; (void)barH;
+#endif
+}
 
 static void drawSdIcon(TFT_eSPI& t, int w, int barH) {
     const int x0 = sdIconX(w);
@@ -489,8 +529,9 @@ void drawTitleBar(TFT_eSPI& t, const char* title) {
     // was there last frame and is not now leaves nothing behind -- no erase
     // needed, unlike the rotate icon above, which predates that repaint.
     if (Security::enabled()) drawLockIcon(t, w, ICON_BOX_H);
-    drawWifiIcon(t, w, ICON_BOX_H);
-    drawSdIcon(t, w, ICON_BOX_H);
+    if (Settings::showWifiIcon()) drawWifiIcon(t, w, ICON_BOX_H);
+    if (Settings::showSdIcon()) drawSdIcon(t, w, ICON_BOX_H);
+    drawGpsIcon(t, w, ICON_BOX_H);
 }
 
 uint8_t uiTextSize(TFT_eSPI& t, uint8_t base) {
