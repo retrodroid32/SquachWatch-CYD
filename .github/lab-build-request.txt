@@ -1,3 +1,7 @@
-WATCH149-LANDBACK
-# Experimental LAB build after landscape WATCH BACK touch fix.
-# Triggered only on explicit user hardware regression report.
+PR136-GPS-UTC-BOARD-MENU-HWTEST-20261103
+# LAB-only firmware, refreshed PR136 at 4e59c33bf0fb323d7a51ab9e34f0e3ee8a2da9ca.
+# Add Settings -> SYSTEM -> SYSTEM PROPERTIES -> Board so GPS status is reachable
+# without an unrelated firmware update notification.
+# Clock sync from fresh real UBX/NMEA fix while untrusted; RX GPIO35 115200.
+# Test GPS status + time source, both 2.8 ST7789 and 3.2 ST7798, SD, WiFi, BLE, mesh.
+# No production merge, tag or release. Preserve all branches.
