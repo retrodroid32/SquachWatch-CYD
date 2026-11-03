@@ -13,6 +13,10 @@
 #include <string.h>
 
 #include "mbedtls_compat.h"
+#if defined(LAB_GNSS169)
+#include <Arduino.h>
+#include <esp_heap_caps.h>
+#endif
 
 namespace {
 
@@ -156,6 +160,14 @@ uint16_t MeshCrypto::dhCode(const uint8_t pubA[DH_LEN], const uint8_t pubB[DH_LE
 bool MeshCrypto::selfTest() {
     namespace V = MeshMsgVec;
     bool ok = false;
+#if defined(LAB_GNSS169)
+    // Diagnostics only: preserve every cryptographic acceptance condition.
+    // The failed device reported almost no contiguous heap during startup.
+    uint8_t stage = 1;
+    Serial.printf("[LAB169] cipher self-test start: free=%lu largest=%lu\n",
+                  (unsigned long)ESP.getFreeHeap(),
+                  (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
+#endif
     do {
         // 1. Key stretching agrees.
         uint8_t key[MeshMsg::KEY_LEN];
@@ -164,12 +176,18 @@ bool MeshCrypto::selfTest() {
                           V::ITERS, key)) break;
         if (memcmp(key, V::KEY, sizeof key) != 0) break;
         if (!ccmSetKey(key)) break;
+#if defined(LAB_GNSS169)
+        stage = 2;
+#endif
 
         // 2. The whole frame agrees -- header, nonce, associated data,
         //    ciphertext and tag, all at once.
         uint8_t f[MeshMsg::CANNED_FRAME_LEN];
         if (MeshMsg::sealCanned(IMPL, V::MAC, V::COUNTER, V::CANNED, f, sizeof f) != sizeof f) break;
         if (memcmp(f, V::FRAME, sizeof f) != 0) break;
+#if defined(LAB_GNSS169)
+        stage = 3;
+#endif
 
         // 3. The golden frame opens, to the golden line.
         uint32_t ctr = 0;
@@ -177,12 +195,18 @@ bool MeshCrypto::selfTest() {
         if (MeshMsg::openCanned(IMPL, V::MAC, V::FRAME, sizeof V::FRAME, ctr, line)
                 != MeshMsg::Open::OK) break;
         if (ctr != V::COUNTER || line != V::CANNED) break;
+#if defined(LAB_GNSS169)
+        stage = 4;
+#endif
 
         // 4. And a tampered one does not. A cipher that accepts everything
         //    passes the first three.
         f[MeshMsg::HDR_LEN] ^= 0x01;
         if (MeshMsg::openCanned(IMPL, V::MAC, f, sizeof f, ctr, line)
                 != MeshMsg::Open::BAD_TAG) break;
+#if defined(LAB_GNSS169)
+        stage = 5;
+#endif
 
         // 5. A typed part agrees too: the six-bit packing, the part byte and
         //    the counter offset, against an implementation that packed the
@@ -201,6 +225,12 @@ bool MeshCrypto::selfTest() {
                     MeshMsg::TEXT_PART_CHARS) != 0) break;
         ok = true;
     } while (false);
+#if defined(LAB_GNSS169)
+    Serial.printf("[LAB169] cipher self-test %s at stage %u: free=%lu largest=%lu\n",
+                  ok ? "PASS" : "FAIL", (unsigned)stage,
+                  (unsigned long)ESP.getFreeHeap(),
+                  (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
+#endif
     s_keyed = false;            // nothing left keyed with the test key
     return ok;
 }
