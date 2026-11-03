@@ -1441,6 +1441,10 @@ static void enterLog() {
 
 static bool    s_rawScanIsBle = true;
 static bool    s_rawScanCachedView = false;
+#if defined(CYD32) && defined(GPS_SUPPORT) && defined(GPS_RX_PIN)
+static void lendFrameToWifiSurvey();
+static uint32_t s_rawWifiLastDrawMs = 0;
+#endif
 
 static void enterRawScan(bool isBle) {
     state = AppState::RAWSCAN;
@@ -1448,8 +1452,22 @@ static void enterRawScan(bool isBle) {
     s_rawScanIsBle = isBle;
     s_rawScanCachedView = false;
     s_confirmPending = false;
-    if (isBle) engine.startRawBleScan();
-    else       engine.startRawWifiScan();
+    if (isBle) {
+        engine.startRawBleScan();
+#if defined(CYD32) && defined(GPS_SUPPORT) && defined(GPS_RX_PIN)
+        // Switching back from a Wi-Fi sweep releases radio ownership first.
+        // Recover the framebuffer now, without allocating during Wi-Fi scan.
+        restoreFrameBuffer();
+#endif
+    } else {
+#if defined(CYD32) && defined(GPS_SUPPORT) && defined(GPS_RX_PIN)
+        // The main SCAN -> WiFi path used to retain the whole 77 KB sprite,
+        // unlike Add Network. On the 3.2-inch it was still memory-starved.
+        lendFrameToWifiSurvey();
+        s_rawWifiLastDrawMs = 0;
+#endif
+        engine.startRawWifiScan();
+    }
     uiRawScanInit(*canvas, isBle);
 }
 
@@ -3859,7 +3877,8 @@ void loop() {
     // finished. Retry the framebuffer loan after that task releases memory,
     // rather than permanently leaving all ordinary screens unbuffered.
     if (s_frameLent && state != AppState::UPDATE && state != AppState::WIFI_PASS &&
-        state != AppState::WIFI_ADD)
+        state != AppState::WIFI_ADD &&
+        !(state == AppState::RAWSCAN && !s_rawScanIsBle && !s_rawScanCachedView))
         restoreFrameBuffer();
     if (state == AppState::CLEAR) {
         const char* sub = nullptr;
@@ -5410,6 +5429,23 @@ void loop() {
             const bool done = s_rawScanCachedView ||
                               (s_rawScanIsBle ? engine.rawBleScanDone() :
                                (engine.rawWifiScanDone() || engine.rawWifiScanFailed()));
+#if defined(CYD32) && defined(GPS_SUPPORT) && defined(GPS_RX_PIN)
+            if (!s_rawScanIsBle && !frameBufferOk) {
+                // Draw directly only while the Wi-Fi scan has borrowed the
+                // full framebuffer. Limit full LCD redraws to ~2 Hz instead
+                // of flickering at the loop's normal 17-25 fps.
+                if (!s_rawWifiLastDrawMs || now - s_rawWifiLastDrawMs >= 550u ||
+                    touchJustDown || touchJustUp) {
+                    uiRawScanTick(tft, now, engine, s_rawScanIsBle, done,
+                                  s_confirmPending, privLabel(s_confirmLabel),
+                                  engine.isWatched(s_confirmMac, s_rawScanIsBle),
+                                  engine.isHunted(s_confirmMac, s_rawScanIsBle),
+                                  IgnoreList::contains(s_confirmMac), true);
+                    Theme::drawToast(tft, now);
+                    s_rawWifiLastDrawMs = now;
+                }
+            } else
+#endif
             drawTwoBand([&](TFT_eSPI& t, bool advance) {
                 uiRawScanTick(t, now, engine, s_rawScanIsBle, done, s_confirmPending, privLabel(s_confirmLabel),
                               engine.isWatched(s_confirmMac, s_rawScanIsBle),
