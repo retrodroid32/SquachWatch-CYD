@@ -107,6 +107,8 @@ struct DiagnosticsInfo {
 
 void uiDiagnosticsInit(TFT_eSPI& t);
 void uiDiagnosticsTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, const DiagnosticsInfo& info);
+// delta is a signed number of diagnostic rows; >0 scrolls down.
+void uiDiagnosticsScroll(int delta);
 
-// Single [ BACK ] button, same shape as the raw-scan screen's.
+// The BACK button stays fixed while the diagnostic lines scroll.
 bool uiDiagnosticsHitBack(int x, int y, int screenW, int screenH);
