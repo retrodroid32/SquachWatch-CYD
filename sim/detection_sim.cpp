@@ -158,6 +158,7 @@ const RawBleResult* DetectionEngine::rawBleAt(uint8_t idx) const {
 }
 void DetectionEngine::startRawWifiScan() {}
 bool DetectionEngine::rawWifiScanDone() const { return true; }
+bool DetectionEngine::rawWifiScanFailed() const { return false; }
 uint8_t DetectionEngine::rawWifiCount() const { return 0; }
 const char* DetectionEngine::rawWifiSsid(uint8_t) const { return ""; }
 int8_t DetectionEngine::rawWifiRssi(uint8_t) const { return 0; }
