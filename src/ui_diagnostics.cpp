@@ -80,6 +80,15 @@ void uiDiagnosticsTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, co
         y = drawLine(t, y, Theme::CYAN, "NMEA:",
                      "%lu bytes %lu ok %lu bad",
                      (unsigned long)g.bytes, (unsigned long)g.good, (unsigned long)g.bad);
+        y = drawLine(t, y, Theme::CYAN, "RAW:",
+                     "$%lu LF%lu bin%lu UBX%lu",
+                     (unsigned long)g.dollar, (unsigned long)g.newlines,
+                     (unsigned long)g.binary, (unsigned long)g.ubx);
+        y = drawLine(t, y, Theme::CYAN, "MSG:",
+                     "GGA %lu RMC %lu RXpeak %lu",
+                     (unsigned long)g.gga, (unsigned long)g.rmc,
+                     (unsigned long)g.rxPeak);
+        y = drawLine(t, y, Theme::CYAN, "LAST:", "%s", g.prefix);
         y = drawLine(t, y, Theme::CYAN, "SAT:",
                      "%u used %u view %u heard",
                      (unsigned)g.sats, (unsigned)g.view, (unsigned)g.heard);
