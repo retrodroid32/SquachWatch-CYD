@@ -12,17 +12,14 @@
 
 namespace Lab169 {
 namespace {
-// Start at user's stated exact 115000 baud; then 115200 (standard), 9600,
-// 38400, 57600. A valid NMEA checksum locks the working baud automatically.
-constexpr uint32_t RATES[] = {115000u, 115200u, 9600u, 38400u, 57600u};
-constexpr uint8_t RATE_COUNT = sizeof(RATES) / sizeof(RATES[0]);
-constexpr uint32_t PROBE_MS = 12000u;
-uint8_t rateIndex = 0;
-uint32_t baud = RATES[0], switchedAt = 0;
+// User-confirmed receiver speed: stay at 115200. Never reset the UBX parser
+// by repeatedly probing other baud rates while binary NAV packets arrive.
+constexpr uint32_t GNSS_BAUD = 115200u;
+uint32_t baud = GNSS_BAUD;
 uint32_t bytes = 0, rateBytes = 0, lastPrint = 0, lastCsv = 0, csvCount = 0;
 uint32_t dollar = 0, newlines = 0, printable = 0, binary = 0, ubx = 0;
 uint32_t gga = 0, rmc = 0, rxPeak = 0, lastRawPrint = 0;
-bool lockedBaud = false, csvPass = false, rawActive = false;
+bool csvPass = false, rawActive = false;
 uint8_t lastByte = 0;
 char raw[160] = {};
 uint8_t rawN = 0;
@@ -32,9 +29,8 @@ const uint8_t RSN[] = {
     48,20, 1,0, 0,15,172,4, 1,0, 0,15,172,4, 1,0, 0,15,172,2, 0,0
 };
 
-void start(uint8_t index, uint32_t now) {
-    rateIndex = index;
-    baud = RATES[index];
+void start(uint32_t now) {
+    baud = GNSS_BAUD;
     Serial2.end();
     // The previous 256-byte RX ring and 160-byte-per-frame draining could
     // lose NMEA at high output rates. Configure BEFORE Serial2.begin().
@@ -107,8 +103,8 @@ void formatCsv(const Gnss::Fix& f) {
 
 void begin() {
     bytes = lastPrint = lastCsv = csvCount = lastRawPrint = 0;
-    lockedBaud = csvPass = false;
-    start(0, millis());
+    csvPass = false;
+    start(millis());
     Serial.println("[LAB169] Hardware test: SYSTEM > DIAGNOSTICS; UART raw counters; no SD writes.");
 }
 
@@ -128,9 +124,7 @@ void tick(uint32_t now) {
         noteRaw((uint8_t)ch, now);
         Gnss::feed((char)ch, now);
     }
-    if (Gnss::good()) lockedBaud = true;
-    if (!lockedBaud && now - switchedAt >= PROBE_MS)
-        start((rateIndex + 1) % RATE_COUNT, now);
+    // Combined parser handles both NMEA and UBX on this single fixed UART.
 
     const Gnss::Fix& f = Gnss::fix();
     if (Gnss::fresh(now) && f.epoch && (!lastCsv || now - lastCsv >= 5000u)) {
@@ -147,6 +141,10 @@ void tick(uint32_t now) {
             (unsigned)f.used, (unsigned)sky.view, (unsigned)sky.heard,
             (long)f.lat7, (long)f.lon7, (unsigned long)f.epoch,
             csvCount ? (csvPass ? "PASS" : "FAIL") : "WAIT");
+        Serial.printf("[LAB169] UBX good=%lu bad=%lu PVT=%lu SAT=%lu last=%02X/%02X\n",
+            (unsigned long)Gnss::ubxGood(), (unsigned long)Gnss::ubxBad(),
+            (unsigned long)Gnss::ubxPvt(), (unsigned long)Gnss::ubxSat(),
+            (unsigned)Gnss::ubxLastClass(), (unsigned)Gnss::ubxLastId());
         Serial.printf("[LAB169] RX $=%lu LF=%lu ASCII=%lu binary=%lu UBX=%lu GGA=%lu RMC=%lu RXpeak=%lu last=%s\n",
             (unsigned long)dollar, (unsigned long)newlines,
             (unsigned long)printable, (unsigned long)binary,
@@ -160,6 +158,9 @@ Status status(uint32_t now) {
     Status s = {};
     s.baud = baud; s.bytes = bytes; s.rateBytes = rateBytes;
     s.good = Gnss::good(); s.bad = Gnss::bad();
+    s.ubxGood = Gnss::ubxGood(); s.ubxBad = Gnss::ubxBad();
+    s.ubxPvt = Gnss::ubxPvt(); s.ubxSat = Gnss::ubxSat();
+    s.ubxClass = Gnss::ubxLastClass(); s.ubxId = Gnss::ubxLastId();
     s.epoch = f.epoch; s.csvCount = csvCount;
     s.lat7 = f.lat7; s.lon7 = f.lon7;
     s.sats = f.used; s.view = sky.view; s.heard = sky.heard;

@@ -105,7 +105,7 @@ mesh_visit_appearance_test_SRCS :=
 mesh_visit_appearance_test_FLAGS := -DSQUACH_MESH=1
 
 # GNSS NMEA parser and WiGLE formatter host regression tests (groundwork only).
-gnss_test_SRCS              := $(SRC)/gnss.cpp
+gnss_test_SRCS              := $(SRC)/gnss.cpp $(SRC)/ubx.cpp
 wigle_test_SRCS             := $(SRC)/wardrive_fmt.cpp $(SRC)/wifi_auth.cpp
 
 .PHONY: all clean

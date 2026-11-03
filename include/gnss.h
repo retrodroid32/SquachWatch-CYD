@@ -31,8 +31,8 @@ struct Sky {
     uint8_t heard = 0;         // of those, the ones with a signal (SNR given)
 };
 
-// One character off the UART. Lines are assembled internally; a complete,
-// checksum-valid sentence updates the state. `nowMs` stamps a new fix.
+// Feed a byte stream containing either or both $NMEA and binary UBX.
+// Checksums and framing are independent, and both update the same Fix API.
 void feed(char c, uint32_t nowMs);
 // A whole sentence at once, with or without its line ending. For tests.
 bool sentence(const char* s, uint32_t nowMs);
@@ -41,9 +41,15 @@ const Fix& fix();
 Sky sky();
 // UTC from the last RMC, or 0: set the clock from it once it has a fix.
 uint32_t utcEpoch();
-// Sentences parsed and rejected (bad checksum), since the last reset.
+// Independent checksums, in mixed NMEA + UBX streams.
 uint32_t good();
 uint32_t bad();
+uint32_t ubxGood();
+uint32_t ubxBad();
+uint32_t ubxPvt();
+uint32_t ubxSat();
+uint8_t ubxLastClass();
+uint8_t ubxLastId();
 
 // A fix older than this is not a position any more (the watch has moved on,
 // or the sky closed). Rows are only written against a fresh one.

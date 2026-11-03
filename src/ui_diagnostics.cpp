@@ -77,18 +77,17 @@ void uiDiagnosticsTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, co
         y = drawLine(t, y, g.fresh ? Theme::GREEN : Theme::AMBER,
                      "GPS169:", "%s %lu baud", g.fresh ? "FIX" :
                      g.valid ? "STALE" : "NO FIX", (unsigned long)g.baud);
+        y = drawLine(t, y, Theme::CYAN, "UBX:",
+                     "%lu OK %lu bad, %02X/%02X",
+                     (unsigned long)g.ubxGood, (unsigned long)g.ubxBad,
+                     (unsigned)g.ubxClass, (unsigned)g.ubxId);
+        y = drawLine(t, y, Theme::CYAN, "NAV:",
+                     "PVT %lu SAT %lu",
+                     (unsigned long)g.ubxPvt, (unsigned long)g.ubxSat);
         y = drawLine(t, y, Theme::CYAN, "NMEA:",
-                     "%lu bytes %lu ok %lu bad",
-                     (unsigned long)g.bytes, (unsigned long)g.good, (unsigned long)g.bad);
-        y = drawLine(t, y, Theme::CYAN, "RAW:",
-                     "$%lu LF%lu bin%lu UBX%lu",
-                     (unsigned long)g.dollar, (unsigned long)g.newlines,
-                     (unsigned long)g.binary, (unsigned long)g.ubx);
-        y = drawLine(t, y, Theme::CYAN, "MSG:",
-                     "GGA %lu RMC %lu RXpeak %lu",
-                     (unsigned long)g.gga, (unsigned long)g.rmc,
-                     (unsigned long)g.rxPeak);
-        y = drawLine(t, y, Theme::CYAN, "LAST:", "%s", g.prefix);
+                     "%lu bytes %lu OK %lu bad",
+                     (unsigned long)g.bytes, (unsigned long)g.good,
+                     (unsigned long)g.bad);
         y = drawLine(t, y, Theme::CYAN, "SAT:",
                      "%u used %u view %u heard",
                      (unsigned)g.sats, (unsigned)g.view, (unsigned)g.heard);
@@ -109,9 +108,18 @@ void uiDiagnosticsTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, co
             y = drawLine(t, y, Theme::CYAN, "UTC:", "%s", stamp);
         }
         y = drawLine(t, y, g.csvCount && g.csvPass ? Theme::GREEN : Theme::AMBER,
-                     "WIGLE:", "%s (%lu tests)",
+                     "WIGLE:", "%s (%lu test rows)",
                      g.csvCount ? (g.csvPass ? "PASS" : "FAIL") : "WAIT GPS",
                      (unsigned long)g.csvCount);
+        y = drawLine(t, y, Theme::CYAN, "RAW:",
+                     "$%lu LF%lu binary%lu",
+                     (unsigned long)g.dollar, (unsigned long)g.newlines,
+                     (unsigned long)g.binary);
+        y = drawLine(t, y, Theme::CYAN, "MSG:",
+                     "GGA %lu RMC %lu peak %lu",
+                     (unsigned long)g.gga, (unsigned long)g.rmc,
+                     (unsigned long)g.rxPeak);
+        y = drawLine(t, y, Theme::CYAN, "LAST:", "%s", g.prefix);
     }
 #endif
     y = drawLine(t, y, Theme::CYAN, "RESET:", "%s", info.resetReason);
