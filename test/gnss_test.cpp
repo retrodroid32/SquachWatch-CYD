@@ -174,7 +174,7 @@ int main() {
     suite("NMEA after binary and unknown binary containing newline and dollar");
     uart(packet(0x0a,0x09,std::vector<uint8_t>{0x24,0x0a,0xb5,0x62}),8300);
     ck("unknown UBX frame accepted, payload not fed to NMEA",
-       Gnss::ubxGood()==3 && Gnss::bad()==0);
+       Gnss::ubxGood()==4 && Gnss::bad()==0);
     const char* rmcMix=nmea("GNRMC,123519.00,A,4807.03800,N,01131.00000,E,0.0,0.0,021126,,,A");
     for (const char* p=rmcMix;*p;p++) Gnss::feed(*p,9000);
     const char* ggaMix=nmea("GNGGA,123520.00,4807.03800,N,01131.00000,E,1,08,0.9,545.4,M,46.9,M,,");
