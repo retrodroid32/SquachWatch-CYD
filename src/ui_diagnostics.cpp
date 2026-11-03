@@ -21,8 +21,25 @@ static void backButtonRect(int screenW, int screenH, int& x, int& y, int& w, int
     y = g.y;
 }
 
+// The diagnostics report may be substantially taller than either CYD's
+// viewport, especially with UBX/NMEA and mesh telemetry enabled. Keep
+// scroll state in this screen rather than changing its report layout.
+static int s_diagScroll = 0;
+static int s_diagMaxScroll = 0;
+static int s_diagTop = 0;
+static int s_diagBottom = 0;
+static int s_diagAbove = 0, s_diagBelow = 0;
+
 void uiDiagnosticsInit(TFT_eSPI& t) {
+    s_diagScroll = s_diagMaxScroll = 0;
     t.fillRect(0, 0, t.width(), t.height(), Theme::BG);
+}
+
+void uiDiagnosticsScroll(int delta) {
+    // Touch supplies rows, not pixels. 16 px is approximately one diagnostic
+    // line, and clamp so swiping cannot expose blank pages at either end.
+    const int next = s_diagScroll + delta * 16;
+    s_diagScroll = next < 0 ? 0 : next > s_diagMaxScroll ? s_diagMaxScroll : next;
 }
 
 bool uiDiagnosticsHitBack(int x, int y, int screenW, int screenH) {
@@ -31,11 +48,13 @@ bool uiDiagnosticsHitBack(int x, int y, int screenW, int screenH) {
     return x >= bx && x <= bx + bw && y >= by && y < screenH;
 }
 
-static int s_diagBottom = 0;
-static int s_diagSkipped = 0;
-
 static int drawLine(TFT_eSPI& t, int y, uint16_t labelColor, const char* label, const char* fmt, ...) {
-    if (s_diagBottom && y + t.fontHeight() > s_diagBottom) { s_diagSkipped++; return y; }
+    // Always advance the logical report cursor, whether or not the line is
+    // in the visible window. The old early-return truncated the report and
+    // made lower fields impossible to reach. Avoid partial lines at edges.
+    const int nextY = y + t.fontHeight() + 2;
+    if (y < s_diagTop) { ++s_diagAbove; return nextY; }
+    if (y + t.fontHeight() > s_diagBottom) { ++s_diagBelow; return nextY; }
     t.setTextColor(labelColor, Theme::BG);
     t.setCursor(6, y);
     t.print(label);
@@ -49,7 +68,7 @@ static int drawLine(TFT_eSPI& t, int y, uint16_t labelColor, const char* label, 
     t.setTextColor(Theme::WHITE, Theme::BG);
     t.setCursor(6 + t.textWidth(label) + 6, y);
     t.print(buf);
-    return y + t.fontHeight() + 2;
+    return nextY;
 }
 
 void uiDiagnosticsTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, const DiagnosticsInfo& info) {
@@ -59,14 +78,16 @@ void uiDiagnosticsTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, co
     Theme::drawTitleBar(t, ">> DIAGNOSTICS <<");
 
     Theme::ButtonBarGeom bar = Theme::computeButtonBar(w, h);
-    int bodyTop = 16, bodyBottom = bar.y - 4;
-    t.fillRect(0, bodyTop, w, bodyBottom - bodyTop, Theme::BG);
+    const int bodyTop = 16, bodyBottom = bar.y - 17;
+    // Reserve a small fixed footer for swipe hints, immediately above BACK.
+    t.fillRect(0, bodyTop, w, bar.y - 4 - bodyTop, Theme::BG);
+    s_diagTop = bodyTop + 2;
     s_diagBottom = bodyBottom;
-    s_diagSkipped = 0;
+    s_diagAbove = s_diagBelow = 0;
 
     t.setTextSize(1);
     t.setTextWrap(false);
-    int y = bodyTop + 2;
+    int y = s_diagTop - s_diagScroll;
 
     y = drawLine(t, y, Theme::CYAN, "BOARD:", "%s (%s)", info.boardName,
                  info.usingCapTouch ? "capacitive" : "resistive");
@@ -282,13 +303,24 @@ void uiDiagnosticsTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, co
     }
 #endif
 
-    if (s_diagSkipped) {
-        char more[16];
-        snprintf(more, sizeof more, "+%d more>", s_diagSkipped);
-        t.setTextSize(1);
+    // y is the end of the FULL virtual report, even when most rows were
+    // skipped. Keep scrolling within actual content, including its gaps.
+    const int contentHeight = y + s_diagScroll - s_diagTop;
+    const int viewHeight = bodyBottom - s_diagTop;
+    s_diagMaxScroll = contentHeight > viewHeight ? contentHeight - viewHeight : 0;
+    if (s_diagScroll > s_diagMaxScroll) s_diagScroll = s_diagMaxScroll;
+
+    // The footer is outside the scrolling viewport. In a two-band sprite
+    // it is painted during each pass through the existing viewport, not
+    // directly onto the LCD, so it cannot add display flicker.
+    if (s_diagMaxScroll > 0) {
+        char hint[48];
+        snprintf(hint, sizeof hint, "%s  SWIPE TO SCROLL  %d/%d  %s",
+                 s_diagAbove ? "^" : " ", s_diagScroll / 16,
+                 (s_diagMaxScroll + 15) / 16, s_diagBelow ? "v" : " ");
         t.setTextColor(Theme::CYAN, Theme::BG);
-        t.setCursor(w - 6 - t.textWidth(more), bodyBottom - t.fontHeight() - 1);
-        t.print(more);
+        t.setCursor(6, bodyBottom + 3);
+        t.print(hint);
     }
 
     int bx, by, bw, bh;
