@@ -7105,10 +7105,36 @@ void loop() {
             info.bbHaveLast = BlackBox::lastCrash(info.bbLast);
 
             drawTwoBand([&](TFT_eSPI& t, bool) { uiDiagnosticsTick(t, now, engine, info); });
-            if (tp.valid && (now - lastTouch) > TOUCH_DEBOUNCE_MS &&
-                uiDiagnosticsHitBack(tp.x, tp.y, tft.width(), tft.height())) {
-                lastTouch = now;
-                enterSettings();
+            // A swipe anywhere in the report scrolls the virtual lines.
+            // Commit BACK on release, not press, so a swipe cannot
+            // accidentally exit the diagnostics page. The bottom bar is
+            // never part of the scrolling viewport.
+            static bool diagTouchActive = false, diagTouchMoved = false;
+            static int diagStartX = 0, diagStartY = 0, diagLastY = 0;
+            if (touchJustDown && tp.valid) {
+                diagTouchActive = true;
+                diagTouchMoved = false;
+                diagStartX = tp.x; diagStartY = diagLastY = tp.y;
+            }
+            if (tp.valid && diagTouchActive &&
+                diagStartY < Theme::computeButtonBar(tft.width(), tft.height()).y) {
+                const int dy = tp.y - diagLastY;
+                if (abs(dy) >= 10) {
+                    diagTouchMoved = true;
+                    const int rows = (abs(dy) + 7) / 16;
+                    uiDiagnosticsScroll(dy > 0 ? -rows : rows);
+                    diagLastY = tp.y;
+                }
+            }
+            if (touchJustUp && diagTouchActive) {
+                if (!diagTouchMoved &&
+                    uiDiagnosticsHitBack(diagStartX, diagStartY,
+                                         tft.width(), tft.height())) {
+                    lastTouch = now;
+                    enterSettings();
+                    uiSettingsOpenPage(SettingsPage::SYSTEM);
+                }
+                diagTouchActive = false;
             }
             break;
         }
