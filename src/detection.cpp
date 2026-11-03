@@ -2134,7 +2134,14 @@ static void rawWifiScanTick() {
         // Active directed probes discover ordinary broadcasting APs. Include
         // hidden networks, use a longer bounded channel dwell than the old
         // default, and do not change the ongoing promiscuous detector profile.
+        const uint32_t beforeHeap = ESP.getFreeHeap();
+        const uint32_t beforeBlock = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
+        wifi_country_t cc = {};
+        esp_wifi_get_country(&cc);
         const int rc = WiFi.scanNetworks(true, true, false, 180);
+        Serial.printf("[raw-wifi] start rc=%d heap=%lu/%lu country=%.2s ch=%u-%u\n",
+                      rc, (unsigned long)beforeHeap, (unsigned long)beforeBlock,
+                      cc.cc, (unsigned)cc.schan, (unsigned)(cc.schan + cc.nchan - 1));
         ++s_rawWifiAttempts;
         s_rawWifiStartedMs = now;
         if (rc == -2) {
@@ -2151,8 +2158,27 @@ static void rawWifiScanTick() {
     const int result = WiFi.scanComplete();
     if (result >= 0) {
         s_rawWifiFinished = true;
-        Serial.printf("[raw-wifi] scan complete: %d networks in %lu ms\n",
-                      result, (unsigned long)(now - s_rawWifiStartedMs));
+        Serial.printf("[raw-wifi] scan complete: %d networks in %lu ms, heap=%lu/%lu\n",
+                      result, (unsigned long)(now - s_rawWifiStartedMs),
+                      (unsigned long)ESP.getFreeHeap(),
+                      (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
+        // AP identity is deliberately NOT logged. Channel distribution
+        // shows if a 3.2 board is actually sweeping all 2.4 GHz channels.
+        uint8_t chCounts[14] = {};
+        int8_t strongest = -127;
+        for (int i = 0; i < result; ++i) {
+            const int ch = WiFi.channel(i);
+            if (ch >= 1 && ch <= 13 && chCounts[ch] != 255) ++chCounts[ch];
+            const int8_t rssi = (int8_t)WiFi.RSSI(i);
+            if (rssi > strongest) strongest = rssi;
+        }
+        char summary[130];
+        int n = snprintf(summary, sizeof(summary), "[raw-wifi] channels:");
+        for (int ch = 1; ch <= 13 && n < (int)sizeof(summary)-12; ++ch)
+            if (chCounts[ch]) n += snprintf(summary+n, sizeof(summary)-n,
+                                            " %d:%u", ch, (unsigned)chCounts[ch]);
+        Serial.printf("%s; strongest=%d dBm\n", summary,
+                      result ? (int)strongest : 0);
     } else if (result == -2 || now - s_rawWifiStartedMs >= 12000u) {
         Serial.printf("[raw-wifi] scan %s (try %u, elapsed %lu ms)\n",
                       result == -2 ? "failed" : "timed out",
