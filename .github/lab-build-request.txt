@@ -1,5 +1,4 @@
-CYD169-UBX-NMEA-HW-20261102
-# LAB-only dual-protocol GPS firmware for CYD 2.8 ST7789 and 3.2 ST7798.
-# UART2 fixed at 115200; support UBX NAV-PVT/SAT and checksummed NMEA concurrently.
-# R2: resolved one stale baud-probe timer reference (compile error).
-# Never publish a production release or tag; physical testing must precede merging #169.
+CYD169-UBX-MEMSAFE-20261103
+# LAB-only isolation build for 2.8 ST7789 and 3.2 ST7798 after new UBX/NMEA boot-loop regression.
+# NAV-SAT streaming, 96-byte UBX cache (was 1536); UART RX 2048 (was 4096).
+# Before/after UART heap diagnostics. Not hardware validated; no production release/tag or merge.
