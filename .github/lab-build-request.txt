@@ -1,3 +1,6 @@
-WATCH149-LANDBACK
-# Experimental LAB build after landscape WATCH BACK touch fix.
-# Triggered only on explicit user hardware regression report.
+CYD172-RADIO-SCAN-FIX-20261103
+# LAB-only firmware for PR #172 GPS integration and WiFi/BLE regression after initial hardware test.
+# Source mirrors PR #172 head aeb9657137504cbbe483372f307e477f9fe39275; only this request file differs.
+# WiFi complete scan pages; host-task BLE pause during full WiFi scan; retry timeout/failure; BLE host restart if stopped.
+# Verify 2.8 ST7789 and 3.2 ST7798 GPS FIX, BLE/WiFi scan after repeated switching, 2.4GHz SSID counts, normal SD/mesh.
+# NO PRODUCTION VERSION/TAG OR RELEASE; DO NOT MERGE UNTIL HARDWARE TEST.
