@@ -16,7 +16,7 @@
 #include "detection.h"
 
 enum class WifiNetsHit : uint8_t { NONE, ROW, USE, REMOVE, ADD, BACK };
-enum class WifiAddHit  : uint8_t { NONE, ROW, RESCAN, BACK };
+enum class WifiAddHit  : uint8_t { NONE, ROW, PREV, NEXT, RESCAN, BACK };
 
 void        uiWifiNetsInit(TFT_eSPI& t);
 void        uiWifiNetsTick(TFT_eSPI& t, uint32_t now);
@@ -30,3 +30,5 @@ int         uiWifiNetsSelected();
 void        uiWifiAddInit(TFT_eSPI& t);
 void        uiWifiAddTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng);
 WifiAddHit  uiWifiAddHit(TFT_eSPI& t, int x, int y, const DetectionEngine& eng, int* row);
+// Paged Wi-Fi scan results: every returned SSID remains selectable.
+void        uiWifiAddPage(int direction);
