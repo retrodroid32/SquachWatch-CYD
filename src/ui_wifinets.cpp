@@ -317,7 +317,9 @@ void uiWifiAddTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng) {
     const int w = t.width();
     const Bar b = bar(t, 2);
     const int fit = rowsThatFit(t, b.y[0]);
-    if (!eng.rawWifiScanDone()) {
+    if (eng.rawWifiScanFailed()) {
+        paragraph(t, ROW_Y0 + 4, Theme::AMBER, "WiFi scan failed or timed out. Press RESCAN; no reboot required.");
+    } else if (!eng.rawWifiScanDone()) {
         const char* dots[] = { "SCANNING", "SCANNING.", "SCANNING..", "SCANNING..." };
         t.setTextColor(Theme::CYAN, Theme::BG);
         t.setCursor(8, ROW_Y0 + 4);
