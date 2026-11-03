@@ -3332,9 +3332,6 @@ void setup() {
     }
 #endif
     engine.init();
-#if defined(LAB_GNSS169)
-    Lab169::begin();
-#endif
     // After the engine: the card leans on the lifetime counts to pick which
     // type sits out, and those are read in init().
     Bingo::begin(engine);
@@ -3345,7 +3342,25 @@ void setup() {
     // After the radio is up and before anything can ask whether messages are
     // ready: this is where the crypto self-test runs, on the real cipher,
     // against a frame built by an independent implementation.
+#if defined(LAB_GNSS169)
+    // LAB hardware isolation: run the production cipher check before
+    // allocating GPS UART RX heap. NEVER bypass or weaken the check.
+    Serial.printf("[LAB169] before mesh self-test: free=%lu largest=%lu\n",
+                  (unsigned long)ESP.getFreeHeap(),
+                  (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
+#endif
     MeshTalk::begin();
+#if defined(LAB_GNSS169)
+    Serial.printf("[LAB169] after mesh self-test: pass=%u free=%lu largest=%lu\n",
+                  (unsigned)MeshTalk::selfTestOk(),
+                  (unsigned long)ESP.getFreeHeap(),
+                  (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
+#endif
+#endif
+#if defined(LAB_GNSS169)
+    // Lab UART is initialized after mesh verification so the test sees the
+    // same available memory as the known-good non-GPS production startup.
+    Lab169::begin();
 #endif
     applyBrightness();
     // After a wipe the board comes back the way the wipe asked: straight to the
