@@ -292,28 +292,53 @@ void radioReport(bool withScan) {
         Serial.println(line);
     }
     if (!withScan) return;
-    esp_wifi_set_promiscuous(false);
+    // A successful scan-start (ESP_OK) does NOT prove the AP result table
+    // could be retrieved. On the 3.2 CYD the second scan reported 0 APs and
+    // the first reported 5 APs with strongest=-127: we previously ignored
+    // errors from BOTH esp_wifi_scan_get_ap_* APIs, hiding memory pressure.
+    const uint32_t heapBefore = ESP.getFreeHeap();
+    const uint32_t blockBefore = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
+    const esp_err_t promOff = esp_wifi_set_promiscuous(false);
     wifi_scan_config_t cfg = {};
     cfg.show_hidden = true;
     cfg.scan_type = WIFI_SCAN_TYPE_PASSIVE;
     cfg.scan_time.passive = 150;
     const uint32_t t0 = millis();
     const esp_err_t se = esp_wifi_scan_start(&cfg, true);
-    uint16_t n = 0;
-    esp_wifi_scan_get_ap_num(&n);
+    uint16_t n = 0, got = 0;
+    esp_err_t countError = ESP_ERR_INVALID_STATE;
+    esp_err_t recordError = ESP_ERR_INVALID_STATE;
     int8_t best = -127;
-    if (n) {
-        uint16_t k = n > 20 ? 20 : n;
-        wifi_ap_record_t recs[20];
-        esp_wifi_scan_get_ap_records(&k, recs);
-        for (uint16_t i = 0; i < k; i++) if (recs[i].rssi > best) best = recs[i].rssi;
-    } else {
-        esp_wifi_clear_ap_list();
+    if (se == ESP_OK) {
+        countError = esp_wifi_scan_get_ap_num(&n);
+        if (countError == ESP_OK && n) {
+            got = n > 20u ? 20u : n;
+            wifi_ap_record_t recs[20] = {};
+            recordError = esp_wifi_scan_get_ap_records(&got, recs);
+            if (recordError == ESP_OK) {
+                for (uint16_t i = 0; i < got; ++i)
+                    if (recs[i].rssi > best) best = recs[i].rssi;
+            }
+        } else {
+            recordError = (countError == ESP_OK) ? ESP_OK : countError;
+            esp_wifi_clear_ap_list();
+        }
     }
-    Serial.printf("[radio] driver scan: err %d, %u network(s), strongest %d dBm, %lu ms\n",
-                  (int)se, (unsigned)n, n ? (int)best : 0, (unsigned long)(millis() - t0));
-    esp_wifi_set_promiscuous(true);
-    esp_wifi_set_channel(ch ? ch : 1, WIFI_SECOND_CHAN_NONE);
+    const uint32_t heapAfter = ESP.getFreeHeap();
+    const uint32_t blockAfter = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
+    Serial.printf("[radio] driver scan: start=%d countErr=%d recordsErr=%d found=%u read=%u best=%d dBm, %lu ms, heap %lu/%lu -> %lu/%lu, promOff=%d\n",
+                  (int)se, (int)countError, (int)recordError,
+                  (unsigned)n, (unsigned)got,
+                  recordError == ESP_OK && got ? (int)best : 0,
+                  (unsigned long)(millis() - t0),
+                  (unsigned long)heapBefore, (unsigned long)blockBefore,
+                  (unsigned long)heapAfter, (unsigned long)blockAfter,
+                  (int)promOff);
+    const esp_err_t promOn = esp_wifi_set_promiscuous(true);
+    const esp_err_t chanRestore = esp_wifi_set_channel(ch ? ch : 1, WIFI_SECOND_CHAN_NONE);
+    if (promOn != ESP_OK || chanRestore != ESP_OK)
+        Serial.printf("[radio] restore: promErr=%d chanErr=%d\n",
+                      (int)promOn, (int)chanRestore);
 }
 static volatile uint8_t s_windowReq = 0;   // a WINDOW command waiting for the next restart
 static bool             s_windowPending = false;
