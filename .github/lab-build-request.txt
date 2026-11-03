@@ -1,3 +1,8 @@
-WATCH149-LANDBACK
-# Experimental LAB build after landscape WATCH BACK touch fix.
-# Triggered only on explicit user hardware regression report.
+PR136-GPS-UTC-BOARD-HWTEST-20261103
+# LAB-only hardware validation of refreshed PR136 atop merged PR169/PR172.
+# Source matches PR136 head 9d278fbc81cef59ab9a0d0e60058327455c4a380; only LAB build request differs.
+# GPS parser / UART2 / GPIO35 / 115200 remain exactly as user verified in PR172.
+# New: adopt UTC from fresh real valid UBX/NMEA fix if system clock untrusted; never fake/stale.
+# New: System Properties -> Board displays GPS FIX/SV or STALE/NO FIX.
+# Test both 2.8 ST7789 and 3.2 ST7798, BLE/WiFi scans, SD hot-swap, mesh and rendering.
+# Do NOT create a production tag/release or merge PR136; hardware approval required.
