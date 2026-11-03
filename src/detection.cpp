@@ -278,6 +278,12 @@ void radioReport(bool withScan) {
                   (unsigned long)qp.bleDropped, (unsigned long)qp.bleDrainAvgUs,
                   (unsigned long)qp.bleDrainMaxUs, (unsigned long)qp.bleBudgetHits,
                   (int)g_rawMode, temperatureRead(), (unsigned long)(millis() / 1000));
+    Serial.printf("[radio] ble gate: %s suppressed=%lu rawResults=%u heap=%lu/%lu\n",
+                  s_heapLow ? "BLOCKED" : "OPEN",
+                  (unsigned long)s_advertsDropped,
+                  g_engine ? (unsigned)g_engine->rawBleCount() : 0u,
+                  (unsigned long)ESP.getFreeHeap(),
+                  (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
     Serial.printf("[radio] wifi queue: q %u hi %u drop %lu, drain %lu/%lu us, budget %lu\n",
                   (unsigned)qp.wifiDepth, (unsigned)qp.wifiHighWater,
                   (unsigned long)qp.wifiDropped, (unsigned long)qp.wifiDrainAvgUs,
@@ -1495,6 +1501,26 @@ void DetectionEngine::loop() {
     // stranded until that scan ends.
     processBleQ(bleBudgetUs, bleMax);
     rawWifiScanTick();
+#if defined(GPS_SUPPORT) && defined(GPS_RX_PIN)
+    // Manual BLE mode returns early instead of calling scanFlushTick().
+    // Its low-memory flag was therefore stale and could suppress EVERY
+    // result even after the heap became usable. Refresh without touching
+    // NimBLE's host task or allocating memory inside its callback.
+    if (g_rawMode == RawScanMode::BLE) {
+        static uint32_t lastRawBleHeapAt = 0;
+        const uint32_t now = millis();
+        if (now - lastRawBleHeapAt >= 500u) {
+            lastRawBleHeapAt = now;
+            const uint32_t largest = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
+            const bool low = largest < 1536u;
+            if (low != s_heapLow)
+                Serial.printf("[raw-ble] memory gate %s largest=%lu B results=%u\n",
+                              low ? "BLOCKED" : "OPEN",
+                              (unsigned long)largest, (unsigned)_rawBleCount);
+            s_heapLow = low;
+        }
+    }
+#endif
 
     // Resting radios still take the BLE side of the loop when BLE is up;
     // only the WiFi steps below are skipped, since WiFi is stopped.
@@ -2083,7 +2109,11 @@ static void rawBleModeOnHost(struct ble_npl_event*) {
     }
     scan->setActiveScan(!passive);
     s_passiveNow = passive;
-    scan->start(0, false, true);
+    const bool started = scan->start(0, false, true);
+    if (g_rawMode == RawScanMode::BLE)
+        Serial.printf("[raw-ble] host start=%u scanning=%u largest=%lu\n",
+                      (unsigned)started, (unsigned)scan->isScanning(),
+                      (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
 #else
     if (!scan || !scan->isScanning()) return;
     const bool passive = (g_rawMode == RawScanMode::BLE) ? false : s_wantPassive;
@@ -2119,6 +2149,13 @@ void DetectionEngine::startRawBleScan() {
     esp_wifi_set_promiscuous(false);
     g_rawMode = RawScanMode::BLE;
     g_rawBleStartMs = millis();
+#if defined(GPS_SUPPORT) && defined(GPS_RX_PIN)
+    const uint32_t largest = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
+    s_heapLow = largest < 1536u;
+    Serial.printf("[raw-ble] enter heap=%lu/%lu gate=%s\n",
+                  (unsigned long)ESP.getFreeHeap(), (unsigned long)largest,
+                  s_heapLow ? "BLOCKED" : "OPEN");
+#endif
     requestRawBleScanMode();
 }
 
