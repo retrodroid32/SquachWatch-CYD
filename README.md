@@ -110,8 +110,8 @@ These items are **not** part of v1.21.0. They remain in open PRs until review, C
 
 | Area | Work in progress | PRs |
 |---|---|---|
-| CYD GPS | Optional GPS firmware variants; NMEA + FlightMesh-style UBX NAV-PVT/NAV-DOP | #77 |
-| GNSS / WiGLE | Shared GNSS/WiGLE groundwork | #69 |
+| CYD GPS | Live UBX/NMEA GPIO35 receiver is in the fork (merged #169 and #172); GPS UTC/board status refinements under review | #136 |
+| GNSS / WiGLE | Parser and WiGLE formatter groundwork merged; live wardriving/export not yet implemented | #169 |
 | T-Watch | Battery/charging status improvements | #70 |
 | T-Watch S3 Plus | GNSS runtime | #71 |
 | Wardriving | GPS-stamped wardrive runtime + WiGLE export | #72 |
@@ -205,7 +205,10 @@ otherwise see all week. It is one tap away in `DETECTION FILTER`.
 
 The web flasher also offers optional 80 MHz display-clock variants for the
 2.8" CYD and 3.2" CYD. Those are separate experimental performance profiles,
-not different physical boards. The RL Phantom capacitive profile is compile-only,
+not different physical boards. The current CYD 2.8" and 3.2" firmware already
+includes a live GPS receiver when an external module is connected (GPS TX to
+GPIO35, UART2 at 115200 baud, UBX and NMEA). No separate GPS binary is needed.
+The RL Phantom capacitive profile is compile-only,
 and the 3.5" ST7796 profile remains excluded from release/CI while its hardware
 issue is unresolved.
 
@@ -289,10 +292,12 @@ For implementation history of the detection-intelligence stages, see [v1.21.0 de
 
 ### The clock
 
-There is no GPS, and the board never joins a network to scan. But it does
-join one for the update check at boot, and for UPDATE OVER WIFI, and the
-clock rides along: one NTP round trip while the radio is up anyway, about a
-second. The zone is yours to pick, and there are three ways: the web
+The CYD 2.8" and 3.2" firmware accepts external UBX or NMEA GPS data
+on GPIO35 at 115200 baud. The #136 clock follow-up can establish trusted UTC
+from a fresh real GNSS fix when the clock is otherwise untrusted; it never
+uses stale fixes or synthetic test positions. Other clock sources remain:
+the board joins a network for the optional update check or UPDATE OVER WIFI
+and can obtain NTP time there. The zone is yours to pick, and there are three ways: the web
 flasher's **Set Time & Zone** button sends this computer's clock and zone
 down the same cable right after flashing; the first time the clock is set
 with no zone chosen, a card on the main screen asks, with the live time in
