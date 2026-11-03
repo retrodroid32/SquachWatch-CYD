@@ -1,3 +1,9 @@
-WATCH149-LANDBACK
-# Experimental LAB build after landscape WATCH BACK touch fix.
-# Triggered only on explicit user hardware regression report.
+PR136-GPS-DIAG-SCROLL-20261103
+# LAB firmware aligned to PR136 e1d870ce006a9a11a44c6f7b84193ec7ca6789c2.
+# Includes Settings -> SYSTEM -> SYSTEM PROPERTIES -> Board.
+# Diagnostics report is touch swipe scrollable with fixed title and BACK.
+# Existing two-band framebuffer rendering kept; no extra full frame allocation.
+# Live UBX/NMEA GPIO35 115200 GPS UTC and Board status retained.
+# Hardware validate both 2.8 ST7789 and 3.2 ST7798, rotation, touch,
+# GPS fresh/stale, WiFi/BLE scanning, SquachMesh and SD hotplug.
+# PR stays DRAFT/UNMERGED. No production tag or release.
