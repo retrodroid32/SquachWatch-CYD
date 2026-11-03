@@ -1299,7 +1299,20 @@ static void scanFlushOnHost(struct ble_npl_event*) {
     // Checked again here: a raw scan may have started, or scanning been
     // switched off, between the post and now.
     if ((g_rawMode != RawScanMode::NONE && !(g_rawMode == RawScanMode::REST && !g_restBle)) ||
-        !scan || !scan->isScanning()) return;
+        !scan) return;
+#if defined(GPS_SUPPORT) && defined(GPS_RX_PIN)
+    // Scan ownership is already held by the host task here. Repair an
+    // unexpectedly stopped BLE scanner without rebooting or touching mesh.
+    if (!scan->isScanning()) {
+        scan->setActiveScan(!s_wantPassive);
+        s_passiveNow = s_wantPassive;
+        scan->start(0, false, true);
+        Serial.printf("[scan] BLE scan recovery: running=%u\n", (unsigned)scan->isScanning());
+        return;
+    }
+#else
+    if (!scan->isScanning()) return;
+#endif
     // Measured across the stop alone -- start() may allocate, and that is not
     // what this number is for.
     const uint32_t before = ESP.getFreeHeap();
@@ -1380,7 +1393,19 @@ static void scanFlushTick() {
     const bool pressed = !s_passiveNow && largest < SCAN_FLUSH_BLOCK_B &&
                          now > SCAN_FLUSH_SETTLE_MS &&
                          now - s_lastFlush >= SCAN_FLUSH_MIN_MS;
+#if defined(GPS_SUPPORT) && defined(GPS_RX_PIN)
+    NimBLEScan* scan = NimBLEDevice::getScan();
+    const bool bleStopped = g_rawMode == RawScanMode::NONE && scan && !scan->isScanning();
+    const bool needsRecovery = bleStopped && now - s_bleRecoveryAt >= 5000u;
+    if (!pressed && !modeChanged && !needsRecovery && now - s_lastFlush < SCAN_FLUSH_MS) return;
+    if (needsRecovery) {
+        s_bleRecoveryAt = now;
+        Serial.printf("[scan] BLE stopped unexpectedly, requesting host-task restart (heap %lu, largest %lu)\n",
+                      (unsigned long)ESP.getFreeHeap(), (unsigned long)largest);
+    }
+#else
     if (!pressed && !modeChanged && now - s_lastFlush < SCAN_FLUSH_MS) return;
+#endif
     if (pressed) {
         Serial.printf("[scan] heap pressed: largest block %lu, flushing early\n", (unsigned long)largest);
         // Three pressed flushes inside a minute: flushing is losing, go passive.
@@ -1397,10 +1422,16 @@ static void scanFlushTick() {
         }
     }
     s_lastFlush = now;
+#if !(defined(GPS_SUPPORT) && defined(GPS_RX_PIN))
     NimBLEScan* scan = NimBLEDevice::getScan();
-    // Never restart a scan that is not running: that would be switching
-    // Bluetooth scanning back on behind whoever turned it off.
+#endif
+    // Never override an UPDATE/REST/WIFI owner. Normal CYD operation may
+    // recover a stopped scan via scanFlushOnHost(), not from this loop task.
+#if defined(GPS_SUPPORT) && defined(GPS_RX_PIN)
+    if (!scan || (!scan->isScanning() && !needsRecovery)) return;
+#else
     if (!scan || !scan->isScanning()) return;
+#endif
     if (!s_flushEvReady) {
         ble_npl_event_init(&s_flushEv, scanFlushOnHost, nullptr);
         s_flushEvReady = true;
