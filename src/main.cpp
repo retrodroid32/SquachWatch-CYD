@@ -44,6 +44,9 @@
 #include "theme.h"            // the crash card on the splash
 #include "privacy.h"
 #include "clock.h"
+#if defined(GPS_SUPPORT) && defined(GPS_RX_PIN)
+#include "gps_runtime.h"
+#endif
 
 // Written every second, read once on the next boot. RTC_NOINIT_ATTR is the
 // point: it survives a software reset WITHOUT being zeroed on the way back
@@ -1445,6 +1448,9 @@ static void enterRawScan(bool isBle) {
     s_rawScanIsBle = isBle;
     s_rawScanCachedView = false;
     s_confirmPending = false;
+    // Identical scan entry and UI path to the working 2.8-inch CYD.
+    // Memory headroom on CYD32 comes from its smaller buffered sprite
+    // at boot, not from deleting/recreating the sprite during a scan.
     if (isBle) engine.startRawBleScan();
     else       engine.startRawWifiScan();
     uiRawScanInit(*canvas, isBle);
@@ -1807,6 +1813,8 @@ static void enterWifiNets() {
 static void enterWifiAdd() {
     state = AppState::WIFI_ADD;
     transitionStart = millis();
+    // Same Wi-Fi scan start as the 2.8-inch. No release of the screen
+    // framebuffer during RF scanning, which caused direct-panel flicker.
     engine.startRawWifiScan();
     uiWifiAddInit(*canvas);
 }
@@ -3106,7 +3114,14 @@ void setup() {
     // PSRAM pushes slower and cannot go by DMA. Keep it inside.
     frame.setAttribute(PSRAM_ENABLE, false);
 #endif
-    if (!frame.createSprite(tft.width(), tft.height())) {
+#if defined(CYD32) && defined(GPS_SUPPORT) && defined(GPS_RX_PIN)
+    // ST7798 has substantially less contiguous free heap after WiFi +
+    // NimBLE + SD + GPS. Retain a 2-band sprite (half the 77KB memory)
+    // permanently, using the established band renderer, rather than
+    // repeatedly destroying the full sprite during RF scans.
+    s_recoveryBands = 2;
+#endif
+    if (!frame.createSprite(tft.width(), tft.height() / s_recoveryBands)) {
         Serial.println("ERROR: frame buffer allocation failed (low memory)");
 #if HAVE_NVS_ERASE
         if (bootCheckRan) {
@@ -3121,6 +3136,19 @@ void setup() {
 #endif
     }
     frame.setTextSize(1);
+#if defined(CYD32) && defined(GPS_SUPPORT) && defined(GPS_RX_PIN)
+    if (frame.created()) {
+        canvas = &tft; // drawTwoBand uses the sprite and pushes each band
+        Serial.printf("[frame] CYD32 two-band buffered renderer, sprite %lu bytes, heap %lu/%lu\n",
+                      (unsigned long)(tft.width() * (tft.height() / s_recoveryBands)),
+                      (unsigned long)ESP.getFreeHeap(),
+                      (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
+    } else {
+        frameBufferOk = false;
+        s_recoveryBands = 1;
+        canvas = &tft;
+    }
+#endif
 #endif
 
     // Builds a 512-byte lookup table and nothing else; it touches no bus
@@ -3340,6 +3368,11 @@ void setup() {
     // ready: this is where the crypto self-test runs, on the real cipher,
     // against a frame built by an independent implementation.
     MeshTalk::begin();
+#endif
+#if defined(GPS_SUPPORT) && defined(GPS_RX_PIN)
+    // The GPS UART allocation follows the mesh cipher self-test, as proven
+    // necessary on the low-heap CYD ST7798 startup path.
+    GpsRuntime::begin();
 #endif
     applyBrightness();
     // After a wipe the board comes back the way the wipe asked: straight to the
@@ -3810,6 +3843,9 @@ void loop() {
         touchJustUp = false;
     }
     engine.loop();
+#if defined(GPS_SUPPORT) && defined(GPS_RX_PIN)
+    GpsRuntime::tick(now);
+#endif
     floodTick();   // nothing outside a FLOOD_BENCH build
     // The heap at the first pass of loop(), for DIAGNOSTICS' BOOT line.
     static uint32_t s_loopHeapFree = 0, s_loopHeapLargest = 0;
@@ -5377,7 +5413,9 @@ void loop() {
         }
         case AppState::RAWSCAN: {
             const bool done = s_rawScanCachedView ||
-                              (s_rawScanIsBle ? engine.rawBleScanDone() : engine.rawWifiScanDone());
+                              (s_rawScanIsBle ? engine.rawBleScanDone() :
+                               (engine.rawWifiScanDone() || engine.rawWifiScanFailed()));
+            // 2.8 and 3.2 use the same buffered renderer on both radios.
             drawTwoBand([&](TFT_eSPI& t, bool advance) {
                 uiRawScanTick(t, now, engine, s_rawScanIsBle, done, s_confirmPending, privLabel(s_confirmLabel),
                               engine.isWatched(s_confirmMac, s_rawScanIsBle),
@@ -6210,7 +6248,13 @@ void loop() {
                         }
                         break;
                     }
-                    case WifiAddHit::RESCAN: engine.stopRawScan(); engine.startRawWifiScan(); break;
+                    case WifiAddHit::PREV:   uiWifiAddPage(-1); break;
+                    case WifiAddHit::NEXT:   uiWifiAddPage(+1); break;
+                    case WifiAddHit::RESCAN:
+                        engine.stopRawScan();
+                        engine.startRawWifiScan();
+                        uiWifiAddInit(*canvas);
+                        break;
                     case WifiAddHit::BACK:   engine.stopRawScan(); enterWifiNets(); break;
                     default: break;
                 }

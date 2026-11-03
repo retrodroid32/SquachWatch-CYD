@@ -301,6 +301,8 @@ public:
 
     void     startRawWifiScan();
     bool     rawWifiScanDone() const;
+    // Distinguish a failed or timed-out radio sweep from a genuinely empty list.
+    bool     rawWifiScanFailed() const;
     uint8_t  rawWifiCount() const;
     const char* rawWifiSsid(uint8_t idx) const;        // "" if idx is out of range
     int8_t   rawWifiRssi(uint8_t idx) const;

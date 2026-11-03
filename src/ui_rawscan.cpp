@@ -314,7 +314,7 @@ switch (Settings::background()) {
     if (count == 0) {
         t.setTextSize(3);
         t.setTextColor(Theme::VAPOR_PINK, Theme::BG);
-        const char* msg = "NOTHING FOUND";
+        const char* msg = (!isBle && eng.rawWifiScanFailed()) ? "SCAN FAILED" : "NOTHING FOUND";
         int mw = t.textWidth(msg);
         t.setCursor((w - mw) / 2, bodyTop + bodyH / 3);
         t.print(msg);
