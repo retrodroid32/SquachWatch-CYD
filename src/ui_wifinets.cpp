@@ -310,19 +310,11 @@ WifiNetsHit uiWifiNetsHit(TFT_eSPI& t, int x, int y, int* row) {
 static int s_wifiAddPage = 0;
 static int s_wifiAddFit = 1;
 static int s_wifiAddCount = 0;
-// The 3.2 panel must not be erased 30+ times/sec while its 77 KB sprite is
-// loaned to Wi-Fi. Repaint for changes, and animate scanning every 700 ms.
-static int s_wifiAddLastPage = -1, s_wifiAddLastCount = -1;
-static int s_wifiAddLastState = -1, s_wifiAddLastW = -1, s_wifiAddLastH = -1;
-static uint32_t s_wifiAddLastPaint = 0, s_wifiAddToastSerial = 0;
 
 void uiWifiAddInit(TFT_eSPI& t) {
     s_wifiAddPage = 0;
     s_wifiAddFit = 1;
     s_wifiAddCount = 0;
-    s_wifiAddLastPage = s_wifiAddLastCount = s_wifiAddLastState = -1;
-    s_wifiAddLastW = s_wifiAddLastH = -1;
-    s_wifiAddLastPaint = s_wifiAddToastSerial = 0;
     t.fillRect(0, 0, t.width(), t.height(), Theme::BG);
 }
 
@@ -332,28 +324,8 @@ void uiWifiAddPage(int direction) {
     if (next >= 0 && next <= maxPage) s_wifiAddPage = next;
 }
 
-void uiWifiAddTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool direct) {
-    const int scanState = eng.rawWifiScanFailed() ? 3 :
-                          eng.rawWifiScanDone() ? 2 : 1;
-    const int scanCount = (int)eng.rawWifiCount();
-    const uint32_t toastSerial = Theme::toastSerial();
-    if (direct) {
-        const bool changed = scanState != s_wifiAddLastState ||
-                             scanCount != s_wifiAddLastCount ||
-                             s_wifiAddPage != s_wifiAddLastPage ||
-                             t.width() != s_wifiAddLastW ||
-                             t.height() != s_wifiAddLastH ||
-                             toastSerial != s_wifiAddToastSerial;
-        if (!changed && (scanState != 1 || now - s_wifiAddLastPaint < 700u))
-            return;
-    }
-    s_wifiAddLastPaint = now;
-    s_wifiAddLastState = scanState;
-    s_wifiAddLastCount = scanCount;
-    s_wifiAddLastPage = s_wifiAddPage;
-    s_wifiAddLastW = t.width();
-    s_wifiAddLastH = t.height();
-    s_wifiAddToastSerial = toastSerial;
+void uiWifiAddTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng) {
+    // Both CYD sizes now paint to a buffered sprite via drawTwoBand().
     t.fillRect(0, 0, t.width(), t.height(), Theme::BG);
     Theme::drawTitleBar(t, ">> ADD A NETWORK <<");
     t.setTextSize(1);
