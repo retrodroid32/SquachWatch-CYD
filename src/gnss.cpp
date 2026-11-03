@@ -1,5 +1,6 @@
 // SquachWatch-CYD — GNSS sentence parser. See gnss.h.
 #include "gnss.h"
+#include "ubx.h"
 #include <string.h>
 #include <stdlib.h>
 
@@ -18,8 +19,9 @@ uint32_t s_good = 0, s_bad = 0;
 enum { T_GP, T_GL, T_GA, T_GB, T_GQ, T_OTHER, T_N };
 uint8_t s_viewDone[T_N], s_heardDone[T_N], s_heardNow[T_N];
 
-char    s_line[96];
+char    s_line[192];
 uint8_t s_len = 0;
+bool s_nmeaActive = false;
 
 int hexVal(char c) {
     if (c >= '0' && c <= '9') return c - '0';
@@ -135,7 +137,7 @@ void onGsv(const char* id, char** f, uint8_t n) {
 
 bool sentence(const char* s, uint32_t nowMs) {
     if (!s || s[0] != '$') return false;
-    char buf[96];
+    char buf[192];
     size_t len = strlen(s);
     while (len && (s[len - 1] == '\r' || s[len - 1] == '\n')) len--;
     if (len < 9 || len >= sizeof buf) { s_bad++; return false; }
@@ -159,14 +161,85 @@ bool sentence(const char* s, uint32_t nowMs) {
 }
 
 void feed(char c, uint32_t nowMs) {
-    if (c == '$') s_len = 0;
+    // UBX consumes only binary frames; ASCII NMEA still decodes as before.
+    if (Ubx::feed((uint8_t)c, nowMs)) return;
+    if (c == '
+
+const Fix& fix() {
+    const Fix& ubx = Ubx::fix();
+    // When both protocols report positions, use the newer VALID fix.
+    if (ubx.valid && (!s_fix.valid || (int32_t)(ubx.atMs - s_fix.atMs) >= 0))
+        return ubx;
+    return s_fix;
+}
+
+Sky sky() {
+    if (Ubx::hasSky()) return Ubx::sky();
+    Sky k;
+    for (uint8_t t = 0; t < T_N; t++) { k.view += s_viewDone[t]; k.heard += s_heardDone[t]; }
+    return k;
+}
+
+uint32_t utcEpoch() { return Ubx::utcEpoch() ? Ubx::utcEpoch() : s_rmcEpoch; }
+uint32_t good() { return s_good; }
+uint32_t bad()  { return s_bad; }
+uint32_t ubxGood() { return Ubx::good(); }
+uint32_t ubxBad() { return Ubx::bad(); }
+uint32_t ubxPvt() { return Ubx::pvt(); }
+uint32_t ubxSat() { return Ubx::sat(); }
+uint8_t ubxLastClass() { return Ubx::lastClass(); }
+uint8_t ubxLastId() { return Ubx::lastId(); }
+
+bool fresh(uint32_t nowMs) {
+    const Fix& f = fix();
+    return f.valid && nowMs - f.atMs < FRESH_MS;
+}
+
+void reset() {
+    s_fix = Fix();
+    s_rmcEpoch = s_rmcDay = 0;
+    s_faked = false;
+    s_good = s_bad = 0;
+    memset(s_viewDone, 0, sizeof s_viewDone);
+    memset(s_heardDone, 0, sizeof s_heardDone);
+    memset(s_heardNow, 0, sizeof s_heardNow);
+    s_len = 0;
+    s_nmeaActive = false;
+    Ubx::reset();
+}
+
+uint32_t toEpoch(int y, int m, int d, int h, int mi, int s) {
+    // Howard Hinnant's days_from_civil.
+    y -= m <= 2;
+    const int era = (y >= 0 ? y : y - 399) / 400;
+    const unsigned yoe = (unsigned)(y - era * 400);
+    const unsigned doy = (unsigned)((153 * (m + (m > 2 ? -3 : 9)) + 2) / 5 + d - 1);
+    const unsigned doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    const long days = (long)era * 146097 + (long)doe - 719468;
+    return (uint32_t)(days * 86400L + h * 3600L + mi * 60L + s);
+}
+
+void fake(int32_t lat7, int32_t lon7, uint32_t epoch, uint32_t nowMs) {
+    s_faked = true;
+    s_fix.valid = true;
+    s_fix.lat7 = lat7; s_fix.lon7 = lon7;
+    s_fix.altM = 0; s_fix.accM = 50; s_fix.used = 0;
+    s_fix.epoch = epoch;
+    s_fix.atMs = nowMs;
+}
+bool faked() { return s_faked && s_fix.valid; }
+
+}  // namespace Gnss
+) { s_len = 0; s_nmeaActive = true; }
+    if (!s_nmeaActive) return;
     if (c == '\n' || c == '\r') {
         if (s_len) { s_line[s_len] = 0; sentence(s_line, nowMs); }
         s_len = 0;
+        s_nmeaActive = false;
         return;
     }
     if (s_len < sizeof s_line - 1) s_line[s_len++] = c;
-    else s_len = 0;                          // overlong: not NMEA, drop it
+    else { s_len = 0; s_nmeaActive = false; }
 }
 
 const Fix& fix() { return s_fix; }

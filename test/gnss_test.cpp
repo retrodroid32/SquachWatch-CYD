@@ -8,6 +8,7 @@
 #include "test_util.h"
 #include <cstdio>
 #include <cstring>
+#include <vector>
 
 // "$" + body + "*hh", with the checksum computed, as the module sends it.
 static const char* nmea(const char* body) {
@@ -16,6 +17,28 @@ static const char* nmea(const char* body) {
     for (const char* p = body; *p; p++) sum ^= (uint8_t)*p;
     snprintf(buf, sizeof buf, "$%s*%02X\r\n", body, sum);
     return buf;
+}
+
+
+// Deterministic UBX frames, with Fletcher checksum calculated independently
+// of the production decoder. No hardware/Arduino dependency.
+static void put16(std::vector<uint8_t>& p, size_t off, uint16_t v) {
+    p[off] = (uint8_t)v; p[off+1] = (uint8_t)(v>>8);
+}
+static void put32(std::vector<uint8_t>& p, size_t off, uint32_t v) {
+    for (unsigned i=0;i<4;i++) p[off+i] = (uint8_t)(v>>(i*8));
+}
+static std::vector<uint8_t> packet(uint8_t cls,uint8_t id,
+                                   const std::vector<uint8_t>& p) {
+    std::vector<uint8_t> f = {0xb5,0x62,cls,id,(uint8_t)p.size(),(uint8_t)(p.size()>>8)};
+    f.insert(f.end(),p.begin(),p.end());
+    uint8_t a=0,b=0;
+    for (size_t i=2;i<f.size();i++) { a=(uint8_t)(a+f[i]); b=(uint8_t)(b+a); }
+    f.push_back(a); f.push_back(b);
+    return f;
+}
+static void uart(const std::vector<uint8_t>& bytes,uint32_t timeMs) {
+    for (uint8_t b: bytes) Gnss::feed((char)b,timeMs);
 }
 
 int main() {
@@ -93,6 +116,68 @@ int main() {
     ck("fake is a fix", Gnss::fix().valid && Gnss::faked());
     Gnss::sentence(nmea("GNGGA,000000.00,4042.76800,N,07400.36000,W,1,06,1.0,5.0,M,0.0,M,,"), 200);
     ck("a real fix ends the fake", !Gnss::faked() && Gnss::fix().valid);
+
+
+    suite("UBX NAV-PVT: binary-only valid position, time and accuracy");
+    Gnss::reset();
+    std::vector<uint8_t> pvt(92,0);
+    put16(pvt,4,2026); pvt[6]=11; pvt[7]=2;
+    pvt[8]=18; pvt[9]=31; pvt[10]=45;
+    pvt[11]=3; // UTC date and time valid
+    pvt[20]=3; pvt[21]=1; pvt[23]=11; // 3D GPS fix, gpsFixOk, 11 SV used
+    put32(pvt,24,(uint32_t)(int32_t)-837654321);
+    put32(pvt,28,(uint32_t)401234567);
+    put32(pvt,36,(uint32_t)(int32_t)-12500); // -12 m MSL
+    put32(pvt,40,2300); // 2.3 m hAcc
+    uart(packet(0x01,0x07,pvt),8000);
+    ck("UBX checksum accepted", Gnss::ubxGood()==1 && Gnss::ubxBad()==0);
+    ck("valid fix from UBX without NMEA", Gnss::fix().valid && Gnss::fresh(8001));
+    ck("signed UBX coordinates", Gnss::fix().lat7==401234567 &&
+                                  Gnss::fix().lon7==-837654321);
+    ck("UBX MSL height and accuracy", Gnss::fix().altM==-12 &&
+                                      Gnss::fix().accM==2);
+    ck("UBX satellites used", Gnss::fix().used==11);
+    ck("UBX valid date/time", Gnss::fix().epoch==
+                                Gnss::toEpoch(2026,11,2,18,31,45));
+    ck("UBX PVT counter", Gnss::ubxPvt()==1);
+
+    suite("UBX NAV-SAT visibility and signal");
+    std::vector<uint8_t> sat(32,0);
+    sat[4]=1; sat[5]=2; // version, numSvs
+    sat[9]=1; sat[10]=42; // svId 1, cno=42
+    sat[21]=2; sat[22]=0; // svId 2, cno=0
+    uart(packet(0x01,0x35,sat),8100);
+    ck("NAV-SAT counted", Gnss::ubxSat()==1);
+    ck("UBX satellites in view and heard", Gnss::sky().view==2 &&
+                                            Gnss::sky().heard==1);
+
+    suite("UBX corrupted checksum cannot corrupt fix");
+    auto badUbx = packet(0x01,0x07,pvt);
+    badUbx.back() ^= 0x40;
+    uart(badUbx,8200);
+    ck("UBX bad checksum counted", Gnss::ubxBad()==1);
+    ck("valid earlier position preserved", Gnss::fix().lat7==401234567);
+
+    suite("NMEA after binary and unknown binary containing newline and dollar");
+    uart(packet(0x0a,0x09,std::vector<uint8_t>{0x24,0x0a,0xb5,0x62}),8300);
+    ck("unknown UBX frame accepted, payload not fed to NMEA",
+       Gnss::ubxGood()==3 && Gnss::bad()==0);
+    const char* rmcMix=nmea("GNRMC,123519.00,A,4807.03800,N,01131.00000,E,0.0,0.0,021126,,,A");
+    for (const char* p=rmcMix;*p;p++) Gnss::feed(*p,9000);
+    const char* ggaMix=nmea("GNGGA,123520.00,4807.03800,N,01131.00000,E,1,08,0.9,545.4,M,46.9,M,,");
+    for (const char* p=ggaMix;*p;p++) Gnss::feed(*p,9100);
+    ck("NMEA also accepted in mixed protocol stream", Gnss::good()==2);
+    ck("newest valid position chosen", Gnss::fix().lat7==481173000 &&
+                                       Gnss::fix().lon7==115166666);
+    ck("NMEA time still valid", Gnss::fix().epoch==
+                                Gnss::toEpoch(2026,11,2,12,35,20));
+
+    suite("UBX bad PVT quality does not claim a fix on fresh reset");
+    Gnss::reset();
+    pvt[21]=0; // no gpsFixOk
+    uart(packet(0x01,0x07,pvt),10000);
+    ck("UBX quality reported as no fix", !Gnss::fix().valid);
+    ck("UBX frame itself accepted", Gnss::ubxGood()==1);
 
     return report();
 }
