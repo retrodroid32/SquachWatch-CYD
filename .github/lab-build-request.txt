@@ -1,3 +1,7 @@
-WATCH149-LANDBACK
-# Experimental LAB build after landscape WATCH BACK touch fix.
-# Triggered only on explicit user hardware regression report.
+CYD172-WIFI32-SCAN-HEAP-APDIAG-20261103
+# LAB-only version for PR172 Wi-Fi AP scan reliability diagnosis on 3.2 ST7798.
+# PR172 head d2f39cbd72c7be370f35212687a3bccbdb58ef7c: ONLY this LAB request differs.
+# Reclaim ~77KB framebuffer for both ADD NETWORK and main SCAN -> WiFi (CYD32 only).
+# Add driver-level scan count/record-fetch errors plus contiguous-heap telemetry in RADIO SCAN.
+# Preserve BLE host-task scan pause/recovery and GPS UBX/NMEA UART @115200 GPIO35.
+# Physical hardware test mandatory. DO NOT MERGE/TAG/CREATE PRODUCTION RELEASE.
