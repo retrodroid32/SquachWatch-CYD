@@ -1,3 +1,9 @@
-WATCH149-LANDBACK
-# Experimental LAB build after landscape WATCH BACK touch fix.
-# Triggered only on explicit user hardware regression report.
+CYD172-WIFI32-SCAN-MEMFIX-20261103
+# LAB ONLY firmware for PR172: targeted 3.2-inch ST7798 AP discovery recovery.
+# Source matches PR172 at 1e8da41f14d5f6909bdca34141df7bc964a8cc0c; only this request differs.
+# CYD32 temporarily lends full screen framebuffer (~77 KB) during manual WiFi AP scan,
+# avoids direct-panel flicker, restores bands after returning from survey.
+# Logs heap before/after, country/channel range, and WiFi channel summary WITHOUT SSID values.
+# Underlying scan recovery and BLE pause/resume retained from earlier candidate.
+# Repeat physical comparison: same 2.4GHz network visible on 2.8 but absent on 3.2 before fix.
+# No merge, no production version tag or release. Physical hardware validation required.
