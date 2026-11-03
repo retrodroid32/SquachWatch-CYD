@@ -1,5 +1,9 @@
 // SquachWatch-CYD — on-device diagnostics screen implementation
 #include "ui_diagnostics.h"
+#if defined(GPS_SUPPORT) && defined(GPS_RX_PIN)
+#include "gps_runtime.h"
+#include "wardrive.h" // UTC stamp formatting only; no WiGLE row export
+#endif
 #include "clock.h"
 #include "theme.h"
 #include "detection.h"
@@ -66,6 +70,40 @@ void uiDiagnosticsTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, co
 
     y = drawLine(t, y, Theme::CYAN, "BOARD:", "%s (%s)", info.boardName,
                  info.usingCapTouch ? "capacitive" : "resistive");
+#if defined(GPS_SUPPORT) && defined(GPS_RX_PIN)
+    // Live receiver diagnostics, rather than the LAB's synthetic AP/WiGLE test.
+    {
+        const GpsRuntime::Status g = GpsRuntime::status(now);
+        y = drawLine(t, y, g.fresh ? Theme::GREEN : Theme::AMBER, "GPS:",
+                     "%s %lu baud", g.fresh ? "FIX" :
+                     (g.fix.valid ? "STALE" : "NO FIX"), (unsigned long)GpsRuntime::BAUD);
+        y = drawLine(t, y, Theme::CYAN, "UBX:", "%lu OK %lu bad",
+                     (unsigned long)g.ubxGood, (unsigned long)g.ubxBad);
+        y = drawLine(t, y, Theme::CYAN, "NAV:", "PVT %lu SAT %lu",
+                     (unsigned long)g.ubxPvt, (unsigned long)g.ubxSat);
+        y = drawLine(t, y, Theme::CYAN, "NMEA:", "%lu OK %lu bad (%lu bytes)",
+                     (unsigned long)g.nmeaGood, (unsigned long)g.nmeaBad,
+                     (unsigned long)g.bytes);
+        y = drawLine(t, y, Theme::CYAN, "SAT:", "%u used %u view %u heard",
+                     (unsigned)g.fix.used, (unsigned)g.sky.view, (unsigned)g.sky.heard);
+        if (g.fresh) {
+            const int64_t la = g.fix.lat7, lo = g.fix.lon7;
+            const uint64_t ala = (uint64_t)(la < 0 ? -la : la);
+            const uint64_t alo = (uint64_t)(lo < 0 ? -lo : lo);
+            y = drawLine(t, y, Theme::GREEN, "LAT:", "%s%lu.%07lu",
+                         la < 0 ? "-" : "", (unsigned long)(ala / 10000000ULL),
+                         (unsigned long)(ala % 10000000ULL));
+            y = drawLine(t, y, Theme::GREEN, "LON:", "%s%lu.%07lu",
+                         lo < 0 ? "-" : "", (unsigned long)(alo / 10000000ULL),
+                         (unsigned long)(alo % 10000000ULL));
+        }
+        if (g.fix.epoch) {
+            char stamp[24];
+            Wardrive::utcStamp(g.fix.epoch, stamp, sizeof stamp);
+            y = drawLine(t, y, Theme::CYAN, "UTC:", "%s", stamp);
+        }
+    }
+#endif
     y = drawLine(t, y, Theme::CYAN, "RESET:", "%s", info.resetReason);
     // Only after an actual panic, and only when the breadcrumb survived. A
     // blank line here means a clean boot, not a missing feature.
