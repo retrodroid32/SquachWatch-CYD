@@ -1796,7 +1796,9 @@ static void goHome() {
     if (Settings::deskWanted()) enterDesk();
     else                        enterClear();
 }
-static void enterSysProps() {
+static bool s_sysPropsFromSettings = false;
+static void enterSysProps(bool fromSettings = false) {
+    s_sysPropsFromSettings = fromSettings;
     state = AppState::SYS_PROPS;
     transitionStart = millis();
     // Squachy said this line out loud until now, and two boards talking to
@@ -4304,7 +4306,15 @@ void loop() {
                             Theme::showToast("CAN'T START UPDATE", updateRefusedWhy(), Theme::AMBER);
                         }
                         break;
-                    case SysPropsHit::CLOSE: goHome(); break;
+                    case SysPropsHit::CLOSE:
+                        if (s_sysPropsFromSettings) {
+                            s_sysPropsFromSettings = false;
+                            enterSettings();
+                            uiSettingsOpenPage(SettingsPage::SYSTEM);
+                        } else {
+                            goHome();
+                        }
+                        break;
                     case SysPropsHit::NONE:  break;
                 }
                 lastTouch = now;
@@ -5855,6 +5865,7 @@ void loop() {
                             break;
                         case SettingsRow::CHECK_COLORS: enterColorCheck(true); break;
                         case SettingsRow::DIAGNOSTICS:  enterDiagnostics(); break;
+                        case SettingsRow::SYSTEM_PROPERTIES: enterSysProps(true); break;
                         case SettingsRow::WIFI_NETWORKS: enterWifiNets(); break;
                         case SettingsRow::SD_FILES: enterSdFiles(); break;
                         case SettingsRow::DESK_MODE:    uiSettingsOpenPage(SettingsPage::DESK); break;
