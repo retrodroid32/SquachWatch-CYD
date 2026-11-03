@@ -1,3 +1,8 @@
-WATCH149-LANDBACK
-# Experimental LAB build after landscape WATCH BACK touch fix.
-# Triggered only on explicit user hardware regression report.
+CYD172-AP-SCAN-OWNERSHIP-FIX-20261103
+# LAB firmware request for PR172 Wi-Fi AP diagnostic correction.
+# Parent matches PR172 commit 2f897eceb23abceb6ed6028ea1586c4e54ce8c2b; only LAB build request differs.
+# Do not mix raw esp_wifi_scan_get_ap_records with Arduino-ESP32 2.0.14 scan-done event consumer.
+# RADIO SCAN now uses WiFi.scanNetworks() and WiFi.getNetworkInfo() from same Arduino owner.
+# CYD 3.2 temporary ~77KB frame loan applies to SCAN -> WiFi and ADD NETWORK.
+# Verify physical 3.2 SSID discovery, receive stability, 2.8 unaffected, GPS SD mesh.
+# No merge, no production release/version tag.
