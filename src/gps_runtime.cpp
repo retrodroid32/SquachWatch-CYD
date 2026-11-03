@@ -3,6 +3,7 @@
 #if defined(GPS_SUPPORT) && defined(GPS_RX_PIN)
 #include "gps_runtime.h"
 #include "clock.h"
+#include "theme.h"
 #include <Arduino.h>
 #include <esp_heap_caps.h>
 
@@ -10,7 +11,8 @@ namespace GpsRuntime {
 namespace {
 bool s_started = false;
 uint32_t s_bytes = 0, s_peak = 0;
-uint32_t s_lastReport = 0;
+uint32_t s_lastReport = 0, s_lastGoodPacketMs = 0;
+uint32_t s_prevUbxOk = 0, s_prevNmeaOk = 0;
 }
 
 void begin() {
@@ -25,6 +27,8 @@ void begin() {
     Serial2.begin(BAUD, SERIAL_8N1, GPS_RX_PIN, -1); // RX only; GPS TX -> GPIO35
     Gnss::reset();
     s_bytes = s_peak = s_lastReport = 0;
+    s_lastGoodPacketMs = s_prevUbxOk = s_prevNmeaOk = 0;
+    Theme::setGpsIconStatus(Theme::GpsIconStatus::ABSENT);
     s_started = true;
     Serial.printf("[gps] UART2 RX GPIO%d at %lu, buffer %u; heap %lu free, %lu largest\n",
                   GPS_RX_PIN, (unsigned long)BAUD, (unsigned)actual,
@@ -46,6 +50,21 @@ void tick(uint32_t nowMs) {
         ++s_bytes;
         Gnss::feed((char)ch, nowMs); // UBX + checksum-validated NMEA on the same UART
     }
+    // Only recognize a connected receiver after checksum-valid UBX or NMEA
+    // packets (not merely bytes on floating GPIO35). The icon disappears
+    // after five seconds without valid packets; a fresh FIX turns green.
+    // No UART/SD/heap changes and no separate GPS polling task.
+    const uint32_t ubxOk = Gnss::ubxGood(), nmeaOk = Gnss::good();
+    if (ubxOk != s_prevUbxOk || nmeaOk != s_prevNmeaOk) {
+        s_lastGoodPacketMs = nowMs;
+        s_prevUbxOk = ubxOk;
+        s_prevNmeaOk = nmeaOk;
+    }
+    const bool gpsOnline = s_lastGoodPacketMs != 0 &&
+                           (uint32_t)(nowMs - s_lastGoodPacketMs) < 5000u;
+    Theme::setGpsIconStatus(!gpsOnline ? Theme::GpsIconStatus::ABSENT :
+                            Gnss::fresh(nowMs) ? Theme::GpsIconStatus::FIX :
+                            Theme::GpsIconStatus::SEARCHING);
     // PR136 follow-up: adopt real GPS UTC without a second parser or
     // allocating memory. Only a checksum-validated, CURRENT position/fix
     // may establish the clock. Do this once while time is untrusted.
