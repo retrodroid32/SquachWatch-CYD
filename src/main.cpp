@@ -44,6 +44,9 @@
 #include "theme.h"            // the crash card on the splash
 #include "privacy.h"
 #include "clock.h"
+#if defined(GPS_SUPPORT) && defined(GPS_RX_PIN)
+#include "gps_runtime.h"
+#endif
 
 // Written every second, read once on the next boot. RTC_NOINIT_ATTR is the
 // point: it survives a software reset WITHOUT being zeroed on the way back
@@ -3341,6 +3344,11 @@ void setup() {
     // against a frame built by an independent implementation.
     MeshTalk::begin();
 #endif
+#if defined(GPS_SUPPORT) && defined(GPS_RX_PIN)
+    // The GPS UART allocation follows the mesh cipher self-test, as proven
+    // necessary on the low-heap CYD ST7798 startup path.
+    GpsRuntime::begin();
+#endif
     applyBrightness();
     // After a wipe the board comes back the way the wipe asked: straight to the
     // main screen, unlocked, with no splash and no boot quip, after a duress
@@ -3810,6 +3818,9 @@ void loop() {
         touchJustUp = false;
     }
     engine.loop();
+#if defined(GPS_SUPPORT) && defined(GPS_RX_PIN)
+    GpsRuntime::tick(now);
+#endif
     floodTick();   // nothing outside a FLOOD_BENCH build
     // The heap at the first pass of loop(), for DIAGNOSTICS' BOOT line.
     static uint32_t s_loopHeapFree = 0, s_loopHeapLargest = 0;
