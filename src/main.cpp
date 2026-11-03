@@ -5776,6 +5776,9 @@ void loop() {
                         case SettingsRow::ALERT_RULES: enterAlertRules(); break;
                         case SettingsRow::DETECTION_FILTER: enterDetFilter(); break;
                         case SettingsRow::POWER_SAVER: enterPower(); break;
+                        case SettingsRow::SHOW_WIFI_ICON: Settings::toggleWifiIcon(); break;
+                        case SettingsRow::SHOW_SD_ICON: Settings::toggleSdIcon(); break;
+                        case SettingsRow::SHOW_GPS_ICON: Settings::toggleGpsIcon(); break;
                         case SettingsRow::PRIVACY:
                             Settings::togglePrivacyMode();
                             Theme::showToast(Settings::privacyMode() ? "PRIVACY MODE ON" : "PRIVACY MODE OFF",
