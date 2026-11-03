@@ -293,8 +293,8 @@ For implementation history of the detection-intelligence stages, see [v1.21.0 de
 ### The clock
 
 The CYD 2.8" and 3.2" firmware accepts external UBX or NMEA GPS data
-on GPIO35 at 115200 baud. The #136 clock follow-up can establish trusted UTC
-from a fresh real GNSS fix when the clock is otherwise untrusted; it never
+on GPIO35 at 115200 baud. A fresh real GNSS fix establishes trusted UTC
+when the clock is otherwise untrusted; stale and synthetic fixes are ignored. It never
 uses stale fixes or synthetic test positions. Other clock sources remain:
 the board joins a network for the optional update check or UPDATE OVER WIFI
 and can obtain NTP time there. The zone is yours to pick, and there are three ways: the web
