@@ -292,48 +292,59 @@ void radioReport(bool withScan) {
         Serial.println(line);
     }
     if (!withScan) return;
-    // A successful scan-start (ESP_OK) does NOT prove the AP result table
-    // could be retrieved. On the 3.2 CYD the second scan reported 0 APs and
-    // the first reported 5 APs with strongest=-127: we previously ignored
-    // errors from BOTH esp_wifi_scan_get_ap_* APIs, hiding memory pressure.
+    if (g_rawMode != RawScanMode::NONE || WiFi.scanComplete() == WIFI_SCAN_RUNNING) {
+        Serial.printf("[radio] driver scan SKIPPED: another scan/update owns radio (raw mode %u, WiFi state %d)\n",
+                      (unsigned)g_rawMode, (int)WiFi.scanComplete());
+        return;
+    }
+    // Arduino-ESP32 2.0.14's WIFI_EVENT_SCAN_DONE handler unconditionally
+    // calls esp_wifi_scan_get_ap_records(), even for a scan started directly
+    // using esp_wifi_scan_start(). That consumes/frees the driver AP table.
+    // The old RADIO SCAN therefore printed 'found=5, read=0, err=0':
+    // a second get_ap_records() *after* Arduino had already consumed it.
+    // Use ONE API owner and read Arduino's retained scan table instead.
     const uint32_t heapBefore = ESP.getFreeHeap();
     const uint32_t blockBefore = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
     const esp_err_t promOff = esp_wifi_set_promiscuous(false);
-    wifi_scan_config_t cfg = {};
-    cfg.show_hidden = true;
-    cfg.scan_type = WIFI_SCAN_TYPE_PASSIVE;
-    cfg.scan_time.passive = 150;
+    WiFi.scanDelete();
     const uint32_t t0 = millis();
-    const esp_err_t se = esp_wifi_scan_start(&cfg, true);
-    uint16_t n = 0, got = 0;
-    esp_err_t countError = ESP_ERR_INVALID_STATE;
-    esp_err_t recordError = ESP_ERR_INVALID_STATE;
-    int8_t best = -127;
-    if (se == ESP_OK) {
-        countError = esp_wifi_scan_get_ap_num(&n);
-        if (countError == ESP_OK && n) {
-            got = n > 20u ? 20u : n;
-            wifi_ap_record_t recs[20] = {};
-            recordError = esp_wifi_scan_get_ap_records(&got, recs);
-            if (recordError == ESP_OK) {
-                for (uint16_t i = 0; i < got; ++i)
-                    if (recs[i].rssi > best) best = recs[i].rssi;
-            }
-        } else {
-            recordError = (countError == ESP_OK) ? ESP_OK : countError;
-            esp_wifi_clear_ap_list();
+    // Same passive scan timing as the original RADIO SCAN; show hidden too.
+    const int n = WiFi.scanNetworks(false, true, true, 150);
+    int retrieved = 0, strongest = -127;
+    uint8_t channelCounts[14] = {};
+    if (n > 0) {
+        for (int i = 0; i < n; ++i) {
+            String ssid;
+            uint8_t encryption = 0;
+            int32_t rssi = -127, channel = 0;
+            uint8_t* bssid = nullptr;
+            if (!WiFi.getNetworkInfo((uint8_t)i, ssid, encryption, rssi, bssid, channel))
+                continue;
+            ++retrieved;
+            if (rssi > strongest) strongest = (int)rssi;
+            if (channel >= 1 && channel <= 13 && channelCounts[channel] < 255)
+                ++channelCounts[channel];
         }
     }
     const uint32_t heapAfter = ESP.getFreeHeap();
     const uint32_t blockAfter = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
-    Serial.printf("[radio] driver scan: start=%d countErr=%d recordsErr=%d found=%u read=%u best=%d dBm, %lu ms, heap %lu/%lu -> %lu/%lu, promOff=%d\n",
-                  (int)se, (int)countError, (int)recordError,
-                  (unsigned)n, (unsigned)got,
-                  recordError == ESP_OK && got ? (int)best : 0,
+    Serial.printf("[radio] arduino scan: found=%d readable=%d strongest=%d dBm, %lu ms, heap %lu/%lu -> %lu/%lu, promOff=%d\n",
+                  n, retrieved, retrieved ? strongest : 0,
                   (unsigned long)(millis() - t0),
                   (unsigned long)heapBefore, (unsigned long)blockBefore,
                   (unsigned long)heapAfter, (unsigned long)blockAfter,
                   (int)promOff);
+    if (retrieved) {
+        char summary[130];
+        int used = snprintf(summary, sizeof(summary), "[radio] AP channels:");
+        for (int c = 1; c <= 13 && used < (int)sizeof(summary) - 12; ++c)
+            if (channelCounts[c])
+                used += snprintf(summary + used, sizeof(summary) - used,
+                                 " %d:%u", c, (unsigned)channelCounts[c]);
+        Serial.println(summary);
+    }
+    // Free Arduino's heap-allocated AP array before resuming scanning.
+    WiFi.scanDelete();
     const esp_err_t promOn = esp_wifi_set_promiscuous(true);
     const esp_err_t chanRestore = esp_wifi_set_channel(ch ? ch : 1, WIFI_SECOND_CHAN_NONE);
     if (promOn != ESP_OK || chanRestore != ESP_OK)
