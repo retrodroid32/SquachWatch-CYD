@@ -1717,6 +1717,22 @@ static void lendFrameToDownload(bool preservePanel) {
     s_recoveryBands = 1;
     s_frameLent = true;
 }
+#if defined(CYD32) && defined(GPS_SUPPORT) && defined(GPS_RX_PIN)
+// The 3.2 CYD's WiFi USE needs this same ~77 KB block, but the manual
+// WiFi AP survey was still running WITH the entire sprite allocated.
+// Release it BEFORE asking the WiFi driver to scan, then paint the simple
+// WiFi ADD screen directly until the sweep ends.
+static void lendFrameToWifiSurvey() {
+    if (!frameBufferOk) return;
+    const uint32_t before = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
+    releaseFrameBuffer("wifi-survey", false);
+    s_recoveryBands = 1;
+    s_frameLent = true;
+    Serial.printf("[wifi-survey] contiguous heap %lu -> %lu before AP survey\n",
+                  (unsigned long)before,
+                  (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
+}
+#endif
 static void restoreFrameBuffer() {
     if (!s_frameLent) return;
 #if defined(CYD32)
@@ -1810,6 +1826,9 @@ static void enterWifiNets() {
 static void enterWifiAdd() {
     state = AppState::WIFI_ADD;
     transitionStart = millis();
+#if defined(CYD32) && defined(GPS_SUPPORT) && defined(GPS_RX_PIN)
+    lendFrameToWifiSurvey();
+#endif
     engine.startRawWifiScan();
     uiWifiAddInit(*canvas);
 }
@@ -3839,7 +3858,8 @@ void loop() {
     // A cancelled WiFi check can leave Settings before the HTTPS task has
     // finished. Retry the framebuffer loan after that task releases memory,
     // rather than permanently leaving all ordinary screens unbuffered.
-    if (s_frameLent && state != AppState::UPDATE && state != AppState::WIFI_PASS)
+    if (s_frameLent && state != AppState::UPDATE && state != AppState::WIFI_PASS &&
+        state != AppState::WIFI_ADD)
         restoreFrameBuffer();
     if (state == AppState::CLEAR) {
         const char* sub = nullptr;
@@ -6199,7 +6219,13 @@ void loop() {
             break;
         }
         case AppState::WIFI_ADD: {
+#if defined(CYD32) && defined(GPS_SUPPORT) && defined(GPS_RX_PIN)
+            // While the 3.2 WiFi survey owns the former full-frame memory,
+            // avoid repeated full-panel wipes on each UI loop tick.
+            uiWifiAddTick(*canvas, now, engine, !frameBufferOk);
+#else
             drawTwoBand([&](TFT_eSPI& t, bool) { uiWifiAddTick(t, now, engine); });
+#endif
             if (touchJustDown) {
                 int row = -1;
                 switch (uiWifiAddHit(*canvas, tp.x, tp.y, engine, &row)) {
