@@ -1,3 +1,4 @@
-CYD169-GPS-RXFIX-20261102
-# LAB-only hardware verification of #169: UART RX 4096/2048 bounded drain + 115000/115200/9600 probe and raw NMEA diagnostic counters.
-# For CYD 2.8 ST7789 / 3.2 ST7798; no production release, tag, or merge.
+CYD169-UBX-NMEA-HW-20261102
+# LAB-only CYD 2.8 ST7789 and 3.2 ST7798 physical GPS verification.
+# Confirmed receiver at 115200 baud; GNSS now accepts UBX NAV-PVT/SAT and NMEA simultaneously.
+# No production release/tag and no merge; original PR #169 remains unmerged pending hardware proof.
