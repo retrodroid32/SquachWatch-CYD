@@ -1441,10 +1441,6 @@ static void enterLog() {
 
 static bool    s_rawScanIsBle = true;
 static bool    s_rawScanCachedView = false;
-#if defined(CYD32) && defined(GPS_SUPPORT) && defined(GPS_RX_PIN)
-static void lendFrameToWifiSurvey();
-static uint32_t s_rawWifiLastDrawMs = 0;
-#endif
 
 static void enterRawScan(bool isBle) {
     state = AppState::RAWSCAN;
@@ -1452,22 +1448,11 @@ static void enterRawScan(bool isBle) {
     s_rawScanIsBle = isBle;
     s_rawScanCachedView = false;
     s_confirmPending = false;
-    if (isBle) {
-        engine.startRawBleScan();
-#if defined(CYD32) && defined(GPS_SUPPORT) && defined(GPS_RX_PIN)
-        // Switching back from a Wi-Fi sweep releases radio ownership first.
-        // Recover the framebuffer now, without allocating during Wi-Fi scan.
-        restoreFrameBuffer();
-#endif
-    } else {
-#if defined(CYD32) && defined(GPS_SUPPORT) && defined(GPS_RX_PIN)
-        // The main SCAN -> WiFi path used to retain the whole 77 KB sprite,
-        // unlike Add Network. On the 3.2-inch it was still memory-starved.
-        lendFrameToWifiSurvey();
-        s_rawWifiLastDrawMs = 0;
-#endif
-        engine.startRawWifiScan();
-    }
+    // Identical scan entry and UI path to the working 2.8-inch CYD.
+    // Memory headroom on CYD32 comes from its smaller buffered sprite
+    // at boot, not from deleting/recreating the sprite during a scan.
+    if (isBle) engine.startRawBleScan();
+    else       engine.startRawWifiScan();
     uiRawScanInit(*canvas, isBle);
 }
 
@@ -1735,22 +1720,6 @@ static void lendFrameToDownload(bool preservePanel) {
     s_recoveryBands = 1;
     s_frameLent = true;
 }
-#if defined(CYD32) && defined(GPS_SUPPORT) && defined(GPS_RX_PIN)
-// The 3.2 CYD's WiFi USE needs this same ~77 KB block, but the manual
-// WiFi AP survey was still running WITH the entire sprite allocated.
-// Release it BEFORE asking the WiFi driver to scan, then paint the simple
-// WiFi ADD screen directly until the sweep ends.
-static void lendFrameToWifiSurvey() {
-    if (!frameBufferOk) return;
-    const uint32_t before = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
-    releaseFrameBuffer("wifi-survey", false);
-    s_recoveryBands = 1;
-    s_frameLent = true;
-    Serial.printf("[wifi-survey] contiguous heap %lu -> %lu before AP survey\n",
-                  (unsigned long)before,
-                  (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
-}
-#endif
 static void restoreFrameBuffer() {
     if (!s_frameLent) return;
 #if defined(CYD32)
@@ -1844,9 +1813,8 @@ static void enterWifiNets() {
 static void enterWifiAdd() {
     state = AppState::WIFI_ADD;
     transitionStart = millis();
-#if defined(CYD32) && defined(GPS_SUPPORT) && defined(GPS_RX_PIN)
-    lendFrameToWifiSurvey();
-#endif
+    // Same Wi-Fi scan start as the 2.8-inch. No release of the screen
+    // framebuffer during RF scanning, which caused direct-panel flicker.
     engine.startRawWifiScan();
     uiWifiAddInit(*canvas);
 }
@@ -3146,7 +3114,14 @@ void setup() {
     // PSRAM pushes slower and cannot go by DMA. Keep it inside.
     frame.setAttribute(PSRAM_ENABLE, false);
 #endif
-    if (!frame.createSprite(tft.width(), tft.height())) {
+#if defined(CYD32) && defined(GPS_SUPPORT) && defined(GPS_RX_PIN)
+    // ST7798 has substantially less contiguous free heap after WiFi +
+    // NimBLE + SD + GPS. Retain a 2-band sprite (half the 77KB memory)
+    // permanently, using the established band renderer, rather than
+    // repeatedly destroying the full sprite during RF scans.
+    s_recoveryBands = 2;
+#endif
+    if (!frame.createSprite(tft.width(), tft.height() / s_recoveryBands)) {
         Serial.println("ERROR: frame buffer allocation failed (low memory)");
 #if HAVE_NVS_ERASE
         if (bootCheckRan) {
@@ -3161,6 +3136,19 @@ void setup() {
 #endif
     }
     frame.setTextSize(1);
+#if defined(CYD32) && defined(GPS_SUPPORT) && defined(GPS_RX_PIN)
+    if (frame.created()) {
+        canvas = &tft; // drawTwoBand uses the sprite and pushes each band
+        Serial.printf("[frame] CYD32 two-band buffered renderer, sprite %lu bytes, heap %lu/%lu\n",
+                      (unsigned long)(tft.width() * (tft.height() / s_recoveryBands)),
+                      (unsigned long)ESP.getFreeHeap(),
+                      (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
+    } else {
+        frameBufferOk = false;
+        s_recoveryBands = 1;
+        canvas = &tft;
+    }
+#endif
 #endif
 
     // Builds a 512-byte lookup table and nothing else; it touches no bus
@@ -3876,9 +3864,7 @@ void loop() {
     // A cancelled WiFi check can leave Settings before the HTTPS task has
     // finished. Retry the framebuffer loan after that task releases memory,
     // rather than permanently leaving all ordinary screens unbuffered.
-    if (s_frameLent && state != AppState::UPDATE && state != AppState::WIFI_PASS &&
-        state != AppState::WIFI_ADD &&
-        !(state == AppState::RAWSCAN && !s_rawScanIsBle && !s_rawScanCachedView))
+    if (s_frameLent && state != AppState::UPDATE && state != AppState::WIFI_PASS)
         restoreFrameBuffer();
     if (state == AppState::CLEAR) {
         const char* sub = nullptr;
@@ -5429,23 +5415,7 @@ void loop() {
             const bool done = s_rawScanCachedView ||
                               (s_rawScanIsBle ? engine.rawBleScanDone() :
                                (engine.rawWifiScanDone() || engine.rawWifiScanFailed()));
-#if defined(CYD32) && defined(GPS_SUPPORT) && defined(GPS_RX_PIN)
-            if (!s_rawScanIsBle && !frameBufferOk) {
-                // Draw directly only while the Wi-Fi scan has borrowed the
-                // full framebuffer. Limit full LCD redraws to ~2 Hz instead
-                // of flickering at the loop's normal 17-25 fps.
-                if (!s_rawWifiLastDrawMs || now - s_rawWifiLastDrawMs >= 550u ||
-                    touchJustDown || touchJustUp) {
-                    uiRawScanTick(tft, now, engine, s_rawScanIsBle, done,
-                                  s_confirmPending, privLabel(s_confirmLabel),
-                                  engine.isWatched(s_confirmMac, s_rawScanIsBle),
-                                  engine.isHunted(s_confirmMac, s_rawScanIsBle),
-                                  IgnoreList::contains(s_confirmMac), true);
-                    Theme::drawToast(tft, now);
-                    s_rawWifiLastDrawMs = now;
-                }
-            } else
-#endif
+            // 2.8 and 3.2 use the same buffered renderer on both radios.
             drawTwoBand([&](TFT_eSPI& t, bool advance) {
                 uiRawScanTick(t, now, engine, s_rawScanIsBle, done, s_confirmPending, privLabel(s_confirmLabel),
                               engine.isWatched(s_confirmMac, s_rawScanIsBle),
@@ -6255,13 +6225,7 @@ void loop() {
             break;
         }
         case AppState::WIFI_ADD: {
-#if defined(CYD32) && defined(GPS_SUPPORT) && defined(GPS_RX_PIN)
-            // While the 3.2 WiFi survey owns the former full-frame memory,
-            // avoid repeated full-panel wipes on each UI loop tick.
-            uiWifiAddTick(*canvas, now, engine, !frameBufferOk);
-#else
             drawTwoBand([&](TFT_eSPI& t, bool) { uiWifiAddTick(t, now, engine); });
-#endif
             if (touchJustDown) {
                 int row = -1;
                 switch (uiWifiAddHit(*canvas, tp.x, tp.y, engine, &row)) {
