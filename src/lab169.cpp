@@ -36,7 +36,7 @@ void start(uint32_t now) {
     // lose NMEA at high output rates. Configure BEFORE Serial2.begin().
     const size_t actual = Serial2.setRxBufferSize(4096);
     Serial2.begin(baud, SERIAL_8N1, 35, -1);
-    switchedAt = now;
+    (void)now; // Fixed 115200 baud; no automatic baud cycling.
     rateBytes = dollar = newlines = printable = binary = ubx = 0;
     gga = rmc = rxPeak = 0;
     rawActive = false; rawN = 0; lastByte = 0;
