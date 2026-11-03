@@ -71,6 +71,7 @@ enum class SettingsRow : uint8_t {
     SNOOZE_MANAGER,  // main Settings: opens the current per-device snooze list
     SNOOZE_ENTRY,    // dynamic entry on the snooze page: tap to unsnooze
     SNOOZE_EMPTY,    // no active snoozes
+    SYSTEM_PROPERTIES, // GNSS builds: opens Update / Notes / Board window
     BACK,
     COUNT,
     NONE = 255
