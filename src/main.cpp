@@ -43,9 +43,13 @@
 #include "ui_dex.h"
 #include "regulars.h"
 #include "notices.h"
+#include "pet.h"              // native companion touch/throw gestures
 #include "theme.h"            // the crash card on the splash
 #include "privacy.h"
 #include "clock.h"
+#if defined(GPS_SUPPORT) && defined(GPS_RX_PIN)
+#include "gps_runtime.h"
+#endif
 
 // Written every second, read once on the next boot. RTC_NOINIT_ATTR is the
 // point: it survives a software reset WITHOUT being zeroed on the way back
@@ -231,7 +235,9 @@ static void drawCrashCard(TFT_eSPI& t) {
 #include "ui_log.h"
 #include "ui_rawscan.h"
 #include "ui_watchalert.h"
+#include "watch_alert_actions.h"
 #include "ui_settings.h"
+#include "ui_sd_browser.h"
 #include "ui_diagnostics.h"
 #include "ui_hunt.h"
 #include "ui_colorcheck.h"
@@ -277,6 +283,7 @@ static void drawCrashCard(TFT_eSPI& t) {
 #include "ota_core.h"
 #include "ota_ble.h"
 #include "ota_wifi.h"
+#include "wifi_use_policy.h"
 #include "ui_update.h"
 #include "ui_wifipass.h"
 #include "ui_sysprops.h"
@@ -399,7 +406,10 @@ static void drawCrashCard(TFT_eSPI& t) {
 // relative to it. File-scope (not local to setup()) so the Settings >
 // INVERT row handler in loop() can use the same XOR instead of
 // clobbering this baseline with an absolute call.
-#if defined(TWATCH_S3)
+#if defined(FREENOVE_S3)
+// Freenove's ILI9341 setup specifies inversion on.
+constexpr bool PANEL_NEEDS_INVERSION = true;
+#elif defined(TWATCH_S3)
 // Confirmed on the watch 2026-09-22: the ST7789 wants inversion on (as
 // LilyGo's own setup says); false showed every colour inverted.
 constexpr bool PANEL_NEEDS_INVERSION = true;
@@ -515,6 +525,8 @@ AppState            state     = AppState::BOOT;
 uint32_t            bootStart = 0;
 uint32_t            alertStart= 0;
 uint32_t            watchAlertStart = 0;
+static bool         s_watchAlertArmed = false; // opening touch must lift before alert actions
+static bool         s_watchAlertFromRoster = false; // route the alert back to its opening screen
 uint32_t            lastTouch = 0;
 bool                prevTouchValid = false; // last frame's tp.valid, for true press/release edge detection (see loop())
 DetectionType       lastAlertType = DetectionType::UNKNOWN;
@@ -1201,7 +1213,7 @@ static bool    s_confirmArmed = false;
 // The compiled-in ranges are a 2.8" board's. Anywhere else -- the digitisers
 // on the display's own bus -- they put taps nowhere near the finger, so a
 // board with nothing better has no SKIP to offer.
-#if defined(TOUCH_SHARES_DISPLAY_BUS) || defined(CYD35) || defined(TWATCH_S3)
+#if defined(TOUCH_SHARES_DISPLAY_BUS) || defined(CYD35) || defined(TWATCH_S3) || defined(FREENOVE_S3)
 static const bool DEFAULT_TOUCH_USABLE = false;
 #else
 static const bool DEFAULT_TOUCH_USABLE = true;
@@ -1234,11 +1246,22 @@ static void runTouchCalibration() {
     lastTouch = millis();
 }
 
+// Shared by the boot splash and home-screen adaptive multi-band renderer.
+// Must be declared before enterBoot() in CYD32 GNSS builds.
+static uint8_t s_recoveryBands = 1;
 static void enterBoot() {
     state = AppState::BOOT;
     bootStart = millis();
     transitionStart = bootStart;
+    // The GPS-enabled 3.2 CYD owns only a half-height sprite. Prepare its
+    // boot canvas in that sprite rather than clearing the live LCD each
+    // time the unbuffered splash starts.
+#if defined(CYD32) && defined(GPS_SUPPORT) && defined(GPS_RX_PIN)
+    if (frameBufferOk && s_recoveryBands > 1) uiBootInit(frame);
+    else                                      uiBootInit(*canvas);
+#else
     uiBootInit(*canvas);
+#endif
 #if defined(CYD35)
     clearSharedFrameBuffer();
 #endif
@@ -1252,7 +1275,7 @@ static bool s_scanPickerOpen = false;
 
 static void enterLocked();
 // The frame buffer lent to a WiFi download, and taken back; defined with the update code below.
-static void lendFrameToDownload();
+static void lendFrameToDownload(bool preservePanel = false);
 static void restoreFrameBuffer();
 // Every way home goes through here, which makes it the one place the lock has
 // to be honoured: while locked, "home" is the lock screen.
@@ -1271,6 +1294,7 @@ static bool onRawScanScreen() {
 #endif
         ;
 }
+// Adaptive framebuffer recovery uses the band count declared above enterBoot().
 static void enterClear() {
     if (Security::locked()) { enterLocked(); return; }
     restoreFrameBuffer();   // lent to a download that did not end in a restart
@@ -1280,7 +1304,15 @@ static void enterClear() {
     state = AppState::CLEAR;
     transitionStart = millis();
     s_scanPickerOpen = false;
+    // A recovered multi-band sprite renders the entire home screen on its
+    // first draw. Do not blank the physical LCD here: doing so exposes a
+    // dark lower band while the first multi-pass frame is being composed.
+    // The normal full-frame and unbuffered paths retain the old init.
+#if !defined(CYD35)
+    if (!(frameBufferOk && s_recoveryBands > 1)) uiClearInit(*canvas);
+#else
     uiClearInit(*canvas);
+#endif
 #if defined(CYD35)
     clearSharedFrameBuffer();
 #endif
@@ -1412,14 +1444,16 @@ static void enterAlert(const Detection& d) {
 #endif
 }
 
-static void enterWatchAlert() {
+static void enterWatchAlert(bool fromRoster = false) {
+    s_watchAlertFromRoster = fromRoster;
     state = AppState::WATCH_ALERT;
 #if defined(TWATCH_S3)
     twatchBuzz(Buzz::WATCH);
 #endif
     watchAlertStart = millis();
+    s_watchAlertArmed = false;
     transitionStart = watchAlertStart;
-    uiWatchAlertInit(*canvas);
+    uiWatchAlertInit(*canvas, !fromRoster); // preserve roster position on manual OPEN ALERT
 #if defined(CYD35)
     clearSharedFrameBuffer();
 #endif
@@ -1449,6 +1483,9 @@ static void enterRawScan(bool isBle) {
     s_rawScanIsBle = isBle;
     s_rawScanCachedView = false;
     s_confirmPending = false;
+    // Identical scan entry and UI path to the working 2.8-inch CYD.
+    // Memory headroom on CYD32 comes from its smaller buffered sprite
+    // at boot, not from deleting/recreating the sprite during a scan.
     if (isBle) engine.startRawBleScan();
     else       engine.startRawWifiScan();
     uiRawScanInit(*canvas, isBle);
@@ -1490,6 +1527,20 @@ static void enterDesk() {
     state = AppState::DESK;
     transitionStart = millis();
     uiDeskInit(*canvas);
+}
+
+static bool s_sdFilesDirty = true;
+static uint16_t s_sdFilesLastW = 0, s_sdFilesLastH = 0;
+static bool s_sdFilesLastReady = false;
+static bool s_sdFilesNeedsReload = false;
+static uint32_t s_sdFilesNextStatusDraw = 0;
+static void enterSdFiles() {
+    s_sdFilesDirty = true;
+    s_sdFilesNeedsReload = false;
+    s_sdFilesLastReady = engine.sd().ready();
+    state = AppState::SD_FILES;
+    transitionStart = millis();
+    SdBrowser::begin(engine.sd());
 }
 
 static void enterDiagnostics() {
@@ -1566,7 +1617,13 @@ static void enterInvite() {
 
 // INVERT and ROT on the console -- see clock.cpp. Consumed in loop().
 volatile bool g_consoleInvert = false;
-volatile bool g_consoleAdc = false;      // ADC: spare input-only analog pins on ESP32 CYD hardware
+volatile bool g_consoleAdc = false;
+volatile bool g_consoleXyzzy = false;
+volatile bool g_consoleLegend = false;
+volatile bool g_consoleJail = false;
+volatile bool g_consoleOutfitSet = false;
+volatile int8_t g_consoleOutfit = -1;
+volatile bool g_consoleFree = false;      // ADC: spare input-only analog pins on ESP32 CYD hardware
 volatile bool g_consoleRotate = false;
 volatile bool g_consoleRadioTest = false; // RADIO TEST: cycle even on the cable with the screen on (bench)
 volatile bool g_consoleBatt    = false;   // BATT: one reading, now
@@ -1658,13 +1715,15 @@ static void autoUpdateTick(uint32_t now) {
 // about to restart and the copying the wipe does ran the heap dry without
 // it. Afterwards the screens draw straight to the panel, the fallback a
 // failed rotate already uses.
-static void releaseFrameBuffer(const char* who) {
+static void releaseFrameBuffer(const char* who, bool clearPanel = true) {
 #if !defined(CYD35)
     if (!frameBufferOk) return;
     frame.deleteSprite();
     frameBufferOk = false;
     canvas = &tft;
-    tft.fillScreen(Theme::BG);
+    // A saved-network USE check must not blank the LCD when freeing the
+    // framebuffer: that used to cause an obvious full-screen flash at tap.
+    if (clearPanel) tft.fillScreen(Theme::BG);
     Serial.printf("[%s] frame buffer released: largest block %lu\n", who,
                   (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
 #else
@@ -1685,24 +1744,72 @@ static void releaseFrameBuffer(const char* who) {
 // heap will not give a 77 KB block again, draws unbuffered until a restart
 // (the same fallback a failed rotate takes).
 static bool s_frameLent = false;
-static void lendFrameToDownload() {
+// Number of vertical sprite bands in ordinary (non-CYD35) builds. Normal
+// operation uses a full frame (1). After an OTA check, fragmented ESP32 heap
+// can make 76.8 KB / 38.4 KB contiguous allocations impossible. Recover
+// with the smallest power-of-two band count that fits: 2, 4, 8, or 16.
+// Every supported 240x320 / 320x240 rotation divides evenly by those counts.
+static void lendFrameToDownload(bool preservePanel) {
     if (!frameBufferOk) return;
-    releaseFrameBuffer("ota");
+    releaseFrameBuffer(preservePanel ? "wifi-use" : "ota", !preservePanel);
+    s_recoveryBands = 1;
     s_frameLent = true;
 }
 static void restoreFrameBuffer() {
     if (!s_frameLent) return;
+#if defined(CYD32)
+    // USE temporarily lends the full ~77KB sprite so FreeRTOS and the
+    // WiFi STA driver can allocate during association. Do not steal the
+    // memory back before its worker finishes and radio detection resumes.
+    if (OtaWifi::savedTestState() != OtaWifi::SavedTest::IDLE) return;
+#endif
+#if defined(CYD35)
+    // CYD35 keeps its half-screen sprite during OTA: nothing to allocate.
     s_frameLent = false;
-#if !defined(CYD35)
-    if (frameBufferOk) return;
+#else
+    if (frameBufferOk) { s_frameLent = false; return; }
+    // end() puts OTA in OFF immediately, but its worker may still be
+    // unwinding an HTTPS request and holding the heap we need for 320x240.
+    if (OtaWifi::state() != OtaWifi::State::OFF || OtaWifi::taskActive()) return;
+    // Keep the loan outstanding after an allocation failure. The worker's
+    // last TLS allocations may take time to unwind, and we can recover
+    // without rebooting once a contiguous block becomes available.
+    static uint32_t nextAttempt = 0;
+    const uint32_t now = millis();
+    if (nextAttempt && (int32_t)(now - nextAttempt) < 0) return;
+    nextAttempt = now + 2000;
     frame.setColorDepth(8);
-    if (frame.createSprite(tft.width(), tft.height())) {
+    bool recovered = false;
+    // The first Wi-Fi check on tested hardware leaves only a 51 KB largest
+    // block: 2 bands of 38.4 KB work. A *second* check can leave only 32 KB,
+    // so the 2-band retry fails forever unless we can step down to 4+ bands.
+    // All drawing stays buffered: the same sprite is reused one band at a
+    // time and the framebuffer never writes erase-then-redraw directly to
+    // the display. 16 bands needs just 4,800 bytes on 320x240 CYDs.
+    for (uint8_t bands = 1; bands <= 16; bands <<= 1) {
+        if (tft.height() % bands != 0) continue;
+        const int bandHeight = tft.height() / bands;
+        if (!frame.createSprite(tft.width(), bandHeight)) continue;
         frame.setTextSize(1);
         frameBufferOk = true;
-        canvas = &frame;
-        Serial.println("[ota] frame buffer back");
-    } else {
-        Serial.printf("[ota] frame buffer could not come back (largest block %lu); unbuffered until restart\n",
+        s_recoveryBands = bands;
+        canvas = (bands == 1) ? (TFT_eSPI*)&frame : &tft;
+        s_frameLent = false;
+        nextAttempt = 0;
+        FramePush::invalidate();
+        if (bands == 1) {
+            Serial.println("[ota] frame buffer restored after WiFi cleanup");
+        } else {
+            Serial.printf("[ota] recovered %u-band frame buffer (%lu bytes; largest free %lu)\n",
+                          (unsigned)bands,
+                          (unsigned long)(tft.width() * bandHeight),
+                          (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
+        }
+        recovered = true;
+        break;
+    }
+    if (!recovered) {
+        Serial.printf("[ota] frame buffer still unavailable (largest block %lu); will retry\n",
                       (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
     }
 #endif
@@ -1724,7 +1831,9 @@ static void goHome() {
     if (Settings::deskWanted()) enterDesk();
     else                        enterClear();
 }
-static void enterSysProps() {
+static bool s_sysPropsFromSettings = false;
+static void enterSysProps(bool fromSettings = false) {
+    s_sysPropsFromSettings = fromSettings;
     state = AppState::SYS_PROPS;
     transitionStart = millis();
     // Squachy said this line out loud until now, and two boards talking to
@@ -1741,6 +1850,8 @@ static void enterWifiNets() {
 static void enterWifiAdd() {
     state = AppState::WIFI_ADD;
     transitionStart = millis();
+    // Same Wi-Fi scan start as the 2.8-inch. No release of the screen
+    // framebuffer during RF scanning, which caused direct-panel flicker.
     engine.startRawWifiScan();
     uiWifiAddInit(*canvas);
 }
@@ -1759,11 +1870,27 @@ static void enterHuntList() {
     uiHuntInit(*canvas);
 }
 
-static void enterWatchList() {
+static void enterWatchList(bool preserveScroll = false) {
     engine.deactivateWatch();
     state = AppState::WATCH_LIST;
     transitionStart = millis();
-    uiWatchAlertInit(*canvas);
+    // When returning from a manually opened alert, the roster will
+    // repaint itself on the first frame. Do not reset the scroll
+    // position via uiWatchAlertInit(): the user should land on the row
+    // they just inspected, including after ACK, REMOVE, or timeout.
+    if (!preserveScroll) uiWatchAlertInit(*canvas);
+}
+
+// The same WATCH card can be opened automatically or via WATCH TARGETS.
+// Only the latter returns to the roster. Reset the origin flag before
+// transitioning so later background alerts always return to CLEAR.
+static void leaveWatchAlert() {
+    const bool backToRoster = s_watchAlertFromRoster;
+    s_watchAlertFromRoster = false;
+    if (WatchAlertActions::returnPage(backToRoster) == WatchAlertActions::ReturnPage::ROSTER)
+        enterWatchList(true);
+    else
+        enterClear();
 }
 
 // true when reached via the first-boot flow (DONE -> CLEAR, straight
@@ -2109,6 +2236,38 @@ static void twatchPowerUp() {
     delay(20);
     Serial.printf("[pmu] AXP2101 up: battery %d%%, %s\n", s_pmu.getBatteryPercent(),
                   s_pmu.isVbusIn() ? "on USB" : "on battery");
+}
+#endif
+
+#if defined(FREENOVE_S3)
+// One-cell LiPo through the board's 200K/200K divider to ADC1 GPIO9.
+// There is no fuel-gauge IC and the charger status is not wired to the ESP32,
+// so this is explicitly a voltage-derived estimate, never a charging claim.
+static uint16_t freenoveS3BatteryMv() {
+    uint32_t sum = 0;
+    for (int i = 0; i < 8; i++) sum += analogReadMilliVolts(9);
+    return (uint16_t)(sum / 8 * 2);
+}
+static uint8_t freenoveS3BatteryPct(uint16_t mv) {
+    static const uint16_t MV[]  = {3300,3500,3600,3700,3750,3800,3850,3900,4000,4100,4200};
+    static const uint8_t  PCT[] = {0,5,10,20,30,40,50,60,75,90,100};
+    if (mv <= MV[0]) return 0;
+    for (uint8_t i = 1; i < sizeof(MV)/sizeof(MV[0]); i++)
+        if (mv <= MV[i]) return (uint8_t)(PCT[i-1] + (uint32_t)(PCT[i]-PCT[i-1]) * (mv-MV[i-1]) / (MV[i]-MV[i-1]));
+    return 100;
+}
+void boardBatteryLine(char* out, size_t n) {
+    static uint32_t at = 0;
+    static char line[16] = "";
+    const uint32_t now = millis();
+    if (!line[0] || now - at >= 2000u) {
+        at = now ? now : 1;
+        const uint16_t mv = freenoveS3BatteryMv();
+        if (mv < 2500) snprintf(line, sizeof line, "NONE");
+        else snprintf(line, sizeof line, "%u%% %u.%02uV", (unsigned)freenoveS3BatteryPct(mv),
+                      (unsigned)(mv/1000), (unsigned)(mv%1000/10));
+    }
+    snprintf(out, n, "%s", line);
 }
 #endif
 
@@ -2799,7 +2958,7 @@ void setup() {
     // while it is still the previous life's, not this one's.
     crashReportInit();
     Serial.begin(SERIAL_BAUD);
-#if defined(TWATCH_S3)
+#if defined(TWATCH_S3) || defined(FREENOVE_S3)
     // Native USB: with nothing reading the port, every print would otherwise
     // wait its full timeout for a host, and after the chatty first-boot
     // calibration the loop crawled so slowly the screen looked frozen black.
@@ -2836,12 +2995,11 @@ void setup() {
 // Not on AWOK (TOUCH_CS there) and not on either RL Phantom, where GPIO21 is
 // the capacitive controller's INTERRUPT line. Driving it high at boot is the
 // same mistake as the LEDC attach further down, just earlier.
-#if !defined(AWOK) && !defined(RLPHANTOM) && !defined(RLPHANTOM_R) && !defined(TWATCH_S3) && !defined(CYD32C) && !defined(CYD35C)
+#if !defined(AWOK) && !defined(RLPHANTOM) && !defined(RLPHANTOM_R) && !defined(TWATCH_S3) && !defined(FREENOVE_S3) && !defined(CYD32C) && !defined(CYD35C)
     pinMode(21, OUTPUT); digitalWrite(21, HIGH);
 #endif
-#if defined(TWATCH_S3)
-    // GPIO27 and GPIO32 are the S3's PSRAM lines: touching either hangs the
-    // chip until the watchdog reboots it. The watch's backlight is GPIO45.
+#if defined(TWATCH_S3) || defined(FREENOVE_S3)
+    // S3 board: use its dedicated GPIO45 backlight and leave legacy CYD pins alone.
     pinMode(45, OUTPUT); digitalWrite(45, HIGH);
 #else
     pinMode(27, OUTPUT); digitalWrite(27, HIGH);
@@ -2904,7 +3062,7 @@ void setup() {
 // TOUCH_CS on AWOK, and the capacitive controller's INTERRUPT line on the RL
 // Phantom. Driving a 5 kHz PWM onto either is the kind of fault that looks
 // like dead touch, which is exactly how it presented on the Phantom.
-#if defined(TWATCH_S3)
+#if defined(TWATCH_S3) || defined(FREENOVE_S3)
     // One backlight, GPIO45, on the first channel. The CYD pins below are
     // flash/PSRAM lines and the power chip's interrupt on an S3.
     ledcSetup(BL_CH_ORIG, 5000, 8);
@@ -2993,7 +3151,14 @@ void setup() {
     // PSRAM pushes slower and cannot go by DMA. Keep it inside.
     frame.setAttribute(PSRAM_ENABLE, false);
 #endif
-    if (!frame.createSprite(tft.width(), tft.height())) {
+#if defined(CYD32) && defined(GPS_SUPPORT) && defined(GPS_RX_PIN)
+    // ST7798 has substantially less contiguous free heap after WiFi +
+    // NimBLE + SD + GPS. Retain a 2-band sprite (half the 77KB memory)
+    // permanently, using the established band renderer, rather than
+    // repeatedly destroying the full sprite during RF scans.
+    s_recoveryBands = 2;
+#endif
+    if (!frame.createSprite(tft.width(), tft.height() / s_recoveryBands)) {
         Serial.println("ERROR: frame buffer allocation failed (low memory)");
 #if HAVE_NVS_ERASE
         if (bootCheckRan) {
@@ -3008,6 +3173,19 @@ void setup() {
 #endif
     }
     frame.setTextSize(1);
+#if defined(CYD32) && defined(GPS_SUPPORT) && defined(GPS_RX_PIN)
+    if (frame.created()) {
+        canvas = &tft; // drawTwoBand uses the sprite and pushes each band
+        Serial.printf("[frame] CYD32 two-band buffered renderer, sprite %lu bytes, heap %lu/%lu\n",
+                      (unsigned long)(tft.width() * (tft.height() / s_recoveryBands)),
+                      (unsigned long)ESP.getFreeHeap(),
+                      (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
+    } else {
+        frameBufferOk = false;
+        s_recoveryBands = 1;
+        canvas = &tft;
+    }
+#endif
 #endif
 
     // Builds a 512-byte lookup table and nothing else; it touches no bus
@@ -3052,6 +3230,14 @@ void setup() {
     usingCapTouch = CapTouch::probe();
     Serial.println(usingCapTouch ? "T-Watch S3 -- FT6336 capacitive touch answered."
                                  : "T-Watch S3 -- FT6336 did not answer; no touch.");
+#elif defined(FREENOVE_S3)
+    // FNK0104B: FT6336 at 0x38 on SDA16/SCL15 with reset on GPIO18.
+    // FNK0104A has no touch controller and safely continues without touch.
+    CapTouch::begin(16, 15, 18, 0x38);
+    usingCapTouch = CapTouch::probe();
+    Serial.println(usingCapTouch ? "Freenove S3 -- FT6336 capacitive touch answered."
+                                 : "Freenove S3 -- FT6336 did not answer; no touch (FNK0104A?).");
+    { char b[16]; boardBatteryLine(b, sizeof b); Serial.printf("[batt] %s\n", b); }
 #elif defined(TOUCH_ON_DISPLAY_BUS)
     // AWOK's XPT2046 sits on the display's own shared VSPI bus (TOUCH_CS=21,
     // already armed by TFT_eSPI itself once awok_user_setup.h's #define
@@ -3155,9 +3341,14 @@ void setup() {
     }
 #endif
 
-    // Seed the PRNG so the digital rain starts in a fresh-looking state
-    // on every boot. Analog read on a floating pin is plenty.
+    // Seed the PRNG so the digital rain starts in a fresh-looking state.
+#if defined(FREENOVE_S3)
+    // Avoid guessing which S3 pins are safe ADC inputs around OPI PSRAM.
+    randomSeed(esp_random());
+#else
+    // Analog read on a floating pin is plenty on the classic ESP32 boards.
     randomSeed(analogRead(34));
+#endif
 
     // The backlight goes down while the radios come up, and back to your
     // setting once they are running.
@@ -3226,6 +3417,11 @@ void setup() {
     // ready: this is where the crypto self-test runs, on the real cipher,
     // against a frame built by an independent implementation.
     MeshTalk::begin();
+#endif
+#if defined(GPS_SUPPORT) && defined(GPS_RX_PIN)
+    // The GPS UART allocation follows the mesh cipher self-test, as proven
+    // necessary on the low-heap CYD ST7798 startup path.
+    GpsRuntime::begin();
 #endif
     applyBrightness();
     // After a wipe the board comes back the way the wipe asked: straight to the
@@ -3503,6 +3699,57 @@ static inline void drawTwoBand(F&& draw) {
         frame.resetViewport();
         return;
     }
+#else
+    if (s_recoveryBands > 1 && frameBufferOk) {
+        // Reuse the CYD35 clipping hints as well as its viewport technique.
+        // Previously we rendered EVERY background cell/menu row for EVERY
+        // band; the viewport discarded most pixels only after expensive
+        // colour blends, text layout, and graphics work had already run.
+        const int bandH = tft.height() / s_recoveryBands;
+        uint32_t totalDrawUs = 0, totalPushUs = 0;
+        uint32_t slowestDrawUs = 0, slowestPushUs = 0;
+        uint8_t slowestDrawBand = 0, slowestPushBand = 0;
+        DrawBand::setEnabled(true);
+        for (int b = 0; b < s_recoveryBands; ++b) {
+            const int y = b * bandH;
+            DrawBand::set(y, y + bandH);
+            frame.setViewport(0, -y, tft.width(), tft.height(), true);
+            const uint32_t drawStartUs = micros();
+            draw((TFT_eSPI&)frame, b == 0);
+            const uint32_t drawUs = micros() - drawStartUs;
+            totalDrawUs += drawUs;
+            if (drawUs > slowestDrawUs) {
+                slowestDrawUs = drawUs;
+                slowestDrawBand = (uint8_t)b;
+            }
+            const uint32_t pushStartUs = micros();
+            pushFrame(0, y);
+            const uint32_t pushUs = micros() - pushStartUs;
+            totalPushUs += pushUs;
+            if (pushUs > slowestPushUs) {
+                slowestPushUs = pushUs;
+                slowestPushBand = (uint8_t)b;
+            }
+        }
+        frame.resetViewport();
+        DrawBand::all();
+        DrawBand::setEnabled(false);
+        // Diagnostic only; once per five seconds, not on every frame.
+        // Main-screen latency can be caused by expensive paint work OR SPI.
+        // Distinguish the two and identify the physical band responsible.
+        static uint32_t lastBandDiagMs = 0;
+        const uint32_t diagNow = millis();
+        if (state == AppState::CLEAR && diagNow - lastBandDiagMs >= 5000) {
+            lastBandDiagMs = diagNow;
+            Serial.printf("[bands] n=%u draw=%lu us push=%lu us slow-draw=%u:%lu slow-push=%u:%lu\n",
+                          (unsigned)s_recoveryBands,
+                          (unsigned long)totalDrawUs,
+                          (unsigned long)totalPushUs,
+                          (unsigned)slowestDrawBand, (unsigned long)slowestDrawUs,
+                          (unsigned)slowestPushBand, (unsigned long)slowestPushUs);
+        }
+        return;
+    }
 #endif
     draw(*canvas, true);
 }
@@ -3649,6 +3896,9 @@ void loop() {
         touchJustUp = false;
     }
     engine.loop();
+#if defined(GPS_SUPPORT) && defined(GPS_RX_PIN)
+    GpsRuntime::tick(now);
+#endif
     floodTick();   // nothing outside a FLOOD_BENCH build
     // The heap at the first pass of loop(), for DIAGNOSTICS' BOOT line.
     static uint32_t s_loopHeapFree = 0, s_loopHeapLargest = 0;
@@ -3664,6 +3914,11 @@ void loop() {
     OtaCore::tick(now);
     OtaBle::tick(now);
     OtaWifi::tick(now);
+    // A cancelled WiFi check can leave Settings before the HTTPS task has
+    // finished. Retry the framebuffer loan after that task releases memory,
+    // rather than permanently leaving all ordinary screens unbuffered.
+    if (s_frameLent && state != AppState::UPDATE && state != AppState::WIFI_PASS)
+        restoreFrameBuffer();
     if (state == AppState::CLEAR) {
         const char* sub = nullptr;
         bool good = false;
@@ -3798,6 +4053,37 @@ void loop() {
     }
 #endif
 #if defined(ARDUINO_ARCH_ESP32) && !defined(SQW_S3) && !defined(CROWPANEL7)
+    if (g_consoleOutfitSet) {
+        g_consoleOutfitSet = false;
+        const int8_t idx = g_consoleOutfit;
+        if (idx >= -1 && idx < (int8_t)Squachy::outfitCount()) {
+            Squachy::setOutfitPreview(idx);
+            Serial.printf("[outfit] bench preview %d: %s\n", (int)idx,
+                          idx >= 0 ? Squachy::outfitNameAt((uint8_t)idx) : "off");
+        } else {
+            Serial.println("[outfit] invalid index; use -1 to 19");
+        }
+    }
+    if (g_consoleJail) {
+        g_consoleJail = false;
+        Squachy::jailStart();
+        Serial.println("[jail] ten-minute sentence started; pet throw counter not integrated");
+    }
+    if (g_consoleFree) {
+        g_consoleFree = false;
+        Squachy::jailFree();
+        Serial.println("[jail] sentence ended; STRIPES unlocked");
+    }
+    if (g_consoleLegend) {
+        g_consoleLegend = false;
+        Squachy::previewLegend(!Squachy::legendPreview());
+        Serial.printf("[legend] preview %s\n", Squachy::legendPreview() ? "ON" : "off");
+    }
+    if (g_consoleXyzzy) {
+        g_consoleXyzzy = false;
+        Theme::summonXyzzy();
+        Serial.println("[xyzzy] the terminal types it now (TERMINAL background only)");
+    }
     if (g_consoleAdc) {
         g_consoleAdc = false;
         const uint8_t pins[] = {
@@ -3869,7 +4155,7 @@ void loop() {
 #if defined(CYD35)
             frame.resizeInPlace(tft.width(), tft.height() / 2);
 #else
-            frame.resizeInPlace(tft.width(), tft.height());
+            frame.resizeInPlace(tft.width(), tft.height() / s_recoveryBands);
 #endif
         } else if (frameBufferOk) {
             // Never got its one-time boot-time allocation in the first
@@ -3998,6 +4284,20 @@ void loop() {
             } else {
                 uiBootTick(tft, now);
             }
+#elif defined(CYD32) && defined(GPS_SUPPORT) && defined(GPS_RX_PIN)
+            // BOOT used to draw directly to the TFT on CYD32 while CLEAR
+            // drew through two buffered bands. Keep both sides of the
+            // handoff buffered, so the 3.2 panel never shows half-painted
+            // text/background primitives on its way to the main screen.
+            if (frameBufferOk && s_recoveryBands > 1) {
+                drawTwoBand([&](TFT_eSPI& t, bool) {
+                    uiBootTick(t, now);
+                    if (crashCardWanted()) drawCrashCard(t);
+                });
+            } else {
+                uiBootTick(*canvas, now);
+                if (crashCardWanted()) drawCrashCard(*canvas);
+            }
 #else
             uiBootTick(*canvas, now);
             if (crashCardWanted()) drawCrashCard(*canvas);
@@ -4040,11 +4340,11 @@ void loop() {
             break;
         }
         case AppState::SYS_PROPS: {
-            // A detection still takes the screen. The window can open on a
-            // board nobody is watching -- a squad member's hello brings the
-            // news -- and it has no timeout, so without this it held every
-            // alert back until somebody happened to tap it.
-            {
+            // An automatic update-news window may yield to an alert, but
+            // a window deliberately opened from SYSTEM is user-owned.
+            // Keep it visible while detections continue to be logged.
+            // Do not consume the pending WATCH hit until the user leaves.
+            if (!s_sysPropsFromSettings) {
                 const Detection* latest = engine.latest();
                 if (latest && freshAlertCandidate(*latest, now) &&
                     alertMayInterrupt(*latest)) {
@@ -4071,7 +4371,15 @@ void loop() {
                             Theme::showToast("CAN'T START UPDATE", updateRefusedWhy(), Theme::AMBER);
                         }
                         break;
-                    case SysPropsHit::CLOSE: goHome(); break;
+                    case SysPropsHit::CLOSE:
+                        if (s_sysPropsFromSettings) {
+                            s_sysPropsFromSettings = false;
+                            enterSettings();
+                            uiSettingsOpenPage(SettingsPage::SYSTEM);
+                        } else {
+                            goHome();
+                        }
+                        break;
                     case SysPropsHit::NONE:  break;
                 }
                 lastTouch = now;
@@ -4143,20 +4451,39 @@ void loop() {
                     uiClearTick(tft, now, engine, true, s_scanPickerOpen);
                 }
 #else
-                uiClearTick(*canvas, now, engine, true, s_scanPickerOpen);
+                if (s_recoveryBands > 1) {
+                    // Draw all overlays INSIDE each buffered half before it
+                    // is pushed; drawing them later via canvas=&tft would
+                    // resurrect the direct-to-panel flicker.
+                    drawTwoBand([&](TFT_eSPI& t, bool advance) {
+                        uiClearTick(t, now, engine, advance, s_scanPickerOpen);
+                        if (uiZoneCardWanted()) uiZoneCardDraw(t, now);
+                        Theme::drawToast(t, now);
+#if CROWD_BENCH
+                        if (CrowdBench::active()) CrowdBench::drawOver(t, now);
+#endif
+                    });
+                } else {
+                    uiClearTick(*canvas, now, engine, true, s_scanPickerOpen);
+                }
 #endif
                 FrameProf::lap(FrameProf::CHROME);
 
-                // Overlays are part of the retained frame: when one is live,
-                // clearShouldRender() keeps rendering until it expires. The
-                // zone card is persistent UI; a short-lived toast is the
-                // immediate answer to the user's action, so it draws last.
-                if (uiZoneCardWanted()) uiZoneCardDraw(*canvas, now);
-                Theme::drawToast(*canvas, now);
-
-#if CROWD_BENCH
-                if (CrowdBench::active()) CrowdBench::drawOver(*canvas, now);
+                if (
+#if !defined(CYD35)
+                    s_recoveryBands == 1
+#else
+                    true
 #endif
+                ) {
+                    // For ordinary full-screen frames, overlays are part of
+                    // the retained frame and pushed at the end of loop().
+                    if (uiZoneCardWanted()) uiZoneCardDraw(*canvas, now);
+                    Theme::drawToast(*canvas, now);
+#if CROWD_BENCH
+                    if (CrowdBench::active()) CrowdBench::drawOver(*canvas, now);
+#endif
+                }
             } else {
                 renderedThisLoop = false;
             }
@@ -4239,7 +4566,12 @@ void loop() {
             if (Theme::consumeToasterCatch())   Squachy::unlockChromeWing();
             if (Theme::consumeEyeCatch())       Squachy::unlockVoidEye();
             if (Theme::consumeLodgeKnock())     Squachy::unlockParka();
+            if (Theme::consumeOwlReek())        Squachy::unlockShambler();
+            if (Theme::consumeRedGlyph())       Squachy::unlockTh3();
+            Theme::setOwlAsks(!Squachy::shamblerUnlocked());
+            Theme::setRedGlyph(!Squachy::th3Unlocked());
             if (Theme::consumeSharkCatch())     Squachy::unlockShark();
+            if (const uint8_t said = Theme::consumeXyzzy()) Squachy::magicWord(said);
     if (Theme::consumePetUnlock())      Squachy::unlockPet();
 
             bool boring = Settings::boringMode();
@@ -4266,6 +4598,7 @@ void loop() {
             // reads as PETTING (a drag/stroke) and keeps firing, throttled
             // internally by squachy.cpp, for as long as the stroke
             // continues.
+            static bool     petGrabActive = false;
             static bool     sqActive = false;
             static bool     sqHeld = false;
             static bool     sqPetting = false;
@@ -4307,8 +4640,26 @@ void loop() {
             // active gesture, still takes priority over the button bar
             // in the branch below -- Squachy is drawn well clear of the
             // button row, so the two never really compete in practice.)
+            // A different screen may have consumed the release edge (for
+            // example, an incoming ALERT). Cancel the stale hold safely
+            // before a new touch or a touchless return to CLEAR.
+            if (petGrabActive && (touchJustDown || (!tp.valid && !touchJustUp))) {
+                Pet::cancel(now);
+                petGrabActive = false;
+            }
             if (touchJustDown) {
-                sqActive = !boring && Squachy::hitTest(tp.x, tp.y);
+                // The pet can sit directly over Squachy's head. Give the
+                // companion first refusal, then leave every existing UI
+                // and Squachy gesture path unchanged when it is missed.
+                // Tutorials, onboarding and show-off intentionally own all
+                // touches until dismissed; never start a stranded pet grip.
+                bool petCanGrab = !boring && !Squachy::onboardingActive() &&
+                                  !Squachy::showOffActive();
+#if SQUACH_MESH
+                petCanGrab = petCanGrab && !MeshTutor::active();
+#endif
+                petGrabActive = petCanGrab && Pet::grab(tp.x, tp.y, now);
+                sqActive = !petGrabActive && !boring && Squachy::hitTest(tp.x, tp.y);
                 sqHeld = false;
                 sqPetting = false;
                 sqStartMs = now;
@@ -4318,7 +4669,7 @@ void loop() {
                 clrHoldActive = !s_scanPickerOpen && barBtn == ButtonId::CLR;
                 clrHoldFired  = false;
                 clrHoldStart  = now;
-                nbActive = !s_scanPickerOpen && uiClearNearbyHit(tp.x, tp.y);
+                nbActive = !petGrabActive && !s_scanPickerOpen && uiClearNearbyHit(tp.x, tp.y);
                 nbStart  = now;
             }
 
@@ -4350,6 +4701,16 @@ void loop() {
                     }
                 }
 #endif
+            } else if (petGrabActive) {
+                // Latch for the entire finger gesture: movement over a
+                // WATCH/HUNT pill, edge zone or other button cannot turn
+                // one pet throw into an unrelated UI action.
+                if (tp.valid) Pet::drag(tp.x, tp.y, now);
+                if (touchJustUp) {
+                    Pet::release(now);
+                    petGrabActive = false;
+                    lastTouch = now;
+                }
             } else if (!boring && Squachy::onboardingActive() && tp.valid && (now - lastTouch) > TOUCH_DEBOUNCE_MS &&
                 Squachy::onboardingTapAdvance(tp.x, tp.y)) {
                 lastTouch = now;
@@ -4548,7 +4909,9 @@ void loop() {
                 uiAlertTick(tft, now, engine, s_infoPending, alertInfoTypeName, alertInfoText);
             }
 #else
-            uiAlertTick(*canvas, now, engine, s_infoPending, alertInfoTypeName, alertInfoText);
+            drawTwoBand([&](TFT_eSPI& t, bool) {
+                uiAlertTick(t, now, engine, s_infoPending, alertInfoTypeName, alertInfoText);
+            });
 #endif
             // The finger that opened the card has to lift before the card
             // listens: see s_alertArmed. The auto-dismiss timer below still
@@ -4562,6 +4925,37 @@ void loop() {
             // gate LOG's info panel uses, applied here too -- MORE INFO
             // appears on the exact tap that opened it, so without this
             // the still-held finger could instantly dismiss it.
+            // The snooze duration picker owns all touches while visible.
+            // Keep the alert from auto-dismissing until a choice or CANCEL.
+            if (uiAlertSnoozePrompt()) {
+                if (tp.valid && (now - lastTouch) > TOUCH_DEBOUNCE_MS) {
+                    const AlertSnoozeChoice choice =
+                        uiAlertHitSnoozeChoice(tp.x, tp.y, tft.width(), tft.height());
+                    if (choice != AlertSnoozeChoice::NONE) {
+                        lastTouch = now;
+                        if (choice == AlertSnoozeChoice::CANCEL) {
+                            uiAlertSetSnoozePrompt(false);
+                            alertStart = now;  // give time to reconsider
+                        } else {
+                            const IgnoreList::SnoozeDuration duration =
+                                choice == AlertSnoozeChoice::MIN_10 ? IgnoreList::SnoozeDuration::MIN_10 :
+                                choice == AlertSnoozeChoice::MIN_30 ? IgnoreList::SnoozeDuration::MIN_30 :
+                                choice == AlertSnoozeChoice::HOUR_1 ? IgnoreList::SnoozeDuration::HOUR_1 :
+                                                                       IgnoreList::SnoozeDuration::ALWAYS;
+                            if (IgnoreList::snooze(s_alertMac, duration)) {
+                                uiAlertSetSnoozePrompt(false);
+                                Theme::showToast("SNOOZED", choice == AlertSnoozeChoice::ALWAYS
+                                    ? "Until you unsnooze" : "Expires automatically", Theme::AMBER);
+                                squachyCatch(lastAlertType, s_alertMac, lastAlertHits, lastAlertRssi, lastAlertConf);
+                                enterClear();
+                            } else {
+                                Theme::showToast("SNOOZE FAILED", "List full or save failed", Theme::RED);
+                            }
+                        }
+                    }
+                }
+                break;
+            }
             if (s_infoPending) {
                 if (!s_infoArmed) {
                     if (!tp.valid) s_infoArmed = true;
@@ -4587,7 +4981,7 @@ void loop() {
             }
 
             // Locked: an alert is for looking at, not acting on. MORE INFO,
-            // IGNORE and HUNT would all change the device without the PIN, so
+            // IGNORE, WATCH and HUNT would change the device without PIN, so
             // any tap -- or the timeout -- goes back to the lock screen.
             if (Security::locked()) {
                 if ((tp.valid && (now - lastTouch) > TOUCH_DEBOUNCE_MS) ||
@@ -4620,14 +5014,24 @@ void loop() {
                     squachyCatch(lastAlertType, s_alertMac, lastAlertHits, lastAlertRssi, lastAlertConf);
                     enterClear();
                 } else if (uiAlertHitSnooze(tp.x, tp.y, tft.width(), tft.height())) {
-                    // This device, until the board restarts: no more alerts
-                    // from it, while it goes on being scanned, counted and
-                    // logged like anything IGNOREd. Acknowledges the alert
-                    // like IGNORE does. See IgnoreList::snooze for why it
-                    // is no longer the whole type for an hour.
+                    // Ask how long rather than silently snoozing until restart.
+                    // Do not count/dismiss this alert until the user selects
+                    // a duration; CANCEL leaves all policies unchanged.
                     lastTouch = now;
-                    IgnoreList::snooze(s_alertMac);
-                    Theme::showToast("SNOOZED", "This one, until restart", Theme::AMBER);
+                    uiAlertSetSnoozePrompt(true);
+                } else if (uiAlertHitWatch(tp.x, tp.y, tft.width(), tft.height())) {
+                    // One-tap WATCH from an ordinary detection alert. Guard
+                    // against toggleWatch*() removing an existing target:
+                    // WATCHED remains selected until explicitly un-watched
+                    // from WATCH TARGETS, LOG, or raw scan.
+                    const WatchAlertActions::AddResult result =
+                        WatchAlertActions::addOnly(engine, s_alertMac, s_alertLabel, s_alertIsBle);
+                    if (result == WatchAlertActions::AddResult::ADDED)
+                        Theme::showToast("ADDED TO WATCH", s_alertLabel, Theme::CYAN);
+                    else if (result == WatchAlertActions::AddResult::ALREADY_WATCHED)
+                        Theme::showToast("ALREADY WATCHING", s_alertLabel, Theme::CYAN);
+                    else
+                        Theme::showToast("WATCH LIST FULL", "Maximum 8 targets", Theme::AMBER);
                     squachyCatch(lastAlertType, s_alertMac, lastAlertHits, lastAlertRssi, lastAlertConf);
                     enterClear();
                 } else if (uiAlertHitHunt(tp.x, tp.y, tft.width(), tft.height())) {
@@ -4672,7 +5076,7 @@ void loop() {
                 uiOutfitUnlockTick(tft, now, engine);
             }
 #else
-            uiOutfitUnlockTick(*canvas, now, engine);
+            drawTwoBand([&](TFT_eSPI& t, bool) { uiOutfitUnlockTick(t, now, engine); });
 #endif
             const bool timedOut = (now - outfitUnlockStart) > OUTFIT_UNLOCK_AUTO_MS;
             const bool tapped   = tp.valid && (now - lastTouch) > TOUCH_DEBOUNCE_MS &&
@@ -4700,60 +5104,157 @@ void loop() {
                 uiWatchAlertTick(tft, now, engine, true);
             }
 #else
-            uiWatchAlertTick(*canvas, now, engine, true);
+            drawTwoBand([&](TFT_eSPI& t, bool advance) { uiWatchAlertTick(t, now, engine, advance); });
 #endif
+            // A held touch from the roster's OPEN ALERT action must not
+            // instantly acknowledge the card it just opened.
+            if (!s_watchAlertArmed) {
+                if (!tp.valid) s_watchAlertArmed = true;
+                else break;
+            }
+            // A PIN-locked screen must never allow WATCH removal or
+            // acknowledgement. Exit the alert with unread state intact.
+            if (Security::locked()) {
+                if (touchJustDown || (now-watchAlertStart)>ALERT_AUTO_DISMISS_MS) {
+                    engine.deactivateWatch();
+                    leaveWatchAlert();
+                }
+                break;
+            }
             if (tp.valid && (now - lastTouch) > TOUCH_DEBOUNCE_MS) {
                 lastTouch = now;
                 if (uiWatchAlertHitRemove(*canvas, tp.x, tp.y)) {
-                    engine.clearWatch(); // only the device whose alert is open
+                    engine.clearWatch(); // only the target of the active card
                     Theme::showToast("REMOVED FROM WATCH", nullptr, Theme::CYAN);
                 } else {
-                    engine.deactivateWatch();
+                    // A tap anywhere outside REMOVE acknowledges this
+                    // WATCH alert. The target remains on the WATCH list.
+                    engine.acknowledgeWatch();
                 }
-                enterClear();
+                leaveWatchAlert();
             } else if ((now - watchAlertStart) > ALERT_AUTO_DISMISS_MS) {
+                // An unattended alert returns home after 10 seconds,
+                // leaving its unread WATCH marker intact. This permits other
+                // WATCH and ordinary alerts and normal screen/lock timeouts,
+                // with no separate manual MINIMIZE control.
                 engine.deactivateWatch();
-                enterClear();
+                leaveWatchAlert();
             }
             break;
         }
         case AppState::WATCH_LIST: {
-            // Retained roster: the underlying WATCH RSSI history samples at
-            // ~2 s, so repainting/pushing this static list every main-loop
-            // pass only creates unnecessary panel traffic. Draw immediately
-            // on entry/touch, then at the same 2 s cadence as the data.
-            static uint32_t wlLastDrawAt = 0, wlEntryAt = 0;
+            // Long-press a roster target for OPEN ALERT / REMOVE / CANCEL.
+            // Keep an identity snapshot, never a sorted row number: the order
+            // can change during the hold as incoming RSSI samples update.
+            static bool wlGesture=false, wlMoved=false, wlTargetValid=false;
+            static bool wlMenuOpen=false;
+            static int wlStartX=0, wlStartY=0, wlLastY=-1;
+            static uint32_t wlDownAt=0;
+            static DetectionEngine::WatchTargetInfo wlTarget = {};
+            static uint32_t wlLastDrawAt=0, wlEntryAt=0;
+            static bool wlDirty=false;
             const bool wlNewEntry = wlEntryAt != transitionStart;
-            const bool wlNeedsDraw = wlNewEntry || touchJustDown || touchJustUp ||
-                                     tp.valid || (now - wlLastDrawAt >= 2000);
+            if (wlNewEntry) {
+                wlMenuOpen=false; wlGesture=false; wlMoved=false;
+                wlTargetValid=false; wlEntryAt=transitionStart;
+                wlDirty=true;
+            }
+            // BACK is a dedicated button, not a scrollable row. Handle its
+            // press immediately, before expensive multi-band rendering and
+            // without depending on a later release edge. In landscape the
+            // release can be missed while the display is being pushed.
+            if (!wlMenuOpen && touchJustDown &&
+                (now-lastTouch)>TOUCH_DEBOUNCE_MS &&
+                uiWatchAlertListHitBack(tp.x,tp.y,tft.width(),tft.height())) {
+                lastTouch=now;
+                wlGesture=false;
+                enterClear();
+                break;
+            }
+            // In recovery-band mode each roster render is multiple physical
+            // passes. Redrawing continuously during a held finger starves
+            // touch polling, causing BACK to require repeated taps.
+            // Render on state changes, not every loop while touch is held.
+            const bool wlNeedsDraw = wlDirty || wlNewEntry || touchJustDown || touchJustUp ||
+                                     (now-wlLastDrawAt>=2000);
             if (wlNeedsDraw) {
-                wlEntryAt = transitionStart;
-                wlLastDrawAt = now;
+                wlLastDrawAt=now;
+                wlDirty=false;
                 drawTwoBand([&](TFT_eSPI& t, bool) {
                     uiWatchListTick(t, now, engine);
+                    if (wlMenuOpen) {
+                        char pv[40];
+                        uiWatchAlertListActionMenu(t, Privacy::name(wlTarget.label, pv, sizeof pv));
+                    }
                 });
             } else {
-                renderedThisLoop = false;
+                renderedThisLoop=false;
             }
 
-            static bool wlGesture=false, wlMoved=false;
-            static int wlStartX=0, wlStartY=0, wlLastY=-1;
-            if(touchJustDown){
+            // While the menu is open it owns the entire touch surface.
+            // It is first drawn on a RELEASE, so the gesture that opened
+            // it cannot accidentally select a destructive action.
+            if (wlMenuOpen) {
+                if (touchJustDown && (now-lastTouch)>TOUCH_DEBOUNCE_MS) {
+                    lastTouch=now;
+                    const WatchListAction action=uiWatchAlertListActionHit(
+                        tp.x,tp.y,tft.width(),tft.height());
+                    if (action!=WatchListAction::NONE) {
+                        wlMenuOpen=false;
+                        wlDirty=true; // Repaint roster after modal removal/cancel.
+                        if (action==WatchListAction::REMOVE || action==WatchListAction::OPEN_ALERT) {
+                            // The selected row may have disappeared while
+                            // the modal was up; never toggle/add a stale MAC.
+                            int match=-1;
+                            for (uint8_t i=0;i<engine.watchTargetCount();i++) {
+                                DetectionEngine::WatchTargetInfo info;
+                                if (engine.watchTargetInfo(i,info) &&
+                                    info.kind==wlTarget.kind &&
+                                    memcmp(info.mac,wlTarget.mac,6)==0) { match=i; break; }
+                            }
+                            if (match>=0) {
+                                if (action==WatchListAction::OPEN_ALERT) {
+                                    if (engine.activateWatchTarget((uint8_t)match))
+                                        enterWatchAlert(true);
+                                } else {
+                                    if (wlTarget.kind==DetectionEngine::WatchKind::BLE)
+                                        engine.toggleWatchBle(wlTarget.mac,wlTarget.label);
+                                    else
+                                        engine.toggleWatchWifi(wlTarget.mac,wlTarget.label);
+                                }
+                            }
+                        }
+                    }
+                }
+                break;
+            }
+            if (touchJustDown) {
                 wlGesture=true; wlMoved=false;
                 wlStartX=tp.x; wlStartY=tp.y; wlLastY=tp.y;
+                wlDownAt=now;
+                wlTargetValid=uiWatchAlertListTargetAt(tft,wlStartX,wlStartY,engine,wlTarget);
             }
-            if(tp.valid&&wlGesture){
+            if (tp.valid && wlGesture) {
                 const int dy=tp.y-wlLastY;
-                if(abs(dy)>10){
+                if (abs(dy)>10) {
                     wlMoved=true;
                     uiWatchAlertListScroll(dy>0?-1:1);
+                    wlDirty=true;
                     wlLastY=tp.y;
                 }
+                if (abs(tp.x-wlStartX)>22 || abs(tp.y-wlStartY)>24) wlMoved=true;
             }
-            if(touchJustUp&&wlGesture){
-                if(!wlMoved && uiWatchAlertListHitBack(wlStartX,wlStartY,tft.width(),tft.height())){
+            if (touchJustUp && wlGesture) {
+                if (!wlMoved && uiWatchAlertListHitBack(
+                        wlStartX,wlStartY,tft.width(),tft.height())) {
                     lastTouch=now;
+                    wlGesture=false;
                     enterClear();
+                    break;
+                } else if (!wlMoved && wlTargetValid && now-wlDownAt>=650) {
+                    wlDirty=true;
+                    wlMenuOpen=true;
+                    lastTouch=now;
                 }
                 wlGesture=false;
             }
@@ -4987,7 +5488,9 @@ void loop() {
         }
         case AppState::RAWSCAN: {
             const bool done = s_rawScanCachedView ||
-                              (s_rawScanIsBle ? engine.rawBleScanDone() : engine.rawWifiScanDone());
+                              (s_rawScanIsBle ? engine.rawBleScanDone() :
+                               (engine.rawWifiScanDone() || engine.rawWifiScanFailed()));
+            // 2.8 and 3.2 use the same buffered renderer on both radios.
             drawTwoBand([&](TFT_eSPI& t, bool advance) {
                 uiRawScanTick(t, now, engine, s_rawScanIsBle, done, s_confirmPending, privLabel(s_confirmLabel),
                               engine.isWatched(s_confirmMac, s_rawScanIsBle),
@@ -5148,10 +5651,42 @@ void loop() {
             break;
         }
         case AppState::SETTINGS: {
-            // Nothing on this screen moves by the call -- no background, no
-            // mascot -- so both passes are the same picture and the row
-            // hashes find nothing to send once it has settled.
-            drawTwoBand([&](TFT_eSPI& t, bool) { uiSettingsTick(t, now, engine); });
+            if (frameBufferOk) {
+                // Buffered path: animations and unchanged-row suppression
+                // behave as normal.
+                drawTwoBand([&](TFT_eSPI& t, bool advance) { uiSettingsTick(t, now, engine, false, advance); });
+            } else {
+                // When WiFi OTA leaves too little contiguous RAM to restore
+                // the full-screen sprite, drawing every loop straight to
+                // the LCD produces the rapid full-screen flicker. Keep the
+                // menu usable without forcing a reboot: render a still
+                // background only on entry, navigation, touch/scroll, and an
+                // occasional refresh of dynamic counters/snooze durations.
+                static uint32_t paintedScene = UINT32_MAX;
+                static uint32_t paintedAt = 0;
+                static SettingsPage paintedPage = SettingsPage::MAIN;
+                static int prevX = -1, prevY = -1;
+                static bool paintNext = false;
+                const SettingsPage page = uiSettingsCurrentPage();
+                const bool moved = tp.valid && prevX >= 0 &&
+                                   (abs(tp.x - prevX) > 3 || abs(tp.y - prevY) > 3);
+                const bool first = paintedScene != transitionStart || paintedPage != page;
+                const bool input = touchJustDown || touchJustUp || paintNext;
+                const bool slowRefresh = (uint32_t)(now - paintedAt) >= 30000UL;
+                // Limit costly direct draws during a drag; taps and page
+                // changes always refresh immediately.
+                if (first || input || slowRefresh || (moved && (uint32_t)(now - paintedAt) >= 120UL)) {
+                    uiSettingsTick(*canvas, now, engine, true);
+                    paintedScene = transitionStart;
+                    paintedPage = page;
+                    paintedAt = now;
+                }
+                // Settings commits taps after this drawing step. Schedule
+                // one more pass to show the new value on the next loop.
+                paintNext = touchJustUp;
+                prevX = tp.valid ? tp.x : -1;
+                prevY = tp.valid ? tp.y : -1;
+            }
             // Row taps commit on release, not on press, and only if
             // the touch never moved past the scroll threshold -- same
             // fix as LOG/raw-scan: firing on press meant a swipe that
@@ -5277,7 +5812,13 @@ void loop() {
                         case SettingsRow::BACKGROUND: Settings::cycleBackground(); break;
                         case SettingsRow::BACKGROUND_LOCK: Settings::toggleBackgroundLocked(); break;
                         case SettingsRow::UPDATE_CHECK:    Settings::toggleUpdateCheck();     break;
-                        case SettingsRow::TIME_ZONE:       Settings::cycleTimeZone();         break;
+                        case SettingsRow::TIME_ZONE:
+                            // The arrows both live inside the left-aligned label.
+                            // Match their rendered positions, not the screen midpoint.
+                            Settings::stepTimeZone(uiSettingsTimeZoneStepForTap(
+                                tft, gestureStartX, tft.width(), tft.height()));
+                            Settings::markTimeZoneChosen();
+                            break;
                         case SettingsRow::INVERT:
                             Settings::toggleInvert();
                             // XOR against the panel's own baseline, not an
@@ -5300,6 +5841,9 @@ void loop() {
                         case SettingsRow::ALERT_RULES: enterAlertRules(); break;
                         case SettingsRow::DETECTION_FILTER: enterDetFilter(); break;
                         case SettingsRow::POWER_SAVER: enterPower(); break;
+                        case SettingsRow::SHOW_WIFI_ICON: Settings::toggleWifiIcon(); break;
+                        case SettingsRow::SHOW_SD_ICON: Settings::toggleSdIcon(); break;
+                        case SettingsRow::SHOW_GPS_ICON: Settings::toggleGpsIcon(); break;
                         case SettingsRow::PRIVACY:
                             Settings::togglePrivacyMode();
                             Theme::showToast(Settings::privacyMode() ? "PRIVACY MODE ON" : "PRIVACY MODE OFF",
@@ -5337,6 +5881,25 @@ void loop() {
                         case SettingsRow::STATUS_LIGHT: enterLight(); break;
                         case SettingsRow::SECURITY:    enterSecurity(); break;
                         case SettingsRow::IGNORED_DEVICES:  enterIgnoreList(); break;
+                        case SettingsRow::SNOOZE_MANAGER:
+                            uiSettingsOpenPage(SettingsPage::SNOOZES);
+                            break;
+                        case SettingsRow::SNOOZE_ENTRY: {
+                            // The Settings renderer and hit-test share row geometry
+                            // and scroll position. Use a copied MAC because removal
+                            // compacts the list before the next frame.
+                            const int index = uiSettingsSnoozeIndexAt(tft, gestureStartX,
+                                gestureStartY, tft.width(), tft.height());
+                            uint8_t mac[6]; uint32_t remaining = 0; bool always = false;
+                            if (index >= 0 && IgnoreList::snoozeInfo((uint8_t)index, mac, remaining, always)) {
+                                if (IgnoreList::unsnooze(mac))
+                                    Theme::showToast("UNSNOOZED", "Alerts restored for this device", Theme::CYAN);
+                                else
+                                    Theme::showToast("UNSNOOZE FAILED", "Could not save change", Theme::RED);
+                            }
+                            break;
+                        }
+                        case SettingsRow::SNOOZE_EMPTY: break;
 #if SQUACH_MESH
                         case SettingsRow::SQUACHMESH:
                             // Asked once. After that the row opens the menu
@@ -5370,7 +5933,9 @@ void loop() {
                             break;
                         case SettingsRow::CHECK_COLORS: enterColorCheck(true); break;
                         case SettingsRow::DIAGNOSTICS:  enterDiagnostics(); break;
+                        case SettingsRow::SYSTEM_PROPERTIES: enterSysProps(true); break;
                         case SettingsRow::WIFI_NETWORKS: enterWifiNets(); break;
+                        case SettingsRow::SD_FILES: enterSdFiles(); break;
                         case SettingsRow::DESK_MODE:    uiSettingsOpenPage(SettingsPage::DESK); break;
                         case SettingsRow::DESK_OPEN:
                             // Settings' BACK from the desk comes back to it;
@@ -5398,14 +5963,22 @@ void loop() {
                             break;
                         case SettingsRow::SHADES_COLOR: Squachy::cycleShadesColor(); break;
                         case SettingsRow::SQUACHY_SIZE: Settings::cycleSquachySize(); break;
-                        case SettingsRow::OUTFIT:       enterOutfit(); break;
-                        case SettingsRow::PET:          Squachy::cyclePet(); break;
+                        case SettingsRow::OUTFIT:
+                        case SettingsRow::PET:
+                            if (Squachy::jailed()) {
+                                const uint32_t secs = (Squachy::jailLeftMs() + 999u) / 1000u;
+                                char msg[28];
+                                snprintf(msg, sizeof(msg), "%lu:%02lu left. Behave.", (unsigned long)(secs / 60u), (unsigned long)(secs % 60u));
+                                Theme::showToast("SERVING TIME", msg, Theme::AMBER, 2500);
+                            } else if (row == SettingsRow::OUTFIT) enterOutfit();
+                            else Squachy::cyclePet();
+                            break;
                         case SettingsRow::BANTER:       Settings::cycleBanter(); break;
                         case SettingsRow::VIEW_DIARY:   enterDiary(); break;
                         case SettingsRow::BINGO:        enterBingo(); break;
                         case SettingsRow::DEX:          enterDex(); break;
                         case SettingsRow::APPEARANCE:  uiSettingsOpenAppearance(true); break;
-                        case SettingsRow::TOP_HAT:     Settings::toggleTopHat(); break;
+                        case SettingsRow::AURA:        Settings::toggleAura(); break;
                         // From a sub-page, back to the main list; from the
                         // main list, out.
                         case SettingsRow::BACK:
@@ -5612,10 +6185,20 @@ void loop() {
             lastTouch = now;
             // The board redraws only what changed, so it is the same with the
             // frame buffer and without it (given up for a download).
-#if defined(CYD35)
+#if defined(CYD35C)
+            // Capacitive CYD35C draws the password screen directly to its panel.
             uiWifiPassTick(tft, now);
 #else
-            drawTwoBand([&](TFT_eSPI& t, bool) { uiWifiPassTick(t, now); });
+#if defined(CYD32)
+            if (WifiScreenPolicy::keyboardDirectPanel(frameBufferOk, s_recoveryBands)) {
+                // A 3.2-inch board may be unbuffered, or may have recovered
+                // only a partial-height sprite after WiFi USE. In either
+                // case draw once on the full-size panel, with atomic
+                // key patches and no repeated whole-keyboard redraws.
+                uiWifiPassTick(tft, now, true);
+            } else
+#endif
+                drawTwoBand([&](TFT_eSPI& t, bool) { uiWifiPassTick(t, now); });
 #endif
             if (touchJustDown)    uiWifiPassTouch(tp.x, tp.y, now, WifiPassTouch::DOWN);
             else if (tp.valid)    uiWifiPassTouch(tp.x, tp.y, now, WifiPassTouch::MOVE);
@@ -5655,7 +6238,34 @@ void loop() {
             break;
         }
         case AppState::WIFI_NETS: {
-            drawTwoBand([&](TFT_eSPI& t, bool) { uiWifiNetsTick(t, now); });
+            const OtaWifi::SavedTest test = OtaWifi::savedTestState();
+            if (test == OtaWifi::SavedTest::CONNECTING) lastTouch = now;
+            else if (test != OtaWifi::SavedTest::IDLE) {
+                OtaWifi::clearSavedTest();
+                engine.stopUpdateRadio();
+#if defined(CYD32)
+                // Recovery can choose smaller bands if the WiFi heap is
+                // fragmented. Never hold the large framebuffer during USE.
+                restoreFrameBuffer();
+#endif
+                switch (test) {
+                    case OtaWifi::SavedTest::JOINED:       Theme::showToast("WIFI CONNECTED", "Verified; scanning resumed", Theme::GREEN); break;
+                    case OtaWifi::SavedTest::BAD_PASSWORD: Theme::showToast("AUTH FAILED", "Check saved password", Theme::AMBER); break;
+                    case OtaWifi::SavedTest::NOT_FOUND:    Theme::showToast("NETWORK NOT FOUND", nullptr, Theme::AMBER); break;
+                    default:                               Theme::showToast("CONNECTION FAILED", "Try again or move closer", Theme::AMBER); break;
+                }
+            }
+#if defined(CYD32)
+            // When 3.2-inch WiFi has lent its framebuffer (or recovered
+            // only a small sprite band), don't clear/repaint the full LCD
+            // for every finger down/up. The incremental painter updates only
+            // the rows, buttons and toast region whose content changed.
+            if (WifiScreenPolicy::networksDirectPanel(frameBufferOk, s_recoveryBands))
+                uiWifiNetsTickDirect(tft, now);
+            else
+#endif
+                drawTwoBand([&](TFT_eSPI& t, bool) { uiWifiNetsTick(t, now); });
+            if (test == OtaWifi::SavedTest::CONNECTING) break;
             if (touchJustDown) {
                 int row = -1;
                 switch (uiWifiNetsHit(*canvas, tp.x, tp.y, &row)) {
@@ -5663,8 +6273,29 @@ void loop() {
                     case WifiNetsHit::USE: {
                         const int s = uiWifiNetsSelected();
                         if (s >= 0 && s < OtaWifi::savedCount()) {
-                            OtaWifi::useSaved((uint8_t)s);
-                            Theme::showToast("TRIED FIRST", OtaWifi::savedSsidAt((uint8_t)s), Theme::CYAN);
+                            if (Security::locked()) {
+                                Theme::showToast("UNLOCK FIRST", nullptr, Theme::AMBER);
+                            } else {
+                                OtaWifi::useSaved((uint8_t)s);
+                                engine.startUpdateRadio();
+#if defined(CYD32)
+                                // Boot WiFi succeeds before UI/frame allocation.
+                                // USE previously tried to create a 6KB task
+                                // with the 77KB sprite still resident; failure
+                                // was mislabeled WIFI BUSY. Match OTA's proven
+                                // framebuffer loan on this board only.
+                                lendFrameToDownload(true);
+#endif
+                                if (OtaWifi::testSavedAt((uint8_t)s))
+                                    Theme::showToast("CONNECTING", "Testing saved WiFi only", Theme::CYAN);
+                                else {
+                                    engine.stopUpdateRadio();
+#if defined(CYD32)
+                                    restoreFrameBuffer();
+#endif
+                                    Theme::showToast("WIFI CAN'T START", OtaWifi::savedTestStartIssue(), Theme::AMBER);
+                                }
+                            }
                         }
                         break;
                     }
@@ -5713,7 +6344,13 @@ void loop() {
                         }
                         break;
                     }
-                    case WifiAddHit::RESCAN: engine.stopRawScan(); engine.startRawWifiScan(); break;
+                    case WifiAddHit::PREV:   uiWifiAddPage(-1); break;
+                    case WifiAddHit::NEXT:   uiWifiAddPage(+1); break;
+                    case WifiAddHit::RESCAN:
+                        engine.stopRawScan();
+                        engine.startRawWifiScan();
+                        uiWifiAddInit(*canvas);
+                        break;
                     case WifiAddHit::BACK:   engine.stopRawScan(); enterWifiNets(); break;
                     default: break;
                 }
@@ -5803,13 +6440,19 @@ void loop() {
         }
         case AppState::SQUAD: {
             drawTwoBand([&](TFT_eSPI& t, bool advance) { uiSquadTick(t, now, engine, advance); });
-            if (touchJustDown && (now - lastTouch) > TOUCH_DEBOUNCE_MS) {
+            // Same lost-tap bug fixed in SD_FILES (R14): the physical DOWN
+            // edge happens once. If the unrelated global 200 ms cooldown
+            // rejects it, holding the button cannot ever register ADD.
+            // Process every fresh DOWN exactly once, without changing any
+            // other menu or allowing held touches to repeat.
+            if (touchJustDown && tp.valid) {
                 lastTouch = now;
                 switch (uiSquadTouch(tp.x, tp.y, now)) {
                     case SquadHit::BACK:    if (uiSquadRosterMode()) enterMeshMenu(); else enterClear(); break;
                     // Back to the main screen to watch the swap happen.
                     case SquadHit::INVITED: enterClear(); break;
                     case SquadHit::REPLY:   enterMeshCompose(); break;
+                    case SquadHit::SEND:    enterMeshCompose(); break;
                     // A fox hunt: their board is the target, the HUNT gauge the
                     // receiver. Already hunting them: just go to the gauge.
                     case SquadHit::HUNT: {
@@ -5822,9 +6465,51 @@ void loop() {
                     case SquadHit::ADD: {
                         const uint8_t* mac = uiSquadSelectedMac();
                         if (!mac) break;
+                        // A tap reached ADD even if an invite cannot start.
+                        // Never log or generate the private squad phrase here.
+                        Serial.printf("[mesh-ui] ADD tapped: phrase=%u crypto=%u tx=%u\n",
+                                      (unsigned)MeshTalk::havePhrase(),
+                                      (unsigned)MeshTalk::selfTestOk(),
+                                      (unsigned)Settings::meshTransmit());
+                        if (!MeshTalk::selfTestOk()) {
+                            Theme::showToast("CRYPTO TEST FAILED", "Cannot share a squad phrase", Theme::AMBER);
+                            break;
+                        }
+                        if (!MeshTalk::havePhrase()) {
+                            // ERASE ALL clears the saved squad phrase. The old
+                            // ADD only showed a transient toast even though
+                            // invitation cannot start without a phrase.
+                            // Open its existing setup instead of silently
+                            // failing, without changing or leaking any key.
+                            enterMeshPhrase();
+                            break;
+                        }
+                        if (!Settings::meshDetect()) {
+                            Theme::showToast("DETECT IS OFF", "Enable DETECT on both boards", Theme::AMBER, 4500);
+                            break;
+                        }
+                        if (!Settings::messagesOn()) {
+                            // Public invite frames are deliberately discarded
+                            // by Mesh::onManufacturerData() while MESSAGES is
+                            // disabled. A phrase and TRANSMIT alone cannot
+                            // complete the two-way handshake.
+                            Theme::showToast("MESSAGES OFF", "Enable MESSAGES on both boards", Theme::AMBER, 4500);
+                            break;
+                        }
+                        if (!Settings::meshTransmit()) {
+                            // Never silently enable an explicitly gated radio
+                            // setting. Explain what needs user consent.
+                            Theme::showToast("TRANSMIT OFF", "Enable TRANSMIT to invite", Theme::AMBER, 4500);
+                            break;
+                        }
                         const MeshTalk::Send r = MeshTalk::inviteStart(mac, uiSquadSelectedName(), now);
                         if (r == MeshTalk::Send::OK)            enterInvite();
-                        else if (r == MeshTalk::Send::NOT_READY) Theme::showToast("NO PHRASE TO SHARE", "Set one under SQUACHMESH first", Theme::AMBER);
+                        else if (r == MeshTalk::Send::NOT_READY) {
+                            if (!MeshTalk::selfTestOk())
+                                Theme::showToast("CRYPTO TEST FAILED", "Cannot share a squad phrase", Theme::AMBER);
+                            else
+                                Theme::showToast("NO PHRASE TO SHARE", "Set one under SQUACHMESH first", Theme::AMBER);
+                        }
                         else if (r == MeshTalk::Send::TRANSMIT_OFF) Theme::showToast("CAN'T SEND", "Turn TRANSMIT on in SquachMesh", Theme::AMBER);
                         else                                     Theme::showToast("CAN'T START", "Try again in a moment", Theme::AMBER);
                         break;
@@ -6400,6 +7085,55 @@ void loop() {
             }
             break;
         }
+        case AppState::SD_FILES: {
+            // Unlike a static file listing, an offline mount status evolves
+            // on a separate task. Refresh sparingly while offline so RESCAN
+            // attempts/errors are visible without touching or repainting
+            // every animation frame.
+            if (!engine.sd().ready() && (int32_t)(now - s_sdFilesNextStatusDraw) >= 0) {
+                s_sdFilesDirty = true;
+                s_sdFilesNextStatusDraw = now + 1200u;
+            }
+            const bool resized = s_sdFilesLastW != tft.width() || s_sdFilesLastH != tft.height();
+            const bool mounted = engine.sd().ready();
+            if (mounted != s_sdFilesLastReady) {
+                s_sdFilesLastReady = mounted;
+                if (mounted) s_sdFilesNeedsReload = true;
+                s_sdFilesDirty = true;
+            }
+            if (mounted && s_sdFilesNeedsReload) {
+                if (SdBrowser::reloadMountedCard()) s_sdFilesNeedsReload = false;
+                s_sdFilesDirty = true;
+            }
+            if (resized) {
+                s_sdFilesLastW = tft.width(); s_sdFilesLastH = tft.height();
+                s_sdFilesDirty = true;
+            }
+#if defined(CYD32)
+            // Always render this non-animated filesystem menu directly to
+            // the real TFT on the 3.2", independent of recovery-band layout.
+            // A small/stale sprite can otherwise leave 25% of CLEAR visible.
+            if (s_sdFilesDirty) SdBrowser::draw(tft);
+#else
+            if (s_sdFilesDirty)
+                drawTwoBand([&](TFT_eSPI& t, bool) { SdBrowser::draw(t); });
+#endif
+            s_sdFilesDirty = false;
+            // SD browser already uses the physical press edge. Applying the
+            // unrelated 200 ms global lastTouch cooldown here swallowed an
+            // entire BACK tap (the touch edge only lasts one frame), forcing
+            // users to lift and tap again. Let each new press through once.
+            // This is local to SD_FILES and leaves other screens unchanged.
+            if (touchJustDown && tp.valid) {
+                lastTouch = now;
+                if (SdBrowser::tap(tp.x, tp.y, tft.width(), tft.height())) {
+                    SdBrowser::end();
+                    enterSettings();
+                    uiSettingsOpenPage(SettingsPage::SYSTEM);
+                } else s_sdFilesDirty = true;
+            }
+            break;
+        }
         case AppState::DIAGNOSTICS: {
             DiagnosticsInfo info;
             {
@@ -6423,6 +7157,8 @@ void loop() {
             info.usingCapTouch = usingCapTouch;
 #if defined(CYD35C)
             info.boardName = "ESP32-3248S035C";
+#elif defined(FREENOVE_S3)
+            info.boardName = "Freenove S3 2.8";
 #elif defined(FREENOVE32)
             info.boardName = "Freenove 3.2";
 #elif defined(CYD32)
@@ -6456,10 +7192,42 @@ void loop() {
             info.bbHaveLast = BlackBox::lastCrash(info.bbLast);
 
             drawTwoBand([&](TFT_eSPI& t, bool) { uiDiagnosticsTick(t, now, engine, info); });
-            if (tp.valid && (now - lastTouch) > TOUCH_DEBOUNCE_MS &&
-                uiDiagnosticsHitBack(tp.x, tp.y, tft.width(), tft.height())) {
-                lastTouch = now;
-                enterSettings();
+            // One swipe = one complete page. The old incremental row
+            // scroll could stop halfway through a diagnostic value.
+            // BACK and PREV/NEXT are committed on finger release.
+            static bool diagTouchActive = false, diagTouchMoved = false;
+            static int diagStartX = 0, diagStartY = 0;
+            if (touchJustDown && tp.valid) {
+                diagTouchActive = true;
+                diagTouchMoved = false;
+                diagStartX = tp.x;
+                diagStartY = tp.y;
+            }
+            if (tp.valid && diagTouchActive && !diagTouchMoved &&
+                diagStartY < Theme::computeButtonBar(tft.width(), tft.height()).y - 20) {
+                const int dy = tp.y - diagStartY;
+                if (abs(dy) >= 30) {
+                    diagTouchMoved = true;
+                    uiDiagnosticsScroll(dy < 0 ? 1 : -1);
+                }
+            }
+            if (touchJustUp && diagTouchActive) {
+                if (!diagTouchMoved) {
+                    // Footer PAGE keys are a reliable alternative to
+                    // repeated swipes on short/low-sensitivity panels.
+                    const int page = uiDiagnosticsHitPage(
+                        diagStartX, diagStartY, tft.width(), tft.height());
+                    if (page) {
+                        uiDiagnosticsPage(page);
+                    } else if (uiDiagnosticsHitBack(
+                                   diagStartX, diagStartY,
+                                   tft.width(), tft.height())) {
+                        lastTouch = now;
+                        enterSettings();
+                        uiSettingsOpenPage(SettingsPage::SYSTEM);
+                    }
+                }
+                diagTouchActive = false;
             }
             break;
         }
@@ -6602,7 +7370,11 @@ void loop() {
     // straight at tft and every draw this frame already landed on the
     // real screen -- pushing `frame` here would just paint stale data
     // from the sprite we stopped using back over the top of it.
-    if (frameBufferOk && renderedThisLoop) {
+    if (frameBufferOk && s_recoveryBands == 1 && renderedThisLoop
+#if defined(CYD32)
+        && state != AppState::SD_FILES  // direct-panel file browser owns the glass
+#endif
+        ) {
         const bool targetRoster =
             state == AppState::HUNT_LIST || state == AppState::WATCH_LIST;
         if (!targetRoster && now - transitionStart < TRANSITION_MS) {

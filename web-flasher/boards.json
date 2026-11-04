@@ -172,6 +172,20 @@
       "cyd28": false
     },
     {
+      "id": "freenove-s3",
+      "label": "Freenove ESP32-S3 2.8\" (compile-only)",
+      "manifest": null,
+      "visible": false,
+      "ci": true,
+      "release": false,
+      "sign": false,
+      "shared_esp32": false,
+      "merged": false,
+      "lab": false,
+      "cyd28": false,
+      "note": "Compile-validation profile for Freenove FNK0104B/FNK0104A; hardware validation required before publication."
+    },
+    {
       "id": "cyd32c",
       "label": "3.2\" CYD capacitive — ESP32-2432S032C (compile-only)",
       "manifest": null,
@@ -188,16 +202,16 @@
     {
       "id": "cyd35c",
       "label": "3.5\" CYD capacitive — ESP32-3248S035C (compile-only)",
-      "manifest": "manifest-cyd35c.json",
+      "manifest": null,
       "visible": false,
       "ci": true,
       "release": false,
       "sign": false,
       "shared_esp32": true,
       "merged": false,
-      "lab": true,
+      "lab": false,
       "cyd28": false,
-      "note": "LAB-only Sunton ESP32-3248S035C profile with ST7796 and GT911. Not a release profile; hardware validation required."
+      "note": "Compile-only until actual 3.5 capacitive hardware validation."
     }
   ]
 }
