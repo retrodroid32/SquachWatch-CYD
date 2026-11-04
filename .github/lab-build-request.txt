@@ -1,3 +1,5 @@
-WATCH149-LANDBACK
-# Experimental LAB build after landscape WATCH BACK touch fix.
-# Triggered only on explicit user hardware regression report.
+PR182-SNOOZE-4H-CYD-NOV04
+# LAB verification only for upstream v1.40 multi-tap snooze PR182.
+# Head SHA: 346d91c219f0242bc2b8c35f03cedf3794eea68a
+# 2.8 ST7789 + 3.2 ST7798. Preserve v1.22.0 production, NVS and pairings.
+# No production release/tag and no merge.
