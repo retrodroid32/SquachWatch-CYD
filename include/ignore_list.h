@@ -54,9 +54,18 @@ namespace IgnoreList {
 
     void clear();
 
-    // SNOOZE is RAM-only and lasts until restart. IGNORE/TRUSTED suppress it
-    // anyway; ALWAYS_ALERT deliberately bypasses it.
-    void snooze(const uint8_t* mac);
+    // Per-MAC alert snoozes. Timed selections expire from a wrap-safe
+    // millis() deadline (and reset on reboot). ALWAYS is persisted in NVS
+    // until the user explicitly un-snoozes it. All choices keep detecting,
+    // counting and logging. ALWAYS_ALERT policy bypasses snooze.
+    enum class SnoozeDuration : uint8_t { MIN_10, MIN_30, HOUR_1, ALWAYS };
+    static const uint8_t SNOOZE_MAX = 32;
+    bool snooze(const uint8_t* mac, SnoozeDuration duration);
+    bool unsnooze(const uint8_t* mac);
     bool snoozed(const uint8_t* mac);
+    uint8_t snoozeCount();
+    // Copies out the selected entry, its remaining ms (0 for ALWAYS), and
+    // permanence; safe while the list expires and is compacted.
+    bool snoozeInfo(uint8_t idx, uint8_t mac[6], uint32_t& remainingMs, bool& always);
     bool silenced(const uint8_t* mac);
 }

@@ -60,6 +60,17 @@ RawScanTap uiRawScanHitTest(int x, int y, int screenW, int screenH) {
 static void drawBottomBar(TFT_eSPI& t, int w, int h, bool isBle) {
     int bx, by, bw, bh, ax, ay, aw, ah;
     bottomButtonRects(w, h, bx, by, bw, bh, ax, ay, aw, ah);
+#if defined(CYD32) && defined(GPS_SUPPORT) && defined(GPS_RX_PIN)
+    // The 3.2 GPS CYD reuses a half-height 8-bit sprite for two bands.
+    // On raw scans the animated background intentionally ends above the
+    // fixed buttons, leaving a gap where previous result glyphs can survive
+    // the next sprite pass. Paint the ENTIRE footer as an opaque plate,
+    // not just the interiors of the BACK/WIFI buttons. This is still only
+    // drawn inside the existing buffered band viewport, never on the TFT.
+    const int footerTop = by - 4;
+    if (footerTop >= 0 && footerTop < h)
+        t.fillRect(0, footerTop, w, h - footerTop, Theme::BG);
+#endif
     Theme::drawButton(t, bx, by, bw, bh, "[ BACK ]", false);
     Theme::drawButton(t, ax, ay, aw, ah, isBle ? "[ WIFI ]" : "[ BLE ]", false);
 }
@@ -160,6 +171,10 @@ static void rowLayout(TFT_eSPI& t, int w, int h, int& bodyTop, int& bodyBottom, 
     // 2"), which silently queries an unrelated font's metrics instead
     // of the GLCD font actually drawn here. The no-arg overload
     // correctly reads back whatever font+size is currently active.
+    // The 3.2 uses a shared two-band sprite: its prior screen can leave
+    // font #2 selected. The 2.8's raw scan uses the built-in font #1.
+    // Pin the font before computing geometry for BOTH paint and touches.
+    t.setTextFont(1);
     t.setTextSize(2);
     int nameH = t.fontHeight();
     t.setTextSize(1);
@@ -200,6 +215,15 @@ void uiRawScanTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool i
                     bool confirmHunted, bool confirmIgnored, bool advance) {
     int w = t.width();
     int h = t.height();
+#if defined(CYD32) && defined(GPS_SUPPORT) && defined(GPS_RX_PIN)
+    // Unlike the 2.8's full-screen frame, this 3.2 firmware renders top
+    // and bottom into the same half-height sprite. Repaint the full
+    // *logical* page at the start of each pass so BLE and Wi-Fi scan rows
+    // from the previous frame/band cannot remain above or below the body.
+    // setViewport() clips this full-screen clear to the current sprite
+    // band; it never blanks the physical TFT between pushes (no flashing).
+    t.fillRect(0, 0, w, h, Theme::BG);
+#endif
 
     // Squachy gets a small strip of his own below the title bar -- a
     // mini version of his CLEAR-screen self (minScale below his usual
@@ -314,7 +338,7 @@ switch (Settings::background()) {
     if (count == 0) {
         t.setTextSize(3);
         t.setTextColor(Theme::VAPOR_PINK, Theme::BG);
-        const char* msg = "NOTHING FOUND";
+        const char* msg = (!isBle && eng.rawWifiScanFailed()) ? "SCAN FAILED" : "NOTHING FOUND";
         int mw = t.textWidth(msg);
         t.setCursor((w - mw) / 2, bodyTop + bodyH / 3);
         t.print(msg);
@@ -339,7 +363,9 @@ switch (Settings::background()) {
     int idx = g_scroll;
     int max = (bodyH / rowH);
 
-    for (int i = 0; i < max && idx < count; i++, idx++) {
+    // Never render a partial result row into the fixed bottom button
+    // region. Its geometry comes from rowLayout(), just like hit testing.
+    for (int i = 0; i < max && idx < count && y + rowH <= bodyBottom; i++, idx++) {
         t.drawFastHLine(0, y + rowH - 1, w, Theme::PURPLE);
 
         if (isBle) {
