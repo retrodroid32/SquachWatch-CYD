@@ -1,3 +1,5 @@
-WATCH149-LANDBACK
-# Experimental LAB build after landscape WATCH BACK touch fix.
-# Triggered only on explicit user hardware regression report.
+PR129-130-147-CYD-NOV04
+# Combined LAB verification, not a production release.
+# Based on draft PR147 with PR129 browser finder and PR130 flash-helper safety.
+# Lab builds: classic CYD 2.8 ST7789 and 3.2 ST7798; CYD35C compile-only.
+# Unlisted preview /flasher-pr129.html; production root preserved.
