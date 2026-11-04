@@ -4,6 +4,7 @@
 #include "squachy.h"
 #include "lil_guy.h"
 #include "settings.h"
+#include "pet_throw_streak.h"
 #include <math.h>
 #include <stdlib.h>
 
@@ -92,6 +93,134 @@ static float     s_apexY   = 0.0f, s_tHalf = 0.0f;
 // happened to be at that instant.
 static float     s_dropX   = 0.0f, s_dropY = 0.0f;
 
+// ---- Native companion throwing (SHAGGY only) ------------------------------
+// The upstream pet system uses different characters and replaces this fork's
+// proven SHAGGY/YETI behavior. Keep that behavior, adding an optional fling
+// when a finger actually grabs the on-screen SHAGGY.
+static PetThrowStreak s_throwStreak;
+static bool s_petHeld = false, s_petAir = false;
+static float s_petX = 0, s_petY = 0, s_petVX = 0, s_petVY = 0;
+static int s_grabOffX = 0, s_grabOffY = 0;
+static int s_grabStartX = 0, s_grabStartY = 0;
+static int s_dragLastX = 0, s_dragLastY = 0;
+static uint32_t s_dragAt = 0, s_airAt = 0, s_drawAt = 0;
+static uint32_t s_petPhysicsAt = 0;
+static int s_floor = 200;
+// After a real toss, SHAGGY stays on-screen so a ten-throw streak is
+// achievable. Without this, the original 3.2-second cameo ends before
+// the player can possibly earn STRIPES; the next visit is 45-90s later.
+static bool s_playActive = false;
+static uint32_t s_lastPlayThrowAt = 0;
+
+bool hit(int x, int y) {
+    if (s_petHeld || s_petAir || Squachy::jailed() ||
+        !Squachy::petUnlocked() || Squachy::petChoice() != Squachy::PetId::SHAGGY ||
+        s_phase == Phase::AWAY || !s_drawAt ||
+        (uint32_t)(millis() - s_drawAt) > 260u) return false;
+    return x >= (int)s_x && x <= (int)s_x + SPR &&
+           y >= (int)s_y && y <= (int)s_y + SPR;
+}
+
+bool grab(int x, int y, uint32_t now) {
+    if (!hit(x, y)) return false;
+    s_petHeld = true;
+    s_grabOffX = x - (int)s_x; s_grabOffY = y - (int)s_y;
+    s_grabStartX = s_dragLastX = x;
+    s_grabStartY = s_dragLastY = y;
+    s_dragAt = now;
+    s_petX = s_x; s_petY = s_y;
+    s_petVX = s_petVY = 0;
+    s_drawAt = 0;
+    return true;
+}
+
+void drag(int x, int y, uint32_t now) {
+    if (!s_petHeld) return;
+    const uint32_t dt = now - s_dragAt;
+    if (dt >= 5u) {
+        const float vx = (float)(x - s_dragLastX) / (float)dt;
+        const float vy = (float)(y - s_dragLastY) / (float)dt;
+        // Filter resistive-panel jitter without ignoring a fast actual toss.
+        s_petVX = 0.4f * s_petVX + 0.6f * vx;
+        s_petVY = 0.4f * s_petVY + 0.6f * vy;
+        s_dragAt = now; s_dragLastX = x; s_dragLastY = y;
+    }
+    s_petX = (float)(x - s_grabOffX);
+    s_petY = (float)(y - s_grabOffY);
+}
+
+void cancel(uint32_t now) {
+    if (!s_petHeld) return;
+    // Alerts can take over the screen mid-gesture. Returning to CLEAR with
+    // no release edge must not strand SHAGGY in HELD or silently record a
+    // throw from the last sampled velocity.
+    s_petHeld = false;
+    s_petAir = false;
+    s_petVX = s_petVY = 0;
+    s_x = s_petX; s_y = s_petY;
+    s_phase = Phase::HECKLE;
+    s_at = now;
+}
+
+void release(uint32_t now) {
+    if (!s_petHeld) return;
+    s_petHeld = false;
+    const int dx = s_dragLastX - s_grabStartX;
+    const int dy = s_dragLastY - s_grabStartY;
+    const float speed2 = s_petVX * s_petVX + s_petVY * s_petVY;
+    // A stationary finger, tap, or short resistive jitter is not a throw.
+    const bool valid = dx * dx + dy * dy >= 24 * 24 && speed2 >= 0.30f * 0.30f;
+    if (valid) {
+        s_playActive = true;
+        s_lastPlayThrowAt = now;
+        s_petAir = true;
+        s_petVX = fmaxf(-0.95f, fminf(0.95f, s_petVX));
+        s_petVY = fmaxf(-0.95f, fminf(0.95f, s_petVY));
+        s_airAt = s_petPhysicsAt = now;
+        if (s_throwStreak.note(now)) {
+            s_playActive = false;
+            s_petAir = false;
+            s_phase = Phase::AWAY;
+            s_nextAt = 0;
+            Squachy::jailStart();
+        }
+    } else {
+        // A dropped pet resumes his familiar HECKLE/exit rather than
+        // continuing a stale pre-grab jump or counting as a fling.
+        s_x = s_petX; s_y = s_petY;
+        s_phase = Phase::HECKLE;
+        s_at = now;
+    }
+}
+
+// The jail ball is a temporary pet substitute, *not* a new saved pet ID.
+// It is tethered to the existing STRIPES ankle cuff; when the sentence ends,
+// SHAGGY/YETI keep the exact pet choice and motion they had before.
+static void drawJailBall(TFT_eSPI& t, uint32_t now, int width, int bottom) {
+    int ax = width / 2, ay = bottom - 8;
+    Squachy::chainPoint(ax, ay);
+    int bx = ax + (width >= 300 ? 58 : 44);
+    if (bx > width - 18) bx = ax - 44;
+    if (bx < 18) bx = 18;
+    int by = bottom - 17 + (int)((now / 450u) % 3u) - 1;
+    const uint16_t iron = t.color565(116, 125, 141);
+    const uint16_t shine = t.color565(213, 223, 232);
+    const uint16_t dark = t.color565(29, 35, 43);
+    const int links = 6;
+    for (int i = 0; i < links; i++) {
+        const int x = ax + (bx - ax) * (i + 1) / (links + 1);
+        const int y = ay + (by - ay) * (i + 1) / (links + 1);
+        t.drawCircle(x, y, 3, dark);
+        t.drawCircle(x, y, 2, iron);
+    }
+    t.drawLine(ax, ay, bx, by, shine);
+    t.fillCircle(bx, by, 14, dark);
+    t.drawCircle(bx, by, 14, shine);
+    t.fillCircle(bx - 3, by - 4, 8, iron);
+    t.fillCircle(bx - 6, by - 7, 3, shine);
+    t.fillRect(bx - 5, by + 3, 10, 3, t.color565(64, 69, 78));
+}
+
 // ---- the other one ------------------------------------------------------
 // THE YETI, off the ski hill. He is drawn at the size the hill draws him --
 // no new art, nothing scaled -- and everything that makes him him is in what
@@ -172,6 +301,9 @@ static const char* const NAP_REPLY[3] = {
 };
 
 void reset() {
+    s_petHeld = s_petAir = s_playActive = false;
+    s_throwStreak.reset();
+    s_drawAt = 0;
     s_phase  = Phase::AWAY;
     s_x      = -100.0f;
     s_nextAt = 0;
@@ -296,13 +428,52 @@ static void yetiTick(TFT_eSPI& t, uint32_t now, int screenW, int cx, int halfW, 
 }
 
 void tick(TFT_eSPI& t, uint32_t now, int screenW, int bandTop, int bandBottom) {
+    s_floor = bandBottom - SPR;
+    if (Squachy::jailed()) {
+        s_petHeld = s_petAir = s_playActive = false;
+        s_throwStreak.reset();
+        s_drawAt = 0;
+        drawJailBall(t, now, screenW, bandBottom);
+        return;
+    }
+    if (s_petHeld || s_petAir) {
+        if (s_petAir) {
+            const uint32_t dt = now - s_petPhysicsAt;
+            if (dt) {
+                const float ms = (float)(dt > 80u ? 80u : dt);
+                s_petPhysicsAt = now;
+                s_petX += s_petVX * ms;
+                s_petY += s_petVY * ms + 0.5f * G * ms * ms;
+                s_petVY += G * ms;
+                if (s_petX < 0) { s_petX = 0; s_petVX = -s_petVX * 0.5f; }
+                if (s_petX > (float)(screenW - SPR)) {
+                    s_petX = (float)(screenW - SPR); s_petVX = -s_petVX * 0.5f;
+                }
+                if (s_petY >= (float)s_floor || (uint32_t)(now - s_airAt) > 1700u) {
+                    s_petY = (float)s_floor;
+                    s_petAir = false;
+                    s_phase = Phase::HECKLE;
+                    s_at = now;
+                    s_x = s_petX; s_y = s_petY;
+                }
+            }
+        }
+        if (s_petHeld || s_petAir) {
+            Theme::drawLilGuy(t, (int)s_petX, (int)s_petY + SPR, now, SCALE, !s_fromLeft);
+            return;
+        }
+    }
     const Squachy::PetId which = Squachy::petChoice();
     if (!Squachy::petUnlocked() || which == Squachy::PetId::OFF) {
+        s_playActive = false;
+        s_throwStreak.reset();
         s_phase  = Phase::AWAY;
         s_yPhase = YPhase::AWAY;
         return;
     }
     if (which == Squachy::PetId::YETI) {
+        s_playActive = false;
+        s_throwStreak.reset();
         int ycx, yhalfW, ytop, ybot;
         if (!Squachy::lastFootprint(ycx, yhalfW, ytop, ybot)) return;
         if (Squachy::isHeld()) { s_yPhase = YPhase::AWAY; return; }
@@ -403,11 +574,16 @@ void tick(TFT_eSPI& t, uint32_t now, int screenW, int bandTop, int bandBottom) {
         break;
     }
     case Phase::HECKLE: {
-        // Standing still beside him, on the ground he ran in on. He holds
-        // the same beat the perch does, so the line gets the same time to be
-        // read whichever way he delivered it.
+        // After an actual throw, linger through the rolling-minute streak
+        // so the automatic STRIPES sentence can be earned in normal play.
+        // Untouched cameos retain the original 3.2-second visit and exit.
+        const bool playing = s_playActive &&
+                             (uint32_t)(now - s_lastPlayThrowAt) < PetThrowStreak::WINDOW_MS;
+        if (!playing) s_playActive = false;
         s_y = ground;
-        if (now - s_at >= PERCH_MS) { s_phase = Phase::RUN_OUT; s_at = now; }
+        if (!playing && now - s_at >= PERCH_MS) {
+            s_phase = Phase::RUN_OUT; s_at = now;
+        }
         break;
     }
     case Phase::UP: {
@@ -480,6 +656,7 @@ void tick(TFT_eSPI& t, uint32_t now, int screenW, int bandTop, int bandBottom) {
     // out again -- so the facing is settled once, by the side he arrived
     // from. Without this he ran in forwards and left backwards.
     Theme::drawLilGuy(t, (int)s_x, (int)s_y + SPR, now, SCALE, !s_fromLeft);
+    s_drawAt = now ? now : 1u;
     // Beside him, not above. Perched on the crown he is already as high as
     // the band goes, so a bubble over his head lands behind the title bar --
     // which is where the whole joke went the first time. Level with him, and
