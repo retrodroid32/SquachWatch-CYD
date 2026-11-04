@@ -1,3 +1,4 @@
-WATCH149-LANDBACK
-# Experimental LAB build after landscape WATCH BACK touch fix.
-# Triggered only on explicit user hardware regression report.
+CYD1220-PAGES-PUBLISH
+# Re-run trusted Pages workflow_run publisher with EXACT v1.22.0 production artifact.
+# Successful source tag build: 41832825743 (pages-site 13325495255).
+# This is a LAB request only; no tag/release creation, no master modification.

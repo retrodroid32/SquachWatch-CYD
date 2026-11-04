@@ -693,6 +693,42 @@ jobs:
             test "$(stat -c%s sim/web/squachsim.wasm)" -gt 200000
           fi
 
+      - name: Restore exact published v1.22.0 Pages root and retain existing LAB files
+        if: steps.ver.outputs.is_lab == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # A tag build was dispatched with GITHUB_TOKEN and therefore its
+          # completion did not generate the usual workflow_run Pages deploy.
+          # This LAB branch invokes the standard trusted workflow_run
+          # publisher. Its Pages payload is the *exact* already-validated
+          # production artifact, rather than a recompilation of production.
+          mv _site _lab_mirror
+          mkdir -p _site
+          gh run download 41832825743 -R "${{ github.repository }}" -n pages-site -D _site
+          # Keep historic experimental LAB builds discoverable beside the
+          # newly published root, without replacing released binaries.
+          find _lab_mirror -maxdepth 1 -type f -name 'lab-*' -exec cp -p {} _site/ \;
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          root=Path("_site")
+          for name in ("manifest-cyd.json", "manifest-cyd32-st7798.json"):
+              m=json.loads((root/name).read_text())
+              assert m.get("version") == "1.22.0", (name,m.get("version"))
+              for build in m.get("builds", []):
+                  for part in build.get("parts", []):
+                      f=root/part["path"]
+                      assert f.is_file() and f.stat().st_size > 0, f
+              print("v1.22.0 production manifest validated:",name)
+          for path in ("index.html","versions.json","boards.json",
+                       "update/index.html","emulator/index.html"):
+              assert (root/path).is_file(), path
+          PY
+          rm -rf _lab_mirror
+          echo "::notice::v1.22.0 production root restored from successful release job 41832825743"
+
       - name: Upload exact Pages site
         uses: actions/upload-artifact@v7
         with:
