@@ -54,6 +54,8 @@ permissions:
   # Least privilege for this workflow: it creates/reads GitHub Releases.
   # Pages/id-token permissions live only in publish-pages.yml.
   contents: write
+  # Read the exact production run's validated pages-site artifact.
+  actions: read
 
 # One run per tag at a time. The v1.7.7 push started this workflow twice in
 # the same second -- same commit, same tag, same event -- and the two raced:

@@ -1,4 +1,3 @@
-CYD1220-PAGES-PUBLISH
-# Re-run trusted Pages workflow_run publisher with EXACT v1.22.0 production artifact.
-# Successful source tag build: 41832825743 (pages-site 13325495255).
-# This is a LAB request only; no tag/release creation, no master modification.
+CYD1220-PAGES-PUBLISH2
+# Same exact v1.22.0 Pages artifact, grant actions:read for GitHub run download.
+# No change to compiled production images, v1.22.0 tag, or master branch.
