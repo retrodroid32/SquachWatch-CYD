@@ -201,6 +201,13 @@ jobs:
       - name: Validate board matrix and release metadata
         run: python tools/board_matrix.py validate
 
+      - name: Verify PR129/130/147 LAB test gates
+        if: steps.ver.outputs.is_lab == 'true'
+        run: |
+          node tools/test_board_finder.js
+          python -m unittest discover -s tools -p test_flash_known.py -v
+          python tools/test_cyd35c_band_overlay.py
+
       - name: Build firmware
         env:
           SQW_VERSION: ${{ steps.ver.outputs.version }}
@@ -209,6 +216,11 @@ jobs:
           pio run $(python tools/board_matrix.py pio-args release)
           # Compile-only capacitive Phantom: CI/source coverage, never published.
           pio run -e rlphantom
+          # CYD35C remains hardware-unverified: compile it, but do not add
+          # it to the public or LAB flasher's firmware inventory.
+          if [ "${{ steps.ver.outputs.is_lab }}" = "true" ]; then
+            pio run -e cyd35c
+          fi
 
       - name: Merge into one flashable image (per board)
         run: |
@@ -472,6 +484,26 @@ jobs:
               --base "https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/" \
               --dest _site
             echo "LAB_ROOT_MIRRORED=1" >> "$GITHUB_ENV"
+            # An UNLISTED test page for the PR129 browser finder. This never
+            # replaces production index.html/boards.json, and its manifests
+            # resolve to the already-published/validated board profiles.
+            # A preview is distinct from shipping a new public flasher.
+            python - <<'PY'
+          from pathlib import Path
+          import shutil
+          html = Path("web-flasher/index.html").read_text(encoding="utf-8")
+          assert "fetch('./boards.json'" in html
+          assert "<body>" in html
+          html = html.replace("fetch('./boards.json'", "fetch('./boards-pr129.json'", 1)
+          html = html.replace("<body>", """<body>
+          <div role="note" style="text-align:center;padding:12px;background:#402044;color:white;font:18px monospace">
+          UNLISTED PR129 LAB PREVIEW: board-code finder testing only. Firmware
+          selections use the existing published manifests; capacitive CYDs are
+          NOT validated or available for installation.
+          </div>""", 1)
+          Path("_site/flasher-pr129.html").write_text(html, encoding="utf-8")
+          shutil.copyfile("web-flasher/boards.json", "_site/boards-pr129.json")
+          PY
             # This run's build, under lab- names beside production, with a
             # manifest each that points at them. web-flasher/index.html's
             # ?lab=1 list is what offers them.
@@ -699,6 +731,34 @@ jobs:
           name: pages-site
           path: _site
           retention-days: 3
+          if-no-files-found: error
+
+      - name: Package classic CYD LAB app firmware for USB verification
+        if: steps.ver.outputs.is_lab == 'true'
+        run: |
+          mkdir -p verification
+          cp cyd-firmware.bin verification/cyd28-st7789-app-only.bin
+          cp cyd32-st7798-firmware.bin verification/cyd32-st7798-app-only.bin
+          cat > verification/README.txt <<'EOF'
+          SquachWatch-CYD PR129 + PR130 + PR147 combined LAB build.
+          Recommended: flash via the unlisted LAB picker (?lab=1) after
+          the Pages deployment succeeds; signed OTA and Web Serial use
+          the correct multi-part manifest and preserve settings.
+          This archive contains APP-ONLY binaries for existing verified
+          classic ESP32 CYDs, not full factory-erase images.
+          CYD 2.8 ST7789: cyd28-st7789-app-only.bin
+          CYD 3.2 ST7798: cyd32-st7798-app-only.bin
+          APP offset: 0x10000. Do not flash either file at offset 0x0.
+          Do not use these images on CYD32C or CYD35C capacitive devices.
+          No production release tag or stable signed OTA is created.
+          EOF
+      - name: Upload LAB USB verification firmware
+        if: steps.ver.outputs.is_lab == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: pr129-130-147-cyd-verification
+          path: verification
+          retention-days: 7
           if-no-files-found: error
 
       # publish-pages.yml deploys this exact artifact after this workflow
