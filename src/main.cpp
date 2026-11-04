@@ -7,7 +7,7 @@
 #include <SPI.h>
 #include <Wire.h>
 #include <TFT_eSPI.h>
-#if defined(CYD32C)
+#if defined(CYD32C) || defined(CYD35C)
 #include "gt911_touch.h"
 #endif
 #include <XPT2046_Touchscreen.h>
@@ -351,7 +351,7 @@ static void drawCrashCard(TFT_eSPI& t) {
     #define TOUCH_SHARES_DISPLAY_BUS 1
 #endif
 
-#if defined(CYD35)
+#if defined(CYD35) && !defined(CYD35C)
     #define TOUCH_SCK  TFT_SCLK
     #define TOUCH_MOSI TFT_MOSI
     #define TOUCH_MISO TFT_MISO
@@ -415,6 +415,9 @@ constexpr bool PANEL_NEEDS_INVERSION = true;
 constexpr bool PANEL_NEEDS_INVERSION = true;
 #elif defined(CYD32C)
 // Sunton S032C ST7789 IPS baseline from the upstream hardware path.
+constexpr bool PANEL_NEEDS_INVERSION = true;
+#elif defined(CYD35C)
+// S035C / ST7796 capacitive profile baseline from the upstream hardware path.
 constexpr bool PANEL_NEEDS_INVERSION = true;
 #elif defined(FREENOVE32)
 // Freenove's own ST7789 setup specifies inversion on; upstream confirmed
@@ -655,7 +658,7 @@ static uint16_t RAW_Y_MIN = 200, RAW_Y_MAX = 3800;
 static const int16_t CAP_TOUCH_MIN_SPREAD = 50;
 static const int16_t RESISTIVE_MIN_SPREAD = 800;
 
-#if defined(TOUCH_ON_DISPLAY_BUS) || defined(CYD35)
+#if defined(TOUCH_ON_DISPLAY_BUS) || (defined(CYD35) && !defined(CYD35C))
 // TFT_eSPI::setTouch()'s own calibration format, as older firmware saved it
 // on AWOK and the 3.5": [0] and [2] are the raw readings at the low edge of
 // each axis, [1] and [3] the SPANS from there (calibrateTouch() subtracts
@@ -683,7 +686,7 @@ static TouchFit::Fit s_touchFit = TouchFit::fromRanges(RAW_X_MIN, RAW_X_MAX, RAW
 enum class CalSource : uint8_t { BUILT_IN, OLD_SAVED, SAVED };
 static CalSource s_calSource = CalSource::BUILT_IN;
 
-#if defined(TOUCH_ON_DISPLAY_BUS) || defined(CYD35)
+#if defined(TOUCH_ON_DISPLAY_BUS) || (defined(CYD35) && !defined(CYD35C))
 // ---- Calibrations older firmware saved through TFT_eSPI ----
 // AWOK and the 3.5" used to hand touch to TFT_eSPI's calibrateTouch() /
 // getTouch(). Its blob is only read now, once, so an owner who SKIPs the
@@ -789,7 +792,10 @@ static bool rawReadCap(int16_t& a, int16_t& b) {
 }
 
 static bool rawReadResistive(int16_t& a, int16_t& b) {
-#if defined(TOUCH_SHARES_DISPLAY_BUS) || defined(CYD35)
+#if defined(CYD35C)
+    (void)a; (void)b;
+    return false;
+#elif defined(TOUCH_SHARES_DISPLAY_BUS) || defined(CYD35)
     // None of these boards' `touch` (XPT2046_Touchscreen) object is ever
     // begin()'d -- a second SPI driver on the display's own bus produced
     // garbage -- so this goes through TFT_eSPI's raw-touch accessors.
@@ -810,7 +816,7 @@ static bool rawReadResistive(int16_t& a, int16_t& b) {
 #endif
 }
 
-#if defined(TOUCH_ON_DISPLAY_BUS) || defined(CYD35)
+#if defined(TOUCH_ON_DISPLAY_BUS) || (defined(CYD35) && !defined(CYD35C))
 // AWOK and the 3.5" used TFT_eSPI's getTouch(), whose filtering is part of
 // how their touch feels. It is private to the library (validTouch()), so it
 // is repeated here step for step: wait for the pressure to stop rising,
@@ -843,7 +849,7 @@ static bool rawReadFiltered(int16_t& a, int16_t& b) {
 // The one reader pollTouch(), the calibration and the diagnostics screen all
 // use, so what the calibration measures is exactly what touch then reads.
 static bool readTouchRaw(int16_t& a, int16_t& b) {
-#if defined(CYD32C)
+#if defined(CYD32C) || defined(CYD35C)
     uint16_t x, y;
     if (!Gt911::read(x, y)) return false;
     a = (int16_t)x;
@@ -967,7 +973,12 @@ static void initTouchFit() {
     }
 
     s_calSource = CalSource::BUILT_IN;
-#if defined(TOUCH_ON_DISPLAY_BUS) || defined(CYD35)
+#if defined(CYD35C)
+    // GT911 reports native panel pixels, so first boot needs no hand calibration.
+    s_touchFit = { 1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, (int16_t)w0, (int16_t)h0 };
+    return;
+#endif
+#if defined(TOUCH_ON_DISPLAY_BUS) || (defined(CYD35) && !defined(CYD35C))
     TouchFit::Fit old;
     if (fitFromTftEspiBlobs(old)) {
         s_touchFit = old;
@@ -2984,7 +2995,7 @@ void setup() {
 // Not on AWOK (TOUCH_CS there) and not on either RL Phantom, where GPIO21 is
 // the capacitive controller's INTERRUPT line. Driving it high at boot is the
 // same mistake as the LEDC attach further down, just earlier.
-#if !defined(AWOK) && !defined(RLPHANTOM) && !defined(RLPHANTOM_R) && !defined(TWATCH_S3) && !defined(FREENOVE_S3) && !defined(CYD32C)
+#if !defined(AWOK) && !defined(RLPHANTOM) && !defined(RLPHANTOM_R) && !defined(TWATCH_S3) && !defined(FREENOVE_S3) && !defined(CYD32C) && !defined(CYD35C)
     pinMode(21, OUTPUT); digitalWrite(21, HIGH);
 #endif
 #if defined(TWATCH_S3) || defined(FREENOVE_S3)
@@ -2992,7 +3003,7 @@ void setup() {
     pinMode(45, OUTPUT); digitalWrite(45, HIGH);
 #else
     pinMode(27, OUTPUT); digitalWrite(27, HIGH);
-#if !defined(FREENOVE32) && !defined(CYD32C)
+#if !defined(FREENOVE32) && !defined(CYD32C) && !defined(CYD35C)
     pinMode(32, OUTPUT); digitalWrite(32, HIGH);  // AWOK's real BL pin; not a known-spare Freenove GPIO
 #endif
 #endif
@@ -3057,13 +3068,13 @@ void setup() {
     ledcSetup(BL_CH_ORIG, 5000, 8);
     ledcAttachPin(BL_PIN_TWATCH, BL_CH_ORIG);
 #else
-#if !defined(AWOK) && !defined(RLPHANTOM) && !defined(RLPHANTOM_R) && !defined(CYD32C)
+#if !defined(AWOK) && !defined(RLPHANTOM) && !defined(RLPHANTOM_R) && !defined(CYD32C) && !defined(CYD35C)
     ledcSetup(BL_CH_ORIG, 5000, 8);
     ledcAttachPin(BL_PIN_ORIG, BL_CH_ORIG);
 #endif
     ledcSetup(BL_CH_CAP, 5000, 8);
     ledcAttachPin(BL_PIN_CAP, BL_CH_CAP);
-#if !defined(FREENOVE32) && !defined(CYD32C)
+#if !defined(FREENOVE32) && !defined(CYD32C) && !defined(CYD35C)
     ledcSetup(BL_CH_AWOK, 5000, 8);
     ledcAttachPin(BL_PIN_AWOK, BL_CH_AWOK);
 #endif
@@ -3208,6 +3219,10 @@ void setup() {
     usingCapTouch = Gt911::begin();
     Serial.println(usingCapTouch ? "ESP32-2432S032C -- GT911 capacitive touch answered."
                                  : "ESP32-2432S032C -- GT911 did not answer; no touch.");
+#elif defined(CYD35C)
+    usingCapTouch = Gt911::begin();
+    Serial.println(usingCapTouch ? "ESP32-3248S035C -- GT911 capacitive touch answered."
+                                 : "ESP32-3248S035C -- GT911 did not answer; no touch.");
 #elif defined(TWATCH_S3)
     // The T-Watch's FT6336, on I2C SDA 39 / SCL 40 at 0x38. No reset line;
     // the AXP2101 powers it (ALDO3) in twatchPowerUp(), before this runs.
@@ -3272,7 +3287,7 @@ void setup() {
         uint32_t windowStart = millis();
         while (millis() - windowStart < 1200) {
             int16_t a, b;
-#if defined(CYD32C)
+#if defined(CYD32C) || defined(CYD35C)
             bool down = readTouchRaw(a, b);
 #else
             bool down = usingCapTouch ? rawReadCap(a, b) : rawReadResistive(a, b);
@@ -3281,7 +3296,7 @@ void setup() {
                 if (holdStart == 0) holdStart = millis();
                 else if (millis() - holdStart > 800) {
                     TouchCal::reset();
-#if defined(TOUCH_ON_DISPLAY_BUS) || defined(CYD35)
+#if defined(TOUCH_ON_DISPLAY_BUS) || (defined(CYD35) && !defined(CYD35C))
                     // TouchCal::reset() clears the Fit and the 2.8"-style
                     // calibration; these boards' old TFT_eSPI blobs live in
                     // a namespace of their own, and SKIP would bring them
@@ -3319,7 +3334,7 @@ void setup() {
     // injected against the compiled-in ranges -- a calibration screen would
     // just sit there waiting for a finger.
     initTouchFit();
-#if defined(ESP32)
+#if defined(ESP32) && !defined(CYD35C)
     if (s_calSource != CalSource::SAVED) {
         Serial.println("Touch: no five-target calibration yet -- running it now.");
         runTouchCalibration();
@@ -3669,10 +3684,14 @@ static inline void drawTwoBand(F&& draw) {
     if (frameBufferOk) {
         const int halfH = tft.height() / 2;
         DrawBand::set(0, halfH);
+        frame.resetViewport();
+        frame.fillRect(0, 0, tft.width(), halfH, Theme::BG);
         frame.setViewport(0, 0, tft.width(), tft.height(), true);
         draw((TFT_eSPI&)frame, true);
         pushFrame(0, 0);
         DrawBand::set(halfH, tft.height());
+        frame.resetViewport();
+        frame.fillRect(0, 0, tft.width(), halfH, Theme::BG);
         frame.setViewport(0, -halfH, tft.width(), tft.height(), true);
         draw((TFT_eSPI&)frame, false);
         pushFrame(0, halfH);
@@ -6166,6 +6185,10 @@ void loop() {
             lastTouch = now;
             // The board redraws only what changed, so it is the same with the
             // frame buffer and without it (given up for a download).
+#if defined(CYD35C)
+            // Capacitive CYD35C draws the password screen directly to its panel.
+            uiWifiPassTick(tft, now);
+#else
 #if defined(CYD32)
             if (WifiScreenPolicy::keyboardDirectPanel(frameBufferOk, s_recoveryBands)) {
                 // A 3.2-inch board may be unbuffered, or may have recovered
@@ -6176,6 +6199,7 @@ void loop() {
             } else
 #endif
                 drawTwoBand([&](TFT_eSPI& t, bool) { uiWifiPassTick(t, now); });
+#endif
             if (touchJustDown)    uiWifiPassTouch(tp.x, tp.y, now, WifiPassTouch::DOWN);
             else if (tp.valid)    uiWifiPassTouch(tp.x, tp.y, now, WifiPassTouch::MOVE);
             else if (touchJustUp) uiWifiPassTouch(tp.x, tp.y, now, WifiPassTouch::UP);
@@ -6190,13 +6214,25 @@ void loop() {
             } else if (r == WifiPassResult::BACK && s_passForNets) {
                 s_passForNets = false;
                 uiWifiPassClear();
+#if defined(CYD35)
+                FramePush::invalidate();
+                clearSharedFrameBuffer();
+#endif
                 enterWifiNets();
             } else if (r == WifiPassResult::OK) {
                 OtaWifi::connect(uiWifiPassSsid(), uiWifiPassText(), true);
                 uiWifiPassClear();
+#if defined(CYD35)
+                FramePush::invalidate();
+                clearSharedFrameBuffer();
+#endif
                 enterUpdate();
             } else if (r == WifiPassResult::BACK) {
                 uiWifiPassClear();
+#if defined(CYD35)
+                FramePush::invalidate();
+                clearSharedFrameBuffer();
+#endif
                 enterUpdate();
             }
             break;
@@ -7119,7 +7155,9 @@ void loop() {
                 info.calB0 = (int16_t)lroundf(b0); info.calB1 = (int16_t)lroundf(b1);
             }
             info.usingCapTouch = usingCapTouch;
-#if defined(FREENOVE_S3)
+#if defined(CYD35C)
+            info.boardName = "ESP32-3248S035C";
+#elif defined(FREENOVE_S3)
             info.boardName = "Freenove S3 2.8";
 #elif defined(FREENOVE32)
             info.boardName = "Freenove 3.2";
