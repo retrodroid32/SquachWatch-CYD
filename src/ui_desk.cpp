@@ -427,7 +427,8 @@ void uiDeskTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool adva
     // screen's width so the portrait rotation keeps the same look.
     bool pm = false;
     char tm[8];
-    Clock::formatTime(tm, sizeof tm, true, &pm);
+    const bool twelveHour = !Settings::clock24Hour();
+    Clock::formatTime(tm, sizeof tm, twelveHour, &pm);
     const bool set = Clock::trusted();
     // SIZE scales every measurement of the clock together. LARGE is held back
     // wherever it would not fit across the screen with its AM/PM and plate.
@@ -443,7 +444,7 @@ void uiDeskTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool adva
         // its air and its padding. It has to fit between the corner
         // icons, since it reaches up into their row; a size that would not
         // is held back to one that does, so nothing ends up on the border.
-        const float scaled = 4.0f * 30.0f + 3.0f * 6.0f + 10.0f + 14.0f;
+        const float scaled = 4.0f * 30.0f + 3.0f * 6.0f + 10.0f + (twelveHour ? 14.0f : 0.0f);
         const float fixedW = 8.0f + 2.0f * (float)pad;
         const float room   = (float)(w - (2 * Theme::TITLE_ICON_W + 2));
         if (k * scaled + fixedW > room) k = (room - fixedW) / scaled;
@@ -464,7 +465,7 @@ void uiDeskTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool adva
     // "10:01" centred by its cells sat visibly right of the date, in a plate
     // with a gap down one side and none down the other.
     const int digitsW = n * dw + (n - 1) * gap + colonW;
-    const int AMPM_W  = 14;                    // 2 px of air and "AM" at 12
+    const int AMPM_W  = twelveHour ? 14 : 0;                    // 2 px of air and "AM" at 12
     int   bInkTop = 0, bInkH = 1;
     float bScale  = 1.0f;
     if (bangers) {
@@ -586,8 +587,8 @@ void uiDeskTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool adva
         }
         x += gap;
     }
-    // AM / PM beside the last digit, at its foot.
-    {
+    // In 24-hour mode, suppress AM/PM and its reserved width.
+    if (twelveHour) {
         const uint16_t ac = set ? Theme::VAPOR_YELLOW : Theme::W95_SHADOW;
         const char* half = set ? (pm ? "PM" : "AM") : "--";
         if (backdrop) {
