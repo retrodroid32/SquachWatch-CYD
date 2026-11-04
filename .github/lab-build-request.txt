@@ -1,3 +1,7 @@
-WATCH149-LANDBACK
-# Experimental LAB build after landscape WATCH BACK touch fix.
-# Triggered only on explicit user hardware regression report.
+PR136-DIAG-PAGES-WRAP-20261103
+# PR136 diagnostics-only LAB firmware for physical CYD 2.8 and 3.2 retest.
+# Complete diagnostic fields with bounded word-wrapped values; no horizontal clipping.
+# Variable-height rows paginated fully, never behind top status icons or bottom BACK.
+# PREV/NEXT footer taps, page count, one page per vertical swipe.
+# Preserve verified 3.2 flash-free boot, GPS icon show/hide, board properties.
+# No merge, release, version tag; previous lab branches and source preserved.
