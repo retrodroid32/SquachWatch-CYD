@@ -107,7 +107,7 @@ struct DiagnosticsInfo {
 
 void uiDiagnosticsInit(TFT_eSPI& t);
 void uiDiagnosticsTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, const DiagnosticsInfo& info);
-// delta is a signed number of diagnostic rows; >0 scrolls down.
+// Swipe in either direction: move by one complete diagnostic page.
 void uiDiagnosticsScroll(int delta);
 // Page-step fallback for the left/right controls in the fixed footer.
 void uiDiagnosticsPage(int direction);

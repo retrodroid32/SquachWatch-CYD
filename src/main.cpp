@@ -7132,25 +7132,23 @@ void loop() {
             info.bbHaveLast = BlackBox::lastCrash(info.bbLast);
 
             drawTwoBand([&](TFT_eSPI& t, bool) { uiDiagnosticsTick(t, now, engine, info); });
-            // A swipe anywhere in the report scrolls the virtual lines.
-            // Commit BACK on release, not press, so a swipe cannot
-            // accidentally exit the diagnostics page. The bottom bar is
-            // never part of the scrolling viewport.
+            // One swipe = one complete page. The old incremental row
+            // scroll could stop halfway through a diagnostic value.
+            // BACK and PREV/NEXT are committed on finger release.
             static bool diagTouchActive = false, diagTouchMoved = false;
-            static int diagStartX = 0, diagStartY = 0, diagLastY = 0;
+            static int diagStartX = 0, diagStartY = 0;
             if (touchJustDown && tp.valid) {
                 diagTouchActive = true;
                 diagTouchMoved = false;
-                diagStartX = tp.x; diagStartY = diagLastY = tp.y;
+                diagStartX = tp.x;
+                diagStartY = tp.y;
             }
-            if (tp.valid && diagTouchActive &&
-                diagStartY < Theme::computeButtonBar(tft.width(), tft.height()).y) {
-                const int dy = tp.y - diagLastY;
-                if (abs(dy) >= 10) {
+            if (tp.valid && diagTouchActive && !diagTouchMoved &&
+                diagStartY < Theme::computeButtonBar(tft.width(), tft.height()).y - 20) {
+                const int dy = tp.y - diagStartY;
+                if (abs(dy) >= 30) {
                     diagTouchMoved = true;
-                    const int rows = (abs(dy) + 7) / 16;
-                    uiDiagnosticsScroll(dy > 0 ? -rows : rows);
-                    diagLastY = tp.y;
+                    uiDiagnosticsScroll(dy < 0 ? 1 : -1);
                 }
             }
             if (touchJustUp && diagTouchActive) {

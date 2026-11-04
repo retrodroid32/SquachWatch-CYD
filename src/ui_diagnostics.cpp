@@ -21,38 +21,45 @@ static void backButtonRect(int screenW, int screenH, int& x, int& y, int& w, int
     y = g.y;
 }
 
-// The diagnostics report may be substantially taller than either CYD's
-// viewport, especially with UBX/NMEA and mesh telemetry enabled. Keep
-// scroll state in this screen rather than changing its report layout.
-static int s_diagScroll = 0;
-static int s_diagMaxScroll = 0;
-static int s_diagTop = 0;
-static int s_diagBottom = 0;
-static int s_diagAbove = 0, s_diagBelow = 0;
-static int s_diagPagePx = 0;
+// Diagnostics are built as a small fixed array of complete rows. The old
+// scrolling display painted each field on a single line, so long values
+// vanished off the right edge, while page steps could stop in mid-row.
+// A static array (no heap allocations) allows measured word wrapping and
+// deterministic, whole-row pages on both CYD orientations and both bands.
+static const int DIAG_MAX_ROWS = 40;
+static const int DIAG_VALUE_CAP = 112;
+struct DiagRow {
+    const char* label; // All caller labels are string literals
+    uint16_t color;
+    char value[DIAG_VALUE_CAP];
+};
+static DiagRow s_diagRows[DIAG_MAX_ROWS];
+static int s_diagRowCount = 0;
+static int s_diagPage = 0;
+static int s_diagPageCount = 1;
+static uint8_t s_diagPageStarts[DIAG_MAX_ROWS + 1];
 
 void uiDiagnosticsInit(TFT_eSPI& t) {
-    s_diagScroll = s_diagMaxScroll = s_diagPagePx = 0;
+    s_diagPage = 0;
+    s_diagPageCount = 1;
+    s_diagRowCount = 0;
     t.fillRect(0, 0, t.width(), t.height(), Theme::BG);
 }
 
-void uiDiagnosticsScroll(int delta) {
-    // Finger movement is quantized to rows by the caller. Keep this
-    // independent from the displayed font height and clamp at both ends.
-    const int next = s_diagScroll + delta * 16;
-    s_diagScroll = next < 0 ? 0 : next > s_diagMaxScroll ? s_diagMaxScroll : next;
+void uiDiagnosticsPage(int direction) {
+    const int next = s_diagPage + (direction > 0 ? 1 : direction < 0 ? -1 : 0);
+    s_diagPage = next < 0 ? 0 : next >= s_diagPageCount ? s_diagPageCount - 1 : next;
 }
 
-void uiDiagnosticsPage(int direction) {
-    if (!direction) return;
-    const int step = s_diagPagePx > 0 ? s_diagPagePx : 64;
-    const int next = s_diagScroll + (direction > 0 ? step : -step);
-    s_diagScroll = next < 0 ? 0 : next > s_diagMaxScroll ? s_diagMaxScroll : next;
+void uiDiagnosticsScroll(int delta) {
+    // A swipe changes one whole page. It cannot strand half of a report row
+    // above or beneath the visible area.
+    uiDiagnosticsPage(delta);
 }
 
 int uiDiagnosticsHitPage(int x, int y, int screenW, int screenH) {
     const Theme::ButtonBarGeom bar = Theme::computeButtonBar(screenW, screenH);
-    if (y < bar.y - 18 || y >= bar.y) return 0;
+    if (y < bar.y - 20 || y >= bar.y) return 0;
     if (x >= 0 && x < screenW / 3) return -1;
     if (x >= (screenW * 2) / 3 && x < screenW) return 1;
     return 0;
@@ -64,54 +71,82 @@ bool uiDiagnosticsHitBack(int x, int y, int screenW, int screenH) {
     return x >= bx && x <= bx + bw && y >= by && y < screenH;
 }
 
-static int drawLine(TFT_eSPI& t, int y, uint16_t labelColor, const char* label, const char* fmt, ...) {
-    // Always advance the logical report cursor, whether or not the line is
-    // in the visible window. The old early-return truncated the report and
-    // made lower fields impossible to reach. Avoid partial lines at edges.
-    const int nextY = y + t.fontHeight() + 2;
-    if (y < s_diagTop) { ++s_diagAbove; return nextY; }
-    if (y + t.fontHeight() > s_diagBottom) { ++s_diagBelow; return nextY; }
-    t.setTextColor(labelColor, Theme::BG);
-    t.setCursor(6, y);
-    t.print(label);
+static int drawLine(TFT_eSPI& t, int y, uint16_t labelColor,
+                    const char* label, const char* fmt, ...) {
+    (void)t;
+    if (s_diagRowCount < DIAG_MAX_ROWS) {
+        DiagRow& row = s_diagRows[s_diagRowCount++];
+        row.label = label;
+        row.color = labelColor;
+        va_list args;
+        va_start(args, fmt);
+        vsnprintf(row.value, sizeof(row.value), fmt, args);
+        va_end(args);
+    }
+    return y + 1; // Compatibility with the existing report assembler
+}
 
-    char buf[48];
-    va_list args;
-    va_start(args, fmt);
-    vsnprintf(buf, sizeof(buf), fmt, args);
-    va_end(args);
+// Draw font 1 at 1x: six pixels per glyph. Copy a bounded fragment into a
+// local buffer rather than changing rows' stored values or using String.
+// Break at the last whitespace that fits, and hard-break long version/hex
+// tokens when they have no spaces. Measure and paint using the SAME helper
+// so pagination always matches the actual rendered line count.
+static int diagRowHeight(TFT_eSPI& t, const DiagRow& row,
+                         int screenW, int y, bool paint) {
+    const int lineH = 11;
+    const int xLabel = 8;
+    const int xValue = xLabel + t.textWidth(row.label) + 7;
+    const char* p = row.value;
+    int nLines = 0;
 
-    t.setTextColor(Theme::WHITE, Theme::BG);
-    t.setCursor(6 + t.textWidth(label) + 6, y);
-    t.print(buf);
-    return nextY;
+    if (paint) {
+        t.setTextColor(row.color, Theme::BG);
+        t.setCursor(xLabel, y);
+        t.print(row.label);
+    }
+
+    do {
+        const int x = nLines == 0 ? xValue : xLabel;
+        int maxChars = (screenW - 8 - x) / 6;
+        if (maxChars < 1) maxChars = 1;
+        const size_t available = strlen(p);
+        size_t take = available < (size_t)maxChars ? available : (size_t)maxChars;
+        if (take < available) {
+            // Prefer a word boundary, but never leave an empty segment.
+            size_t cut = take;
+            while (cut > 0 && p[cut] != ' ' && p[cut - 1] != ' ') --cut;
+            if (cut > 0) take = cut;
+        }
+        // Avoid drawing a trailing blank at the end of a wrapped segment.
+        while (take > 0 && p[take - 1] == ' ') --take;
+        if (take == 0 && available != 0) take = available < (size_t)maxChars ? available : (size_t)maxChars;
+        if (paint && take) {
+            char fragment[DIAG_VALUE_CAP];
+            memcpy(fragment, p, take);
+            fragment[take] = '\0';
+            t.setTextColor(Theme::WHITE, Theme::BG);
+            t.setCursor(x, y + nLines * lineH);
+            t.print(fragment);
+        }
+        p += take;
+        while (*p == ' ') ++p;
+        ++nLines;
+    } while (*p);
+
+    return nLines * lineH + 4;
 }
 
 void uiDiagnosticsTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, const DiagnosticsInfo& info) {
-    (void)now;
-    int w = t.width(), h = t.height();
-
-    // Font 2 is sticky on the shared two-band sprite. Force fixed 8-pixel
-    // font 1 before measuring any row, including on the 3.2 ST7798.
+    const int w = t.width(), h = t.height();
+    // Reset inherited canvas font state before measuring or printing.
     t.setTextFont(1);
     t.setTextSize(1);
     t.setTextWrap(false);
-    Theme::drawTitleBar(t, ">> DIAGNOSTICS <<");
 
-    Theme::ButtonBarGeom bar = Theme::computeButtonBar(w, h);
-    const int footerTop = bar.y - 18;
-    // The hamburger/status icons occupy rows 0..19. None of the report
-    // may start behind them, nor run into the fixed footer/BACK strip.
-    const int bodyTop = Theme::TITLE_ICON_BAND_H + 4;
-    const int bodyBottom = footerTop - 4;
-    t.fillRect(0, Theme::TITLE_ICON_BAND_H, w,
-               bar.y - Theme::TITLE_ICON_BAND_H, Theme::BG);
-    s_diagTop = bodyTop;
-    s_diagBottom = bodyBottom;
-    s_diagPagePx = bodyBottom - bodyTop - 12;
-    s_diagAbove = s_diagBelow = 0;
-    int y = s_diagTop - s_diagScroll;
-
+    // Build the entire report before deciding where page breaks belong.
+    // This runs independently in both halves of the 3.2's sprite pass.
+    s_diagRowCount = 0;
+    int y = 0;
     y = drawLine(t, y, Theme::CYAN, "BOARD:", "%s (%s)", info.boardName,
                  info.usingCapTouch ? "capacitive" : "resistive");
 #if defined(GPS_SUPPORT) && defined(GPS_RX_PIN)
@@ -326,27 +361,59 @@ void uiDiagnosticsTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, co
     }
 #endif
 
-    // y is the end of the FULL virtual report, even when most rows were
-    // skipped. Keep scrolling within actual content, including its gaps.
-    const int contentHeight = y + s_diagScroll - s_diagTop;
-    const int viewHeight = bodyBottom - s_diagTop;
-    s_diagMaxScroll = contentHeight > viewHeight ? contentHeight - viewHeight : 0;
-    if (s_diagScroll > s_diagMaxScroll) s_diagScroll = s_diagMaxScroll;
-
-    // A separate, fixed 18px footer cannot cover the last report row.
-    // Two tap targets provide page jumps if repeated swipes are awkward.
-    if (s_diagMaxScroll > 0) {
-        const int footerY = footerTop + 4;
-        t.setTextColor(Theme::CYAN, Theme::BG);
-        t.setCursor(6, footerY);
-        t.print("^ PAGE");
-        const char* hint = "SWIPE";
-        t.setCursor((w - t.textWidth(hint)) / 2, footerY);
-        t.print(hint);
-        const char* down = "PAGE v";
-        t.setCursor(w - 6 - t.textWidth(down), footerY);
-        t.print(down);
+    // The fixed title/icon band, report and navigation never overlap.
+    // Pages are composed from *complete* measured rows, not pixel offsets.
+    const Theme::ButtonBarGeom bar = Theme::computeButtonBar(w, h);
+    const int footerTop = bar.y - 20;
+    const int bodyTop = Theme::TITLE_ICON_BAND_H + 22; // title below the icons
+    const int bodyBottom = footerTop - 5;
+    const int availableH = bodyBottom - bodyTop;
+    s_diagPageCount = 1;
+    s_diagPageStarts[0] = 0;
+    int usedH = 0;
+    for (int i = 0; i < s_diagRowCount; ++i) {
+        const int rh = diagRowHeight(t, s_diagRows[i], w, 0, false);
+        if (usedH > 0 && usedH + rh > availableH) {
+            s_diagPageStarts[s_diagPageCount++] = (uint8_t)i;
+            usedH = 0;
+        }
+        usedH += rh;
     }
+    s_diagPageStarts[s_diagPageCount] = (uint8_t)s_diagRowCount;
+    if (s_diagPage >= s_diagPageCount) s_diagPage = s_diagPageCount - 1;
+
+    Theme::drawTitleBar(t, ">> DIAGNOSTICS <<");
+    t.fillRect(0, Theme::TITLE_ICON_BAND_H, w,
+               bar.y - Theme::TITLE_ICON_BAND_H, Theme::BG);
+    t.setTextFont(1);
+    t.setTextSize(1);
+    t.setTextWrap(false);
+    t.setTextColor(Theme::CYAN, Theme::BG);
+    t.setCursor(8, Theme::TITLE_ICON_BAND_H + 5);
+    t.print("DIAGNOSTICS");
+
+    int rowY = bodyTop;
+    for (int i = s_diagPageStarts[s_diagPage];
+         i < s_diagPageStarts[s_diagPage + 1]; ++i) {
+        rowY += diagRowHeight(t, s_diagRows[i], w, rowY, true);
+    }
+
+    // The footer is always visible. Both its labels and the page count
+    // remain completely above the pinned BACK button, in either rotation.
+    char pager[20];
+    snprintf(pager, sizeof pager, "%d/%d", s_diagPage + 1, s_diagPageCount);
+    const int footY = footerTop + 6;
+    t.setTextColor(s_diagPage > 0 ? Theme::CYAN : Theme::W95_SHADOW, Theme::BG);
+    t.setCursor(8, footY);
+    t.print("< PREV");
+    t.setTextColor(Theme::WHITE, Theme::BG);
+    t.setCursor((w - t.textWidth(pager)) / 2, footY);
+    t.print(pager);
+    t.setTextColor(s_diagPage + 1 < s_diagPageCount ? Theme::CYAN : Theme::W95_SHADOW,
+                   Theme::BG);
+    const char* next = "NEXT >";
+    t.setCursor(w - 8 - t.textWidth(next), footY);
+    t.print(next);
 
     int bx, by, bw, bh;
     backButtonRect(w, h, bx, by, bw, bh);
