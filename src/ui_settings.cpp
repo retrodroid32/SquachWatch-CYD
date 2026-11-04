@@ -25,7 +25,7 @@ static const int TOP_MARGIN = 32;
 
 // One scroll position per page, not one shared: see SettingsPage in the header.
 static SettingsPage s_page = SettingsPage::MAIN;
-static int g_scrollFor[6] = { 0, 0, 0, 0, 0, 0 };
+static int g_scrollFor[7] = { 0, 0, 0, 0, 0, 0, 0 };
 #define g_scroll (g_scrollFor[(uint8_t)s_page])
 
 // BACK is pinned along the bottom now. Height of that strip, reserved out of
@@ -104,6 +104,7 @@ static const SettingsRow APPEARANCE_ROWS[] = {
     // appears once it has been earned; see buildDisplayList().
     SettingsRow::SQUACHY_SIZE, SettingsRow::OUTFIT, SettingsRow::PET,
     SettingsRow::SHADES_COLOR, SettingsRow::BANTER, SettingsRow::AURA,
+    SettingsRow::FONTS,
     // Then how the SCREEN looks.
     SettingsRow::THEME, SettingsRow::BACKGROUND, SettingsRow::BACKGROUND_LOCK, SettingsRow::BRIGHTNESS,
     SettingsRow::INVERT, SettingsRow::RGB_SWAP, SettingsRow::ROTATION_LOCK,
@@ -155,6 +156,11 @@ static const SettingsRow DESK_ROWS[] = {
 };
 static const uint8_t DESK_ROWS_N = sizeof(DESK_ROWS) / sizeof(DESK_ROWS[0]);
 static const uint8_t APPEARANCE_ROWS_N = sizeof(APPEARANCE_ROWS) / sizeof(APPEARANCE_ROWS[0]);
+static const SettingsRow FONT_ROWS[] = {
+    SettingsRow::FONT_MENUS, SettingsRow::FONT_TEXT, SettingsRow::FONT_BUTTONS,
+    SettingsRow::FONT_BUBBLES, SettingsRow::FONT_PETS, SettingsRow::FONT_XP
+};
+static const uint8_t FONT_ROWS_N = sizeof(FONT_ROWS) / sizeof(FONT_ROWS[0]);
 // The display buffers below are sized off the longest of the lists (the
 // DESK MODE page's is checked against it just below).
 // It used to be the main one, until that list lost its NICKNAME row and
@@ -162,6 +168,7 @@ static const uint8_t APPEARANCE_ROWS_N = sizeof(APPEARANCE_ROWS) / sizeof(APPEAR
 static const uint8_t LIST_MAX_N = (APPEARANCE_ROWS_N > ALL_ROWS_N ? APPEARANCE_ROWS_N : ALL_ROWS_N) > IgnoreList::SNOOZE_MAX ? (APPEARANCE_ROWS_N > ALL_ROWS_N ? APPEARANCE_ROWS_N : ALL_ROWS_N) : IgnoreList::SNOOZE_MAX;
 static_assert(SYSTEM_ROWS_N <= LIST_MAX_N, "the display list is sized off LIST_MAX_N");
 static_assert(DESK_ROWS_N <= LIST_MAX_N, "the display list is sized off LIST_MAX_N");
+static_assert(FONT_ROWS_N <= LIST_MAX_N, "the font list must fit display buffers");
 #if defined(TWATCH_S3)
 static_assert(WATCH_ROWS_N <= LIST_MAX_N, "the display list is sized off LIST_MAX_N");
 #endif
@@ -190,7 +197,7 @@ static bool isSquachyOnlyRow(SettingsRow r) {
            r == SettingsRow::PET || r == SettingsRow::AURA;
 }
 
-enum class RowGroupId : uint8_t { APPEARANCE, BEHAVIOR, SQUACHY, SYSTEM, DESK, SQUAD, WATCH };
+enum class RowGroupId : uint8_t { APPEARANCE, BEHAVIOR, SQUACHY, SYSTEM, DESK, SQUAD, WATCH, FONTS };
 
 static RowGroupId groupFor(SettingsRow r) {
     // Appearance sits with the Squachy rows because that is where it was asked
@@ -278,6 +285,7 @@ static const char* groupName(RowGroupId g) {
         case RowGroupId::DESK:       return "DESK";
         case RowGroupId::SQUAD:      return "SQUAD";
         case RowGroupId::WATCH:      return "WATCH";
+        case RowGroupId::FONTS:      return "TEXT SIZE";
         default:                     return "SYSTEM";
     }
 }
@@ -293,6 +301,7 @@ static uint16_t groupColor(RowGroupId g) {
         case RowGroupId::DESK:       return Theme::CYAN;
         case RowGroupId::SQUAD:      return Theme::GREEN;
         case RowGroupId::WATCH:      return Theme::AMBER;
+        case RowGroupId::FONTS:      return Theme::CYAN;
         default:                     return Theme::VAPOR_PURPLE;
     }
 }
@@ -328,6 +337,7 @@ static uint8_t buildDisplayList(DisplayItem* out) {
     if (s_page == SettingsPage::APPEARANCE) { src = APPEARANCE_ROWS; srcN = APPEARANCE_ROWS_N; }
     else if (s_page == SettingsPage::SYSTEM) { src = SYSTEM_ROWS;    srcN = SYSTEM_ROWS_N; }
     else if (s_page == SettingsPage::DESK)   { src = DESK_ROWS;      srcN = DESK_ROWS_N; }
+    else if (s_page == SettingsPage::FONTS)  { src = FONT_ROWS;      srcN = FONT_ROWS_N; }
 #if defined(TWATCH_S3)
     else if (s_page == SettingsPage::WATCH)  { src = WATCH_ROWS;     srcN = WATCH_ROWS_N; }
 #endif
@@ -467,7 +477,7 @@ void uiSettingsInit(TFT_eSPI& t) {
     // memory is for moving BETWEEN pages inside one visit -- carrying it
     // across a fresh entry would drop you mid-list with no idea why.
     s_page = SettingsPage::MAIN;
-    for (uint8_t i = 0; i < 6; i++) g_scrollFor[i] = 0;
+    for (uint8_t i = 0; i < 7; i++) g_scrollFor[i] = 0;
     // Any pending question dies with the screen. Coming back to Settings and
     // finding a confirm panel still up from last time would be answering
     // something you no longer remember asking.
@@ -605,6 +615,9 @@ void uiSettingsOpenPage(SettingsPage p) {
 }
 
 SettingsPage uiSettingsCurrentPage() { return s_page; }
+SettingsPage uiSettingsParentPage() {
+    return s_page == SettingsPage::FONTS ? SettingsPage::APPEARANCE : SettingsPage::MAIN;
+}
 
 void uiSettingsOpenAppearance(bool open) {
     uiSettingsOpenPage(open ? SettingsPage::APPEARANCE : SettingsPage::MAIN);
@@ -1053,6 +1066,15 @@ static void rowContent(SettingsRow r, const DetectionEngine& eng, char* valBuf, 
         case SettingsRow::APPEARANCE:
             label = "APPEARANCE"; value = ">";
             break;
+        case SettingsRow::FONTS:
+            label = "FONTS"; value = ">";
+            break;
+        case SettingsRow::FONT_MENUS:   label = "MENUS"; value = nullptr; break;
+        case SettingsRow::FONT_TEXT:    label = "TEXT"; value = nullptr; break;
+        case SettingsRow::FONT_BUTTONS: label = "BUTTONS"; value = nullptr; break;
+        case SettingsRow::FONT_BUBBLES: label = "BUBBLES"; value = nullptr; break;
+        case SettingsRow::FONT_PETS:    label = "PETS"; value = nullptr; break;
+        case SettingsRow::FONT_XP:      label = "XP TILES"; value = nullptr; break;
         case SettingsRow::AURA:
             label = "AURA"; value = Settings::auraShown() ? "LIT" : "OUT";
             break;
@@ -1143,6 +1165,7 @@ switch (Settings::background()) {
     else if (s_page == SettingsPage::DESK)   pageTitle = ">> DESK MODE <<";
     else if (s_page == SettingsPage::WATCH)  pageTitle = ">> WATCH SETTINGS <<";
     else if (s_page == SettingsPage::SNOOZES) pageTitle = ">> SNOOZES <<";
+    else if (s_page == SettingsPage::FONTS) pageTitle = ">> FONTS <<";
     Theme::drawTitleBar(t, pageTitle);
 
     // +6, not +4: four group headers plus the two tracking rows.
