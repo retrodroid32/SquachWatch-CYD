@@ -251,7 +251,15 @@ static RowGroupId groupFor(SettingsRow r) {
         case SettingsRow::OUTFIT:
         case SettingsRow::PET:
         case SettingsRow::BANTER:
+        case SettingsRow::FONTS:
             return RowGroupId::APPEARANCE;
+        case SettingsRow::FONT_MENUS:
+        case SettingsRow::FONT_TEXT:
+        case SettingsRow::FONT_BUTTONS:
+        case SettingsRow::FONT_BUBBLES:
+        case SettingsRow::FONT_PETS:
+        case SettingsRow::FONT_XP:
+            return RowGroupId::FONTS;
         case SettingsRow::BORING_MODE:
         case SettingsRow::CONFIDENCE:
         case SettingsRow::AUTO_QUIET:
@@ -454,6 +462,18 @@ static void computeGeom(TFT_eSPI& t, int screenH, int& top, int& bodyBottom,
     // The pinned BACK strip owns the bottom of the screen, so the list stops
     // above it -- otherwise the last row draws underneath and cannot be tapped.
     bodyBottom = screenH - Theme::pinnedBackH(t.width()) - 2;
+    // Font sliders have their own stable-size rows and a sample above BACK.
+    // Fixed geometry is vital: changing MENUS must not move touch targets
+    // under the finger while the user is adjusting it.
+    if (s_page == SettingsPage::FONTS) {
+        bodyBottom -= 42;
+        t.setTextFont(1);
+        t.setTextSize(1);
+        rowH = 34;
+        headerH = 15;
+        tallH = 34;
+        return;
+    }
     t.setTextSize(Theme::uiMenuTextSize(t));
     // Two pixels taller than the text strictly needs on each side: a 24 px
     // row was a near miss for a thumb, 26 is not, and seven of them still
@@ -772,7 +792,13 @@ static void drawRow(TFT_eSPI& t, int w, int y, int hgt, const char* label,
     // backing below stays anyway: it costs nothing now and it is what keeps
     // text crisp if a row is ever drawn without a panel behind it.
     rowPanel(t, w, y, hgt);
-    t.setTextSize(compact ? 1 : Theme::uiMenuTextSize(t));
+    t.setTextFont(1);
+    uint8_t size = compact ? 1 : Theme::uiMenuTextSize(t);
+    t.setTextSize(size);
+    // A bigger MENUS setting must never overlap the right-side value.
+    while (size > 1 && value && t.textWidth(label) + t.textWidth(value) + 34 > w) {
+        t.setTextSize(--size);
+    }
     t.setTextColor(danger ? Theme::RED : labelColor, Theme::BG);
     t.setCursor(8, y + (hgt - t.fontHeight()) / 2);
     t.print(label);
@@ -790,6 +816,118 @@ static void drawRow(TFT_eSPI& t, int w, int y, int hgt, const char* label,
 // Fills in what a row actually shows. valBuf is scratch space for
 // rows that need to format a number — only valid for the duration of
 // the caller's own loop iteration, not held onto afterward.
+
+static Settings::FontKind fontKindFor(SettingsRow row) {
+    switch (row) {
+        case SettingsRow::FONT_TEXT: return Settings::FontKind::TEXT;
+        case SettingsRow::FONT_BUTTONS: return Settings::FontKind::BUTTONS;
+        case SettingsRow::FONT_BUBBLES: return Settings::FontKind::BUBBLES;
+        case SettingsRow::FONT_PETS: return Settings::FontKind::PETS;
+        case SettingsRow::FONT_XP: return Settings::FontKind::XP_TILES;
+        default: return Settings::FontKind::MENUS;
+    }
+}
+static Settings::FontKind s_fontPreview = Settings::FontKind::MENUS;
+
+// Same geometry is used by drawFontRow and uiSettingsFontTap: 240px portrait
+// and 320px landscape never ask a thumb to hit a hidden control.
+static void fontSliderX(int w, int& start, int& end, int& minus, int& plus) {
+    minus = w - 78;
+    plus  = w - 39;
+    start = 76;
+    end   = minus - 9;
+    if (end < start + 5) end = start + 5;
+}
+static void drawFontRow(TFT_eSPI& t, int w, int y, int h, const char* label, SettingsRow row) {
+    const Settings::FontKind kind = fontKindFor(row);
+    int8_t lo = 0, hi = 0;
+    Theme::fontRange(t, kind, lo, hi);
+    int d = Theme::fontDelta(kind);
+    if (d < lo) d = lo;
+    if (d > hi) d = hi;
+    rowPanel(t, w, y, h);
+    t.setTextFont(1);
+    t.setTextSize(1);
+    t.setTextColor(Theme::CYAN, Theme::BG);
+    t.setCursor(8, y + (h - 8) / 2);
+    t.print(label);
+    int start, end, minus, plus;
+    fontSliderX(w, start, end, minus, plus);
+    const int cy = y + h/2;
+    t.drawFastHLine(start, cy, end - start + 1, Theme::PURPLE);
+    if (hi > lo) {
+        for (int i=lo; i<=hi; ++i) {
+            const int xx = start + (end-start)*(i-lo)/(hi-lo);
+            t.drawFastVLine(xx, cy-4, 9, i == 0 ? Theme::CYAN : Theme::VAPOR_PURPLE);
+        }
+        const int p = start + (end-start)*(d-lo)/(hi-lo);
+        t.fillCircle(p, cy, 4, Theme::VAPOR_PINK);
+        t.drawCircle(p, cy, 4, Theme::WHITE);
+        Theme::drawWin95Button(t, minus, y+6, 32, 22, "-", false);
+        Theme::drawWin95Button(t, plus, y+6, 32, 22, "+", false);
+    } else {
+        t.setTextColor(Theme::W95_SHADOW, Theme::BG);
+        t.setCursor(start+2, y + (h-8)/2);
+        t.print("FIXED");
+    }
+    // The label is itself a PIXEL/SMOOTH toggle for the four capable kinds.
+    if (Theme::fontHasFace(kind)) {
+        t.drawFastHLine(8, y+h-5, 43, Theme::VAPOR_PINK);
+    }
+    t.setTextFont(1); t.setTextSize(1);
+}
+static void drawFontPreview(TFT_eSPI& t, int w, int y, int h) {
+    t.fillRect(3, y, w-9, h-2, Theme::BG);
+    t.drawRect(3, y, w-9, h-2, Theme::CYAN);
+    t.setTextFont(1); t.setTextSize(1);
+    const int d = Theme::fontDelta(s_fontPreview);
+    t.setTextColor(Theme::CYAN, Theme::BG);
+    const char* sample = Theme::fontStepName((int8_t)d);
+    t.setCursor(8,y+3);
+    t.print("PREVIEW: "); t.print(sample);
+    if (s_fontPreview == Settings::FontKind::XP_TILES)
+        t.print(" / XP STYLE PENDING");
+    else if (s_fontPreview == Settings::FontKind::TEXT && d == 0)
+        t.print(" / BUILT-IN");
+    else if (Theme::fontHasFace(s_fontPreview))
+        t.print(Theme::fontSmooth(s_fontPreview) ? " / SMOOTH" : " / PIXEL");
+    if (s_fontPreview == Settings::FontKind::BUTTONS) {
+        Theme::drawButton(t, w-97, y+18, 87, 18, "Aa 12:34", false);
+    } else {
+        t.setTextFont(Theme::fontSmooth(s_fontPreview) ? 2 : 1);
+        t.setTextSize((uint8_t)(d > 0 ? 2 : 1));
+        t.setTextColor(Theme::WHITE, Theme::BG);
+        const char* words = "Aa 12:34";
+        if (t.textWidth(words) <= w-24 && t.fontHeight() <= 19) {
+            t.setCursor(8,y+18); t.print(words);
+        }
+    }
+    t.setTextFont(1); t.setTextSize(1);
+}
+
+void uiSettingsFontTap(TFT_eSPI& t, int x, int y, int screenW, int screenH) {
+    if (s_page != SettingsPage::FONTS) return;
+    const SettingsRow row = uiSettingsHitTest(t, x, y, screenW, screenH);
+    if (row < SettingsRow::FONT_MENUS || row > SettingsRow::FONT_XP) return;
+    const Settings::FontKind kind = fontKindFor(row);
+    s_fontPreview = kind;
+    if (x < 68) { // Label rectangle: change PIXEL/SMOOTH, not size.
+        Theme::toggleFontFace(kind);
+        return;
+    }
+    int8_t lo = 0, hi = 0;
+    Theme::fontRange(t, kind, lo, hi);
+    if (lo == hi) return; // no unsupported resizing
+    int start, end, minus, plus;
+    fontSliderX(screenW, start, end, minus, plus);
+    int delta = Theme::fontDelta(kind);
+    if (x >= plus) delta++;
+    else if (x >= minus) delta--;
+    else if (x >= start && x <= end) delta = lo + ((x - start) * (hi - lo) + (end-start)/2) / (end-start);
+    else return;
+    Theme::setFontDelta(t, kind, delta);
+}
+
 static void rowContent(SettingsRow r, const DetectionEngine& eng, char* valBuf, size_t valBufN,
                        const char*& label, const char*& value, bool& danger) {
     danger = false;
@@ -1210,6 +1348,8 @@ switch (Settings::background()) {
             const bool off = Settings::boringMode() && isSquachyOnlyRow(items[idx].row);
             if (off) {
                 drawRow(t, w, y, itemH, label, "boring mode", false, Theme::W95_SHADOW, h > w);
+            } else if (s_page == SettingsPage::FONTS) {
+                drawFontRow(t, w, y, itemH, label, items[idx].row);
             } else if (isTwoLineRow(items[idx].row)) {
                 drawTwoLineRow(t, w, y, itemH, label, value, groupColor(items[idx].group),
                                items[idx].row == SettingsRow::BACKGROUND ||
@@ -1226,6 +1366,9 @@ switch (Settings::background()) {
     }
 
     Theme::drawScrollbar(t, w - 4, top, bodyBottom - top, n, visibleCount, g_scroll);
+    if (s_page == SettingsPage::FONTS &&
+        DrawBand::has(bodyBottom, bodyBottom + 42))
+        drawFontPreview(t, w, bodyBottom + 1, 40);
 
     // The way out, always on screen. Drawn before the panels so a confirm or
     // an explanation sits over it rather than under.
