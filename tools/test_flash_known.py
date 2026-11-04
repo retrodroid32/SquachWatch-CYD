@@ -54,7 +54,7 @@ class FlashKnownSafetyTests(unittest.TestCase):
     def test_classic_cyd_mapping_unaffected(self):
         _, code, message, calls = self.execute("COM8", "d4:8a:fc:c8:e5:e4")
         self.assertEqual(code, 0)
-        self.assertIsNone(message)
+        self.assertEqual(message, '0')  # main() exits with subprocess return code
         self.assertEqual(len(calls), 1)
         self.assertIn("cyd-fast", calls[0].args[0])
 
