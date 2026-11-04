@@ -4436,6 +4436,13 @@ void loop() {
                     DrawBand::set(0, halfH);
                     frame.setViewport(0, 0, tft.width(), tft.height(), true);
                     uiClearTick(frame, now, engine, true, s_scanPickerOpen);
+                    // CYD35 only retains one half-height sprite. All overlays
+                    // must be painted BEFORE this band is transmitted.
+                    if (uiZoneCardWanted()) uiZoneCardDraw(frame, now);
+                    Theme::drawToast(frame, now);
+#if CROWD_BENCH
+                    if (CrowdBench::active()) CrowdBench::drawOver(frame, now);
+#endif
                     s_bandUs[0] = micros() - tBand;
                     pushFrame(0, 0);
 
@@ -4443,6 +4450,11 @@ void loop() {
                     DrawBand::set(halfH, tft.height());
                     frame.setViewport(0, -halfH, tft.width(), tft.height(), true);
                     uiClearTick(frame, now, engine, false, s_scanPickerOpen);
+                    if (uiZoneCardWanted()) uiZoneCardDraw(frame, now);
+                    Theme::drawToast(frame, now);
+#if CROWD_BENCH
+                    if (CrowdBench::active()) CrowdBench::drawOver(frame, now);
+#endif
                     s_bandUs[1] = micros() - tBand;
                     pushFrame(0, halfH);
                     DrawBand::all();
@@ -4473,11 +4485,13 @@ void loop() {
 #if !defined(CYD35)
                     s_recoveryBands == 1
 #else
-                    true
+                    !frameBufferOk
 #endif
                 ) {
-                    // For ordinary full-screen frames, overlays are part of
-                    // the retained frame and pushed at the end of loop().
+                    // Ordinary full-screen frames retain these overlays until
+                    // the final push. CYD35 only uses this path if allocation
+                    // failed and rendering falls back to the direct TFT; the
+                    // normal CYD35 half-bands already painted them above.
                     if (uiZoneCardWanted()) uiZoneCardDraw(*canvas, now);
                     Theme::drawToast(*canvas, now);
 #if CROWD_BENCH
