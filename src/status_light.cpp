@@ -9,8 +9,8 @@
 // pins, and nothing else on the Phantom's build uses 4, 16 or 17. The AWOK
 // and the 3.5" are unverified and get nothing -- see the header for why that
 // is a rule and not a shortcut.
-#if defined(NM_CYD_C5)
-#define STATUS_LIGHT_HW 2  // C5: one WS2812 on GPIO27, not 3 PWM pins
+#if defined(FREENOVE_S3) || defined(NM_CYD_C5)
+#define STATUS_LIGHT_HW 2
 #elif defined(ESP32) && !defined(CYD35) && !defined(AWOK) && !defined(TWATCH_S3)
 #define STATUS_LIGHT_HW 1
 #else
@@ -28,7 +28,13 @@ static const int     PIN_R = 4, PIN_G = 16, PIN_B = 17;
 #endif
 static const uint8_t CH_R  = 3, CH_G  = 4,  CH_B  = 5;
 #if STATUS_LIGHT_HW == 2
+// Freenove S3 and RockBase C5 both use one addressable RGB LED, on
+// different pins. Preserve the already-validated Freenove GPIO42 path.
+#if defined(NM_CYD_C5)
 static const uint8_t PIN_WS2812 = 27;
+#else
+static const uint8_t PIN_WS2812 = 42;
+#endif
 #endif
 
 static const uint32_t TICK_MS        = 20;
@@ -106,7 +112,6 @@ static inline uint8_t to8(uint16_t v) {
 
 static void write(uint16_t r, uint16_t g, uint16_t b) {
 #if STATUS_LIGHT_HW == 2
-    // On the C5 the core's RMT helper drives one GRB WS2812 safely.
     const uint8_t pr = to8(r), pg = to8(g), pb = to8(b);
     if (pr == s_pixR && pg == s_pixG && pb == s_pixB) return;
     neopixelWrite(PIN_WS2812, pr, pg, pb);
@@ -124,7 +129,9 @@ static void write(uint16_t r, uint16_t g, uint16_t b) {
 }
 
 void begin() {
-#if STATUS_LIGHT_HW == 1
+#if STATUS_LIGHT_HW == 2
+    write(0, 0, 0);
+#elif STATUS_LIGHT_HW
     ledcSetup(CH_R, 5000, PWM_BITS); ledcAttachPin(PIN_R, CH_R);
     ledcSetup(CH_G, 5000, PWM_BITS); ledcAttachPin(PIN_G, CH_G);
     ledcSetup(CH_B, 5000, PWM_BITS); ledcAttachPin(PIN_B, CH_B);

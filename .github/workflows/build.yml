@@ -37,7 +37,9 @@ jobs:
 
       - uses: actions/setup-python@v7
         with:
-          python-version: '3.x'
+          # The ESP32-C5 pioarduino platform currently rejects Python 3.15.
+          # Pin the CI interpreter to a supported minor version for all jobs.
+          python-version: '3.13'
 
       # Both caches matter: the toolchain is a ~200MB download and the
       # framework another large unpack, and neither changes between runs.
