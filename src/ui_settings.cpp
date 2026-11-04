@@ -481,6 +481,7 @@ static void computeGeom(TFT_eSPI& t, int screenH, int& top, int& bodyBottom,
     // size bigger, and this carries it: taller letters, taller row, bigger
     // thumb target, all off the one number.
     rowH = t.fontHeight() + 10;
+    if (rowH < 26) rowH = 26; // never shrink finger touch targets below baseline
     const int big = t.fontHeight();
     t.setTextSize(Theme::uiTextSize(t, 1));
     headerH = t.fontHeight() + 6;
@@ -795,7 +796,10 @@ static void drawRow(TFT_eSPI& t, int w, int y, int hgt, const char* label,
     // text crisp if a row is ever drawn without a panel behind it.
     rowPanel(t, w, y, hgt);
     t.setTextFont(1);
-    uint8_t size = compact ? 1 : Theme::uiMenuTextSize(t);
+    // Portrait used compact labels to avoid overlap. A larger chosen menu
+    // face is allowed only when its actual text fits the entire row.
+    uint8_t size = compact ? (Theme::fontDelta(Settings::FontKind::MENUS) > 0 ? 2 : 1)
+                           : Theme::uiMenuTextSize(t);
     t.setTextSize(size);
     // A bigger MENUS setting must never overlap the right-side value.
     while (size > 1 && value && t.textWidth(label) + t.textWidth(value) + 34 > w) {
