@@ -663,7 +663,9 @@ static void drawPinnedBack(TFT_eSPI& t, int screenW, int screenH) {
     t.fillRect(x, y, w, h, Theme::BG);
     t.drawFastHLine(x, y, w, Theme::PURPLE);
     t.setTextFont(1);
-    t.setTextSize(Theme::uiMenuTextSize(t));
+    uint8_t sz = Theme::uiMenuTextSize(t);
+    while (sz > 1 && 8 * sz > h - 4) --sz;
+    t.setTextSize(sz);
     t.setTextColor(Theme::CYAN, Theme::BG);
     // The DESK MODE page splits the strip: OK on the left goes straight out
     // to wherever Settings was opened from, the desk or the main screen; UP
@@ -798,6 +800,16 @@ static void drawRow(TFT_eSPI& t, int w, int y, int hgt, const char* label,
     // A bigger MENUS setting must never overlap the right-side value.
     while (size > 1 && value && t.textWidth(label) + t.textWidth(value) + 34 > w) {
         t.setTextSize(--size);
+    }
+    // A SMOOTH menu face uses the built-in 16-row font only where it fits
+    // both the full row and its right-aligned setting value.
+    if (Settings::fontFace(Settings::FontKind::MENUS) == 2) {
+        t.setTextFont(2);
+        t.setTextSize(1);
+        if (t.fontHeight() > hgt - 6 ||
+            (value && t.textWidth(label) + t.textWidth(value) + 34 > w)) {
+            t.setTextFont(1); t.setTextSize(size);
+        }
     }
     t.setTextColor(danger ? Theme::RED : labelColor, Theme::BG);
     t.setCursor(8, y + (hgt - t.fontHeight()) / 2);
