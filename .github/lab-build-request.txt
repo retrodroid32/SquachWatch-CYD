@@ -1,3 +1,4 @@
-WATCH149-LANDBACK
-# Experimental LAB build after landscape WATCH BACK touch fix.
-# Triggered only on explicit user hardware regression report.
+CYD1220-PAGES-ARTIFACT-ONLY
+# Release source run: 41832825743, Pages artifact 13325495255
+# Last validated LAB site run: 41831683443, Pages artifact 13324220632
+# Do not compile, release, retag or merge; hand off via existing publish-pages.yml.
