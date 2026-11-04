@@ -1,3 +1,8 @@
-WATCH149-LANDBACK
-# Experimental LAB build after landscape WATCH BACK touch fix.
-# Triggered only on explicit user hardware regression report.
+PR136-DIAG-FULLCLEAR-CYD32-20261103
+# LAB hardware retest: PR136 3.2 ST7798 diagnostics residual-text fix.
+# Reset whole logical page inside each existing two-band buffered viewport.
+# Eliminate ghost values above top icons and beneath pinned BACK footer.
+# Preserve working 2.8 diagnostic behavior, GPS fix/UBX/NMEA, status icons,
+# manually opened system properties, and verified no-flash startup transition.
+# No radio/SD/GPS or general display-rendering changes. No production release.
+# Do not merge PR136 without the user's explicit approval after hardware PASS.
