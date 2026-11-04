@@ -1,0 +1,40 @@
+name: Publish approved v1.22.0 release tag
+on:
+  push:
+    branches:
+      - lab/publish-v1-22-0-20261104
+    paths:
+      - '.github/release-requests/v1.22.0.txt'
+permissions:
+  contents: write
+  actions: write
+jobs:
+  publish-tag-and-dispatch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Verify release request, create immutable tag and dispatch existing release pipeline
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_SHA: e4312f8728242bd88ae74f29b5cef87de414a206
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          test "${GITHUB_REF}" = "refs/heads/lab/publish-v1-22-0-20261104"
+          test "$(tr -d '[:space:]' < VERSION)" = "1.22.0"
+          test -s .github/release-notes/v1.22.0.md
+          for ID in 41828706283 41828751284; do
+            STATUS="$(gh run view "$ID" -R "$GITHUB_REPOSITORY" --json conclusion -q .conclusion)"
+            test "$STATUS" = "success" || { echo "::error::Pre-release CI run $ID was not successful: $STATUS"; exit 1; }
+          done
+          test "$(gh api "repos/$GITHUB_REPOSITORY/git/commits/$RELEASE_SHA" --jq '.tree.sha' | wc -c)" -gt 10
+          if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/v1.22.0" >/dev/null 2>&1; then
+            echo "::error::Release tag v1.22.0 already exists; do not move it."
+            exit 1
+          fi
+          gh api -X POST "repos/$GITHUB_REPOSITORY/git/refs" -f ref=refs/tags/v1.22.0 -f sha="$RELEASE_SHA" >/dev/null
+          echo "::notice::Created v1.22.0 at release-prep SHA $RELEASE_SHA"
+          # GITHUB_TOKEN-generated tag pushes do not trigger ordinary push
+          # workflows; workflow_dispatch is an allowed exception.
+          gh workflow run release-flasher.yml -R "$GITHUB_REPOSITORY" --ref v1.22.0 -f lab=false
+          echo "::notice::Dispatched the original tag-gated release pipeline."

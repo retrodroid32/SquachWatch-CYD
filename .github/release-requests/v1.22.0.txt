@@ -1,0 +1,6 @@
+v1.22.0
+# User-requested next release for CYD 2.8 ST7789 and CYD 3.2 ST7798.
+# Source: post-#136 validated master plus VERSION and release notes.
+# Checked: release-prep CI SUCCESS, signed LAB firmware SUCCESS.
+# Tag target: e4312f8728242bd88ae74f29b5cef87de414a206
+# This branch is a one-time release orchestrator, not merged to master.
