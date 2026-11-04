@@ -73,6 +73,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+      - name: Verify CROWD NONE visitor and state contracts
+        run: python tools/test_crowd_none.py
       - name: Run host tests
         run: make -C test
 
