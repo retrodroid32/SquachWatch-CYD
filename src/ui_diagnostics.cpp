@@ -382,9 +382,17 @@ void uiDiagnosticsTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, co
     s_diagPageStarts[s_diagPageCount] = (uint8_t)s_diagRowCount;
     if (s_diagPage >= s_diagPageCount) s_diagPage = s_diagPageCount - 1;
 
+    // IMPORTANT on the CYD 3.2 ST7798: the same half-height sprite is
+    // reused for both physical bands and for every diagnostics page.
+    // Clearing only [TITLE_ICON_BAND_H, bar.y) left stale glyphs in
+    // rows 0..19 (behind the status icons) and in the bottom strip
+    // (under BACK). The 2.8 full-frame canvas did not exhibit this.
+    // Repaint the entire LOGICAL page inside each band's existing
+    // buffered viewport before drawing the current page. The viewport
+    // clips this full-screen clear to that band's own sprite rows.
+    // Never clear the physical TFT or push an incomplete page.
+    t.fillRect(0, 0, w, h, Theme::BG);
     Theme::drawTitleBar(t, ">> DIAGNOSTICS <<");
-    t.fillRect(0, Theme::TITLE_ICON_BAND_H, w,
-               bar.y - Theme::TITLE_ICON_BAND_H, Theme::BG);
     t.setTextFont(1);
     t.setTextSize(1);
     t.setTextWrap(false);
