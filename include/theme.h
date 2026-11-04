@@ -7,6 +7,8 @@
 
 class DetectionEngine;
 
+namespace Settings { enum class FontKind : uint8_t; }
+
 namespace Theme {
     // Background and chrome — NOT constexpr. These are runtime
     // variables (default-initialized to the original SquachWare
@@ -247,6 +249,18 @@ namespace Theme {
     // means the rows get taller by themselves and the targets grow with the
     // letters. Narrow panels get 2 back and nothing about them moves.
     uint8_t uiMenuTextSize(TFT_eSPI& t);
+
+    // Upstream v1.40 font controls, clamped per display and content width.
+    int8_t fontDelta(Settings::FontKind k);
+    void fontRange(TFT_eSPI& t, Settings::FontKind k, int8_t& lo, int8_t& hi);
+    void setFontDelta(TFT_eSPI& t, Settings::FontKind k, int step);
+    const char* fontStepName(int8_t step);
+    bool fontHasFace(Settings::FontKind k);
+    bool fontSmooth(Settings::FontKind k);
+    void toggleFontFace(Settings::FontKind k);
+    void petFontOn(TFT_eSPI& t);
+    void petFontOff(TFT_eSPI& t);
+    int xpTileScale();
 
     void drawButton(TFT_eSPI& t, int x, int y, int w, int h,
                     const char* label, bool pressed, uint8_t textSize = 1);
