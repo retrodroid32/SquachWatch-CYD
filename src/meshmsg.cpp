@@ -308,6 +308,20 @@ void Replay::record(const uint8_t mac[6], uint32_t counter) {
     e[slot].used = stamp;
 }
 
+// Invoked ONLY when the user confirms matching invitation digits for the
+// selected peer. This is deliberately narrower than clearing the replay
+// table: unrelated members keep their persisted high-water marks.
+bool Replay::forgetPeer(const uint8_t mac[6]) {
+    if (!mac) return false;
+    for (uint8_t i = 0; i < N; i++) {
+        if (e[i].live && memcmp(e[i].mac, mac, 6) == 0) {
+            e[i] = E{};
+            return true;
+        }
+    }
+    return false;
+}
+
 size_t Replay::save(uint8_t out[BYTES]) const {
     // Oldest first, so load() can rebuild who was heard from least recently
     // and a reboot does not change which sender is the next to be dropped.
