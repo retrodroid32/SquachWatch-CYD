@@ -1,6 +1,6 @@
 # SquachWatch-CYD
 
-**Current fork version: v1.21.0**
+**Current production release: [v1.22.0 — Field-Tested CYDs](https://github.com/retrodroid32/SquachWatch-CYD/releases/tag/v1.22.0)**
 
 > Surveillance-device detector for ESP32 Cheap Yellow Display (CYD) boards and compatible touchscreen variants.
 
@@ -29,10 +29,11 @@ the glitchy SquachWatch wordmark.
 
 ## Contents
 
-- [Current release — v1.21.0](#current-release--v1210)
+- [Current release — v1.22.0](#current-release--v1220)
   - [New features](#new-features)
   - [Fixes and improvements](#fixes-and-improvements)
-- [Roadmap — in development after v1.21.0](#roadmap--in-development-after-v1210)
+  - [Hardware verification](#hardware-verification)
+- [Roadmap — in development after v1.22.0](#roadmap--in-development-after-v1220)
 - [Project overview](#project-overview)
   - [Why this fork](#why-this-fork)
 - [Detection coverage](#detection-coverage)
@@ -50,87 +51,69 @@ the glitchy SquachWatch wordmark.
 - [Project status, license and credits](#project-status-license-and-credits)
 
 
-## Current release — v1.21.0
+## Current release — v1.22.0
 
-**Production release:** `v1.21.0`  
-**Previous release:** `v1.20.1` / `2dad3060aa1a2093b8e11c50cc701e984ba0b24e`
+**Production release:** [`v1.22.0 — Field-Tested CYDs`](https://github.com/retrodroid32/SquachWatch-CYD/releases/tag/v1.22.0)  
+**Previous release:** [`v1.21.0 — Sharper Signals`](https://github.com/retrodroid32/SquachWatch-CYD/releases/tag/v1.21.0)  
+**Primary hardware-validation targets:** 2.8-inch ST7789 and 3.2-inch ST7798 classic resistive CYDs.
 
-v1.21.0 is the first production release of the fork's staged detection-intelligence work. It also rolls in the verified BLE, UI, privacy, Remote ID, Flock, tracker-spam, T-Watch, diagnostics and status-light improvements merged after v1.20.1.
+v1.22.0 brings hardware-verified GPS support, display and diagnostic fixes, SD hot-swap recovery, Wi-Fi stability, two-way SquachMesh improvements, more polished WATCH/HUNT controls and expanded Squachy graphics. It builds on v1.21.0's detection-intelligence, Alert Rules, Device Policies, privacy mode and multi-target HUNT features. Existing released board profiles remain available; experimental hardware branches are **not** included.
 
 ### New features
 
-**Detection intelligence**
-- Concrete evidence for why a BLE or Wi-Fi device matched.
-- Uniform sighting/repeat counts where applicable.
-- About 15 seconds of live RSSI history with shared movement classification.
-- Per-type **Alert Rules** for LOG ONLY/full alert, minimum confidence, repeat threshold, cooldown and screen wake.
-- Persistent **Device Policies**: NORMAL, IGNORE, TRUSTED and ALWAYS ALERT.
-- LOG now switches between deduplicated **DEVICES** and chronological **EVENTS** history.
-- Live LOG rows can show compact RSSI direction/sparklines.
+**External GNSS / trusted time on classic CYDs**
+- Live **UBX and NMEA** parsing from an optional external GPS receiver through **UART2 RX GPIO35**; the verified UBX module uses **115200 baud** (connect the receiver's TX to the CYD's GPIO35 and share ground; power the receiver to its rated voltage).
+- GPS diagnostics expose **FIX**, latitude/longitude, satellites, UTC and receiver information. A fresh real GPS fix can establish **trusted UTC** when the clock has not already been set by another trusted source.
+- A GPS indicator can show receiver activity, and status-icon visibility can be configured independently. The normal 2.8-inch and 3.2-inch firmware already includes GPS support: **no special GPS firmware binary is required**.
+- SD detection records use trusted UTC when available. Wi-Fi/NTP and existing time-zone settings remain available without a GPS module.
 
-**WATCH and HUNT**
-- WATCH and HUNT are separate title-bar controls.
-- HUNT supports up to eight simultaneous BLE/Wi-Fi targets.
-- The HUNT roster is sorted by signal strength and shows current RSSI, last-seen age and movement direction.
-- Opening or stopping one HUNT target no longer destroys the rest of the roster.
-
-**Detection coverage**
-- Expanded ASTM F3411/OpenDroneID support over BLE and Wi-Fi.
-- Wi-Fi NAN Remote ID recognition.
-- Curated drone-manufacturer IEEE prefixes with exact MA-L/MA-M matching.
-- Refreshed Flock field signatures and confidence handling.
-- Tracker-only **SpamWatch** suppresses repeated interruptions from rapidly rotating AirTag, SmartTag, Google Find My and Tile identities.
-
-**Privacy and compatibility**
-- New screen-only **PRIVACY MODE** masks displayed names and MAC suffixes while preserving the real data internally for tracking, BlackBox, SD/wardrive and console use.
-- BLE advertised names are parsed with lifetime-safe helpers.
-- BLE addresses are normalized to conventional human-readable MAC order.
-- Legacy reversed-MAC Device Policies, Regulars and BlackBox history remain readable/migratable.
-- CYD BLE OTA remains intentionally supported.
+**Interaction and SquachMesh**
+- Verified **bidirectional** SquachMesh messages, invitations and acceptance between the classic 2.8-inch and 3.2-inch devices; improved message selection and in-range roster interactions.
+- WATCH/HUNT refinements: long-press WATCH actions, timed **Snooze / Unsnooze**, watch-alert navigation, cleaner message bubbles and alert presentation.
+- Improved Squachy speech bubbles, additional costumes and effects, and optimized aquarium rendering.
 
 ### Fixes and improvements
 
-- LOG shows **IGNORED/IGN** state and offers **UNIGNORE** when appropriate.
-- LOG clear requires a confirming second press.
-- Bottom-edge touch targets, raw-scan controls, alert-card fitting, toast wrapping and diagnostics clipping were hardened.
-- Settings group headings are stable labels instead of collapsible rows.
-- APPEARANCE **BRIGHT - / +** touch zones now match the controls drawn on screen.
-- Status-light brightness expands from five to seven levels with migration of saved settings.
-- T-Watch gets a dedicated WATCH SETTINGS page and OFF/LOW/MED/HIGH haptic levels.
-- BLACKBOX console output can walk the full forensic ring including CLR markers.
-- Classic ESP32 CYDs gain a GPS-safe `ADC` console diagnostic.
-- Host tests now track header dependencies and include an optional real SquachMesh crypto test with mbedTLS 2/3 compatibility.
+- **3.2-inch screen stability:** no startup flashing or Wi-Fi keyboard flicker; fixes for stale text in reusable diagnostics graphics bands and raw BLE/Wi-Fi scan rows drawing below the buttons.
+- **Diagnostics:** scrolling/paging now exposes lower rows; **System Properties → Board** stays visible when an alert arrives, and portrait/landscape screens preserve their layout.
+- **SD card recovery:** insertion/removal detection, status icon, file browser layout, FAT/VFS remount and hot-swap handling are more reliable.
+- **Saved Wi-Fi networks:** the **USE** action no longer gets stuck in the previous **WIFI BUSY** / failed-connect loop; UI recovery is improved after connection and update checks.
+- **Detection/emulator:** more precise Flock/Penguin signatures and Raven UUID matching; browser emulator version reporting and regression coverage improved.
+- **Upgrade safety:** production artifacts retain signed BLE OTA and SquachMesh compatibility. The optional 80 MHz display-clock profiles remain **experimental**.
 
-For the complete change record, see [the v1.21.0 release notes](.github/release-notes/v1.21.0.md). The detailed Stage A–E implementation history remains in [v1.21.0 development notes](.github/release-notes/v1.21.0-development.md).
+For the full feature record and artifact details, see the [v1.22.0 release notes](.github/release-notes/v1.22.0.md) or the [published GitHub Release](https://github.com/retrodroid32/SquachWatch-CYD/releases/tag/v1.22.0). The earlier v1.21.0 release is documented in [release history](#v1210).
 
+### Hardware verification
 
-## Roadmap — in development after v1.21.0
+**November 4, 2026 — 6/6 user-reported hardware scenarios PASS** on both the classic **2.8-inch ST7789** and **3.2-inch ST7798** running published v1.22.0 firmware:
 
-These items are **not** part of v1.21.0. They remain in open PRs until review, CI and—where applicable—real-hardware validation are complete.
+1. Firmware boots and reports the expected version, with responsive touch.
+2. External **UBX GPS at 115200 baud** reports a fix, coordinates, satellites and trusted UTC.
+3. SD card removal and reinsertion updates the indicator, restores file access and supports logging.
+4. Saved-network **USE** works without WIFI BUSY errors or keyboard flicker.
+5. SquachMesh invitations/acceptance and messages work **both directions** between the two CYDs.
+6. WATCH/HUNT, diagnostics paging, icon visibility settings and portrait/landscape UI work.
 
-| Area | Work in progress | PRs |
+These results are **physical-board checks reported by the tester**, not claims that CI alone verified hardware. The firmware release and web-flasher deployment also completed their automated validation. Experimental ESP32-C5, ESP32-S3, capacitive CYD, CrowPanel and T-Watch GNSS changes remain separate and require their own physical validation.
+
+## Roadmap — in development after v1.22.0
+
+The GPS, SD, Wi-Fi, display, SquachMesh and UI changes described above are **already released in v1.22.0**; they are not pending features. The following work is in separate **draft/unmerged** PRs with successful CI but without required target-board acceptance. A successful compile or emulator test is not a substitute for testing the actual device.
+
+| Area | Remaining work | Draft PRs |
 |---|---|---|
-| CYD GPS | Live UBX/NMEA GPIO35 receiver is in the fork (merged #169 and #172); GPS UTC/board status refinements under review | #136 |
-| GNSS / WiGLE | Parser and WiGLE formatter groundwork merged; live wardriving/export not yet implemented | #169 |
-| T-Watch | Battery/charging status improvements | #70 |
-| T-Watch S3 Plus | GNSS runtime | #71 |
-| Wardriving | GPS-stamped wardrive runtime + WiGLE export | #72 |
-| Capacitive CYD | ESP32-2432S032C support | #73 |
-| Flasher | Board-code finder and CYD32C publication | #74, #90 |
-| 3.5-inch capacitive | S035C support + keyboard fixes | #75 |
-| ESP32-S3 boards | LCDWiki ES3C28P and Freenove S3 support | #76, #78 |
-| CrowPanel | Advance 7.0 base + stability work | #79, #84 |
-| Time zones | Expanded zones + bidirectional settings row | #80, #93 |
-| Detection | Additional Flock/spam hardening | #81 |
-| WATCH | Keep WATCH alerts open until acknowledged | #82 |
-| UI | Wardrobe polish and aquarium optimization | #83, #89 |
-| Nearby policy | Hide NEARBY for ignore-only / snooze-only activity | #88, #92 |
-| SquachMesh | SEND button on the in-range SQUAD page | #91 |
-| T-Watch policy | TAGS + RINGS log-only behavior | #96 |
-| Reconciliation | Upstream audit ledgers and selective ports | #85, #86, #97 |
+| RockBase ESP32-C5 | NM-CYD-C5 2.8-inch board base, then separate receive-only 5 GHz scans | [#142](https://github.com/retrodroid32/SquachWatch-CYD/pull/142), [#144](https://github.com/retrodroid32/SquachWatch-CYD/pull/144) |
+| Capacitive CYD32C | Base hardware, flasher board identification and known IDs | [#128](https://github.com/retrodroid32/SquachWatch-CYD/pull/128), [#129](https://github.com/retrodroid32/SquachWatch-CYD/pull/129), [#130](https://github.com/retrodroid32/SquachWatch-CYD/pull/130) |
+| 3.5-inch capacitive CYD35C | Display/keyboard support, RGB status LED and overlay fixes | [#131](https://github.com/retrodroid32/SquachWatch-CYD/pull/131), [#143](https://github.com/retrodroid32/SquachWatch-CYD/pull/143), [#147](https://github.com/retrodroid32/SquachWatch-CYD/pull/147) |
+| LCDWiki ESP32-S3 | ES3C28P board support | [#132](https://github.com/retrodroid32/SquachWatch-CYD/pull/132) |
+| CrowPanel Advance 7 | Board base and radio/OTA stability | [#133](https://github.com/retrodroid32/SquachWatch-CYD/pull/133), [#134](https://github.com/retrodroid32/SquachWatch-CYD/pull/134) |
+| ESP32-S3 radio | Slim Wi-Fi teardown/reinitialization settling | [#170](https://github.com/retrodroid32/SquachWatch-CYD/pull/170) |
+| T-Watch | Battery/charging status and TAGS + RINGS logging preferences | [#125](https://github.com/retrodroid32/SquachWatch-CYD/pull/125), [#122](https://github.com/retrodroid32/SquachWatch-CYD/pull/122) |
+| T-Watch S3 Plus | Dedicated GNSS runtime and GPS-stamped WiGLE wardrive export | [#126](https://github.com/retrodroid32/SquachWatch-CYD/pull/126), [#127](https://github.com/retrodroid32/SquachWatch-CYD/pull/127) |
+
+**Release metadata note:** The production v1.22.0 tag is already published. The default `master` branch still awaits the release-metadata/README reconciliation proposed in [#175](https://github.com/retrodroid32/SquachWatch-CYD/pull/175); the documentation branch does not itself change the published tag or firmware binaries.
 
 The reconciliation rule is deliberate: **do not copy upstream history just to make commit counts match.** Useful behavior is reviewed and ported selectively, while fork-specific compatibility decisions—especially retaining CYD BLE OTA—remain intact.
-
 
 ## Project overview
 
@@ -213,7 +196,10 @@ and the 3.5" ST7796 profile remains excluded from release/CI while its hardware
 issue is unresolved.
 
 Most CYD installations need no add-on hardware: no GPS, buzzer, or external
-radio module is required.
+radio module is required. For external GPS, use the classic CYD's GPIO35 UART2
+receive connection with a common ground and the receiver's specified supply voltage;
+the physically verified UBX setup runs at 115200 baud. GPS reception requires
+a suitable antenna and a real GNSS fix.
 
 ## Install
 
@@ -225,6 +211,8 @@ For most users, no build tools are required.
 2. Open the [SquachWatch web flasher](https://retrodroid32.github.io/SquachWatch-CYD/).
 3. Connect the board over USB and install the selected profile.
 4. After boot, use **SCAN** for live detection, **LOG** for detections/history, and **DESK** for desk mode.
+
+**Recommended production version:** [v1.22.0](https://github.com/retrodroid32/SquachWatch-CYD/releases/tag/v1.22.0). For an upgrade, do **not** erase the entire flash unless recovery requires it: preserve saved Wi-Fi, touch calibration, device settings, SquachMesh pairings and SD contents. Choose the correct board profile, especially for the 3.2-inch ST7798. Optional 80 MHz profiles are experimental.
 
 Useful links: [browser emulator](https://retrodroid32.github.io/SquachWatch-CYD/emulator/) · [build guide](docs/BUILD.md) · [pinout](docs/PINOUT.md) · [detection provenance](docs/DETECTIONS.md) · [FAQ](docs/FAQ.md).
 
@@ -279,7 +267,7 @@ plug in, click Connect & Install, done. A T-Watch has its clock set after instal
 If a microSD card is present, every detection is also appended to
 `squachwatch-<day>.log` (CSV: `ts,type,rssi,mac,channel,vendor,ssid`).
 
-### v1.21 controls at a glance
+### Current controls at a glance
 
 - **Alert Rules:** tune alert/log-only behavior, confidence, repeats, cooldown and screen wake by detection type.
 - **Device Policies:** mark a specific device NORMAL, IGNORE, TRUSTED or ALWAYS ALERT.
@@ -287,8 +275,11 @@ If a microSD card is present, every detection is also appended to
 - **WATCH:** keep one passive target selected.
 - **HUNT:** keep up to eight active targets and open the strongest one for live signal guidance.
 - **Privacy Mode:** mask identities on-screen without destroying the underlying detection data.
+- **v1.22 GPS and icons:** inspect fix/coordinates/satellites/UTC in diagnostics, and adjust GPS/status-icon visibility in settings.
+- **v1.22 SD and Wi-Fi:** check the SD status indicator, browse files, and manage saved networks with **USE**.
+- **v1.22 alerts:** long-press WATCH items and use timed **Snooze / Unsnooze** as needed.
 
-For implementation history of the detection-intelligence stages, see [v1.21.0 development notes](.github/release-notes/v1.21.0-development.md).
+For the original detection-intelligence implementation history, see [v1.21.0 development notes](.github/release-notes/v1.21.0-development.md). For v1.22 changes, see [release notes](.github/release-notes/v1.22.0.md).
 
 ### The clock
 
@@ -516,9 +507,9 @@ none of the saved networks is in range. REMOVE takes one off the list.
 - **Read receipts.** When a squad member opens your message their board says
   so, and yours shows a READ toast with their name. A reader with TRANSMIT off
   can't send one, so you see sent and never read, which is the truth.
-- **SNOOZE on an alert.** Quiets that one device until the board restarts. It
-  is still scanned, counted and logged; only the alert stops. IGNORE is the
-  same thing kept for good.
+- **SNOOZE / UNSNOOZE on an alert.** Temporarily quiets that device's
+  alert according to the timed snooze controls, while it continues being
+  scanned, counted and logged. IGNORE is the persistent policy.
 - **Banter about something.** Two Squachys now talk about the weather on
   screen, what was caught earlier, each other's outfits, how many times
   they've met, the squad's size, and the length of the day, one exchange in
@@ -780,6 +771,18 @@ baseline while hot-path lookup, BLE parsing and SD write overhead are reduced
 without changing intended detection semantics.
 
 ## Release history
+
+### v1.22.0
+
+**Field-Tested CYDs.** Released November 4, 2026 with external UBX/NMEA GPS
+and trusted UTC, reliable SD hot-swap and saved Wi-Fi USE, 3.2-inch display
+and diagnostics fixes, bidirectional SquachMesh improvements, WATCH/HUNT and
+Snooze refinements, Squachy graphics and improved signature/emulator coverage.
+Both classic 2.8-inch ST7789 and 3.2-inch ST7798 firmware variants passed six
+user-reported physical regression scenarios after publication.
+
+See [v1.22.0 release notes](.github/release-notes/v1.22.0.md) and
+[release downloads](https://github.com/retrodroid32/SquachWatch-CYD/releases/tag/v1.22.0).
 
 ### v1.21.0
 
