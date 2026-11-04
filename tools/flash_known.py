@@ -3,6 +3,7 @@
 
     python tools/flash_known.py COM33            # reads the MAC, picks the env, flashes
     python tools/flash_known.py COM33 --check    # just says which board and env
+    python tools/flash_known.py COM33 --allow-experimental  # opt in to UNVERIFIED CYD32C
 
 Boards move between ports, and a build for the wrong panel leaves a white
 or torn screen, or a board that never comes up. Every flash goes through
@@ -27,6 +28,9 @@ BOARDS = {
     # that nobody means to flash.
     "a4:f0:0f:8e:3a:88": ("cyd35-fast", "3.5in, 80MHz, two-band drawing"),
     "a0:f2:62:e1:29:10": ("twatch-s3",  "LilyGo T-Watch S3, native USB (COM13 is allowed for THIS MAC only)"),
+    # Sunton ESP32-2432S032C: 3.2in ST7789 IPS with GT911 capacitive touch.
+    "14:33:5c:6c:20:b8": ("cyd32c",     "Sunton ESP32-2432S032C, 3.2in ST7789 IPS, GT911 capacitive touch"),
+    "14:33:5c:6d:22:84": ("cyd32c",     "Sunton ESP32-2432S032C, second validated unit"),
     # 88:57:21:2e:e6:e0 runs SquachEmit, not this firmware. It is the only
     # CAPACITIVE 2.8in; to test capacitive touch, list it here as cyd-fast
     # for the test and comment it out again after (done 2026-09-21).
@@ -37,6 +41,10 @@ NEVER_PORTS = {"COM10"}
 # T-Watch S3 enumerates there as native USB with its MAC as the serial, so
 # COM13 is allowed only when the MAC read back is the watch's (2026-09-22).
 COM13_ONLY_FOR = "a0:f2:62:e1:29:10"
+
+# These board profiles are compile-tested but unverified on this fork's
+# physical hardware. Never silently flash them, even if the MAC is known.
+EXPERIMENTAL_ENVS = {"cyd32c"}
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
@@ -71,6 +79,9 @@ def main():
     print("%s: %s -> %s (%s)" % (port, mac, env, what))
     if "--check" in sys.argv:
         return
+    if env in EXPERIMENTAL_ENVS and "--allow-experimental" not in sys.argv:
+        sys.exit("refusing to flash %s: %s is hardware-unverified. Use --check to inspect; "
+                 "only opt in with --allow-experimental after confirming the exact board" % (port, env))
     if env == "twatch-s3":
         # Native USB: PlatformIO's bundled esptool 4.5 loses the link when its
         # stub changes speed, and fails "Unable to verify flash chip" even
