@@ -210,6 +210,8 @@ namespace Settings {
     // worse than useless.
     bool       wakeOnAlert();
     void       toggleWakeOnAlert();
+    bool       quietTrackers();
+    void       toggleQuietTrackers();
     bool       privacyMode();
     void       togglePrivacyMode();
     // Top-row status indicators; hiding them never changes the radio,

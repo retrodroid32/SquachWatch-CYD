@@ -164,6 +164,7 @@ static const uint8_t  IDLE_CPU_DEFAULT   = 2;   // historical 240 MHz
 static uint8_t  s_bleIx        = BLE_LISTEN_DEFAULT;
 static uint8_t  s_idleCpuIx    = IDLE_CPU_DEFAULT;
 static bool     s_wakeOnAlert  = true;
+static bool     s_quietTrack   = true;
 static bool     s_privacy      = false;
 static bool     s_showWifiIcon = true;
 static bool     s_showSdIcon   = true;
@@ -244,6 +245,7 @@ uint8_t  idleFps()          { return s_powerSaver ? IDLE_FPS[s_idleFpsIx] : 0; }
 uint16_t idleAfterSec()     { return IDLE_AFTER[s_idleAfterIx]; }
 uint16_t cpuMhz()           { return s_powerSaver ? CPU_MHZ[s_cpuIx] : 240; }
 bool     wakeOnAlert()      { return s_wakeOnAlert; }
+bool     quietTrackers()    { return s_quietTrack; }
 bool     privacyMode()      { return s_privacy; }
 bool     showWifiIcon()     { return s_showWifiIcon; }
 bool     showSdIcon()       { return s_showSdIcon; }
@@ -322,6 +324,10 @@ void cycleBuzz() {
 void toggleWakeOnAlert() {
     s_wakeOnAlert = !s_wakeOnAlert;
     s_prefs.putBool("pwrWake", s_wakeOnAlert);
+}
+void toggleQuietTrackers() {
+    s_quietTrack = !s_quietTrack;
+    s_prefs.putBool("qTrack", s_quietTrack);
 }
 void togglePrivacyMode() {
     s_privacy = !s_privacy;
@@ -477,6 +483,7 @@ void load() {
     if (s_bleIx > 2)     s_bleIx = BLE_LISTEN_DEFAULT;
     if (s_idleCpuIx > 2) s_idleCpuIx = IDLE_CPU_DEFAULT;
     s_wakeOnAlert  = s_prefs.getBool("pwrWake", true);
+    s_quietTrack   = s_prefs.getBool("qTrack", true);
     s_privacy      = s_prefs.getBool("privacy", false);
     // Old installations retain their icon layout until a user chooses
     // otherwise. Preferences are display-only and do not disable scans.
