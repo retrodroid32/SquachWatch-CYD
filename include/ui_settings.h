@@ -67,6 +67,7 @@ enum class SettingsRow : uint8_t {
     WATCH_STEADY,    // the T-Watch only: STEADY POWER, DC1 held in PWM, under WATCH
     WATCH_TEMP,      // the T-Watch only: the chip's temperature, a reading, under WATCH
     WATCH_XTAL,      // the T-Watch only: CLOCK CHECK, the ESP32's crystal against the clock chip's
+    WATCH_WARDRIVE,  // T-Watch GPS-stamped WiFi/BLE wardriving
     PRIVACY,         // screen-only masking of addresses and device/network names
     SNOOZE_MANAGER,  // main Settings: opens the current per-device snooze list
     SNOOZE_ENTRY,    // dynamic entry on the snooze page: tap to unsnooze
