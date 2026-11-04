@@ -73,6 +73,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+      - name: Validate v1.40 tap-to-step snooze
+        run: python tools/test_snooze_multitap.py
       - name: Run host tests
         run: make -C test
 

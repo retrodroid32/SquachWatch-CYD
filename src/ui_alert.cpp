@@ -11,8 +11,14 @@
 static Detection s_last;
 static bool s_touched = false;
 static bool s_snoozePrompt = false;
+static const char* s_snoozePickLabel = nullptr;
+static uint16_t s_snoozePickLeft = 0;
 void uiAlertSetSnoozePrompt(bool enabled) { s_snoozePrompt = enabled; }
 bool uiAlertSnoozePrompt() { return s_snoozePrompt; }
+void uiAlertSetSnoozePick(const char* label, uint16_t remainingPermille) {
+    s_snoozePickLabel = label;
+    s_snoozePickLeft = remainingPermille > 1000 ? 1000 : remainingPermille;
+}
 static bool s_redacted = false;
 void uiAlertSetRedacted(bool r) { s_redacted = r; }
 
@@ -144,6 +150,8 @@ void uiAlertInit(TFT_eSPI& t, const Detection& d) {
     s_spamIdentities = 0;
     s_touched = false;
     s_snoozePrompt = false;
+    s_snoozePickLabel = nullptr;
+    s_snoozePickLeft = 0;
     s_alertStart = millis();
     s_glitchStep = 0;
     // fillScreen() relies on TFT_eSPI's base-class width/height, which
@@ -704,21 +712,41 @@ void uiAlertTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng,
         t.setCursor(bx + (bw - hw) / 2, by + (bh - t.fontHeight()) / 2);
         t.print("HUNT");
     }
-    // WATCH: one-tap add straight from the detection alert. Once watched,
-    // the same button reads WATCHED and stays non-destructive: removal is
-    // available in WATCH TARGETS or the normal LOG/raw-scan controls.
+    // WATCH stays intact when no snooze is being picked. During the
+    // three-second tap chooser it becomes a two-line on-screen hint;
+    // the whole alert card then counts taps, including this area.
     {
         int bx, by, bw, bh;
         watchBtnRect(w, h, bx, by, bw, bh);
-        const bool watched = eng.isWatched(s_last.mac, s_last.channel == 0);
-        Theme::drawButton(t, bx, by, bw, bh,
-                          watched ? "WATCHED" : "WATCH", watched);
+        if (s_snoozePickLabel) {
+            Theme::drawButton(t, bx, by, bw, bh, "", false);
+            t.setTextFont(1); t.setTextSize(1);
+            t.setTextWrap(false); t.setTextColor(Theme::CYAN, Theme::BG);
+            const char* a = "TAP AGAIN";
+            const char* b = "LONGER";
+            const int y0 = by + (bh - 17) / 2;
+            t.setCursor(bx + (bw - t.textWidth(a))/2, y0); t.print(a);
+            t.setCursor(bx + (bw - t.textWidth(b))/2, y0 + 9); t.print(b);
+        } else {
+            const bool watched = eng.isWatched(s_last.mac, s_last.channel == 0);
+            Theme::drawButton(t, bx, by, bw, bh,
+                              watched ? "WATCHED" : "WATCH", watched);
+        }
     }
-    // SNOOZE between the two: opens a 10m/30m/1h/always picker.
+    // Upstream 1.40 tap-to-step snooze. Holding this button opens the fork's
+    // previous picker, retaining ALWAYS and its persistent snooze manager.
     {
         int bx, by, bw, bh;
         snoozeBtnRect(w, h, bx, by, bw, bh);
-        Theme::drawButton(t, bx, by, bw, bh, "SNOOZE", false);
+        Theme::drawButton(t, bx, by, bw, bh,
+                          s_snoozePickLabel ? s_snoozePickLabel : "SNOOZE",
+                          s_snoozePickLabel != nullptr);
+        if (s_snoozePickLabel) {
+            const int range = bw - 6;
+            const int progress = (int)((uint32_t)range * s_snoozePickLeft / 1000U);
+            t.fillRect(bx + 3, by + bh - 4, range, 2, Theme::BG);
+            if (progress > 0) t.fillRect(bx + 3, by + bh - 4, progress, 2, Theme::AMBER);
+        }
     }
 
     // TV-static snow over the whole screen during the same random burst

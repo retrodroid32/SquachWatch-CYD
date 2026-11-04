@@ -1351,7 +1351,29 @@ static void squachyCatch(DetectionType type, const uint8_t* mac, uint32_t hits, 
 enum class Buzz : uint8_t { ALERT, WATCH, SAMPLE };
 static void twatchBuzz(Buzz kind);
 #endif
+// Upstream v1.40 multi-tap SNOOZE with the fork's ALWAYS picker retained.
+// A new touch steps 10m -> 30m -> 1h -> 4h; three seconds idle commits.
+struct SnoozeStep { IgnoreList::SnoozeDuration duration; const char* label; const char* toast; };
+static const SnoozeStep SNOOZE_STEP[] = {
+    { IgnoreList::SnoozeDuration::MIN_10, "10 MIN", "This one, for 10 min" },
+    { IgnoreList::SnoozeDuration::MIN_30, "30 MIN", "This one, for 30 min" },
+    { IgnoreList::SnoozeDuration::HOUR_1, "1 HOUR", "This one, for 1 hour" },
+    { IgnoreList::SnoozeDuration::HOUR_4, "4 HOURS", "This one, for 4 hours" },
+};
+static const uint8_t SNOOZE_STEPS = sizeof SNOOZE_STEP / sizeof SNOOZE_STEP[0];
+static const uint32_t SNOOZE_PICK_MS = 3000;
+static const uint32_t SNOOZE_HOLD_PICKER_MS = 900;
+static uint8_t s_snoozeStep = 0;
+static uint32_t s_snoozeTapAt = 0, s_snoozeHoldAt = 0;
+static bool s_snoozeHeld = false;
+static void resetSnoozeTap() {
+    s_snoozeStep = 0;
+    s_snoozeTapAt = 0;
+    s_snoozeHeld = false;
+    uiAlertSetSnoozePick(nullptr, 0);
+}
 static void enterAlert(const Detection& d) {
+    resetSnoozeTap();
     s_backToDesk = (state == AppState::DESK);
     state = AppState::ALERT;
 #if defined(TWATCH_S3)
@@ -4950,6 +4972,49 @@ void loop() {
                 }
                 break;
             }
+            // While picking, every NEW press anywhere on the card steps
+            // the duration. A held finger never repeats at the debounce
+            // cadence. Holding the original SNOOZE button opens the legacy
+            // duration picker (and its persisted ALWAYS option).
+            if (s_snoozeStep) {
+                if (touchJustUp) s_snoozeHeld = false;
+                if (s_snoozeHeld && tp.valid &&
+                    now - s_snoozeHoldAt >= SNOOZE_HOLD_PICKER_MS) {
+                    resetSnoozeTap();
+                    lastTouch = now;
+                    uiAlertSetSnoozePrompt(true);
+                    break;
+                }
+                if (touchJustDown && tp.valid &&
+                    (now - lastTouch) > TOUCH_DEBOUNCE_MS) {
+                    lastTouch = now;
+                    s_snoozeStep = (uint8_t)(s_snoozeStep % SNOOZE_STEPS + 1);
+                    s_snoozeTapAt = now;
+                    s_snoozeHoldAt = now;
+                    s_snoozeHeld = uiAlertHitSnooze(tp.x, tp.y, tft.width(), tft.height());
+                    uiAlertSetSnoozePick(SNOOZE_STEP[s_snoozeStep - 1].label, 1000);
+                    break;
+                }
+                const uint32_t elapsed = now - s_snoozeTapAt;
+                if (elapsed >= SNOOZE_PICK_MS) {
+                    const SnoozeStep& pick = SNOOZE_STEP[s_snoozeStep - 1];
+                    const bool ok = IgnoreList::snooze(s_alertMac, pick.duration);
+                    if (ok) {
+                        Theme::showToast("SNOOZED", pick.toast, Theme::AMBER);
+                        resetSnoozeTap();
+                        squachyCatch(lastAlertType, s_alertMac, lastAlertHits, lastAlertRssi, lastAlertConf);
+                        enterClear();
+                    } else {
+                        resetSnoozeTap();
+                        alertStart = now;
+                        Theme::showToast("SNOOZE FAILED", "List full or save failed", Theme::RED);
+                    }
+                    break;
+                }
+                uiAlertSetSnoozePick(SNOOZE_STEP[s_snoozeStep - 1].label,
+                     (uint16_t)(1000 - elapsed * 1000U / SNOOZE_PICK_MS));
+                break;  // never auto-dismiss while choosing a duration
+            }
             if (tp.valid && (now - lastTouch) > TOUCH_DEBOUNCE_MS) {
                 lastTouch = now;
                 if (uiAlertHitMoreInfo(tp.x, tp.y, tft.width(), tft.height())) {
@@ -4973,11 +5038,14 @@ void loop() {
                     squachyCatch(lastAlertType, s_alertMac, lastAlertHits, lastAlertRssi, lastAlertConf);
                     enterClear();
                 } else if (uiAlertHitSnooze(tp.x, tp.y, tft.width(), tft.height())) {
-                    // Ask how long rather than silently snoozing until restart.
-                    // Do not count/dismiss this alert until the user selects
-                    // a duration; CANCEL leaves all policies unchanged.
+                    // First tap starts the v1.40 duration wheel. A 900 ms
+                    // hold opens the old picker, preserving ALWAYS snooze.
                     lastTouch = now;
-                    uiAlertSetSnoozePrompt(true);
+                    s_snoozeStep = 1;
+                    s_snoozeTapAt = now;
+                    s_snoozeHoldAt = now;
+                    s_snoozeHeld = true;
+                    uiAlertSetSnoozePick(SNOOZE_STEP[0].label, 1000);
                 } else if (uiAlertHitWatch(tp.x, tp.y, tft.width(), tft.height())) {
                     // One-tap WATCH from an ordinary detection alert. Guard
                     // against toggleWatch*() removing an existing target:

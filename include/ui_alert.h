@@ -30,6 +30,9 @@ bool uiAlertHitSnooze(int x, int y, int screenW, int screenH);
 bool uiAlertHitWatch(int x, int y, int screenW, int screenH);
 void uiAlertSetSnoozePrompt(bool enabled);
 bool uiAlertSnoozePrompt();
+// Timed SNOOZE multi-tap preview; null clears it. Progress 0..1000.
+// The legacy 10/30/1h/ALWAYS picker remains available by holding SNOOZE.
+void uiAlertSetSnoozePick(const char* label, uint16_t remainingPermille);
 enum class AlertSnoozeChoice : uint8_t { NONE, MIN_10, MIN_30, HOUR_1, ALWAYS, CANCEL };
 AlertSnoozeChoice uiAlertHitSnoozeChoice(int x, int y, int screenW, int screenH);
 // While the device is locked with ALERTS WHEN LOCKED at TYPE ONLY: the type
