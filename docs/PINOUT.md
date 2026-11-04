@@ -41,10 +41,21 @@ selects between them via their respective `CS` lines. The SD card
 is optional — if no card is inserted at boot, the firmware just
 skips SD logging and everything else works.
 
-## Unused GPIOs (free for future use)
+## External GNSS input (CYD 2.8" and 3.2")
 
-GPIO 0, 1, 3, 12, 13, 16, 17, 22, 26, 34, 35, 37, 38 are exposed
-on the CYD's GPIO header but not used by SquachWatch-CYD v1.0.
+The current firmware enables real UBX and NMEA GPS reception on the tested
+classic ESP32 CYDs. Connect **GPS module TX → GPIO35**, **GND → GND**,
+and power from a supply rated for the module. The GPS module must transmit
+at **115200 baud**. UART2 is RX-only: leave the GPS module's RX pin
+unconnected. GPIO35 is input-only. Do not wire GPS TX to UART0
+(GPIO3/RXD, shared with the USB console on some 3.2" boards).
+
+## Other header GPIOs
+
+GPIO 0, 1, 3, 12, 13, 16, 17, 22, 26, 34, 37, 38 may be exposed
+on different board revisions. Confirm pin availability against the exact
+hardware before using them. GPIO35 is reserved for GPS RX on supported
+SquachWatch-CYD firmware.
 
 ## Sources
 

@@ -11,7 +11,29 @@ class SdLog {
 public:
     bool begin();              // returns true if card mounted
     bool ready() const { return _ready; }
+    // Browser and monitor serialize individual SD I/O operations.
+    // The browser must not hold the mutex for its entire screen visit.
+    void browseBegin();
+    void browseEnd();
+    void browseFault();
+    bool browseLock();        // nonblocking: never wait for an SD timeout on UI task
+    void browseUnlock();
+    bool rescan();            // request async remount from SD monitor
+    bool wipeAllFiles();      // recursive file deletion; keeps FAT intact, double-confirmed
+    const char* wipeError() const { return _wipeError; }
+    const char* statusDetail() const { return _statusDetail; }
+    uint32_t mountAttempts() const { return _mountAttempts; }
+    uint32_t probeFailures() const { return _probeFailures; }
+    bool remounting() const { return _remounting; }
+    void startMonitor();       // mount-state monitor on a separate task (CYD boards)  // an explicit browse I/O failure (never polled)
     void logEvent(const Detection& d);
+    // Optional, loop-task-only WATCH/HUNT and EVIL TWIN forensic CSV rows.
+    // Uses the same bounded SD mutex and fail-closed I/O policy as logEvent.
+    void logTargetEvidence(const Detection& d, bool watched, bool hunted);
+    // WATCH-only BLE advertisement copy, max 64 bytes, queued from NimBLE
+    // and consumed on the loop task. No callbacks perform SD operations.
+    void logWatchAdvertisement(const uint8_t mac[6], const uint8_t* bytes,
+                               uint8_t len, uint16_t originalLen, int8_t rssi);
     void tick();               // buffered flush / housekeeping (called from loop)
     // Deletes every squachwatch log file on the card. For the security wipe --
     // the phrase and the ignore list live in NVS, but the detection history a
@@ -25,7 +47,24 @@ private:
     static constexpr size_t WRITE_BUFFER_CAP = 512;
     static constexpr size_t WRITE_BUFFER_FLUSH_AT = 384;
 
-    bool     _ready = false;
+    // Latched off on first write/open error; no repeated SPI retries.
+    volatile bool _ready = false;
+    volatile bool _browsing = false;
+    volatile bool _requestRescan = false;
+    volatile bool _remounting = false;
+    volatile uint32_t _mountAttempts = 0;
+    volatile uint32_t _probeFailures = 0;
+    const char* volatile _statusDetail = "NO SD CARD";
+    bool _everMounted = false;
+    // Original CYD only: keep Arduino SDFS's registered FAT/VFS context
+    // allocated across physical card removal. The underlying diskio drive
+    // and FATFS object remain owned by SDFS, never freed by this class.
+    uint8_t _retainedPdrv = 0xFF;
+    void* _retainedFs = nullptr;
+    bool _retainedDetached = false;
+    char _wipeError[40] = {0};
+    void* _ioMutex = nullptr;   // FreeRTOS semaphore, opaque for PC emulator headers
+    void* _monitorTask = nullptr;
     uint32_t _lastFlush = 0;
     uint32_t _flushFailures = 0;
     uint32_t _droppedLines = 0;
@@ -34,5 +73,9 @@ private:
     uint16_t _pendingLen = 0;
 
     void openDaily();
+    bool remountRetained();   // same FAT/VFS context; reinitialize disk only
     bool flushPending();
+    bool flushPendingLocked();
+    static void monitorEntry(void* ctx);
+    void disableAfterIoFailure(const char* operation);
 };

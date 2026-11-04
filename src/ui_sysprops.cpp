@@ -4,6 +4,9 @@
 #include "settings.h"
 #include "ota_core.h"
 #include "detection.h"
+#if defined(GPS_SUPPORT) && defined(GPS_RX_PIN)
+#include "gps_runtime.h"
+#endif
 #include <Arduino.h>
 #include <esp_heap_caps.h>
 #include <stdio.h>
@@ -277,6 +280,20 @@ void drawBoardTab(TFT_eSPI& t, const Geom& g) {
     uptimeText(buf, sizeof buf, millis());
     row(t, g, y, "Up", buf);
     y += LINE;
+
+#if defined(GPS_SUPPORT) && defined(GPS_RX_PIN)
+    // A compact status in BOARD, separate from the full GNSS diagnostic
+    // screen. No UI/SD/radio state is mutated by this read-only snapshot.
+    const GpsRuntime::Status gps = GpsRuntime::status(millis());
+    if (gps.fresh)
+        snprintf(buf, sizeof buf, "FIX  %u used / %u view",
+                 (unsigned)gps.fix.used, (unsigned)gps.sky.view);
+    else
+        snprintf(buf, sizeof buf, "%s",
+                 gps.fix.valid ? "STALE" : "NO FIX");
+    row(t, g, y, "GPS", buf);
+    y += LINE;
+#endif
 
     snprintf(buf, sizeof buf, "%lu KB free", (unsigned long)(ESP.getFreeHeap() / 1024));
     row(t, g, y, "Memory", buf);
