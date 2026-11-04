@@ -1,3 +1,10 @@
-WATCH149-LANDBACK
-# Experimental LAB build after landscape WATCH BACK touch fix.
-# Triggered only on explicit user hardware regression report.
+PR136-CYD32-UI-BOOT-DIAG-FIX-20261103
+# LAB hardware retest for PR136 head 20d856b0a56b3c77ddafad4d3b4e7f399a26dd6c
+# 3.2 CYD32 ST7798: buffer BOOT splash using same two-band renderer as main
+# without modifying radio, GPS GPIO35 UART2, SD, NVS, or SquachMesh.
+# Diagnostics: force font 1, reserve top 20px icon band and fixed footer;
+# show PAGE UP / SWIPE / PAGE DOWN, reach final BLE SEEN/FLUSHED lines.
+# Settings-launched System Properties: alerts logged without closing Board.
+# Keep GPS green/amber/absent icon and Wi-Fi/SD/GPS show/hide unchanged.
+# Retest CYD 2.8 ST7789 and 3.2 ST7798 in both orientations.
+# NOT a production release or version tag; DO NOT merge without approval.
