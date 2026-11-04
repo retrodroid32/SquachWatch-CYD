@@ -1516,6 +1516,38 @@
       compatNote.textContent = msg;
     }
 
+    // Pure matcher: intentionally independent from DOM, so the published
+    // board finder can be regression-tested against the real boards.json.
+    // A PCB code must never silently expose an unpublished/untested profile.
+    function classifyBoardCode(input, matrix) {
+      var raw = String(input || '').toUpperCase().replace(/\s+/g, '');
+      if (raw.length < 4) return { kind: 'empty' };
+      // The unqualified ESP32-32E mark is shared by multiple screen sizes.
+      if (/^(?:ESP32-?)?32E$/.test(raw)) return { kind: 'ambiguous' };
+      if (/E32R35|32E.*320X480|32E.*3\.5|3\.5.*32E/.test(raw)) return { kind: 'unsupported35' };
+      if (/32E.*240X320|32E.*2\.8|2\.8.*32E/.test(raw)) raw = 'E32R28T';
+
+      var hits = [], unpublished = [];
+      Object.keys(matrix).forEach(function (id) {
+        var b = matrix[id];
+        if (!Array.isArray(b.codes)) return;
+        var found = b.codes.some(function (code) {
+          return raw.indexOf(String(code).toUpperCase().replace(/\s+/g, '')) >= 0;
+        });
+        if (!found) return;
+        if (b.visible === true && b.manifest) hits.push(b);
+        else unpublished.push(b);
+      });
+      if (!hits.length) {
+        return { kind: unpublished.length ? 'unpublished' : 'unknown' };
+      }
+      // 2.8-inch S028R boards may carry either supported controller.
+      // Keep ST7789 the DEFAULT, never claim the PCB code identifies LCD silicon.
+      var chosen = hits[0];
+      if (hits.some(function (b) { return b.id === 'cyd'; })) chosen = matrix.cyd;
+      return { kind: 'match', id: chosen.id };
+    }
+
     loadBoardMatrix().then(function () {
       addLabOptions();
 
@@ -1523,46 +1555,27 @@
       var codeOut = document.getElementById('boardCodeAnswer');
       if (!codeIn || !codeOut) return;
       codeIn.addEventListener('input', function () {
-        var raw = codeIn.value.toUpperCase().replace(/\s+/g, '');
+        var result = classifyBoardCode(codeIn.value, boardMatrix);
         codeOut.className = 'board-code-answer';
-        if (raw.length < 4) { codeOut.textContent = ''; return; }
-
-        // ESP32-32E covers different panel sizes. Never pick a firmware from
-        // that generic marking alone; the 3.5-inch resistive build is hidden.
-        if (/^(?:ESP32-?)?32E$/.test(raw)) {
+        if (result.kind === 'empty') { codeOut.textContent = ''; return; }
+        if (result.kind === 'ambiguous') {
           codeOut.className = 'board-code-answer warn';
           codeOut.textContent = 'ESP32-32E comes in 2.8-inch and 3.5-inch versions. Enter E32R28T/E32R35T, or the size/resolution.';
           return;
         }
-        if (/E32R35|32E.*320X480|32E.*3\.5|3\.5.*32E/.test(raw)) {
+        if (result.kind === 'unsupported35') {
           codeOut.className = 'board-code-answer warn';
           codeOut.textContent = '3.5-inch ESP32-32E identified. Its resistive BETA firmware is not in the public board picker; do not choose a 2.8-inch image.';
           return;
         }
-        if (/32E.*240X320|32E.*2\.8|2\.8.*32E/.test(raw)) raw = 'E32R28T';
-
-        var hits = [];
-        Object.keys(boardMatrix).forEach(function (id) {
-          var b = boardMatrix[id];
-          if (!b.visible || !Array.isArray(b.codes)) return;
-          for (var i = 0; i < b.codes.length; i++) {
-            if (raw.indexOf(String(b.codes[i]).toUpperCase().replace(/\s+/g, '')) >= 0) {
-              hits.push(b); break;
-            }
-          }
-        });
-
-        if (!hits.length) {
+        if (result.kind !== 'match') {
           codeOut.className = 'board-code-answer warn';
-          codeOut.textContent = 'Board code not recognized yet — use the list below.';
+          codeOut.textContent = result.kind === 'unpublished'
+            ? 'This board is recognized, but its firmware is not released or hardware validated. Do NOT choose a different board image.'
+            : 'Board code not recognized. Verify the board before selecting a firmware image.';
           return;
         }
-
-        // 2.8" S028R boards can carry either supported display controller.
-        // Pick the normal ST7789 profile first and keep the existing white-
-        // screen guidance visible rather than pretending the PCB code tells us.
-        var chosen = hits[0];
-        if (hits.some(function (b) { return b.id === 'cyd'; })) chosen = boardMatrix.cyd;
+        var chosen = boardMatrix[result.id];
         for (var j = 0; j < select.options.length; j++) {
           if (boardIdFromOption(select.options[j]) === chosen.id) {
             select.selectedIndex = j;
