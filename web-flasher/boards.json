@@ -205,25 +205,35 @@
       "shared_esp32": true,
       "merged": false,
       "lab": false,
+      "cyd28": false
+    },
+    {
+      "id": "freenove-s3",
+      "label": "Freenove ESP32-S3 2.8\" (compile-only)",
+      "manifest": null,
+      "visible": false,
+      "ci": true,
+      "release": false,
+      "sign": false,
+      "shared_esp32": false,
+      "merged": false,
+      "lab": false,
       "cyd28": false,
-      "group": "Other ESP32 boards",
-      "codes": [
-        "ESP32-2432S024C"
-      ]
+      "note": "Compile-validation profile for Freenove FNK0104B/FNK0104A; hardware validation required before publication."
     },
     {
       "id": "cyd32c",
-      "label": "3.2\" CYD · capacitive — ESP32-2432S032C",
-      "manifest": "manifest-cyd32c.json",
-      "visible": true,
+      "label": "3.2\" CYD capacitive — ESP32-2432S032C (compile-only)",
+      "manifest": null,
+      "visible": false,
       "ci": true,
-      "release": true,
-      "sign": true,
+      "release": false,
+      "sign": false,
       "shared_esp32": true,
       "merged": false,
-      "lab": true,
+      "lab": false,
       "cyd28": false,
-      "note": "Sunton ESP32-2432S032C: ST7789 IPS with GT911 capacitive touch. This is not the resistive ESP32-2432S032R profile.",
+      "note": "Compile-only, not hardware validated. Do not offer firmware downloads until verified.",
       "group": "Cheap Yellow Displays (CYD)",
       "codes": [
         "ESP32-2432S032C"

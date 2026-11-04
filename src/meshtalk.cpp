@@ -280,8 +280,9 @@ void deliverInvite(const Slot& s, uint32_t now, uint32_t ctr, uint8_t kind) {
         }
         ++s_rxInviteComplete;
         Serial.printf("[invite-rx] complete four-part %s for this board\n", role ? "ANSWER" : "OFFER");
-        s_replay.record(s.mac, ctr);
-        saveReplay();
+        // No s_replay.record(): public invite counters belong to this
+        // exchange and must not advance the persistent group-message
+        // high-water mark.
         if (role == 0) {
             // An offer. Only while nothing else is going on: a second offer
             // mid-invite is ignored, not swapped in.
@@ -335,8 +336,8 @@ void deliverInvite(const Slot& s, uint32_t now, uint32_t ctr, uint8_t kind) {
         const bool ok = MeshMsg::inviteKeyUnblob(s_invAsm.bytes, s_invPhrase);
         s_invAsm.clear();
         if (!ok) { inviteFail("Garbled phrase", now); return; }
-        s_replay.record(s.mac, ctr);
-        saveReplay();
+        // The KEY is authenticated under this exchange's ephemeral DH key,
+        // so its counter must likewise never change persistent group replay.
         s_invPhraseIn = true;
         Serial.println("[invite] the phrase is in");
         // Taken now if MATCHES was already pressed, else held for it.
@@ -353,11 +354,27 @@ void deliver(const Slot& s, uint32_t now) {
     uint32_t ctr = 0;
     uint8_t kind = 0;
     if (!MeshMsg::parseHeader(s.data, s.len, ctr, kind)) return;
-    // Cheap check first: a counter this sender has already used cannot be a
-    // new message, so it never costs a decryption.
+    // Invitation counters are scoped to an ephemeral key-exchange attempt,
+    // NOT to a prior encrypted squad session. An ERASE ALL/reinstall on one
+    // board resets its sender counter, while a peer still remembers the old
+    // counter in NVS. Rejecting invite packets against that *old* high-water
+    // mark permanently breaks re-pairing: the inviter stays OFFERING and the
+    // other board cannot deliver its answer.
+    //
+    // PUBLIC invite parts are hash-validated and target-checked in
+    // deliverInvite(); encrypted KEY parts are authenticated with the fresh
+    // ephemeral DH session key. InviteAssembly groups all four parts by
+    // sender, kind and counter base; invite states, peer MAC and the displayed
+    // four-digit code still gate any change of squad phrase. Thus invitations
+    // don't consume or depend on the persistent encrypted-message replay
+    // high-water mark.
+    if (kind == MeshMsg::KIND_INVITE_PUB || kind == MeshMsg::KIND_INVITE_KEY) {
+        deliverInvite(s, now, ctr, kind);
+        return;
+    }
+    // Regular group-encrypted messages continue to require fresh, persisted
+    // sender counters before decryption, unchanged.
     if (!s_replay.fresh(s.mac, ctr)) { ++s_rxReplay; return; }
-    // The invite's frames are the one thing a board without a phrase reads.
-    if (kind == MeshMsg::KIND_INVITE_PUB || kind == MeshMsg::KIND_INVITE_KEY) { deliverInvite(s, now, ctr, kind); return; }
     if (!ready()) return;
 
     if (kind == MeshMsg::KIND_READ) {
@@ -871,6 +888,21 @@ Send inviteConfirm(uint32_t now) {
         const Send r = invitePut(MeshMsg::KIND_INVITE_KEY, blob, INVITE_KEY_MS, now);
         memset(blob, 0, sizeof blob);
         if (r != Send::OK) { inviteFail("Could not send the phrase", now); return r; }
+        // This exact peer has just been physically verified via the same
+        // four-digit ephemeral DH code on BOTH boards. If their flash was
+        // erased since we last heard them, their new group-message counters
+        // can be lower than our persisted replay high-water mark. R16 fixed
+        // replay handling for invitations but that older record still
+        // blocked their HELLO and all messages after pairing.
+        //
+        // Only discard the chosen peer's stale high-water mark; persist the
+        // change immediately. Every other peer and all later normal message
+        // traffic still use the existing authenticated replay protection.
+        // No reset on ADD alone, incoming offers, or unmatched digits.
+        if (s_replay.forgetPeer(s_invPeerMac)) {
+            saveReplay();
+            Serial.println("[invite] cleared matched peer's old message replay epoch");
+        }
         inviteTo(InviteState::SENDING, now);
         s_invConfirmed = false;
         for (uint8_t i = 0; i < SQUAD_N; i++)
