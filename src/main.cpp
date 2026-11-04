@@ -1221,6 +1221,9 @@ static void runTouchCalibration() {
     lastTouch = millis();
 }
 
+// Shared by the boot splash and home-screen adaptive multi-band renderer.
+// Must be declared before enterBoot() in CYD32 GNSS builds.
+static uint8_t s_recoveryBands = 1;
 static void enterBoot() {
     state = AppState::BOOT;
     bootStart = millis();
@@ -1266,8 +1269,7 @@ static bool onRawScanScreen() {
 #endif
         ;
 }
-// Shared with home-screen entry and adaptive OTA framebuffer recovery.
-static uint8_t s_recoveryBands = 1;
+// Adaptive framebuffer recovery uses the band count declared above enterBoot().
 static void enterClear() {
     if (Security::locked()) { enterLocked(); return; }
     restoreFrameBuffer();   // lent to a download that did not end in a restart
