@@ -111,7 +111,7 @@ The GPS, SD, Wi-Fi, display, SquachMesh and UI changes described above are **alr
 | T-Watch | Battery/charging status and TAGS + RINGS logging preferences | [#125](https://github.com/retrodroid32/SquachWatch-CYD/pull/125), [#122](https://github.com/retrodroid32/SquachWatch-CYD/pull/122) |
 | T-Watch S3 Plus | Dedicated GNSS runtime and GPS-stamped WiGLE wardrive export | [#126](https://github.com/retrodroid32/SquachWatch-CYD/pull/126), [#127](https://github.com/retrodroid32/SquachWatch-CYD/pull/127) |
 
-**Release metadata note:** The production v1.22.0 tag is already published. The default `master` branch still awaits the release-metadata/README reconciliation proposed in [#175](https://github.com/retrodroid32/SquachWatch-CYD/pull/175); the documentation branch does not itself change the published tag or firmware binaries.
+**Release metadata note:** The production v1.22.0 tag is published, and [PR #175](https://github.com/retrodroid32/SquachWatch-CYD/pull/175) synchronized its version, release notes and README with `master`. The original release tag and firmware binaries remain unchanged.
 
 The reconciliation rule is deliberate: **do not copy upstream history just to make commit counts match.** Useful behavior is reviewed and ported selectively, while fork-specific compatibility decisions—especially retaining CYD BLE OTA—remain intact.
 
