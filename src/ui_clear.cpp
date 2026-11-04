@@ -1719,7 +1719,7 @@ static int16_t s_cornerClockPillR = -1;
 static int16_t drawCornerClock(TFT_eSPI& t, int w) {
     if (!Clock::trusted()) return -1;
     char tm[8];
-    Clock::formatTime(tm, sizeof tm, true);
+    Clock::formatTime(tm, sizeof tm, !Settings::clock24Hour());
     t.setTextSize(2);
     const int icons = Theme::titleBarRightIconsX(w);
     const int right = icons - (icons < w ? 2 : 4);
