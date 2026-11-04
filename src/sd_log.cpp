@@ -54,6 +54,10 @@ static const uint8_t SD_MAX_FILES = 1;
 
 bool SdLog::begin() {
     if (_ready) return true;
+#if defined(LCDWIKI_ES3C28P)
+    // Card-bus pins not yet hardware validated on this board.
+    return false;
+#endif
     ++_mountAttempts;
     _statusDetail = "TRYING SD MOUNT";
     // Do not turn a detected unplug (red) back to gray during unsuccessful

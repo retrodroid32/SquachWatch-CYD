@@ -17,12 +17,26 @@ void begin(int sda, int scl, int rst, uint8_t addr) {
     ADDR = addr;
     if (rst >= 0) {
         pinMode(rst, OUTPUT);
+#if defined(LCDWIKI_ES3C28P)
+        // LCDWiki's supplied FT6336G init uses HIGH -> LOW -> HIGH and a
+        // substantially longer boot delay than the CST816-family boards.
+        digitalWrite(rst, HIGH);
+        delay(20);
+        digitalWrite(rst, LOW);
+        delay(20);
+        digitalWrite(rst, HIGH);
+        delay(500);
+#else
         digitalWrite(rst, LOW);
         delay(10);
         digitalWrite(rst, HIGH);
         delay(50);  // chip boot time after reset release
+#endif
     }
     Wire.begin(sda, scl);
+#if defined(LCDWIKI_ES3C28P)
+    Wire.setClock(400000);
+#endif
 }
 
 bool probe() {
