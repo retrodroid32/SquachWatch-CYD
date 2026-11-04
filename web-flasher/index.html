@@ -1545,7 +1545,7 @@
       // Keep ST7789 the DEFAULT, never claim the PCB code identifies LCD silicon.
       var chosen = hits[0];
       if (hits.some(function (b) { return b.id === 'cyd'; })) chosen = matrix.cyd;
-      return { kind: 'match', id: chosen.id };
+      return { kind: 'match', id: chosen.id, resetOverclock: true };
     }
 
     loadBoardMatrix().then(function () {
@@ -1576,6 +1576,9 @@
           return;
         }
         var chosen = boardMatrix[result.id];
+        // Printed PCB markings do not establish display clock tolerance.
+        // Never carry an experimental 80 MHz checkbox across auto-selection.
+        if (ocChk && result.resetOverclock) ocChk.checked = false;
         for (var j = 0; j < select.options.length; j++) {
           if (boardIdFromOption(select.options[j]) === chosen.id) {
             select.selectedIndex = j;
