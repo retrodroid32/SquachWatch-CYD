@@ -69,6 +69,16 @@ pio run -t upload
 pio run -e cyd32-st7798 -t upload
 ```
 
+**External GPS (current CYD firmware):** No separate GPS build or TinyGPS++
+dependency is needed. Both 2.8" ST7789/ILI9341 and 3.2" ST7798 base
+profiles include the validated UBX/NMEA parser. Connect **GPS TX → CYD
+GPIO35**, module **GND → CYD GND**, and supply the GPS module with its
+specified voltage. Leave GPS RX disconnected (the CYD uses UART2 RX
+only). The module must output at **115200 baud**. Do **not** connect the
+GPS to 3.2" UART0 RXD/TXD / CH340C serial lines; those are shared with
+USB diagnostics. A recent, valid GNSS fix can establish the clock if no
+trusted time is available.
+
 On Windows you can also run `build_cyd32_st7798.bat` and
 `flash_cyd32_st7798.bat`. The flash helper lists detected serial ports and
 asks which COM port to use before uploading.

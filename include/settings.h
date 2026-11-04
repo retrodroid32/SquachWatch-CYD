@@ -212,6 +212,14 @@ namespace Settings {
     void       toggleWakeOnAlert();
     bool       privacyMode();
     void       togglePrivacyMode();
+    // Top-row status indicators; hiding them never changes the radio,
+    // SD mount state or GPS parser. Saved separately per board in NVS.
+    bool       showWifiIcon();
+    void       toggleWifiIcon();
+    bool       showSdIcon();
+    void       toggleSdIcon();
+    bool       showGpsIcon();
+    void       toggleGpsIcon();
     // The T-Watch's buzz on an alert (the DRV2605 haptic motor). Kept on
     // every board so the settings file reads the same; only the watch has
     // a motor to use it.
