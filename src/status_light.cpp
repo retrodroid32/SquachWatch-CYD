@@ -11,7 +11,8 @@
 // is a rule and not a shortcut.
 #if defined(FREENOVE_S3)
 #define STATUS_LIGHT_HW 2
-#elif defined(ESP32) && !defined(CYD35) && !defined(AWOK) && !defined(TWATCH_S3)
+// CYD35C has an RGB LED on verified GPIO4/16/17; resistive CYD35 stays off.
+#elif defined(ESP32) && (!defined(CYD35) || defined(CYD35C)) && !defined(AWOK) && !defined(TWATCH_S3)
 #define STATUS_LIGHT_HW 1
 #else
 #define STATUS_LIGHT_HW 0
