@@ -438,9 +438,26 @@ bool lockButtonHit(int x, int y, int w) {
 #define BUBBLE_FONT 2
 #endif
 #if BUBBLE_FONT == 2
-void bubbleFontOn(TFT_eSPI& t)  { t.setTextFont(2); }
-void bubbleFontOff(TFT_eSPI& t) { t.setTextFont(1); }
-int  bubbleTextH()  { return 16; }
+// The font/height are a unit: Squachy's wrap and box calculation reads the
+// same height as the actual face. Default 0/2 stays the historical font 2.
+static int s_bubbleHeight = 16;
+void bubbleFontOn(TFT_eSPI& t) {
+    const int delta = (int)Settings::fontStep(Settings::FontKind::BUBBLES) - 2;
+    const bool pixel = Settings::fontFace(Settings::FontKind::BUBBLES) == 1;
+    if (pixel) {
+        t.setTextFont(1);
+        t.setTextSize((uint8_t)(delta < 0 ? 1 : delta > 0 ? 3 : 2));
+    } else if (delta < 0) {
+        t.setTextFont(1);
+        t.setTextSize(1);
+    } else {
+        t.setTextFont(2);
+        t.setTextSize((uint8_t)(delta > 0 ? 2 : 1));
+    }
+    s_bubbleHeight = t.fontHeight();
+}
+void bubbleFontOff(TFT_eSPI& t) { t.setTextFont(1); t.setTextSize(1); }
+int  bubbleTextH()  { return s_bubbleHeight; }
 int  bubbleAscent() { return 0; }
 #else
 static int s_bubAb = -1, s_bubBb = 0;
@@ -639,12 +656,36 @@ void drawButton(TFT_eSPI& t, int x, int y, int w, int h,
         t.setTextSize(ts);
         if (t.textWidth(label) > w - 6) ts = textSize;
     }
-    t.setTextSize(ts);
+    // Measure each candidate against the actual button, not the panel width.
+    // Oversized labels gracefully fall back instead of overlapping borders.
+    int requested = (int)ts + fontDelta(Settings::FontKind::BUTTONS);
+    if (requested > 4) requested = 4;
+    if (requested < 1) requested = 1;
+    t.setTextFont(1);
+    int chosen = ts;
+    for (int trySize = requested; trySize >= 1; --trySize) {
+        t.setTextSize((uint8_t)trySize);
+        if (t.textWidth(label) <= w - 6 && t.fontHeight() <= h - 2) {
+            chosen = trySize;
+            break;
+        }
+    }
+    t.setTextSize((uint8_t)chosen);
+    // Explicit SMOOTH face only where the box really holds it.
+    const uint8_t face = Settings::fontFace(Settings::FontKind::BUTTONS);
+    if (face == 2 && chosen <= 2) {
+        t.setTextFont(2);
+        t.setTextSize(1);
+        if (t.textWidth(label) > w - 6 || t.fontHeight() > h - 2) {
+            t.setTextFont(1); t.setTextSize((uint8_t)chosen);
+        }
+    }
     t.setTextColor(fg, fill);
-    int tw = t.textWidth(label);
-    int th = t.fontHeight();
+    const int tw = t.textWidth(label);
+    const int th = t.fontHeight();
     t.setCursor(x + (w - tw) / 2, y + (h - th) / 2);
     t.print(label);
+    t.setTextFont(1); t.setTextSize(1);
 }
 
 void drawWin95Button(TFT_eSPI& t, int x, int y, int w, int h,
@@ -679,15 +720,32 @@ void drawWin95Button(TFT_eSPI& t, int x, int y, int w, int h,
     // the tell that it is a costume. Centred on the FACE rather than on the
     // whole rect, so the bevel does not pull the text off-centre, then the
     // one-pixel press offset on top.
+    t.setTextFont(1);
     t.setTextSize(1);
     t.setTextWrap(false);
     t.setTextColor(BLACK, W95_FACE);
+    // Win95 buttons also use the bounded BUTTONS ladder.
+    int size = 1 + fontDelta(Settings::FontKind::BUTTONS);
+    if (size < 1) size = 1;
+    if (size > 4) size = 4;
+    for (; size > 1; --size) {
+        t.setTextSize((uint8_t)size);
+        if (t.textWidth(label) <= w - 8 && t.fontHeight() <= h - 4) break;
+    }
+    t.setTextSize((uint8_t)size);
+    if (Settings::fontFace(Settings::FontKind::BUTTONS) == 2 && size <= 2) {
+        t.setTextFont(2); t.setTextSize(1);
+        if (t.textWidth(label) > w - 8 || t.fontHeight() > h - 4) {
+            t.setTextFont(1); t.setTextSize((uint8_t)size);
+        }
+    }
     const int tw = t.textWidth(label);
     const int th = t.fontHeight();
     const int ox = sunken ? 1 : 0;
     t.setCursor(x + 2 + (w - 4 - tw) / 2 + ox,
                 y + 2 + (h - 4 - th) / 2 + ox);
     t.print(label);
+    t.setTextFont(1); t.setTextSize(1);
 }
 
 ButtonBarGeom computeButtonBar(int screenW, int screenH) {
