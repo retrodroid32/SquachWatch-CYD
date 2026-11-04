@@ -1225,7 +1225,15 @@ static void enterBoot() {
     state = AppState::BOOT;
     bootStart = millis();
     transitionStart = bootStart;
+    // The GPS-enabled 3.2 CYD owns only a half-height sprite. Prepare its
+    // boot canvas in that sprite rather than clearing the live LCD each
+    // time the unbuffered splash starts.
+#if defined(CYD32) && defined(GPS_SUPPORT) && defined(GPS_RX_PIN)
+    if (frameBufferOk && s_recoveryBands > 1) uiBootInit(frame);
+    else                                      uiBootInit(*canvas);
+#else
     uiBootInit(*canvas);
+#endif
 #if defined(CYD35)
     clearSharedFrameBuffer();
 #endif
@@ -4233,6 +4241,20 @@ void loop() {
             } else {
                 uiBootTick(tft, now);
             }
+#elif defined(CYD32) && defined(GPS_SUPPORT) && defined(GPS_RX_PIN)
+            // BOOT used to draw directly to the TFT on CYD32 while CLEAR
+            // drew through two buffered bands. Keep both sides of the
+            // handoff buffered, so the 3.2 panel never shows half-painted
+            // text/background primitives on its way to the main screen.
+            if (frameBufferOk && s_recoveryBands > 1) {
+                drawTwoBand([&](TFT_eSPI& t, bool) {
+                    uiBootTick(t, now);
+                    if (crashCardWanted()) drawCrashCard(t);
+                });
+            } else {
+                uiBootTick(*canvas, now);
+                if (crashCardWanted()) drawCrashCard(*canvas);
+            }
 #else
             uiBootTick(*canvas, now);
             if (crashCardWanted()) drawCrashCard(*canvas);
@@ -4275,11 +4297,11 @@ void loop() {
             break;
         }
         case AppState::SYS_PROPS: {
-            // A detection still takes the screen. The window can open on a
-            // board nobody is watching -- a squad member's hello brings the
-            // news -- and it has no timeout, so without this it held every
-            // alert back until somebody happened to tap it.
-            {
+            // An automatic update-news window may yield to an alert, but
+            // a window deliberately opened from SYSTEM is user-owned.
+            // Keep it visible while detections continue to be logged.
+            // Do not consume the pending WATCH hit until the user leaves.
+            if (!s_sysPropsFromSettings) {
                 const Detection* latest = engine.latest();
                 if (latest && freshAlertCandidate(*latest, now) &&
                     alertMayInterrupt(*latest)) {
@@ -7130,12 +7152,20 @@ void loop() {
                 }
             }
             if (touchJustUp && diagTouchActive) {
-                if (!diagTouchMoved &&
-                    uiDiagnosticsHitBack(diagStartX, diagStartY,
-                                         tft.width(), tft.height())) {
-                    lastTouch = now;
-                    enterSettings();
-                    uiSettingsOpenPage(SettingsPage::SYSTEM);
+                if (!diagTouchMoved) {
+                    // Footer PAGE keys are a reliable alternative to
+                    // repeated swipes on short/low-sensitivity panels.
+                    const int page = uiDiagnosticsHitPage(
+                        diagStartX, diagStartY, tft.width(), tft.height());
+                    if (page) {
+                        uiDiagnosticsPage(page);
+                    } else if (uiDiagnosticsHitBack(
+                                   diagStartX, diagStartY,
+                                   tft.width(), tft.height())) {
+                        lastTouch = now;
+                        enterSettings();
+                        uiSettingsOpenPage(SettingsPage::SYSTEM);
+                    }
                 }
                 diagTouchActive = false;
             }

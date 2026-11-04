@@ -109,6 +109,10 @@ void uiDiagnosticsInit(TFT_eSPI& t);
 void uiDiagnosticsTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, const DiagnosticsInfo& info);
 // delta is a signed number of diagnostic rows; >0 scrolls down.
 void uiDiagnosticsScroll(int delta);
+// Page-step fallback for the left/right controls in the fixed footer.
+void uiDiagnosticsPage(int direction);
+// -1 = page up, 1 = page down, 0 = no footer page key.
+int uiDiagnosticsHitPage(int x, int y, int screenW, int screenH);
 
 // The BACK button stays fixed while the diagnostic lines scroll.
 bool uiDiagnosticsHitBack(int x, int y, int screenW, int screenH);

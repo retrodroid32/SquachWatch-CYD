@@ -29,17 +29,33 @@ static int s_diagMaxScroll = 0;
 static int s_diagTop = 0;
 static int s_diagBottom = 0;
 static int s_diagAbove = 0, s_diagBelow = 0;
+static int s_diagPagePx = 0;
 
 void uiDiagnosticsInit(TFT_eSPI& t) {
-    s_diagScroll = s_diagMaxScroll = 0;
+    s_diagScroll = s_diagMaxScroll = s_diagPagePx = 0;
     t.fillRect(0, 0, t.width(), t.height(), Theme::BG);
 }
 
 void uiDiagnosticsScroll(int delta) {
-    // Touch supplies rows, not pixels. 16 px is approximately one diagnostic
-    // line, and clamp so swiping cannot expose blank pages at either end.
+    // Finger movement is quantized to rows by the caller. Keep this
+    // independent from the displayed font height and clamp at both ends.
     const int next = s_diagScroll + delta * 16;
     s_diagScroll = next < 0 ? 0 : next > s_diagMaxScroll ? s_diagMaxScroll : next;
+}
+
+void uiDiagnosticsPage(int direction) {
+    if (!direction) return;
+    const int step = s_diagPagePx > 0 ? s_diagPagePx : 64;
+    const int next = s_diagScroll + (direction > 0 ? step : -step);
+    s_diagScroll = next < 0 ? 0 : next > s_diagMaxScroll ? s_diagMaxScroll : next;
+}
+
+int uiDiagnosticsHitPage(int x, int y, int screenW, int screenH) {
+    const Theme::ButtonBarGeom bar = Theme::computeButtonBar(screenW, screenH);
+    if (y < bar.y - 18 || y >= bar.y) return 0;
+    if (x >= 0 && x < screenW / 3) return -1;
+    if (x >= (screenW * 2) / 3 && x < screenW) return 1;
+    return 0;
 }
 
 bool uiDiagnosticsHitBack(int x, int y, int screenW, int screenH) {
@@ -75,18 +91,25 @@ void uiDiagnosticsTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, co
     (void)now;
     int w = t.width(), h = t.height();
 
+    // Font 2 is sticky on the shared two-band sprite. Force fixed 8-pixel
+    // font 1 before measuring any row, including on the 3.2 ST7798.
+    t.setTextFont(1);
+    t.setTextSize(1);
+    t.setTextWrap(false);
     Theme::drawTitleBar(t, ">> DIAGNOSTICS <<");
 
     Theme::ButtonBarGeom bar = Theme::computeButtonBar(w, h);
-    const int bodyTop = 16, bodyBottom = bar.y - 17;
-    // Reserve a small fixed footer for swipe hints, immediately above BACK.
-    t.fillRect(0, bodyTop, w, bar.y - 4 - bodyTop, Theme::BG);
-    s_diagTop = bodyTop + 2;
+    const int footerTop = bar.y - 18;
+    // The hamburger/status icons occupy rows 0..19. None of the report
+    // may start behind them, nor run into the fixed footer/BACK strip.
+    const int bodyTop = Theme::TITLE_ICON_BAND_H + 4;
+    const int bodyBottom = footerTop - 4;
+    t.fillRect(0, Theme::TITLE_ICON_BAND_H, w,
+               bar.y - Theme::TITLE_ICON_BAND_H, Theme::BG);
+    s_diagTop = bodyTop;
     s_diagBottom = bodyBottom;
+    s_diagPagePx = bodyBottom - bodyTop - 12;
     s_diagAbove = s_diagBelow = 0;
-
-    t.setTextSize(1);
-    t.setTextWrap(false);
     int y = s_diagTop - s_diagScroll;
 
     y = drawLine(t, y, Theme::CYAN, "BOARD:", "%s (%s)", info.boardName,
@@ -310,17 +333,19 @@ void uiDiagnosticsTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, co
     s_diagMaxScroll = contentHeight > viewHeight ? contentHeight - viewHeight : 0;
     if (s_diagScroll > s_diagMaxScroll) s_diagScroll = s_diagMaxScroll;
 
-    // The footer is outside the scrolling viewport. In a two-band sprite
-    // it is painted during each pass through the existing viewport, not
-    // directly onto the LCD, so it cannot add display flicker.
+    // A separate, fixed 18px footer cannot cover the last report row.
+    // Two tap targets provide page jumps if repeated swipes are awkward.
     if (s_diagMaxScroll > 0) {
-        char hint[48];
-        snprintf(hint, sizeof hint, "%s  SWIPE TO SCROLL  %d/%d  %s",
-                 s_diagAbove ? "^" : " ", s_diagScroll / 16,
-                 (s_diagMaxScroll + 15) / 16, s_diagBelow ? "v" : " ");
+        const int footerY = footerTop + 4;
         t.setTextColor(Theme::CYAN, Theme::BG);
-        t.setCursor(6, bodyBottom + 3);
+        t.setCursor(6, footerY);
+        t.print("^ PAGE");
+        const char* hint = "SWIPE";
+        t.setCursor((w - t.textWidth(hint)) / 2, footerY);
         t.print(hint);
+        const char* down = "PAGE v";
+        t.setCursor(w - 6 - t.textWidth(down), footerY);
+        t.print(down);
     }
 
     int bx, by, bw, bh;
