@@ -1221,11 +1221,22 @@ static void runTouchCalibration() {
     lastTouch = millis();
 }
 
+// Shared by the boot splash and home-screen adaptive multi-band renderer.
+// Must be declared before enterBoot() in CYD32 GNSS builds.
+static uint8_t s_recoveryBands = 1;
 static void enterBoot() {
     state = AppState::BOOT;
     bootStart = millis();
     transitionStart = bootStart;
+    // The GPS-enabled 3.2 CYD owns only a half-height sprite. Prepare its
+    // boot canvas in that sprite rather than clearing the live LCD each
+    // time the unbuffered splash starts.
+#if defined(CYD32) && defined(GPS_SUPPORT) && defined(GPS_RX_PIN)
+    if (frameBufferOk && s_recoveryBands > 1) uiBootInit(frame);
+    else                                      uiBootInit(*canvas);
+#else
     uiBootInit(*canvas);
+#endif
 #if defined(CYD35)
     clearSharedFrameBuffer();
 #endif
@@ -1258,8 +1269,7 @@ static bool onRawScanScreen() {
 #endif
         ;
 }
-// Shared with home-screen entry and adaptive OTA framebuffer recovery.
-static uint8_t s_recoveryBands = 1;
+// Adaptive framebuffer recovery uses the band count declared above enterBoot().
 static void enterClear() {
     if (Security::locked()) { enterLocked(); return; }
     restoreFrameBuffer();   // lent to a download that did not end in a restart
@@ -1796,7 +1806,9 @@ static void goHome() {
     if (Settings::deskWanted()) enterDesk();
     else                        enterClear();
 }
-static void enterSysProps() {
+static bool s_sysPropsFromSettings = false;
+static void enterSysProps(bool fromSettings = false) {
+    s_sysPropsFromSettings = fromSettings;
     state = AppState::SYS_PROPS;
     transitionStart = millis();
     // Squachy said this line out loud until now, and two boards talking to
@@ -4231,6 +4243,20 @@ void loop() {
             } else {
                 uiBootTick(tft, now);
             }
+#elif defined(CYD32) && defined(GPS_SUPPORT) && defined(GPS_RX_PIN)
+            // BOOT used to draw directly to the TFT on CYD32 while CLEAR
+            // drew through two buffered bands. Keep both sides of the
+            // handoff buffered, so the 3.2 panel never shows half-painted
+            // text/background primitives on its way to the main screen.
+            if (frameBufferOk && s_recoveryBands > 1) {
+                drawTwoBand([&](TFT_eSPI& t, bool) {
+                    uiBootTick(t, now);
+                    if (crashCardWanted()) drawCrashCard(t);
+                });
+            } else {
+                uiBootTick(*canvas, now);
+                if (crashCardWanted()) drawCrashCard(*canvas);
+            }
 #else
             uiBootTick(*canvas, now);
             if (crashCardWanted()) drawCrashCard(*canvas);
@@ -4273,11 +4299,11 @@ void loop() {
             break;
         }
         case AppState::SYS_PROPS: {
-            // A detection still takes the screen. The window can open on a
-            // board nobody is watching -- a squad member's hello brings the
-            // news -- and it has no timeout, so without this it held every
-            // alert back until somebody happened to tap it.
-            {
+            // An automatic update-news window may yield to an alert, but
+            // a window deliberately opened from SYSTEM is user-owned.
+            // Keep it visible while detections continue to be logged.
+            // Do not consume the pending WATCH hit until the user leaves.
+            if (!s_sysPropsFromSettings) {
                 const Detection* latest = engine.latest();
                 if (latest && freshAlertCandidate(*latest, now) &&
                     alertMayInterrupt(*latest)) {
@@ -4304,7 +4330,15 @@ void loop() {
                             Theme::showToast("CAN'T START UPDATE", updateRefusedWhy(), Theme::AMBER);
                         }
                         break;
-                    case SysPropsHit::CLOSE: goHome(); break;
+                    case SysPropsHit::CLOSE:
+                        if (s_sysPropsFromSettings) {
+                            s_sysPropsFromSettings = false;
+                            enterSettings();
+                            uiSettingsOpenPage(SettingsPage::SYSTEM);
+                        } else {
+                            goHome();
+                        }
+                        break;
                     case SysPropsHit::NONE:  break;
                 }
                 lastTouch = now;
@@ -5766,6 +5800,9 @@ void loop() {
                         case SettingsRow::ALERT_RULES: enterAlertRules(); break;
                         case SettingsRow::DETECTION_FILTER: enterDetFilter(); break;
                         case SettingsRow::POWER_SAVER: enterPower(); break;
+                        case SettingsRow::SHOW_WIFI_ICON: Settings::toggleWifiIcon(); break;
+                        case SettingsRow::SHOW_SD_ICON: Settings::toggleSdIcon(); break;
+                        case SettingsRow::SHOW_GPS_ICON: Settings::toggleGpsIcon(); break;
                         case SettingsRow::PRIVACY:
                             Settings::togglePrivacyMode();
                             Theme::showToast(Settings::privacyMode() ? "PRIVACY MODE ON" : "PRIVACY MODE OFF",
@@ -5855,6 +5892,7 @@ void loop() {
                             break;
                         case SettingsRow::CHECK_COLORS: enterColorCheck(true); break;
                         case SettingsRow::DIAGNOSTICS:  enterDiagnostics(); break;
+                        case SettingsRow::SYSTEM_PROPERTIES: enterSysProps(true); break;
                         case SettingsRow::WIFI_NETWORKS: enterWifiNets(); break;
                         case SettingsRow::SD_FILES: enterSdFiles(); break;
                         case SettingsRow::DESK_MODE:    uiSettingsOpenPage(SettingsPage::DESK); break;
@@ -7094,10 +7132,42 @@ void loop() {
             info.bbHaveLast = BlackBox::lastCrash(info.bbLast);
 
             drawTwoBand([&](TFT_eSPI& t, bool) { uiDiagnosticsTick(t, now, engine, info); });
-            if (tp.valid && (now - lastTouch) > TOUCH_DEBOUNCE_MS &&
-                uiDiagnosticsHitBack(tp.x, tp.y, tft.width(), tft.height())) {
-                lastTouch = now;
-                enterSettings();
+            // One swipe = one complete page. The old incremental row
+            // scroll could stop halfway through a diagnostic value.
+            // BACK and PREV/NEXT are committed on finger release.
+            static bool diagTouchActive = false, diagTouchMoved = false;
+            static int diagStartX = 0, diagStartY = 0;
+            if (touchJustDown && tp.valid) {
+                diagTouchActive = true;
+                diagTouchMoved = false;
+                diagStartX = tp.x;
+                diagStartY = tp.y;
+            }
+            if (tp.valid && diagTouchActive && !diagTouchMoved &&
+                diagStartY < Theme::computeButtonBar(tft.width(), tft.height()).y - 20) {
+                const int dy = tp.y - diagStartY;
+                if (abs(dy) >= 30) {
+                    diagTouchMoved = true;
+                    uiDiagnosticsScroll(dy < 0 ? 1 : -1);
+                }
+            }
+            if (touchJustUp && diagTouchActive) {
+                if (!diagTouchMoved) {
+                    // Footer PAGE keys are a reliable alternative to
+                    // repeated swipes on short/low-sensitivity panels.
+                    const int page = uiDiagnosticsHitPage(
+                        diagStartX, diagStartY, tft.width(), tft.height());
+                    if (page) {
+                        uiDiagnosticsPage(page);
+                    } else if (uiDiagnosticsHitBack(
+                                   diagStartX, diagStartY,
+                                   tft.width(), tft.height())) {
+                        lastTouch = now;
+                        enterSettings();
+                        uiSettingsOpenPage(SettingsPage::SYSTEM);
+                    }
+                }
+                diagTouchActive = false;
             }
             break;
         }

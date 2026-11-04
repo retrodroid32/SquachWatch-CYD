@@ -165,6 +165,9 @@ static uint8_t  s_bleIx        = BLE_LISTEN_DEFAULT;
 static uint8_t  s_idleCpuIx    = IDLE_CPU_DEFAULT;
 static bool     s_wakeOnAlert  = true;
 static bool     s_privacy      = false;
+static bool     s_showWifiIcon = true;
+static bool     s_showSdIcon   = true;
+static bool     s_showGpsIcon  = true;
 static uint8_t  s_buzzMode     = 2;    // 0 OFF, 1 HIGH, 2 MED, 3 LOW; MED by default
 static bool     s_steady       = false;
 // The watch's radio duty cycle: on for a few seconds, resting for the rest.
@@ -242,6 +245,9 @@ uint16_t idleAfterSec()     { return IDLE_AFTER[s_idleAfterIx]; }
 uint16_t cpuMhz()           { return s_powerSaver ? CPU_MHZ[s_cpuIx] : 240; }
 bool     wakeOnAlert()      { return s_wakeOnAlert; }
 bool     privacyMode()      { return s_privacy; }
+bool     showWifiIcon()     { return s_showWifiIcon; }
+bool     showSdIcon()       { return s_showSdIcon; }
+bool     showGpsIcon()      { return s_showGpsIcon; }
 bool     buzz()             { return s_buzzMode != 0; }
 bool     steadyPower()      { return s_steady; }
 // Only while POWER SAVER is on. Either RADIO DUTY row (the Power screen,
@@ -320,6 +326,18 @@ void toggleWakeOnAlert() {
 void togglePrivacyMode() {
     s_privacy = !s_privacy;
     s_prefs.putBool("privacy", s_privacy);
+}
+void toggleWifiIcon() {
+    s_showWifiIcon = !s_showWifiIcon;
+    s_prefs.putBool("wifiIco", s_showWifiIcon);
+}
+void toggleSdIcon() {
+    s_showSdIcon = !s_showSdIcon;
+    s_prefs.putBool("sdIco", s_showSdIcon);
+}
+void toggleGpsIcon() {
+    s_showGpsIcon = !s_showGpsIcon;
+    s_prefs.putBool("gpsIco", s_showGpsIcon);
 }
 
 // ---- easter-egg hunt progress ----------------------------------------
@@ -460,6 +478,11 @@ void load() {
     if (s_idleCpuIx > 2) s_idleCpuIx = IDLE_CPU_DEFAULT;
     s_wakeOnAlert  = s_prefs.getBool("pwrWake", true);
     s_privacy      = s_prefs.getBool("privacy", false);
+    // Old installations retain their icon layout until a user chooses
+    // otherwise. Preferences are display-only and do not disable scans.
+    s_showWifiIcon = s_prefs.getBool("wifiIco", true);
+    s_showSdIcon   = s_prefs.getBool("sdIco", true);
+    s_showGpsIcon  = s_prefs.getBool("gpsIco", true);
     // Preserve the old ON/OFF choice on first boot with this firmware.
     // Existing OFF remains OFF; existing ON lands at MED, the 3 V library
     // appropriate for the watch motor. New writes use the separate mode key.

@@ -127,6 +127,11 @@ namespace Theme {
     enum class SdStatus : uint8_t { ABSENT, READY, ERROR };
     void setSdStatus(SdStatus status);
     SdStatus sdStatus();
+    // A status indicator means an actual checksum-valid GNSS stream was
+    // heard recently; only a fresh position fix turns it green.
+    enum class GpsIconStatus : uint8_t { ABSENT, SEARCHING, FIX };
+    void setGpsIconStatus(GpsIconStatus status);
+    GpsIconStatus gpsIconStatus();
 
     // The chrome every list screen BELOW Settings shares, so they read as
     // one family with it: a small heading at the top in the colour of the

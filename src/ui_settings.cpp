@@ -129,8 +129,16 @@ static const SettingsRow SYSTEM_ROWS[] = {
     SettingsRow::BOARD_BATTERY,
 #endif
     SettingsRow::PRIVACY,
+    SettingsRow::SHOW_WIFI_ICON, SettingsRow::SHOW_SD_ICON,
+#if defined(GPS_SUPPORT) && defined(GPS_RX_PIN)
+    SettingsRow::SHOW_GPS_ICON,
+#endif
     SettingsRow::CALIBRATE, SettingsRow::CHECK_COLORS,
-    SettingsRow::DIAGNOSTICS, SettingsRow::UPDATE_FIRMWARE, SettingsRow::UPDATE_CHECK, SettingsRow::WIFI_NETWORKS, SettingsRow::SD_FILES,
+    SettingsRow::DIAGNOSTICS,
+#if defined(GPS_SUPPORT) && defined(GPS_RX_PIN)
+    SettingsRow::SYSTEM_PROPERTIES,
+#endif
+    SettingsRow::UPDATE_FIRMWARE, SettingsRow::UPDATE_CHECK, SettingsRow::WIFI_NETWORKS, SettingsRow::SD_FILES,
     SettingsRow::RESET_STATS,
 };
 static const uint8_t SYSTEM_ROWS_N = sizeof(SYSTEM_ROWS) / sizeof(SYSTEM_ROWS[0]);
@@ -935,6 +943,18 @@ static void rowContent(SettingsRow r, const DetectionEngine& eng, char* valBuf, 
             break;
         case SettingsRow::DIAGNOSTICS:
             label = "DIAGNOSTICS";
+            break;
+        case SettingsRow::SHOW_WIFI_ICON:
+            label = "WIFI ICON"; value = Settings::showWifiIcon() ? "ON" : "OFF";
+            break;
+        case SettingsRow::SHOW_SD_ICON:
+            label = "SD ICON"; value = Settings::showSdIcon() ? "ON" : "OFF";
+            break;
+        case SettingsRow::SHOW_GPS_ICON:
+            label = "GPS ICON"; value = Settings::showGpsIcon() ? "ON" : "OFF";
+            break;
+        case SettingsRow::SYSTEM_PROPERTIES:
+            label = "SYSTEM PROPERTIES"; value = "BOARD >";
             break;
         case SettingsRow::UPDATE_FIRMWARE:
             // The row names the newer version when one is known, so the boot
