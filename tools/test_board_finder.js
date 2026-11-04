@@ -34,7 +34,10 @@ const cases = [
 for (const [input, kind, id] of cases) {
   const result = fn(input, matrix);
   assert.equal(result.kind, kind, input);
-  if (id) assert.equal(result.id, id, input);
+  if (id) {
+    assert.equal(result.id, id, input);
+    assert.equal(result.resetOverclock, true, 'auto-selection must reset 80 MHz');
+  }
   else assert.equal(result.id, undefined, input);
 }
 assert.equal(matrix.cyd32c.visible, false, 'unverified CYD32C must stay hidden');
