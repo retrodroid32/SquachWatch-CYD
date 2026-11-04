@@ -22,6 +22,15 @@ namespace Pet {
     // call site does not need to check either.
     void tick(TFT_eSPI& t, uint32_t now, int screenW, int bandTop, int bandBottom);
 
+    // Only the native SHAGGY companion is throwable. These report/consume
+    // the full touch gesture before Squachy's own gesture classifier.
+    // YETI and ordinary UI touches retain their pre-PR121 behavior.
+    bool hit(int x, int y);
+    bool grab(int x, int y, uint32_t now);
+    void drag(int x, int y, uint32_t now);
+    void release(uint32_t now);
+    void cancel(uint32_t now);  // screen transition: drop, never count a fling
+
     // Cancels whatever he is doing and puts him off screen. Used when the
     // screen changes underneath him, so he does not reappear mid-jump on a
     // screen that has been away for a minute.

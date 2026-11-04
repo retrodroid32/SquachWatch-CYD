@@ -129,9 +129,9 @@ namespace Settings {
     bool       rotationLocked();
     void       toggleRotationLock();
 
-    // The Legend top hat: worn unless taken off on the APPEARANCE page.
-    bool       topHatShown();
-    void       toggleTopHat();
+    // The Legend's aura: lit unless put out on the APPEARANCE page.
+    bool       auraShown();
+    void       toggleAura();
 
     // Last rotation (0..3, TFT_eSPI's setRotation() values) the rotate
     // button left the screen on -- so it comes back up the same way
@@ -218,6 +218,14 @@ namespace Settings {
     void       toggleWakeOnAlert();
     bool       privacyMode();
     void       togglePrivacyMode();
+    // Top-row status indicators; hiding them never changes the radio,
+    // SD mount state or GPS parser. Saved separately per board in NVS.
+    bool       showWifiIcon();
+    void       toggleWifiIcon();
+    bool       showSdIcon();
+    void       toggleSdIcon();
+    bool       showGpsIcon();
+    void       toggleGpsIcon();
     // The T-Watch's buzz on an alert (the DRV2605 haptic motor). Kept on
     // every board so the settings file reads the same; only the watch has
     // a motor to use it.

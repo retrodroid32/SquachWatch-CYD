@@ -33,7 +33,7 @@ static const bool DEFAULT_ROTATION_LOCK = true;
 static const bool DEFAULT_ROTATION_LOCK = false;
 #endif
 static bool        s_rotationLocked = DEFAULT_ROTATION_LOCK;
-static bool        s_topHat = true;
+static bool        s_aura = true;
 // Eight is the ceiling because the radio's own squad ring holds eight (see
 // SQUAD_N in mesh.cpp). A menu that offered thirty would be offering something
 // the hardware cannot hear: the ninth board in the room evicts the first, and
@@ -168,6 +168,9 @@ static uint8_t  s_bleIx        = BLE_LISTEN_DEFAULT;
 static uint8_t  s_idleCpuIx    = IDLE_CPU_DEFAULT;
 static bool     s_wakeOnAlert  = true;
 static bool     s_privacy      = false;
+static bool     s_showWifiIcon = true;
+static bool     s_showSdIcon   = true;
+static bool     s_showGpsIcon  = true;
 static uint8_t  s_buzzMode     = 2;    // 0 OFF, 1 HIGH, 2 MED, 3 LOW; MED by default
 static bool     s_steady       = false;
 // The watch's radio duty cycle: on for a few seconds, resting for the rest.
@@ -245,6 +248,9 @@ uint16_t idleAfterSec()     { return IDLE_AFTER[s_idleAfterIx]; }
 uint16_t cpuMhz()           { return s_powerSaver ? CPU_MHZ[s_cpuIx] : 240; }
 bool     wakeOnAlert()      { return s_wakeOnAlert; }
 bool     privacyMode()      { return s_privacy; }
+bool     showWifiIcon()     { return s_showWifiIcon; }
+bool     showSdIcon()       { return s_showSdIcon; }
+bool     showGpsIcon()      { return s_showGpsIcon; }
 bool     buzz()             { return s_buzzMode != 0; }
 bool     steadyPower()      { return s_steady; }
 // Only while POWER SAVER is on. Either RADIO DUTY row (the Power screen,
@@ -327,6 +333,18 @@ void toggleWakeOnAlert() {
 void togglePrivacyMode() {
     s_privacy = !s_privacy;
     s_prefs.putBool("privacy", s_privacy);
+}
+void toggleWifiIcon() {
+    s_showWifiIcon = !s_showWifiIcon;
+    s_prefs.putBool("wifiIco", s_showWifiIcon);
+}
+void toggleSdIcon() {
+    s_showSdIcon = !s_showSdIcon;
+    s_prefs.putBool("sdIco", s_showSdIcon);
+}
+void toggleGpsIcon() {
+    s_showGpsIcon = !s_showGpsIcon;
+    s_prefs.putBool("gpsIco", s_showGpsIcon);
 }
 
 // ---- easter-egg hunt progress ----------------------------------------
@@ -411,7 +429,9 @@ void load() {
 #endif
     s_infoPrimerShown = s_prefs.getBool("infoprimer", false);
     s_rotationLocked = s_prefs.getBool("rotlock", DEFAULT_ROTATION_LOCK);
-    s_topHat         = s_prefs.getBool("tophat", true);
+    // A new key, not the top hat's: somebody who took the hat off never said
+    // anything about the aura, and should see it once before deciding.
+    s_aura           = s_prefs.getBool("aura", true);
     s_rotation = s_prefs.getUChar("rot", DEFAULT_ROTATION);
     if (s_rotation > 3) s_rotation = DEFAULT_ROTATION;
     s_backgroundLocked = s_prefs.getBool("bglock", false);
@@ -468,6 +488,11 @@ void load() {
     if (s_idleCpuIx > 2) s_idleCpuIx = IDLE_CPU_DEFAULT;
     s_wakeOnAlert  = s_prefs.getBool("pwrWake", true);
     s_privacy      = s_prefs.getBool("privacy", false);
+    // Old installations retain their icon layout until a user chooses
+    // otherwise. Preferences are display-only and do not disable scans.
+    s_showWifiIcon = s_prefs.getBool("wifiIco", true);
+    s_showSdIcon   = s_prefs.getBool("sdIco", true);
+    s_showGpsIcon  = s_prefs.getBool("gpsIco", true);
     // Preserve the old ON/OFF choice on first boot with this firmware.
     // Existing OFF remains OFF; existing ON lands at MED, the 3 V library
     // appropriate for the watch motor. New writes use the separate mode key.
@@ -653,11 +678,11 @@ void markInfoPrimerShown() {
     s_prefs.putBool("infoprimer", true);
 }
 
-bool topHatShown() { return s_topHat; }
+bool auraShown() { return s_aura; }
 
-void toggleTopHat() {
-    s_topHat = !s_topHat;
-    s_prefs.putBool("tophat", s_topHat);
+void toggleAura() {
+    s_aura = !s_aura;
+    s_prefs.putBool("aura", s_aura);
 }
 
 bool rotationLocked() { return s_rotationLocked; }
@@ -730,7 +755,7 @@ void setTimeZone(uint8_t i) {
 // chosen: only THIS IS RIGHT, the row's own tap, or the flasher does that.
 void cycleTimeZone()     { stepTimeZone(1); markTimeZoneChosen(); }
 void stepTimeZone(int dir) {
-    s_timeZone = (uint8_t)((s_timeZone + Clock::zoneCount() + dir) % Clock::zoneCount());
+    s_timeZone = Clock::zoneStep(s_timeZone, dir);
     s_prefs.putUChar("tz", s_timeZone);
     Clock::applyZone(s_timeZone);
 }
