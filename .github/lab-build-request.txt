@@ -1,3 +1,6 @@
-WATCH149-LANDBACK
-# Experimental LAB build after landscape WATCH BACK touch fix.
-# Triggered only on explicit user hardware regression report.
+CYD1220-RC1-NOV04
+# CYD v1.22.0 release candidate from release/prepare-v1.22.0-cyd-20261104.
+# Physical targets: 2.8 ST7789 (cyd) and 3.2 ST7798 (cyd32-st7798).
+# Production profile already includes GPS_SUPPORT RX GPIO35.
+# Include normal official stable/80MHz variants as the workflow supports.
+# Release candidate for regression testing; no production tag or GitHub Release.
