@@ -1,0 +1,6 @@
+v1.22.0
+# One-time deploy of exact production release Pages artifact.
+# GitHub Release: https://github.com/retrodroid32/SquachWatch-CYD/releases/tag/v1.22.0
+# Successful source build: https://github.com/retrodroid32/SquachWatch-CYD/actions/runs/41832825743
+# pages-site artifact id: 13325495255
+# No firmware recompile, feature-PR merge, or tag change.

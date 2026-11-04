@@ -1,0 +1,51 @@
+name: Deploy v1.22.0 validated production web flasher
+on:
+  push:
+    branches:
+      - lab/deploy-v1-22-0-pages-20261104
+    paths:
+      - '.github/page-deploy-requests/v1.22.0.txt'
+permissions:
+  contents: read
+  actions: read
+  pages: write
+  id-token: write
+concurrency:
+  group: github-pages
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Download EXACT published v1.22.0 release site's validated artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p _site
+          gh run download 41832825743 -R "${{ github.repository }}" -n pages-site -D _site
+          test -s _site/index.html
+          test -s _site/versions.json
+          test -s _site/boards.json
+          test -s _site/manifest-cyd.json
+          test -s _site/manifest-cyd32-st7798.json
+          test -s _site/update/index.html
+          test -s _site/emulator/index.html
+          python3 - <<'PY'
+          import json
+          for name in ("manifest-cyd.json", "manifest-cyd32-st7798.json"):
+              obj=json.load(open("_site/"+name))
+              ver=obj.get("version")
+              assert ver=="1.22.0", "%s release manifest has version %r, not 1.22.0"%(name,ver)
+              print("Validated v1.22.0:",name)
+          PY
+      - name: Upload exact validated Pages site
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: _site
+      - name: Deploy production web flasher
+        id: deployment
+        uses: actions/deploy-pages@v5
