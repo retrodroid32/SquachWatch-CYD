@@ -145,7 +145,8 @@ LIVE_SRCS := $(SRC)/main.cpp \
              $(SRC)/cap_touch.cpp \
              $(SRC)/touch_cal.cpp \
              $(SIM_DIR)/main_live.cpp \
-             $(SIM_DIR)/detection_sim.cpp
+             $(SIM_DIR)/detection_sim.cpp \
+             $(SIM_DIR)/sd_browser_sim.cpp
 # -include Arduino.h mirrors what the Arduino build system does for
 # every translation unit: cap_touch.cpp and friends call pinMode/delay
 # without including it themselves and rely on that being implicit.
@@ -164,7 +165,8 @@ WASM_SRCS := $(UI_SRCS) \
              $(SRC)/cap_touch.cpp \
              $(SRC)/touch_cal.cpp \
              $(SIM_DIR)/main_wasm.cpp \
-             $(SIM_DIR)/detection_sim.cpp
+             $(SIM_DIR)/detection_sim.cpp \
+             $(SIM_DIR)/sd_browser_sim.cpp
 WASM_DIR  := web
 WASM_OUT  := $(WASM_DIR)/squachsim.js
 # -Os over -O2: this ships over the wire, and the emulator spends its
@@ -190,6 +192,14 @@ WASM_FLAGS := -std=c++17 -Os -I$(SIM_DIR) -I$(INC) -DSQUACH_MESH=1 \
               -sEXPORTED_RUNTIME_METHODS=ccall,cwrap,HEAPU8,UTF8ToString,stringToUTF8,lengthBytesUTF8 \
               -sENVIRONMENT=web,node \
               --closure 0
+
+# WebAssembly builds print their real firmware identity on the boot screen.
+# Tagged production releases pass their explicit vX.Y.Z; LAB builds reuse
+# the already published emulator and do not compile this target.
+# Local builds use git describe, or "unknown" outside a Git repository.
+# This affects only the browser emulator.
+WASM_VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo unknown)
+WASM_FLAGS   += -DFIRMWARE_VERSION='"$(WASM_VERSION)"'
 
 BIN      := squachsim
 LIVE_BIN := squachsim-live

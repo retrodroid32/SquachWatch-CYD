@@ -125,6 +125,14 @@ int main() {
     ck("random 10-char name does not match",
        lookupBtName("12345abcde") == DetectionType::UNKNOWN);
 
+    ck("bare Flock SSID matches FLOCK",
+       lookupSsid("Flock") == DetectionType::FLOCK);
+    ck("Flock prefix does not overmatch unrelated SSIDs",
+       lookupSsid("Flockhart Family WiFi") != DetectionType::FLOCK);
+    ck("bare serial helper accepts exactly 10 digits", isBareSerialName("1234567890"));
+    ck("bare serial helper rejects non-digits", !isBareSerialName("12345abcde"));
+    ck("bare serial helper rejects wrong length", !isBareSerialName("123456789"));
+
     suite("Flock wildcard-probe corroboration");
 
     const uint8_t qca[6] = {0x00,0x03,0x7F,0x50,0x00,0x01};
@@ -226,6 +234,23 @@ int main() {
     ck("null mac is safe", lookupOui(nullptr, &conf) == DetectionType::UNKNOWN);
     ck("the one-argument form still compiles and works",
        lookupOui((const uint8_t[]){ 0xB4, 0x1E, 0x52, 0, 0, 0 }) == DetectionType::FLOCK);
+
+    // Upstream issue #41 reports an NVIDIA Shield being mistaken for Raven.
+    // We do not have its raw advertisement yet; do not invent a "Shield"
+    // signature or remove the real Raven service UUIDs without evidence.
+    // Lock down exact-match behavior while collecting the actual frame.
+    suite("Raven service UUIDs need exact evidence (upstream #41)");
+    const uint16_t ravenIds[] = {0x3100, 0x3200, 0x3300, 0x3400, 0x3500};
+    for (uint16_t id : ravenIds) {
+        ck("documented Raven service is recognized", lookupUuid(id) == DetectionType::RAVEN);
+    }
+    const uint16_t ordinaryServices[] = {
+        0x1800, 0x1801, 0x180F, 0x1812, // generic / battery / HID profiles
+        0x3101, 0x31FF, 0x34FF, 0x3501  // neighboring but not exact IDs
+    };
+    for (uint16_t id : ordinaryServices) {
+        ck("ordinary/adjacent service is not Raven", lookupUuid(id) != DetectionType::RAVEN);
+    }
 
     suite("Sonos is not a licence plate reader");
     // 00:0E:58 sat in the ALPR block as "Vigilant" for eleven releases. It

@@ -19,6 +19,8 @@ uint16_t    s_demoCode = 0;
 char        s_demoName[13] = "";
 bool        s_demoInviter = false;
 bool        s_showPhrase = false;
+// R16 LAB: receive counters since entering ADD TO SQUAD, visible without USB.
+MeshTalk::RxDiagnostics s_rxStart = {};
 
 InviteState st()      { return s_demo ? s_demoState : MeshTalk::inviteState(); }
 uint16_t    code()    { return s_demo ? s_demoCode : MeshTalk::inviteCode(); }
@@ -77,6 +79,7 @@ void uiInviteDemo(InviteState s, uint16_t c, const char* name, bool inv) {
 void uiInviteInit(TFT_eSPI& t) {
     s_demo = false;
     s_showPhrase = false;
+    s_rxStart = MeshTalk::rxDiagnostics();
     t.fillRect(0, 0, t.width(), t.height(), Theme::BG);
 }
 
@@ -198,6 +201,22 @@ void uiInviteTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng) {
             break;
     }
 
+    // R16 LAB troubleshooting: an offer can remain on-screen even though the
+    // other board accepted it. These live counters distinguish RF packets
+    // never arriving (RX stays 0) from assembler/replay rejection. No MAC,
+    // phrase or session-key material appears on screen.
+    if (!s_demo && st() == InviteState::OFFERING) {
+        const MeshTalk::RxDiagnostics rx = MeshTalk::rxDiagnostics();
+        char diag[50];
+        snprintf(diag, sizeof diag, "RX:%lu PART:%lu REPLAY:%lu",
+                 (unsigned long)(rx.seen - s_rxStart.seen),
+                 (unsigned long)(rx.inviteParts - s_rxStart.inviteParts),
+                 (unsigned long)(rx.replayRejected - s_rxStart.replayRejected));
+        t.setTextSize(1);
+        t.setTextColor(Theme::AMBER, Theme::BG);
+        t.setCursor(6, b.y - 17);
+        t.print(diag);
+    }
     const Page pg = page();
     if (pg.one)  Theme::drawWin95Button(t, b.oneX, b.y, b.w, BTN_H, pg.one, false);
     if (pg.left) Theme::drawWin95Button(t, b.leftX, b.y, b.w, BTN_H, pg.left, false);
