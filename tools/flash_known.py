@@ -3,6 +3,7 @@
 
     python tools/flash_known.py COM33            # reads the MAC, picks the env, flashes
     python tools/flash_known.py COM33 --check    # just says which board and env
+    python tools/flash_known.py COM33 --allow-experimental  # opt in to UNVERIFIED CYD32C
 
 Boards move between ports, and a build for the wrong panel leaves a white
 or torn screen, or a board that never comes up. Every flash goes through
@@ -41,6 +42,10 @@ NEVER_PORTS = {"COM10"}
 # COM13 is allowed only when the MAC read back is the watch's (2026-09-22).
 COM13_ONLY_FOR = "a0:f2:62:e1:29:10"
 
+# These board profiles are compile-tested but unverified on this fork's
+# physical hardware. Never silently flash them, even if the MAC is known.
+EXPERIMENTAL_ENVS = {"cyd32c"}
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 PENV = os.path.join(os.path.expanduser("~"), ".platformio", "penv", "Scripts")
@@ -74,6 +79,9 @@ def main():
     print("%s: %s -> %s (%s)" % (port, mac, env, what))
     if "--check" in sys.argv:
         return
+    if env in EXPERIMENTAL_ENVS and "--allow-experimental" not in sys.argv:
+        sys.exit("refusing to flash %s: %s is hardware-unverified. Use --check to inspect; "
+                 "only opt in with --allow-experimental after confirming the exact board" % (port, env))
     if env == "twatch-s3":
         # Native USB: PlatformIO's bundled esptool 4.5 loses the link when its
         # stub changes speed, and fails "Unable to verify flash chip" even
