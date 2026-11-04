@@ -478,6 +478,33 @@ int main() {
         ck("the oldest was dropped, so it is fresh again", q.fresh(m[0], 100));
     }
 
+    suite("Only the verified re-paired peer loses its stale replay counter");
+    {
+        Replay before;
+        // Simulate a 3.2 erased/reinstalled, while 2.8 still remembers
+        // its old, much larger counter from the same BLE identity.
+        before.record(me, 70000);
+        before.record(you, 420);
+        ck("old high-water rejects freshly installed peer's new counter",
+           !before.fresh(me, 2));
+        ck("re-pair reset finds exact selected peer", before.forgetPeer(me));
+        ck("selected peer's new counter can now authenticate", before.fresh(me, 2));
+        ck("another member's old frame remains rejected", !before.fresh(you, 420));
+        ck("a missing peer does not alter replay state", !before.forgetPeer(me));
+        before.record(me, 2);
+        ck("freshly re-paired member still rejects duplicate normal messages",
+           !before.fresh(me, 2) && !before.fresh(you, 420));
+        ck("fresh messages from both members continue", before.fresh(me, 3) && before.fresh(you, 421));
+
+        uint8_t stored[Replay::BYTES];
+        ck("selective reset serializes normally", before.save(stored) == Replay::BYTES);
+        Replay rebooted;
+        ck("selective replay protection survives a device restart",
+           rebooted.load(stored, sizeof stored) &&
+           !rebooted.fresh(me, 2) && rebooted.fresh(me, 3) &&
+           !rebooted.fresh(you, 420) && rebooted.fresh(you, 421));
+    }
+
     suite("The counter never repeats, even across a crash");
     {
         uint32_t nvs = 0;                       // what flash holds

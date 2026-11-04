@@ -17,7 +17,9 @@ enum class WifiPassTouch  : uint8_t { DOWN, MOVE, UP };
 enum class WifiPassResult : uint8_t { NONE, OK, BACK };
 
 void           uiWifiPassInit(TFT_eSPI& t, const char* ssid);
-void           uiWifiPassTick(TFT_eSPI& t, uint32_t now);
+// directPanel is for CYD32 unbuffered/recovered-band WiFi screens only.
+// It disables redundant full-screen settling redraws and buffers key patches.
+void           uiWifiPassTick(TFT_eSPI& t, uint32_t now, bool directPanel = false);
 void           uiWifiPassTouch(int x, int y, uint32_t now, WifiPassTouch phase);
 WifiPassResult uiWifiPassResult();
 const char*    uiWifiPassText();
