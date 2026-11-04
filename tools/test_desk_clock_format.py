@@ -32,6 +32,9 @@ checks = {
         "Clock::formatTime(tm, sizeof tm, twelveHour, &pm);" in desk,
     "clock parser supports both formats": 'twelveHour ? "%d:%02d" : "%02d:%02d"' in clock,
     "12-hour geometry vs 24-hour": "const int AMPM_W  = twelveHour ? 14 : 0;" in desk,
+    "zone clock uses same preference": "const bool twelveHour = !Settings::clock24Hour();" in source("src/ui_zone.cpp") and
+        'if (twelveHour) snprintf(line' in source("src/ui_zone.cpp"),
+    "corner clock uses same preference": "Clock::formatTime(tm, sizeof tm, !Settings::clock24Hour());" in source("src/ui_clear.cpp"),
     "am-pm only in 12-hour": "if (twelveHour) {\n        const uint16_t ac" in desk,
 }
 for name, ok in checks.items():
