@@ -4165,7 +4165,7 @@ void loop() {
         else if (state == AppState::SETTINGS) {
             // The gear on a sub-page goes back up a level, the way it does
             // from every other screen Settings opens.
-            if (uiSettingsCurrentPage() != SettingsPage::MAIN) uiSettingsOpenPage(SettingsPage::MAIN);
+            if (uiSettingsCurrentPage() != SettingsPage::MAIN) uiSettingsOpenPage(uiSettingsParentPage());
             else                                               enterClear();
         }
         else {
@@ -5736,7 +5736,7 @@ void loop() {
                     if (uiSettingsTapPinnedBack(*canvas, gestureStartX, gestureStartY,
                                                  tft.width(), tft.height())) {
                         if (uiSettingsCurrentPage() != SettingsPage::MAIN)
-                            uiSettingsOpenPage(SettingsPage::MAIN);
+                            uiSettingsOpenPage(uiSettingsParentPage());
                         else
                             enterClear();
                         gestureActive = false;
@@ -5937,11 +5937,23 @@ void loop() {
                         case SettingsRow::BINGO:        enterBingo(); break;
                         case SettingsRow::DEX:          enterDex(); break;
                         case SettingsRow::APPEARANCE:  uiSettingsOpenAppearance(true); break;
+                        case SettingsRow::FONTS:
+                            uiSettingsOpenPage(SettingsPage::FONTS);
+                            break;
+                        case SettingsRow::FONT_MENUS:
+                        case SettingsRow::FONT_TEXT:
+                        case SettingsRow::FONT_BUTTONS:
+                        case SettingsRow::FONT_BUBBLES:
+                        case SettingsRow::FONT_PETS:
+                        case SettingsRow::FONT_XP:
+                            uiSettingsFontTap(*canvas, gestureStartX, gestureStartY,
+                                              tft.width(), tft.height());
+                            break;
                         case SettingsRow::AURA:        Settings::toggleAura(); break;
                         // From a sub-page, back to the main list; from the
                         // main list, out.
                         case SettingsRow::BACK:
-                            if (uiSettingsCurrentPage() != SettingsPage::MAIN) uiSettingsOpenPage(SettingsPage::MAIN);
+                            if (uiSettingsCurrentPage() != SettingsPage::MAIN) uiSettingsOpenPage(uiSettingsParentPage());
                             else                                               enterClear();
                             break;
                         default: break;
