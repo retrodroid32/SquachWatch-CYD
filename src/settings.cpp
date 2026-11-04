@@ -411,8 +411,10 @@ void load() {
     s_deskSquad     = s_prefs.getBool("crwdesk", false);
     // Follows the main screen's until the desk has one of its own: the two
     // were one setting, and a board upgraded mid-use should look the same.
-    s_deskCrowd     = s_prefs.getUChar("dskcrwd", s_meshCrowd);
-    if (s_deskCrowd < 1 || s_deskCrowd > CROWD_MAX || s_deskCrowd == 2) s_deskCrowd = s_meshCrowd;
+    // Desk has no NONE option: a main-screen NONE must not zero its default.
+    s_deskCrowd     = s_prefs.getUChar("dskcrwd", s_meshCrowd ? s_meshCrowd : 1);
+    if (s_deskCrowd < 1 || s_deskCrowd > CROWD_MAX || s_deskCrowd == 2)
+        s_deskCrowd = s_meshCrowd ? s_meshCrowd : 1;
     s_deskFullVisit = s_prefs.getBool("dskvisit", false);
     s_meshTransmit = s_prefs.getBool("meshtx", false);
     s_meshConsent  = s_prefs.getBool("meshok", false);
