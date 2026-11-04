@@ -83,6 +83,8 @@ jobs:
       - uses: actions/checkout@v7
       - name: Run host tests
         run: make -C test
+      - name: Verify CYD35C overlay band ordering
+        run: python tools/test_cyd35c_band_overlay.py
 
   emulator:
     # Cheap, and it catches the failure mode the merge introduced: the
