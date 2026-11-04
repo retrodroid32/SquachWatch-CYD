@@ -73,6 +73,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+      - name: Validate 12/24-hour desk clock integration
+        run: python tools/test_desk_clock_format.py
       - name: Run host tests
         run: make -C test
 
