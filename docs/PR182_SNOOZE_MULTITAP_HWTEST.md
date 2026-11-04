@@ -1,16 +1,18 @@
-# PR #182 — hardware acceptance: upstream v1.40 multi-tap SNOOZE
+# PR #182 — hardware acceptance: six-choice tap-through SNOOZE
 
-**Draft LAB only.** Physical testing required on 2.8 ST7789 and 3.2 ST7798.
-Keep v1.22.0 production, pairings, SD contents, GPS and existing saved settings.
+**Draft LAB only. Physical testing required on 2.8 ST7789 and 3.2 ST7798.**
+Preserve v1.22.0 production, SD, GPS, pairings and saved preferences.
 
-## Expected selection
-1. Trigger a normal detection alert. Tap SNOOZE once and release: shows **10 MIN** and **TAP AGAIN / LONGER** above it with a three-second progress strip.
-2. Tap again on the SNOOZE button: **30 MIN**. Tap anywhere on the card: **1 HOUR**, then **4 HOURS**, then wraps to **10 MIN**.
-3. After the last tap, wait three seconds: toast names the duration and the alert closes. Detect/log behavior remains active; the device must not interrupt until the chosen duration expires.
-4. **Hold** SNOOZE for >=900 ms: the legacy 10 MIN / 30 MIN / 1 HOUR / ALWAYS modal opens. CANCEL changes no policy; ALWAYS survives a reboot, appears in SNOOZED DEVICES, and can be unsnoozed.
-5. Confirm a physically *held* finger never advances multiple duration steps and that the card cannot auto-dismiss during a selection.
-6. Confirm other alerts, WATCH and HUNT buttons, info overlays, PIN lock, portrait/landscape and SquachMesh remain correct. Test on both hardware boards.
-7. Validate 4-hour snooze expiry behavior with accelerated host/runtime tests if available; serial/heap monitoring for scan/SD/GPS regressions.
-8. Do not erase flash. Prior ALWAYS records are kept under the existing NVS key and can be changed to timed or unsnoozed.
+## Expected behavior
 
-Only merge after user confirms physical verification. Do not tag or publish as production.
+1. On an alert, tap **SNOOZE** once: **10 MIN** shows with **TAP AGAIN / TO CHANGE** and the three-second progress strip.
+2. Each new tap anywhere on the alert cycles **30 MIN → 1 HOUR → 4 HOURS → ALWAYS → OFF → 10 MIN**. A held finger never repeats. No long-press picker exists.
+3. Stop tapping for three seconds to apply. Timed choices expire automatically; **ALWAYS** persists across reboot and remains in **SNOOZED DEVICES** until removed.
+4. **OFF** removes the current device's snooze, including saved **ALWAYS** in NVS, so alerts are allowed again. Selecting OFF when unsnoozed is an accepted no-op. Detection and logging never stop.
+5. Validate **ALWAYS → reboot → OFF → reboot**: the device must remain unsnoozed and no longer appear in **SNOOZED DEVICES**.
+6. Test no auto-dismiss mid-choice, WATCH/HUNT, lock, info panels, portrait/landscape, touch, GPS/SD and SquachMesh.
+7. Use the correct images for **2.8 ST7789** (`cyd`) and **3.2 ST7798** (`cyd32-st7798`).
+
+**Known unresolved issue:** Earlier PR182 firmware produced a black screen on the 2.8 ST7789 while snooze was later reported working. A green CI result does NOT resolve this. Physically validate boot/display and capture serial logs if it recurs.
+
+No erase-flash, production tag/release or merge until both boards pass.

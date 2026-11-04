@@ -1351,25 +1351,31 @@ static void squachyCatch(DetectionType type, const uint8_t* mac, uint32_t hits, 
 enum class Buzz : uint8_t { ALERT, WATCH, SAMPLE };
 static void twatchBuzz(Buzz kind);
 #endif
-// Upstream v1.40 multi-tap SNOOZE with the fork's ALWAYS picker retained.
-// A new touch steps 10m -> 30m -> 1h -> 4h; three seconds idle commits.
-struct SnoozeStep { IgnoreList::SnoozeDuration duration; const char* label; const char* toast; };
+// Upstream v1.40 multi-tap SNOOZE, extended to ALWAYS and OFF.
+// New presses cycle: 10m -> 30m -> 1h -> 4h -> ALWAYS -> OFF.
+// Three seconds idle commits; OFF removes a saved snooze for this device.
+struct SnoozeStep {
+    IgnoreList::SnoozeDuration duration;
+    const char* label;
+    const char* toast;
+    bool off;
+};
 static const SnoozeStep SNOOZE_STEP[] = {
-    { IgnoreList::SnoozeDuration::MIN_10, "10 MIN", "This one, for 10 min" },
-    { IgnoreList::SnoozeDuration::MIN_30, "30 MIN", "This one, for 30 min" },
-    { IgnoreList::SnoozeDuration::HOUR_1, "1 HOUR", "This one, for 1 hour" },
-    { IgnoreList::SnoozeDuration::HOUR_4, "4 HOURS", "This one, for 4 hours" },
+    { IgnoreList::SnoozeDuration::MIN_10, "10 MIN",  "This one, for 10 min", false },
+    { IgnoreList::SnoozeDuration::MIN_30, "30 MIN",  "This one, for 30 min", false },
+    { IgnoreList::SnoozeDuration::HOUR_1, "1 HOUR",  "This one, for 1 hour", false },
+    { IgnoreList::SnoozeDuration::HOUR_4, "4 HOURS", "This one, for 4 hours", false },
+    { IgnoreList::SnoozeDuration::ALWAYS, "ALWAYS", "Until you unsnooze", false },
+    // OFF is a removal action, not a duration: its duration field is unused.
+    { IgnoreList::SnoozeDuration::MIN_10, "OFF", "Alerts enabled for device", true },
 };
 static const uint8_t SNOOZE_STEPS = sizeof SNOOZE_STEP / sizeof SNOOZE_STEP[0];
 static const uint32_t SNOOZE_PICK_MS = 3000;
-static const uint32_t SNOOZE_HOLD_PICKER_MS = 900;
 static uint8_t s_snoozeStep = 0;
-static uint32_t s_snoozeTapAt = 0, s_snoozeHoldAt = 0;
-static bool s_snoozeHeld = false;
+static uint32_t s_snoozeTapAt = 0;
 static void resetSnoozeTap() {
     s_snoozeStep = 0;
     s_snoozeTapAt = 0;
-    s_snoozeHeld = false;
     uiAlertSetSnoozePick(nullptr, 0);
 }
 static void enterAlert(const Detection& d) {
@@ -4902,41 +4908,6 @@ void loop() {
                 else           tp.valid = false;
             }
 
-            // Same "ignore the touch that opened this until it releases"
-            // gate LOG's info panel uses, applied here too -- MORE INFO
-            // appears on the exact tap that opened it, so without this
-            // the still-held finger could instantly dismiss it.
-            // The snooze duration picker owns all touches while visible.
-            // Keep the alert from auto-dismissing until a choice or CANCEL.
-            if (uiAlertSnoozePrompt()) {
-                if (tp.valid && (now - lastTouch) > TOUCH_DEBOUNCE_MS) {
-                    const AlertSnoozeChoice choice =
-                        uiAlertHitSnoozeChoice(tp.x, tp.y, tft.width(), tft.height());
-                    if (choice != AlertSnoozeChoice::NONE) {
-                        lastTouch = now;
-                        if (choice == AlertSnoozeChoice::CANCEL) {
-                            uiAlertSetSnoozePrompt(false);
-                            alertStart = now;  // give time to reconsider
-                        } else {
-                            const IgnoreList::SnoozeDuration duration =
-                                choice == AlertSnoozeChoice::MIN_10 ? IgnoreList::SnoozeDuration::MIN_10 :
-                                choice == AlertSnoozeChoice::MIN_30 ? IgnoreList::SnoozeDuration::MIN_30 :
-                                choice == AlertSnoozeChoice::HOUR_1 ? IgnoreList::SnoozeDuration::HOUR_1 :
-                                                                       IgnoreList::SnoozeDuration::ALWAYS;
-                            if (IgnoreList::snooze(s_alertMac, duration)) {
-                                uiAlertSetSnoozePrompt(false);
-                                Theme::showToast("SNOOZED", choice == AlertSnoozeChoice::ALWAYS
-                                    ? "Until you unsnooze" : "Expires automatically", Theme::AMBER);
-                                squachyCatch(lastAlertType, s_alertMac, lastAlertHits, lastAlertRssi, lastAlertConf);
-                                enterClear();
-                            } else {
-                                Theme::showToast("SNOOZE FAILED", "List full or save failed", Theme::RED);
-                            }
-                        }
-                    }
-                }
-                break;
-            }
             if (s_infoPending) {
                 if (!s_infoArmed) {
                     if (!tp.valid) s_infoArmed = true;
@@ -4972,42 +4943,37 @@ void loop() {
                 }
                 break;
             }
-            // While picking, every NEW press anywhere on the card steps
-            // the duration. A held finger never repeats at the debounce
-            // cadence. Holding the original SNOOZE button opens the legacy
-            // duration picker (and its persisted ALWAYS option).
+            // Each NEW press advances the six choices. A held finger
+            // never repeats. ALWAYS and OFF do not need a long-press menu.
             if (s_snoozeStep) {
-                if (touchJustUp) s_snoozeHeld = false;
-                if (s_snoozeHeld && tp.valid &&
-                    now - s_snoozeHoldAt >= SNOOZE_HOLD_PICKER_MS) {
-                    resetSnoozeTap();
-                    lastTouch = now;
-                    uiAlertSetSnoozePrompt(true);
-                    break;
-                }
                 if (touchJustDown && tp.valid &&
                     (now - lastTouch) > TOUCH_DEBOUNCE_MS) {
                     lastTouch = now;
                     s_snoozeStep = (uint8_t)(s_snoozeStep % SNOOZE_STEPS + 1);
                     s_snoozeTapAt = now;
-                    s_snoozeHoldAt = now;
-                    s_snoozeHeld = uiAlertHitSnooze(tp.x, tp.y, tft.width(), tft.height());
                     uiAlertSetSnoozePick(SNOOZE_STEP[s_snoozeStep - 1].label, 1000);
                     break;
                 }
                 const uint32_t elapsed = now - s_snoozeTapAt;
                 if (elapsed >= SNOOZE_PICK_MS) {
                     const SnoozeStep& pick = SNOOZE_STEP[s_snoozeStep - 1];
-                    const bool ok = IgnoreList::snooze(s_alertMac, pick.duration);
+                    // OFF is idempotent, but saved ALWAYS removal must
+                    // succeed on NVS before claiming that alerts are enabled.
+                    const bool ok = pick.off
+                        ? (!IgnoreList::snoozed(s_alertMac) || IgnoreList::unsnooze(s_alertMac))
+                        : IgnoreList::snooze(s_alertMac, pick.duration);
                     if (ok) {
-                        Theme::showToast("SNOOZED", pick.toast, Theme::AMBER);
+                        Theme::showToast(pick.off ? "SNOOZE OFF" : "SNOOZED",
+                                         pick.toast, pick.off ? Theme::CYAN : Theme::AMBER);
                         resetSnoozeTap();
                         squachyCatch(lastAlertType, s_alertMac, lastAlertHits, lastAlertRssi, lastAlertConf);
                         enterClear();
                     } else {
                         resetSnoozeTap();
                         alertStart = now;
-                        Theme::showToast("SNOOZE FAILED", "List full or save failed", Theme::RED);
+                        Theme::showToast(pick.off ? "UNSNOOZE FAILED" : "SNOOZE FAILED",
+                                         pick.off ? "Settings save failed" : "List full or save failed",
+                                         Theme::RED);
                     }
                     break;
                 }
@@ -5038,13 +5004,10 @@ void loop() {
                     squachyCatch(lastAlertType, s_alertMac, lastAlertHits, lastAlertRssi, lastAlertConf);
                     enterClear();
                 } else if (uiAlertHitSnooze(tp.x, tp.y, tft.width(), tft.height())) {
-                    // First tap starts the v1.40 duration wheel. A 900 ms
-                    // hold opens the old picker, preserving ALWAYS snooze.
+                    // First tap starts the six-choice snooze wheel.
                     lastTouch = now;
                     s_snoozeStep = 1;
                     s_snoozeTapAt = now;
-                    s_snoozeHoldAt = now;
-                    s_snoozeHeld = true;
                     uiAlertSetSnoozePick(SNOOZE_STEP[0].label, 1000);
                 } else if (uiAlertHitWatch(tp.x, tp.y, tft.width(), tft.height())) {
                     // One-tap WATCH from an ordinary detection alert. Guard

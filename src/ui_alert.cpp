@@ -10,11 +10,8 @@
 
 static Detection s_last;
 static bool s_touched = false;
-static bool s_snoozePrompt = false;
 static const char* s_snoozePickLabel = nullptr;
 static uint16_t s_snoozePickLeft = 0;
-void uiAlertSetSnoozePrompt(bool enabled) { s_snoozePrompt = enabled; }
-bool uiAlertSnoozePrompt() { return s_snoozePrompt; }
 void uiAlertSetSnoozePick(const char* label, uint16_t remainingPermille) {
     s_snoozePickLabel = label;
     s_snoozePickLeft = remainingPermille > 1000 ? 1000 : remainingPermille;
@@ -149,7 +146,6 @@ void uiAlertInit(TFT_eSPI& t, const Detection& d) {
     s_spam = false;
     s_spamIdentities = 0;
     s_touched = false;
-    s_snoozePrompt = false;
     s_snoozePickLabel = nullptr;
     s_snoozePickLeft = 0;
     s_alertStart = millis();
@@ -301,32 +297,6 @@ bool uiAlertHitSnooze(int x, int y, int screenW, int screenH) {
     snoozeBtnRect(screenW, screenH, bx, by, bw, bh);
     return x >= bx && x <= bx + bw && y >= by && y <= by + bh;
 }
-
-static void snoozePickerRect(int w, int h, int& x, int& y) {
-    x = (w - 232) / 2;
-    y = (h - 174) / 2;
-}
-
-AlertSnoozeChoice uiAlertHitSnoozeChoice(int tx, int ty, int w, int h) {
-    if (!s_snoozePrompt) return AlertSnoozeChoice::NONE;
-    int x, y;
-    snoozePickerRect(w, h, x, y);
-    if (tx < x || tx >= x + 232 || ty < y || ty >= y + 174)
-        return AlertSnoozeChoice::NONE;
-    // Match the four drawn buttons and the bottom cancel button.
-    if (ty >= y + 38 && ty < y + 70) {
-        if (tx >= x + 10 && tx < x + 110) return AlertSnoozeChoice::MIN_10;
-        if (tx >= x + 122 && tx < x + 222) return AlertSnoozeChoice::MIN_30;
-    }
-    if (ty >= y + 78 && ty < y + 110) {
-        if (tx >= x + 10 && tx < x + 110) return AlertSnoozeChoice::HOUR_1;
-        if (tx >= x + 122 && tx < x + 222) return AlertSnoozeChoice::ALWAYS;
-    }
-    if (tx >= x + 10 && tx < x + 222 && ty >= y + 125 && ty < y + 157)
-        return AlertSnoozeChoice::CANCEL;
-    return AlertSnoozeChoice::NONE;
-}
-
 
 bool uiAlertHitHunt(int x, int y, int screenW, int screenH) {
     int bx, by, bw, bh;
@@ -723,7 +693,7 @@ void uiAlertTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng,
             t.setTextFont(1); t.setTextSize(1);
             t.setTextWrap(false); t.setTextColor(Theme::CYAN, Theme::BG);
             const char* a = "TAP AGAIN";
-            const char* b = "LONGER";
+            const char* b = "TO CHANGE";
             const int y0 = by + (bh - 17) / 2;
             t.setCursor(bx + (bw - t.textWidth(a))/2, y0); t.print(a);
             t.setCursor(bx + (bw - t.textWidth(b))/2, y0 + 9); t.print(b);
@@ -733,8 +703,8 @@ void uiAlertTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng,
                               watched ? "WATCHED" : "WATCH", watched);
         }
     }
-    // Upstream 1.40 tap-to-step snooze. Holding this button opens the fork's
-    // previous picker, retaining ALWAYS and its persistent snooze manager.
+    // Six-choice snooze wheel includes both ALWAYS and OFF; no modal needed.
+    // Persistent ALWAYS still uses the existing Snoozed Devices manager.
     {
         int bx, by, bw, bh;
         snoozeBtnRect(w, h, bx, by, bw, bh);
@@ -766,28 +736,6 @@ void uiAlertTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng,
     // a screen that keeps rendering underneath" pattern LOG's confirm/
     // info panels use.
     if (infoPending) Theme::drawInfoPanel(t, w, h, now, infoTypeName, infoText);
-    if (s_snoozePrompt) {
-        int x, y;
-        snoozePickerRect(w, h, x, y);
-        t.fillRoundRect(x, y, 232, 174, 6, Theme::BG);
-        t.drawRoundRect(x, y, 232, 174, 6, Theme::CYAN);
-        t.setTextSize(1);
-        t.setTextWrap(false);
-        t.setTextColor(Theme::CYAN, Theme::BG);
-        const char* title = "SNOOZE THIS DEVICE FOR:";
-        t.setCursor(x + (232 - t.textWidth(title)) / 2, y + 12);
-        t.print(title);
-        Theme::drawButton(t, x + 10,  y + 38, 100, 32, "10 MIN", false);
-        Theme::drawButton(t, x + 122, y + 38, 100, 32, "30 MIN", false);
-        Theme::drawButton(t, x + 10,  y + 78, 100, 32, "1 HOUR", false);
-        Theme::drawButton(t, x + 122, y + 78, 100, 32, "ALWAYS", false);
-        Theme::drawButton(t, x + 10,  y + 125, 212, 32, "CANCEL", false);
-        t.setTextSize(1);
-        const char* tip = "Always: until manually removed";
-        t.setTextColor(Theme::AMBER, Theme::BG);
-        t.setCursor(x + (232 - t.textWidth(tip)) / 2, y + 163);
-        t.print(tip);
-    }
 }
 
 bool uiAlertTouched() {
