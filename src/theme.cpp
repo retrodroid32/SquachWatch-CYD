@@ -535,11 +535,90 @@ void drawTitleBar(TFT_eSPI& t, const char* title) {
 }
 
 uint8_t uiTextSize(TFT_eSPI& t, uint8_t base) {
-    return (base == 1 && t.width() >= 400) ? 2 : base;
+    // TEXT can step down the bigger board's body text, not above the
+    // size hard-coded layouts were drawn for on the classic 2.8/3.2.
+    if (base == 1 && t.width() >= 400)
+        return fontDelta(Settings::FontKind::TEXT) < 0 ? 1 : 2;
+    return base;
 }
 
+int8_t fontDelta(Settings::FontKind k) {
+    const int v = (int)Settings::fontStep(k) - 2;
+    return (int8_t)(v < -2 ? -2 : v > 2 ? 2 : v);
+}
+
+void fontRange(TFT_eSPI& t, Settings::FontKind k, int8_t& lo, int8_t& hi) {
+    using Settings::FontKind;
+    switch (k) {
+        case FontKind::MENUS:
+            lo = (int8_t)(t.width() >= 400 ? -2 : -1);
+            hi = (int8_t)(t.height() < 200 ? 0 : 1);
+            return;
+        case FontKind::TEXT:
+            lo = (int8_t)(t.width() >= 400 ? -1 : 0); hi = 0; return;
+        case FontKind::BUTTONS:
+            lo = 0; hi = 2; return; // actual labels must fit their boxes
+        case FontKind::BUBBLES:
+            lo = -1; hi = 1; return; // wrapText + bubbleTextH provide layout
+        case FontKind::PETS:
+            lo = 0; hi = 1; return;
+        case FontKind::XP_TILES:
+            lo = 0; hi = 0; return; // XP counter UI backport is separate
+        default:
+            lo = hi = 0; return;
+    }
+}
+
+void setFontDelta(TFT_eSPI& t, Settings::FontKind k, int step) {
+    int8_t lo = 0, hi = 0;
+    fontRange(t, k, lo, hi);
+    if (step < lo) step = lo;
+    if (step > hi) step = hi;
+    Settings::setFontStep(k, (uint8_t)(step + 2));
+}
+
+const char* fontStepName(int8_t s) {
+    static const char* const names[5] = {"TINY", "SMALLER", "NORMAL", "BIGGER", "HUGE"};
+    if (s < -2) s = -2;
+    if (s > 2) s = 2;
+    return names[s + 2];
+}
+
+bool fontHasFace(Settings::FontKind k) {
+    return k == Settings::FontKind::MENUS ||
+           k == Settings::FontKind::BUTTONS ||
+           k == Settings::FontKind::BUBBLES ||
+           k == Settings::FontKind::PETS;
+}
+bool fontSmooth(Settings::FontKind k) {
+    const uint8_t face = Settings::fontFace(k);
+    if (face == 1) return false;
+    if (face == 2) return true;
+    return k == Settings::FontKind::BUBBLES;
+}
+void toggleFontFace(Settings::FontKind k) {
+    if (fontHasFace(k))
+        Settings::setFontFace(k, fontSmooth(k) ? 1 : 2);
+}
 uint8_t uiMenuTextSize(TFT_eSPI& t) {
-    return t.width() >= 400 ? 3 : 2;
+    int size = (t.width() >= 400 ? 3 : 2) + fontDelta(Settings::FontKind::MENUS);
+    if (size < 1) size = 1;
+    if (size > 4) size = 4;
+    return (uint8_t)size;
+}
+void petFontOn(TFT_eSPI& t) {
+    const bool smooth = fontSmooth(Settings::FontKind::PETS);
+    const int delta = fontDelta(Settings::FontKind::PETS);
+    t.setTextFont(smooth ? 2 : 1);
+    t.setTextSize((uint8_t)(smooth ? 1 : (delta > 0 ? 2 : 1)));
+}
+void petFontOff(TFT_eSPI& t) {
+    t.setTextFont(1); t.setTextSize(1);
+}
+int xpTileScale() {
+    // This fork's classic counters are not yet XP tiles. Keep the
+    // published UI until the independent XP-style feature is ported.
+    return 1;
 }
 
 void drawButton(TFT_eSPI& t, int x, int y, int w, int h,
