@@ -1,3 +1,8 @@
-WATCH149-LANDBACK
-# Experimental LAB build after landscape WATCH BACK touch fix.
-# Triggered only on explicit user hardware regression report.
+PR136-CYD32-UI-BOOT-DIAG-R2-20261103
+# LAB retest of PR136 head e962199e8789453c2c7f8a7315ff2de0583c339a
+# Corrects CYD32 compile error from previous LAB by declaring s_recoveryBands
+# before enterBoot(). Previous unbuilt LAB branch is preserved.
+# Test 3.2 ST7798 boot-to-main flicker, diagnostics scroll PAGE up/down,
+# first and last report rows, and manually opened BOARD surviving new alerts.
+# Recheck 2.8 ST7789, GPS icon and persisted show/hide.
+# LAB-only; no production release, tag, or merge.
