@@ -466,7 +466,7 @@ static void computeGeom(TFT_eSPI& t, int screenH, int& top, int& bodyBottom,
     // Fixed geometry is vital: changing MENUS must not move touch targets
     // under the finger while the user is adjusting it.
     if (s_page == SettingsPage::FONTS) {
-        bodyBottom -= 42;
+        bodyBottom -= 58;
         t.setTextFont(1);
         t.setTextSize(1);
         rowH = 34;
@@ -904,14 +904,14 @@ static void drawFontPreview(TFT_eSPI& t, int w, int y, int h) {
     else if (Theme::fontHasFace(s_fontPreview))
         t.print(Theme::fontSmooth(s_fontPreview) ? " / SMOOTH" : " / PIXEL");
     if (s_fontPreview == Settings::FontKind::BUTTONS) {
-        Theme::drawButton(t, w-97, y+18, 87, 18, "Aa 12:34", false);
+        Theme::drawButton(t, w-103, y+23, 93, 26, "Aa 12:34", false);
     } else {
         t.setTextFont(Theme::fontSmooth(s_fontPreview) ? 2 : 1);
         t.setTextSize((uint8_t)(d > 0 ? 2 : 1));
         t.setTextColor(Theme::WHITE, Theme::BG);
         const char* words = "Aa 12:34";
-        if (t.textWidth(words) <= w-24 && t.fontHeight() <= 19) {
-            t.setCursor(8,y+18); t.print(words);
+        if (t.textWidth(words) <= w-24 && t.fontHeight() <= h-23) {
+            t.setCursor(8,y+21); t.print(words);
         }
     }
     t.setTextFont(1); t.setTextSize(1);
@@ -1379,8 +1379,8 @@ switch (Settings::background()) {
 
     Theme::drawScrollbar(t, w - 4, top, bodyBottom - top, n, visibleCount, g_scroll);
     if (s_page == SettingsPage::FONTS &&
-        DrawBand::has(bodyBottom, bodyBottom + 42))
-        drawFontPreview(t, w, bodyBottom + 1, 40);
+        DrawBand::has(bodyBottom, bodyBottom + 58))
+        drawFontPreview(t, w, bodyBottom + 1, 56);
 
     // The way out, always on screen. Drawn before the panels so a confirm or
     // an explanation sits over it rather than under.
