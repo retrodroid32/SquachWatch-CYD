@@ -11,7 +11,7 @@
 // is a rule and not a shortcut.
 #if defined(FREENOVE_S3)
 #define STATUS_LIGHT_HW 2
-#elif defined(ESP32) && !defined(CYD35) && !defined(AWOK) && !defined(TWATCH_S3)
+#elif defined(ESP32) && !defined(CYD35) && !defined(AWOK) && !defined(TWATCH_S3) && !defined(CROWPANEL7)
 #define STATUS_LIGHT_HW 1
 #else
 #define STATUS_LIGHT_HW 0
