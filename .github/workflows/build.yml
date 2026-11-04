@@ -73,6 +73,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+      - name: Validate upstream font-controls integration
+        run: python tools/test_font_controls.py
       - name: Run host tests
         run: make -C test
 
