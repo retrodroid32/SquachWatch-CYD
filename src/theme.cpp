@@ -507,7 +507,9 @@ void drawPinnedBack(TFT_eSPI& t, const char* label) {
     // second band it lands outside the buffer and draws nothing at all. A
     // strip with no label on it. Shared helpers say what they want.
     t.setTextFont(1);
-    t.setTextSize(uiMenuTextSize(t));
+    uint8_t sz = uiMenuTextSize(t);
+    while (sz > 1 && sz * 8 > h - 4) --sz;
+    t.setTextSize(sz);
     t.setTextColor(CYAN, BG);
     t.setCursor((w - t.textWidth(label)) / 2, y + (h - t.fontHeight()) / 2);
     t.print(label);
