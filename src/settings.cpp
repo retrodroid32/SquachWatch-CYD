@@ -59,7 +59,8 @@ static uint8_t     s_deskBg     = 255;     // 255: not picked yet, follow s_back
 static bool        s_deskActive = false;
 static uint8_t     s_clockFont     = 0;   // 0 segments, 1 Bangers
 static uint8_t     s_clockSize     = 1;   // 0 small, 1 medium, 2 large
-static uint8_t     s_clockBackdrop = 0;   // 0 plain, 1 rain, 2 snow, 3 toasters, 4 fire, 5 stars, 6 fireflies
+static uint8_t     s_clockBackdrop = 0;
+static bool        s_clock24Hour = false;   // 0 plain, 1 rain, 2 snow, 3 toasters, 4 fire, 5 stars, 6 fireflies
 static const uint8_t CLOCK_BG_N  = 7;
 // Bit N = DetectionType N enabled. UNKNOWN (0) is never included -- see
 // Types that arrive switched OFF, on a fresh install and on upgrade alike.
@@ -432,6 +433,7 @@ void load() {
     s_clockFont     = s_prefs.getUChar("clkfont", 0);
     s_clockSize     = s_prefs.getUChar("clksize", 1);
     s_clockBackdrop = s_prefs.getUChar("clkbg", 0);
+    s_clock24Hour = s_prefs.getBool("clk24", false);
     if (s_clockFont > 1)     s_clockFont = 0;
     if (s_clockSize > 2)     s_clockSize = 1;
     if (s_clockBackdrop >= CLOCK_BG_N) s_clockBackdrop = 0;
@@ -593,6 +595,8 @@ const char* clockBackdropName() {
 }
 void        cycleClockBackdrop() { s_clockBackdrop = (uint8_t)((s_clockBackdrop + 1) % CLOCK_BG_N); s_prefs.putUChar("clkbg", s_clockBackdrop); }
 void        cyclePrevClockBackdrop() { s_clockBackdrop = (uint8_t)((s_clockBackdrop + CLOCK_BG_N - 1) % CLOCK_BG_N); s_prefs.putUChar("clkbg", s_clockBackdrop); }
+bool        clock24Hour() { return s_clock24Hour; }
+void        toggleClock24Hour() { s_clock24Hour = !s_clock24Hour; s_prefs.putBool("clk24", s_clock24Hour); }
 
 Background deskBackground() {
     if (s_deskBg != 255 && backgroundSelectable((Background)s_deskBg)) return (Background)s_deskBg;

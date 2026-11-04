@@ -5910,6 +5910,7 @@ void loop() {
                         case SettingsRow::CLOCK_FONT:     Settings::cycleClockFont();     break;
                         case SettingsRow::CLOCK_SIZE:     Settings::cycleClockSize();     break;
                         case SettingsRow::CLOCK_BACKDROP: Settings::cycleClockBackdrop(); break;
+                        case SettingsRow::CLOCK_FORMAT: Settings::toggleClock24Hour(); break;
 #if SQUACH_MESH
                         case SettingsRow::DESK_SQUAD:   Settings::toggleDeskSquad();     break;
                         case SettingsRow::DESK_CROWD:   Settings::cycleDeskCrowd();      break;
