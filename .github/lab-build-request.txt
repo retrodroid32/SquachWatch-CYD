@@ -1,3 +1,5 @@
-WATCH149-LANDBACK
-# Experimental LAB build after landscape WATCH BACK touch fix.
-# Triggered only on explicit user hardware regression report.
+PR182-SNOOZE-ALWAYS-OFF-CYD-NOV04
+# LAB verification of six-option tap wheel: 10m,30m,1h,4h,ALWAYS,OFF.
+# No long-press picker. Test on 2.8 ST7789 + 3.2 ST7798 physical CYDs.
+# Feature commit: a4ebd1d1b8ab9f5530b276ef2823dd3834d15a35
+# Unresolved earlier 2.8-black-screen hardware report. Do not merge or tag.
