@@ -1,3 +1,8 @@
-WATCH149-LANDBACK
-# Experimental LAB build after landscape WATCH BACK touch fix.
-# Triggered only on explicit user hardware regression report.
+PR136-RAWSCAN-FOOTER-CYD32-20261103
+# Hardware regression reported on 3.2 CYD ST7798, not on 2.8 ST7789.
+# BLE and Wi-Fi raw-scan results/old glyphs remain below the fixed BACK/WIFI bar.
+# Reset full logical scan page per two-band sprite pass, paint opaque footer
+# and guard result rows against drawing past bodyBottom; stable font geometry.
+# Tested 3.2 startup no-flicker, GPS icons, Diagnostics and Board view unchanged.
+# Retest BLE/WiFi scans with 4+ results, scroll, BACK, SWITCH, portrait/landscape.
+# No production release/version tag, no merge until hardware PASS and approval.
