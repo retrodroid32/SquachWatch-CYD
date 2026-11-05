@@ -119,6 +119,10 @@ void invalidate();
 // 74 and the push look twice as slow per row as it is.
 void    newFrame();
 int32_t lastRows();
+// True iff the most recent successful FramePush::push() actually wrote any
+// physical row in [y0, y1), including rows expanded into alignment spans.
+// Used to avoid repainting the CYD32 portrait Back strip every frame.
+bool lastPushTouchedRows(int32_t y0, int32_t y1);
 uint32_t hashUs();
 uint32_t wireUs();
 
