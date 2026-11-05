@@ -1224,6 +1224,17 @@ static void runTouchCalibration() {
 // Shared by the boot splash and home-screen adaptive multi-band renderer.
 // Must be declared before enterBoot() in CYD32 GNSS builds.
 static uint8_t s_recoveryBands = 1;
+
+// The 2.8 CYD initializes a screen in its offscreen sprite. A 3.2 CYD
+// using the half-height recovery sprite keeps *canvas pointed at the
+// real TFT for geometry/hit-testing. Using that for state-only ui...Init
+// exposed physical full-screen clears on each entry and BLE/WiFi switch.
+static TFT_eSPI& initFrameCanvas() {
+#if defined(CYD32)
+    if (frameBufferOk && s_recoveryBands > 1) return (TFT_eSPI&)frame;
+#endif
+    return *canvas;
+}
 static void enterBoot() {
     state = AppState::BOOT;
     bootStart = millis();
@@ -1473,7 +1484,7 @@ static void enterLog() {
     transitionStart = millis();
     s_confirmPending = false;
     s_infoPending    = false;
-    uiLogInit(*canvas);
+    uiLogInit(initFrameCanvas());
 }
 
 static bool    s_rawScanIsBle = true;
@@ -1490,7 +1501,7 @@ static void enterRawScan(bool isBle) {
     // at boot, not from deleting/recreating the sprite during a scan.
     if (isBle) engine.startRawBleScan();
     else       engine.startRawWifiScan();
-    uiRawScanInit(*canvas, isBle);
+    uiRawScanInit(initFrameCanvas(), isBle);
 }
 
 // Return from WATCH/HUNT to exactly the list the user was working from.
@@ -1521,14 +1532,14 @@ static void enterSettings() {
     Theme::releaseClockBackdrop();
     state = AppState::SETTINGS;
     transitionStart = millis();
-    uiSettingsInit(*canvas);
+    uiSettingsInit(initFrameCanvas());
 }
 
 static void enterDesk() {
     Settings::deskActive(true);
     state = AppState::DESK;
     transitionStart = millis();
-    uiDeskInit(*canvas);
+    uiDeskInit(initFrameCanvas());
 }
 
 static bool s_sdFilesDirty = true;
@@ -1549,14 +1560,14 @@ static void enterDiagnostics() {
     state = AppState::DIAGNOSTICS;
     transitionStart = millis();
     OtaCore::refreshOther();    // reads flash: once on the way in, not per frame
-    uiDiagnosticsInit(*canvas);
+    uiDiagnosticsInit(initFrameCanvas());
 }
 
 static void enterUpdate() {
     Theme::releaseClockBackdrop();   // the download wants every byte
     state = AppState::UPDATE;
     transitionStart = millis();
-    uiUpdateInit(*canvas);
+    uiUpdateInit(initFrameCanvas());
 }
 
 #if SQUACH_MESH
@@ -1704,7 +1715,7 @@ static void autoUpdateTick(uint32_t now) {
         else if (now - s_auto.failAt > 60000) {
             s_auto.active = false;
             if (!OtaWifi::end()) { engine.stopUpdateRadio(); enterClear(); }
-            else uiUpdateInit(*canvas);
+            else uiUpdateInit(initFrameCanvas());
         }
     } else if (ws == OtaWifi::State::OFF && !OtaCore::restartPending()) {
         s_auto.active = false;      // somebody tapped CANCEL
@@ -1847,7 +1858,7 @@ static void enterSysProps(bool fromSettings = false) {
 static void enterWifiNets() {
     state = AppState::WIFI_NETS;
     transitionStart = millis();
-    uiWifiNetsInit(*canvas);
+    uiWifiNetsInit(initFrameCanvas());
 }
 static void enterWifiAdd() {
     state = AppState::WIFI_ADD;
@@ -1855,7 +1866,7 @@ static void enterWifiAdd() {
     // Same Wi-Fi scan start as the 2.8-inch. No release of the screen
     // framebuffer during RF scanning, which caused direct-panel flicker.
     engine.startRawWifiScan();
-    uiWifiAddInit(*canvas);
+    uiWifiAddInit(initFrameCanvas());
 }
 
 static void enterHunt(HuntReturn returnTo = HuntReturn::HOME) {
@@ -2002,7 +2013,7 @@ static char    s_pinPromptBuf[28] = "";
 static void enterSecurity() {
     state = AppState::SECURITY;
     transitionStart = millis();
-    uiSecurityInit(*canvas);
+    uiSecurityInit(initFrameCanvas());
 }
 
 static const char* pinFlowPrompt(PinFlow f) {
@@ -2175,7 +2186,7 @@ static void performWipe(WipeBoot after) {
 static void enterPower() {
     state = AppState::POWER_SAVER;
     transitionStart = millis();
-    uiPowerInit(*canvas);
+    uiPowerInit(initFrameCanvas());
 }
 
 static void enterLight() {
@@ -3154,13 +3165,32 @@ void setup() {
     frame.setAttribute(PSRAM_ENABLE, false);
 #endif
 #if defined(CYD32) && defined(GPS_SUPPORT) && defined(GPS_RX_PIN)
-    // ST7798 has substantially less contiguous free heap after WiFi +
-    // NimBLE + SD + GPS. Retain a 2-band sprite (half the 77KB memory)
-    // permanently, using the established band renderer, rather than
-    // repeatedly destroying the full sprite during RF scans.
-    s_recoveryBands = 2;
+    // Mirror the working 2.8: one complete offscreen frame, pushed once.
+    // Only take the 77KB buffer if the largest contiguous block retains
+    // at least 32KB, with 64KB total free headroom for GPS/SD/BLE.
+    // Otherwise safely retain the prior half-height band renderer.
+    const uint32_t fullFrameBytes = (uint32_t)tft.width() * (uint32_t)tft.height();
+    const uint32_t largestBefore = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
+    const uint32_t totalBefore = ESP.getFreeHeap();
+    const bool fullFrameSafe = largestBefore >= fullFrameBytes + 32768UL &&
+                               totalBefore >= fullFrameBytes + 65536UL;
+    s_recoveryBands = fullFrameSafe ? 1 : 2;
+    Serial.printf("[frame] CYD32 full-sprite %s: need=%lu heap=%lu largest=%lu\n",
+                  fullFrameSafe ? "eligible" : "2-band fallback",
+                  (unsigned long)fullFrameBytes,
+                  (unsigned long)totalBefore, (unsigned long)largestBefore);
 #endif
-    if (!frame.createSprite(tft.width(), tft.height() / s_recoveryBands)) {
+    bool spriteCreated = frame.createSprite(tft.width(), tft.height() / s_recoveryBands);
+#if defined(CYD32) && defined(GPS_SUPPORT) && defined(GPS_RX_PIN)
+    if (!spriteCreated && s_recoveryBands == 1) {
+        // The check is only a reservation estimate; a failed allocation
+        // must fall back without rebooting or touching saved settings.
+        s_recoveryBands = 2;
+        spriteCreated = frame.createSprite(tft.width(), tft.height() / 2);
+        Serial.println("[frame] CYD32 allocation fell back to 2 bands");
+    }
+#endif
+    if (!spriteCreated) {
         Serial.println("ERROR: frame buffer allocation failed (low memory)");
 #if HAVE_NVS_ERASE
         if (bootCheckRan) {
@@ -3177,8 +3207,11 @@ void setup() {
     frame.setTextSize(1);
 #if defined(CYD32) && defined(GPS_SUPPORT) && defined(GPS_RX_PIN)
     if (frame.created()) {
-        canvas = &tft; // drawTwoBand uses the sprite and pushes each band
-        Serial.printf("[frame] CYD32 two-band buffered renderer, sprite %lu bytes, heap %lu/%lu\n",
+        // The full buffer follows exactly the 2.8 CYD's single-frame path.
+        // The partial buffer uses drawTwoBand for clipped, buffered pushes.
+        canvas = s_recoveryBands == 1 ? (TFT_eSPI*)&frame : &tft;
+        Serial.printf("[frame] CYD32 active renderer bands=%u bytes=%lu heap=%lu/%lu\n",
+                      (unsigned)s_recoveryBands,
                       (unsigned long)(tft.width() * (tft.height() / s_recoveryBands)),
                       (unsigned long)ESP.getFreeHeap(),
                       (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
@@ -6232,7 +6265,7 @@ void loop() {
                             OtaBle::end();
                             engine.stopUpdateRadio();
                         }
-                        uiUpdateInit(*canvas);
+                        uiUpdateInit(initFrameCanvas());
                         break;
                     case UpdateHit::BACK:
                         enterSettings();
@@ -6399,7 +6432,7 @@ void loop() {
                     case WifiAddHit::RESCAN:
                         engine.stopRawScan();
                         engine.startRawWifiScan();
-                        uiWifiAddInit(*canvas);
+                        uiWifiAddInit(initFrameCanvas());
                         break;
                     case WifiAddHit::BACK:   engine.stopRawScan(); enterWifiNets(); break;
                     default: break;
