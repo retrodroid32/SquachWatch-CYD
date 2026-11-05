@@ -3589,6 +3589,9 @@ static uint32_t s_bandUs[2] = {0, 0};      // measurement: the 3.5"'s two draw p
 // Physical-write diagnostics for the two target rosters.
 static uint8_t  s_rosterPushesThisLoop = 0;
 static uint32_t s_rosterPushDiagAt = 0;
+#if defined(CYD32)
+static bool s_ui32FooterBandDirty = false;
+#endif
 
 static inline void pushFrame(int x, int y) {
 #if defined(TWATCH_S3)
@@ -3597,6 +3600,9 @@ static inline void pushFrame(int x, int y) {
     uint32_t t0 = micros();
     const bool roster =
         state == AppState::WATCH_LIST || state == AppState::HUNT_LIST;
+#if defined(CYD32)
+    bool sentDirect=false;
+#endif
 
     if (roster) {
         // Isolation path: no changed-row hashing, no multiple address-window
@@ -3616,7 +3622,19 @@ static inline void pushFrame(int x, int y) {
                !FramePush::push(tft, frame.buf(), frame.bufW(), frame.bufH(), x, y)) {
         frame.pushSprite(x, y);
         FramePush::invalidate();
+#if defined(CYD32)
+        sentDirect=true;
+#endif
     }
+#if defined(CYD32)
+    if ((state == AppState::SETTINGS || state == AppState::POWER_SAVER) &&
+        y < tft.height() &&
+        y + frame.bufH() > tft.height() - Theme::pinnedBackH(tft.width())) {
+        const int stripTop = tft.height() - Theme::pinnedBackH(tft.width());
+        if (sentDirect || FramePush::lastPushTouchedRows(stripTop, tft.height()))
+            s_ui32FooterBandDirty=true;
+    }
+#endif
     s_pushAccumUs += micros() - t0;
 }
 
@@ -3750,6 +3768,9 @@ void loop() {
     s_pushAccumUs = 0;
     s_rosterPushesThisLoop = 0;
     FramePush::newFrame();
+#if defined(CYD32)
+    s_ui32FooterBandDirty=false;
+#endif
     bool renderedThisLoop = true;
     uint32_t now = millis();
 #if defined(TWATCH_S3)
