@@ -112,6 +112,9 @@ bool uiSettingsTapPinnedBack(TFT_eSPI& t, int x, int y, int screenW, int screenH
 // The DESK MODE page's strip has OK on its left half: out of Settings to the
 // desk or the main screen, whichever it was opened from. Check before BACK.
 bool uiSettingsTapPinnedOk(int x, int y, int screenW, int screenH);
+// CYD32 rotated-portrait recovery: repaint the Back/Up/OK strip directly
+// on the physical panel after any buffered push. Keeps Settings page semantics.
+void uiSettingsDrawPinnedBackOverlay(TFT_eSPI& panel);
 
 // Row layout matches whatever uiSettingsTick just drew (same geometry
 // function underneath), so call this only against a screen that's

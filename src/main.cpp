@@ -3589,6 +3589,9 @@ static uint32_t s_bandUs[2] = {0, 0};      // measurement: the 3.5"'s two draw p
 // Physical-write diagnostics for the two target rosters.
 static uint8_t  s_rosterPushesThisLoop = 0;
 static uint32_t s_rosterPushDiagAt = 0;
+#if defined(CYD32)
+static bool s_ui32FooterBandDirty = false;
+#endif
 
 static inline void pushFrame(int x, int y) {
 #if defined(TWATCH_S3)
@@ -3597,6 +3600,9 @@ static inline void pushFrame(int x, int y) {
     uint32_t t0 = micros();
     const bool roster =
         state == AppState::WATCH_LIST || state == AppState::HUNT_LIST;
+#if defined(CYD32)
+    bool sentDirect=false;
+#endif
 
     if (roster) {
         // Isolation path: no changed-row hashing, no multiple address-window
@@ -3616,7 +3622,19 @@ static inline void pushFrame(int x, int y) {
                !FramePush::push(tft, frame.buf(), frame.bufW(), frame.bufH(), x, y)) {
         frame.pushSprite(x, y);
         FramePush::invalidate();
+#if defined(CYD32)
+        sentDirect=true;
+#endif
     }
+#if defined(CYD32)
+    if ((state == AppState::SETTINGS || state == AppState::POWER_SAVER) &&
+        y < tft.height() &&
+        y + frame.bufH() > tft.height() - Theme::pinnedBackH(tft.width())) {
+        const int stripTop = tft.height() - Theme::pinnedBackH(tft.width());
+        if (sentDirect || FramePush::lastPushTouchedRows(stripTop, tft.height()))
+            s_ui32FooterBandDirty=true;
+    }
+#endif
     s_pushAccumUs += micros() - t0;
 }
 
@@ -3750,6 +3768,9 @@ void loop() {
     s_pushAccumUs = 0;
     s_rosterPushesThisLoop = 0;
     FramePush::newFrame();
+#if defined(CYD32)
+    s_ui32FooterBandDirty=false;
+#endif
     bool renderedThisLoop = true;
     uint32_t now = millis();
 #if defined(TWATCH_S3)
@@ -7323,6 +7344,45 @@ void loop() {
         FrameProf::lap(FrameProf::POST);
         pushFrame(0, 0);
         FrameProf::lap(FrameProf::PUSH);
+    }
+#endif
+
+#if defined(CYD32)
+    // 3.2" CYD portrait after rotation can retain pixels from the previous
+    // orientation in the bottom strip (especially in low-memory band
+    // recovery). The Back/Up label is rendered by the normal menu sprite,
+    // but the last band sometimes fails to reach the glass. Repaint just the
+    // reserved bottom strip on the real panel AFTER all sprite pushes.
+    //
+    // Only portrait uses this corrective paint; landscape continues along
+    // the unchanged buffered path. Hit-testing already uses tft dimensions.
+    // Preserve Settings subpages' [UP] and DESK's split [OK]/[UP].
+    // Do not disable the frame renderer or allocate additional sprites.
+    static bool s_directPinnedBackWasDrawn = false;
+    static AppState s_lastBackPage = AppState::BOOT;
+    static uint32_t s_lastBackScene = UINT32_MAX;
+    const bool needsDirectPinnedBack = tft.height() > tft.width() &&
+        (state == AppState::SETTINGS || state == AppState::POWER_SAVER);
+    if (needsDirectPinnedBack) {
+        // Only repaint when a real push overwrote the footer, or when
+        // first entering/rotating. Most frames do not modify these rows.
+        const bool first = !s_directPinnedBackWasDrawn ||
+            s_lastBackPage != state || s_lastBackScene != transitionStart;
+        if (first || s_ui32FooterBandDirty ||
+            (!frameBufferOk && (touchJustDown || touchJustUp))) {
+            if (state == AppState::SETTINGS)
+                uiSettingsDrawPinnedBackOverlay(tft);
+            else
+                Theme::drawPinnedBack(tft, "[ BACK ]");
+            s_directPinnedBackWasDrawn = true;
+            s_lastBackPage = state;
+            s_lastBackScene = transitionStart;
+        }
+    } else if (s_directPinnedBackWasDrawn) {
+        // Direct footer paint bypasses FramePush's hash record. Invalidate
+        // exactly once when leaving portrait/these screens.
+        FramePush::invalidate();
+        s_directPinnedBackWasDrawn = false;
     }
 #endif
 
