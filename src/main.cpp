@@ -7359,19 +7359,28 @@ void loop() {
     // Preserve Settings subpages' [UP] and DESK's split [OK]/[UP].
     // Do not disable the frame renderer or allocate additional sprites.
     static bool s_directPinnedBackWasDrawn = false;
+    static AppState s_lastBackPage = AppState::BOOT;
+    static uint32_t s_lastBackScene = UINT32_MAX;
     const bool needsDirectPinnedBack = tft.height() > tft.width() &&
         (state == AppState::SETTINGS || state == AppState::POWER_SAVER);
     if (needsDirectPinnedBack) {
-        if (state == AppState::SETTINGS) {
-            uiSettingsDrawPinnedBackOverlay(tft);
-        } else {
-            Theme::drawPinnedBack(tft, "[ BACK ]");
+        // Only repaint when a real push overwrote the footer, or when
+        // first entering/rotating. Most frames do not modify these rows.
+        const bool first = !s_directPinnedBackWasDrawn ||
+            s_lastBackPage != state || s_lastBackScene != transitionStart;
+        if (first || s_ui32FooterBandDirty ||
+            (!frameBufferOk && (touchJustDown || touchJustUp))) {
+            if (state == AppState::SETTINGS)
+                uiSettingsDrawPinnedBackOverlay(tft);
+            else
+                Theme::drawPinnedBack(tft, "[ BACK ]");
+            s_directPinnedBackWasDrawn = true;
+            s_lastBackPage = state;
+            s_lastBackScene = transitionStart;
         }
-        s_directPinnedBackWasDrawn = true;
     } else if (s_directPinnedBackWasDrawn) {
-        // Our direct panel overlay is not part of FramePush's row hashes.
-        // The next screen/landscape orientation must refresh its full frame
-        // rather than leaving stale Back-strip pixels behind.
+        // Direct footer paint bypasses FramePush's hash record. Invalidate
+        // exactly once when leaving portrait/these screens.
         FramePush::invalidate();
         s_directPinnedBackWasDrawn = false;
     }
