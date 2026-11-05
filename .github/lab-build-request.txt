@@ -1,3 +1,5 @@
-WATCH149-LANDBACK
-# Experimental LAB build after landscape WATCH BACK touch fix.
-# Triggered only on explicit user hardware regression report.
+PR182-PR183-SNOOZE-BACK-CYD32-NOV04
+# Combined LAB integration only (no merge to master).
+# PR182 six-way snooze ALWAYS/OFF + PR183 CYD32 portrait pinned Back fix.
+# Flash correct board variant. No erase-flash, preserve NVS.
+# Source commits: a4ebd1d1b8ab9f5530b276ef2823dd3834d15a35 eab60c51a627d8bee0df2e169846861cc762a1f0
