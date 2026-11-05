@@ -35,6 +35,21 @@ checks = {
   "shared strip height is also used by touch testing":
      "pinnedBackH(screenW)" in theme and "pinnedBackH(w)" in theme,
 }
+push=(r / "src/frame_push.cpp").read_text()
+push_h=(r / "include/frame_push.h").read_text()
+checks.update({
+  "footer repair is event-driven, never unconditional per loop":
+      "if (first || s_ui32FooterBandDirty ||" in block
+      and "s_lastBackScene != transitionStart" in block
+      and "s_ui32FooterBandDirty=false;" in main,
+  "physical row transfer rather than redraw guesses":
+      "FramePush::lastPushTouchedRows(stripTop, tft.height())" in main
+      and "bool lastPushTouchedRows(int32_t y0, int32_t y1);" in push_h
+      and "s_lastPhysicalRows[y + r] = true" in push,
+  "unchanged physical footer rows do not request repaint":
+      "for (int32_t r = 0; r < h; ++r) s_lastPhysicalRows[y + r] = false;" in push
+      and "s_ui32FooterBandDirty=true;" in main,
+})
 for label, ok in checks.items():
     print(("PASS" if ok else "FAIL") + ": " + label)
 assert all(checks.values()), "CYD32 Back strip fix incomplete"
