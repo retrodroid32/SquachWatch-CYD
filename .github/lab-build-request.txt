@@ -1,5 +1,5 @@
-PR182-183-184-CYD32-GUI-WIFI-RENDER-NOV04
-# LAB ONLY: six-way snooze + rotated Back correction + menu cadence and live WiFi status.
-# 3.2 ST7798 is primary tester. 2.8 ST7789 also included for regression.
-# Fixes come from separate unmerged draft PR182, PR183, PR184; no production merge or tag.
-# Preserve NVS, SD, GPS, SquachMesh settings, and v1.22.0 production.
+PR182-185-CYD32-FRAME-SCAN-NOV05
+# LAB preview only: PR182 snooze + PR183 Back + PR184 WiFi/redraw + PR185 2.8-style full buffer and scanner.
+# Physical target 3.2 ST7798 CYD, plus 2.8 ST7789 regression.
+# No merge, production tag or release. Preserve NVS and saved settings.
+# 3.2 memory-safe full frame if headroom permits; fallback two-band, no direct entry clears.
