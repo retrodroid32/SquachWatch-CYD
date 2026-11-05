@@ -59,6 +59,8 @@ void tick(uint32_t now);
 void rescan();
 
 State       state();
+// Only a currently-associated STA, never a persisted historical JOINED test.
+bool        liveConnected();
 // True until the WiFi OTA worker has released its HTTP/TLS resources.
 // State::OFF alone is not enough: end() cancels asynchronously.
 bool        taskActive();
