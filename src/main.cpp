@@ -3641,8 +3641,59 @@ static inline void pushFrame(int x, int y) {
 //
 // Everywhere else this is one call on the full-screen sprite, which is what
 // those boards already did, and loop()'s own push at the end still ships it.
+#if defined(CYD32)
+// The ST7798 may need 2-16 sprite bands to preserve RAM for WiFi/GPS/SD.
+// Those bands used to paint on every detection loop, even on static menus.
+// Cap visual work only; polling, radio scanning and touch always continue.
+static bool s_ui32TouchDown=false, s_ui32TouchUp=false;
+static bool s_ui32SkippedFrame=false;
+static uint32_t s_ui32MenuDraws=0, s_ui32MenuSkips=0;
+static bool cyd32MenuState(AppState page) {
+    switch (page) {
+        case AppState::SETTINGS:
+        case AppState::POWER_SAVER:
+        case AppState::SECURITY:
+        case AppState::STATUS_LIGHT:
+        case AppState::IGNORE_LIST:
+        case AppState::DETECTION_FILTER:
+        case AppState::ALERT_RULES:
+        case AppState::LOG:
+        case AppState::DIAGNOSTICS:
+            return true;
+        default:
+            return false; // ALERT, CLEAR, scan, keyboards and mesh uncapped.
+    }
+}
+static bool cyd32MenuFrameDue() {
+    if (!cyd32MenuState(state)) return true;
+    static AppState lastState=AppState::BOOT;
+    static uint32_t lastScene=UINT32_MAX, lastPaint=0;
+    static bool repaintAfterRelease=false;
+    const uint32_t now=millis();
+    const bool entered = state!=lastState || transitionStart!=lastScene;
+    if (!entered && !s_ui32TouchDown && !s_ui32TouchUp &&
+        !repaintAfterRelease && lastPaint &&
+        (uint32_t)(now-lastPaint) < 125U) {
+        ++s_ui32MenuSkips;
+        s_ui32SkippedFrame=true;
+        return false;
+    }
+    lastState=state;
+    lastScene=transitionStart; // rotation also updates transitionStart
+    lastPaint=now;
+    // A menu row commits on release, after this screen has drawn.
+    // Always draw the new value once more on the next loop.
+    repaintAfterRelease=s_ui32TouchUp;
+    ++s_ui32MenuDraws;
+    return true;
+}
+#endif
+
 template <typename F>
 static inline void drawTwoBand(F&& draw) {
+#if defined(CYD32)
+    if (!cyd32MenuFrameDue()) return;
+#endif
 #if defined(CYD35)
     if (frameBufferOk) {
         const int halfH = tft.height() / 2;
@@ -3751,6 +3802,10 @@ void loop() {
     s_rosterPushesThisLoop = 0;
     FramePush::newFrame();
     bool renderedThisLoop = true;
+#if defined(CYD32)
+    s_ui32SkippedFrame=false;
+    s_ui32TouchDown=s_ui32TouchUp=false;
+#endif
     uint32_t now = millis();
 #if defined(TWATCH_S3)
     twatchCrownTick(now);
@@ -3854,6 +3909,10 @@ void loop() {
         touchJustDown = false;
         touchJustUp = false;
     }
+#if defined(CYD32)
+    s_ui32TouchDown=touchJustDown;
+    s_ui32TouchUp=touchJustUp;
+#endif
     engine.loop();
 #if defined(GPS_SUPPORT) && defined(GPS_RX_PIN)
     GpsRuntime::tick(now);
@@ -7297,6 +7356,10 @@ void loop() {
         }
     }
 
+#if defined(CYD32)
+    // A skipped menu paint must not send stale sprite pixels to the panel.
+    if (s_ui32SkippedFrame) renderedThisLoop=false;
+#endif
 #if !defined(CYD35)
     // Skipped on cyd35: this effect reads back already-drawn pixels to
     // shift them sideways, which is instant/reliable against the sprite
@@ -7376,6 +7439,12 @@ void loop() {
                           (unsigned long)s_clearCadenceSkipsSinceSay,
                           (unsigned long)s_clearStaticSkipsSinceSay,
                           (unsigned long)s_clearSleepSkipsSinceSay);
+#if defined(CYD32)
+            Serial.printf("[ui32] menu draw %lu skipped %lu\n",
+                          (unsigned long)s_ui32MenuDraws,
+                          (unsigned long)s_ui32MenuSkips);
+            s_ui32MenuDraws=s_ui32MenuSkips=0;
+#endif
             s_clearDrawsSinceSay = s_clearCadenceSkipsSinceSay =
                 s_clearStaticSkipsSinceSay = s_clearSleepSkipsSinceSay = 0;
 #if defined(CYD35)
