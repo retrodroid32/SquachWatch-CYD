@@ -7357,6 +7357,36 @@ void loop() {
     }
 #endif
 
+#if defined(CYD32)
+    // 3.2" CYD portrait after rotation can retain pixels from the previous
+    // orientation in the bottom strip (especially in low-memory band
+    // recovery). The Back/Up label is rendered by the normal menu sprite,
+    // but the last band sometimes fails to reach the glass. Repaint just the
+    // reserved bottom strip on the real panel AFTER all sprite pushes.
+    //
+    // Only portrait uses this corrective paint; landscape continues along
+    // the unchanged buffered path. Hit-testing already uses tft dimensions.
+    // Preserve Settings subpages' [UP] and DESK's split [OK]/[UP].
+    // Do not disable the frame renderer or allocate additional sprites.
+    static bool s_directPinnedBackWasDrawn = false;
+    const bool needsDirectPinnedBack = tft.height() > tft.width() &&
+        (state == AppState::SETTINGS || state == AppState::POWER_SAVER);
+    if (needsDirectPinnedBack) {
+        if (state == AppState::SETTINGS) {
+            uiSettingsDrawPinnedBackOverlay(tft);
+        } else {
+            Theme::drawPinnedBack(tft, "[ BACK ]");
+        }
+        s_directPinnedBackWasDrawn = true;
+    } else if (s_directPinnedBackWasDrawn) {
+        // Our direct panel overlay is not part of FramePush's row hashes.
+        // The next screen/landscape orientation must refresh its full frame
+        // rather than leaving stale Back-strip pixels behind.
+        FramePush::invalidate();
+        s_directPinnedBackWasDrawn = false;
+    }
+#endif
+
     if ((state == AppState::WATCH_LIST || state == AppState::HUNT_LIST) &&
         now - s_rosterPushDiagAt >= 1000) {
         s_rosterPushDiagAt = now;

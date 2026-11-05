@@ -649,6 +649,12 @@ static void drawPinnedBack(TFT_eSPI& t, int screenW, int screenH) {
     t.print(lbl);
 }
 
+void uiSettingsDrawPinnedBackOverlay(TFT_eSPI& panel) {
+    // Deliberately use the real panel's dimensions: the sprite may have
+    // a smaller recovery-band backing buffer with a full-screen viewport.
+    drawPinnedBack(panel, panel.width(), panel.height());
+}
+
 bool uiSettingsTapPinnedOk(int x, int y, int screenW, int screenH) {
     if (s_page != SettingsPage::DESK) return false;
     int bx, by, bw, bh;
