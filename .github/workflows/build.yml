@@ -75,6 +75,8 @@ jobs:
       - uses: actions/checkout@v7
       - name: Run host tests
         run: make -C test
+      - name: Verify CYD32 full-buffer and raw scan control parity
+        run: python3 tools/test_cyd32_fullframe_scanner.py
 
   emulator:
     # Cheap, and it catches the failure mode the merge introduced: the
