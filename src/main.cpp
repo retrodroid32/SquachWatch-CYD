@@ -1351,6 +1351,33 @@ static void squachyCatch(DetectionType type, const uint8_t* mac, uint32_t hits, 
 enum class Buzz : uint8_t { ALERT, WATCH, SAMPLE };
 static void twatchBuzz(Buzz kind);
 #endif
+// Upstream v1.40 multi-tap SNOOZE, extended to ALWAYS and OFF.
+// New presses cycle: 10m -> 30m -> 1h -> 4h -> ALWAYS -> OFF.
+// Three seconds idle commits; OFF removes a saved snooze for this device.
+struct SnoozeStep {
+    IgnoreList::SnoozeDuration duration;
+    const char* label;
+    const char* toast;
+    bool off;
+};
+static const SnoozeStep SNOOZE_STEP[] = {
+    { IgnoreList::SnoozeDuration::MIN_10, "10 MIN",  "This one, for 10 min", false },
+    { IgnoreList::SnoozeDuration::MIN_30, "30 MIN",  "This one, for 30 min", false },
+    { IgnoreList::SnoozeDuration::HOUR_1, "1 HOUR",  "This one, for 1 hour", false },
+    { IgnoreList::SnoozeDuration::HOUR_4, "4 HOURS", "This one, for 4 hours", false },
+    { IgnoreList::SnoozeDuration::ALWAYS, "ALWAYS", "Until you unsnooze", false },
+    // OFF is a removal action, not a duration: its duration field is unused.
+    { IgnoreList::SnoozeDuration::MIN_10, "OFF", "Alerts enabled for device", true },
+};
+static const uint8_t SNOOZE_STEPS = sizeof SNOOZE_STEP / sizeof SNOOZE_STEP[0];
+static const uint32_t SNOOZE_PICK_MS = 3000;
+static uint8_t s_snoozeStep = 0;
+static uint32_t s_snoozeTapAt = 0;
+static void resetSnoozeTap() {
+    s_snoozeStep = 0;
+    s_snoozeTapAt = 0;
+    uiAlertSetSnoozePick(nullptr, 0);
+}
 static void enterAlert(const Detection& d) {
     s_backToDesk = (state == AppState::DESK);
     state = AppState::ALERT;
@@ -3589,6 +3616,9 @@ static uint32_t s_bandUs[2] = {0, 0};      // measurement: the 3.5"'s two draw p
 // Physical-write diagnostics for the two target rosters.
 static uint8_t  s_rosterPushesThisLoop = 0;
 static uint32_t s_rosterPushDiagAt = 0;
+#if defined(CYD32)
+static bool s_ui32FooterBandDirty = false;
+#endif
 
 static inline void pushFrame(int x, int y) {
 #if defined(TWATCH_S3)
@@ -3597,6 +3627,9 @@ static inline void pushFrame(int x, int y) {
     uint32_t t0 = micros();
     const bool roster =
         state == AppState::WATCH_LIST || state == AppState::HUNT_LIST;
+#if defined(CYD32)
+    bool sentDirect=false;
+#endif
 
     if (roster) {
         // Isolation path: no changed-row hashing, no multiple address-window
@@ -3616,7 +3649,19 @@ static inline void pushFrame(int x, int y) {
                !FramePush::push(tft, frame.buf(), frame.bufW(), frame.bufH(), x, y)) {
         frame.pushSprite(x, y);
         FramePush::invalidate();
+#if defined(CYD32)
+        sentDirect=true;
+#endif
     }
+#if defined(CYD32)
+    if ((state == AppState::SETTINGS || state == AppState::POWER_SAVER) &&
+        y < tft.height() &&
+        y + frame.bufH() > tft.height() - Theme::pinnedBackH(tft.width())) {
+        const int stripTop = tft.height() - Theme::pinnedBackH(tft.width());
+        if (sentDirect || FramePush::lastPushTouchedRows(stripTop, tft.height()))
+            s_ui32FooterBandDirty=true;
+    }
+#endif
     s_pushAccumUs += micros() - t0;
 }
 
@@ -3803,6 +3848,7 @@ void loop() {
     FramePush::newFrame();
     bool renderedThisLoop = true;
 #if defined(CYD32)
+    s_ui32FooterBandDirty=false;
     s_ui32SkippedFrame=false;
     s_ui32TouchDown=s_ui32TouchUp=false;
 #endif
@@ -4939,41 +4985,6 @@ void loop() {
                 else           tp.valid = false;
             }
 
-            // Same "ignore the touch that opened this until it releases"
-            // gate LOG's info panel uses, applied here too -- MORE INFO
-            // appears on the exact tap that opened it, so without this
-            // the still-held finger could instantly dismiss it.
-            // The snooze duration picker owns all touches while visible.
-            // Keep the alert from auto-dismissing until a choice or CANCEL.
-            if (uiAlertSnoozePrompt()) {
-                if (tp.valid && (now - lastTouch) > TOUCH_DEBOUNCE_MS) {
-                    const AlertSnoozeChoice choice =
-                        uiAlertHitSnoozeChoice(tp.x, tp.y, tft.width(), tft.height());
-                    if (choice != AlertSnoozeChoice::NONE) {
-                        lastTouch = now;
-                        if (choice == AlertSnoozeChoice::CANCEL) {
-                            uiAlertSetSnoozePrompt(false);
-                            alertStart = now;  // give time to reconsider
-                        } else {
-                            const IgnoreList::SnoozeDuration duration =
-                                choice == AlertSnoozeChoice::MIN_10 ? IgnoreList::SnoozeDuration::MIN_10 :
-                                choice == AlertSnoozeChoice::MIN_30 ? IgnoreList::SnoozeDuration::MIN_30 :
-                                choice == AlertSnoozeChoice::HOUR_1 ? IgnoreList::SnoozeDuration::HOUR_1 :
-                                                                       IgnoreList::SnoozeDuration::ALWAYS;
-                            if (IgnoreList::snooze(s_alertMac, duration)) {
-                                uiAlertSetSnoozePrompt(false);
-                                Theme::showToast("SNOOZED", choice == AlertSnoozeChoice::ALWAYS
-                                    ? "Until you unsnooze" : "Expires automatically", Theme::AMBER);
-                                squachyCatch(lastAlertType, s_alertMac, lastAlertHits, lastAlertRssi, lastAlertConf);
-                                enterClear();
-                            } else {
-                                Theme::showToast("SNOOZE FAILED", "List full or save failed", Theme::RED);
-                            }
-                        }
-                    }
-                }
-                break;
-            }
             if (s_infoPending) {
                 if (!s_infoArmed) {
                     if (!tp.valid) s_infoArmed = true;
@@ -5009,6 +5020,44 @@ void loop() {
                 }
                 break;
             }
+            // Each NEW press advances the six choices. A held finger
+            // never repeats. ALWAYS and OFF do not need a long-press menu.
+            if (s_snoozeStep) {
+                if (touchJustDown && tp.valid &&
+                    (now - lastTouch) > TOUCH_DEBOUNCE_MS) {
+                    lastTouch = now;
+                    s_snoozeStep = (uint8_t)(s_snoozeStep % SNOOZE_STEPS + 1);
+                    s_snoozeTapAt = now;
+                    uiAlertSetSnoozePick(SNOOZE_STEP[s_snoozeStep - 1].label, 1000);
+                    break;
+                }
+                const uint32_t elapsed = now - s_snoozeTapAt;
+                if (elapsed >= SNOOZE_PICK_MS) {
+                    const SnoozeStep& pick = SNOOZE_STEP[s_snoozeStep - 1];
+                    // OFF is idempotent, but saved ALWAYS removal must
+                    // succeed on NVS before claiming that alerts are enabled.
+                    const bool ok = pick.off
+                        ? (!IgnoreList::snoozed(s_alertMac) || IgnoreList::unsnooze(s_alertMac))
+                        : IgnoreList::snooze(s_alertMac, pick.duration);
+                    if (ok) {
+                        Theme::showToast(pick.off ? "SNOOZE OFF" : "SNOOZED",
+                                         pick.toast, pick.off ? Theme::CYAN : Theme::AMBER);
+                        resetSnoozeTap();
+                        squachyCatch(lastAlertType, s_alertMac, lastAlertHits, lastAlertRssi, lastAlertConf);
+                        enterClear();
+                    } else {
+                        resetSnoozeTap();
+                        alertStart = now;
+                        Theme::showToast(pick.off ? "UNSNOOZE FAILED" : "SNOOZE FAILED",
+                                         pick.off ? "Settings save failed" : "List full or save failed",
+                                         Theme::RED);
+                    }
+                    break;
+                }
+                uiAlertSetSnoozePick(SNOOZE_STEP[s_snoozeStep - 1].label,
+                     (uint16_t)(1000 - elapsed * 1000U / SNOOZE_PICK_MS));
+                break;  // never auto-dismiss while choosing a duration
+            }
             if (tp.valid && (now - lastTouch) > TOUCH_DEBOUNCE_MS) {
                 lastTouch = now;
                 if (uiAlertHitMoreInfo(tp.x, tp.y, tft.width(), tft.height())) {
@@ -5032,11 +5081,11 @@ void loop() {
                     squachyCatch(lastAlertType, s_alertMac, lastAlertHits, lastAlertRssi, lastAlertConf);
                     enterClear();
                 } else if (uiAlertHitSnooze(tp.x, tp.y, tft.width(), tft.height())) {
-                    // Ask how long rather than silently snoozing until restart.
-                    // Do not count/dismiss this alert until the user selects
-                    // a duration; CANCEL leaves all policies unchanged.
+                    // First tap starts the six-choice snooze wheel.
                     lastTouch = now;
-                    uiAlertSetSnoozePrompt(true);
+                    s_snoozeStep = 1;
+                    s_snoozeTapAt = now;
+                    uiAlertSetSnoozePick(SNOOZE_STEP[0].label, 1000);
                 } else if (uiAlertHitWatch(tp.x, tp.y, tft.width(), tft.height())) {
                     // One-tap WATCH from an ordinary detection alert. Guard
                     // against toggleWatch*() removing an existing target:
@@ -7386,6 +7435,45 @@ void loop() {
         FrameProf::lap(FrameProf::POST);
         pushFrame(0, 0);
         FrameProf::lap(FrameProf::PUSH);
+    }
+#endif
+
+#if defined(CYD32)
+    // 3.2" CYD portrait after rotation can retain pixels from the previous
+    // orientation in the bottom strip (especially in low-memory band
+    // recovery). The Back/Up label is rendered by the normal menu sprite,
+    // but the last band sometimes fails to reach the glass. Repaint just the
+    // reserved bottom strip on the real panel AFTER all sprite pushes.
+    //
+    // Only portrait uses this corrective paint; landscape continues along
+    // the unchanged buffered path. Hit-testing already uses tft dimensions.
+    // Preserve Settings subpages' [UP] and DESK's split [OK]/[UP].
+    // Do not disable the frame renderer or allocate additional sprites.
+    static bool s_directPinnedBackWasDrawn = false;
+    static AppState s_lastBackPage = AppState::BOOT;
+    static uint32_t s_lastBackScene = UINT32_MAX;
+    const bool needsDirectPinnedBack = tft.height() > tft.width() &&
+        (state == AppState::SETTINGS || state == AppState::POWER_SAVER);
+    if (needsDirectPinnedBack) {
+        // Only repaint when a real push overwrote the footer, or when
+        // first entering/rotating. Most frames do not modify these rows.
+        const bool first = !s_directPinnedBackWasDrawn ||
+            s_lastBackPage != state || s_lastBackScene != transitionStart;
+        if (first || s_ui32FooterBandDirty ||
+            (!frameBufferOk && (touchJustDown || touchJustUp))) {
+            if (state == AppState::SETTINGS)
+                uiSettingsDrawPinnedBackOverlay(tft);
+            else
+                Theme::drawPinnedBack(tft, "[ BACK ]");
+            s_directPinnedBackWasDrawn = true;
+            s_lastBackPage = state;
+            s_lastBackScene = transitionStart;
+        }
+    } else if (s_directPinnedBackWasDrawn) {
+        // Direct footer paint bypasses FramePush's hash record. Invalidate
+        // exactly once when leaving portrait/these screens.
+        FramePush::invalidate();
+        s_directPinnedBackWasDrawn = false;
     }
 #endif
 
