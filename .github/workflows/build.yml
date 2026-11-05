@@ -77,6 +77,12 @@ jobs:
         run: make -C test
       - name: Verify CYD32 redraw rate and live Wi-Fi icon
         run: python3 tools/test_cyd32_render_wifi.py
+      - name: Verify PR182 six-choice snooze
+        run: python3 tools/test_snooze_multitap.py
+      - name: Verify PR183 physical pinned Back-strip repair
+        run: python3 tools/test_cyd32_rotated_back.py
+      - name: Verify PR185 2.8-style framebuffer and raw scan buttons
+        run: python3 tools/test_cyd32_fullframe_scanner.py
 
   emulator:
     # Cheap, and it catches the failure mode the merge introduced: the
