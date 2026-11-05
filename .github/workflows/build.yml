@@ -75,6 +75,8 @@ jobs:
       - uses: actions/checkout@v7
       - name: Run host tests
         run: make -C test
+      - name: Verify rotated CYD32 Settings and Power Saver BACK overlays
+        run: python3 tools/test_cyd32_rotated_back.py
 
   emulator:
     # Cheap, and it catches the failure mode the merge introduced: the
