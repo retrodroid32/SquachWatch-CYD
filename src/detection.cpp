@@ -783,6 +783,12 @@ bool DetectionEngine::init() {
     if (SLIM_WIFI) {
         esp_wifi_stop();
         esp_wifi_deinit();
+        // The ESP32-S3 Wi-Fi controller may still be settling immediately
+        // after deinit. Keep the validated classic ESP32 CYDs unchanged;
+        // T-Watch S3 does not execute this SLIM_WIFI path.
+#if defined(CONFIG_IDF_TARGET_ESP32S3)
+        delay(10);
+#endif
         wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
         cfg.static_rx_buf_num  = 2;    // the DMA landing zone; 2 is the floor
         cfg.dynamic_rx_buf_num = 16;
