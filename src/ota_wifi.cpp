@@ -564,6 +564,9 @@ void rescan() {
 }
 
 State      state()    { return s_state; }
+// SavedResult::JOINED is persisted in NVS and does not imply Wi-Fi is
+// connected now. Normal scanning deliberately tears the station down.
+bool       liveConnected() { return WiFi.status() == WL_CONNECTED; }
 bool       taskActive() { return s_task != nullptr; }
 uint8_t    netCount() { return s_netN; }
 const Net* net(uint8_t i) { return i < s_netN ? &s_nets[i] : nullptr; }
