@@ -22,16 +22,13 @@ void uiAlertSetLastFree(bool lastFree);
 // alert rules have already allowed the card; the banner explains why later
 // tracker identities of this type will stay in LOG without interrupting.
 void uiAlertSetSpam(bool spam, uint16_t identities);
-// SNOOZE starts a modal duration picker. The choice is made only after a
-// separate tap; CANCEL leaves the alert and changes no device policy.
+// One new tap advances 10m / 30m / 1h / 4h / ALWAYS / OFF.
+// Three seconds idle commits; OFF removes this device's current snooze.
 bool uiAlertHitSnooze(int x, int y, int screenW, int screenH);
-// WATCH button is stacked immediately above SNOOZE, in both orientations.
-// Unlike the LOG toggle, tapping an already watched target never unwatches.
+// WATCH button is stacked immediately above SNOOZE in both orientations.
 bool uiAlertHitWatch(int x, int y, int screenW, int screenH);
-void uiAlertSetSnoozePrompt(bool enabled);
-bool uiAlertSnoozePrompt();
-enum class AlertSnoozeChoice : uint8_t { NONE, MIN_10, MIN_30, HOUR_1, ALWAYS, CANCEL };
-AlertSnoozeChoice uiAlertHitSnoozeChoice(int x, int y, int screenW, int screenH);
+// SNOOZE multi-tap preview; null clears it. Progress 0..1000.
+void uiAlertSetSnoozePick(const char* label, uint16_t remainingPermille);
 // While the device is locked with ALERTS WHEN LOCKED at TYPE ONLY: the type
 // and the signal still show, the device's name, label and address do not.
 void uiAlertSetRedacted(bool redacted);
