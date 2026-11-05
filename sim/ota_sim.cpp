@@ -149,6 +149,10 @@ void tick(uint32_t now) {
 }
 
 State      state()    { return s_state; }
+bool       liveConnected() {
+    return s_state == State::CHECKING || s_state == State::READY ||
+           s_state == State::DOWNLOADING || s_state == State::VERIFYING;
+}
 // Emulator has no asynchronous HTTPS worker or heap to wait on.
 bool       taskActive() { return false; }
 uint8_t    netCount() { return sizeof NETS / sizeof NETS[0]; }

@@ -367,16 +367,19 @@ static void drawWifiIcon(TFT_eSPI& t, int w, int barH) {
     const int x0 = wifiIconX(w), cx = x0 + WIFI_ICON_W / 2, cy = barH / 2;
     t.fillRect(x0, 0, WIFI_ICON_W, barH, BG);
     uint16_t ink = W95_SHADOW;
+    // A saved JOINED result describes an earlier successful test, even
+    // after reboot or a move out of range. Green means a live STA link.
     if (OtaWifi::savedCount()) {
         switch (OtaWifi::savedResult(OtaWifi::savedUse())) {
-            case OtaWifi::SavedResult::JOINED:       ink = GREEN; break;
             case OtaWifi::SavedResult::BAD_PASSWORD: ink = RED; break;
             case OtaWifi::SavedResult::NOT_FOUND:
             case OtaWifi::SavedResult::FAILED:       ink = AMBER; break;
-            default:                                 ink = CYAN; break;
+            default:                                 ink = CYAN; break; // saved, disconnected
         }
     }
-    if (OtaWifi::savedTestState() == OtaWifi::SavedTest::CONNECTING) ink = VAPOR_YELLOW;
+    if (OtaWifi::savedTestState() == OtaWifi::SavedTest::CONNECTING ||
+        OtaWifi::state() == OtaWifi::State::CONNECTING) ink = VAPOR_YELLOW;
+    if (OtaWifi::liveConnected()) ink = GREEN;
     // Three neon signal arcs and a dot, small enough for the 20px chrome.
     t.drawLine(cx - 9, cy - 3, cx, cy - 8, ink);
     t.drawLine(cx, cy - 8, cx + 9, cy - 3, ink);
