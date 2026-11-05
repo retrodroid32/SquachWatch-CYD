@@ -52,8 +52,11 @@ void uiRawScanScroll(int delta) {
 RawScanTap uiRawScanHitTest(int x, int y, int screenW, int screenH) {
     int bx, by, bw, bh, ax, ay, aw, ah;
     bottomButtonRects(screenW, screenH, bx, by, bw, bh, ax, ay, aw, ah);
-    if (x >= bx && x <= bx + bw && y >= by && y < screenH) return RawScanTap::BACK;
-    if (x >= ax && x <= ax + aw && y >= ay && y < screenH) return RawScanTap::SWITCH;
+    // Exact same rectangles as painted buttons. The old test extended
+    // through the bottom bezel, so invisible pixels below a button still
+    // triggered BACK/SWITCH after a scan transition.
+    if (x >= bx && x < bx + bw && y >= by && y < by + bh) return RawScanTap::BACK;
+    if (x >= ax && x < ax + aw && y >= ay && y < ay + ah) return RawScanTap::SWITCH;
     return RawScanTap::NONE;
 }
 
@@ -71,6 +74,13 @@ static void drawBottomBar(TFT_eSPI& t, int w, int h, bool isBle) {
     if (footerTop >= 0 && footerTop < h)
         t.fillRect(0, footerTop, w, h - footerTop, Theme::BG);
 #endif
+    // The ongoing scan's message, background, Squachy and earlier screens
+    // may leave font #2 (or a larger text size) selected on the reused
+    // two-band sprite. Theme::drawButton() inherits the active font:
+    // explicitly reset it, as the 2.8's default GLCD scanner effectively
+    // does. No wrapping or clipping of BACK/WIFI/BLE during a live scan.
+    t.setTextFont(1);
+    t.setTextWrap(false);
     Theme::drawButton(t, bx, by, bw, bh, "[ BACK ]", false);
     Theme::drawButton(t, ax, ay, aw, ah, isBle ? "[ WIFI ]" : "[ BLE ]", false);
 }
