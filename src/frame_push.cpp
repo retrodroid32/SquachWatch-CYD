@@ -45,6 +45,8 @@ static bool     s_valid   = false;
 static int32_t  s_validW  = 0, s_validH = 0;
 static uint32_t s_frameNo = 0;
 static int32_t  s_lastRows = 0;
+// Physical rows written by the latest push, not merely dirty sprite rows.
+static bool s_lastPhysicalRows[MAX_ROWS] = {};
 #if defined(CYD35)
 static uint32_t s_hashUs = 0, s_wireUs = 0;
 #define SQW_PUSH_CLOCK(v) const uint32_t v = micros()
@@ -79,6 +81,13 @@ uint32_t hashUs() { return 0; }
 uint32_t wireUs() { return 0; }
 #endif
 int32_t lastRows() { return s_lastRows; }
+bool lastPushTouchedRows(int32_t y0, int32_t y1) {
+    if (y0 < 0) y0 = 0;
+    if (y1 > MAX_ROWS) y1 = MAX_ROWS;
+    for (int32_t y = y0; y < y1; ++y)
+        if (s_lastPhysicalRows[y]) return true;
+    return false;
+}
 
 // FNV-1a over a row, a word at a time. Rows are a multiple of four bytes on
 // every board this is built for, and the sprite buffer is word-aligned.
@@ -137,6 +146,8 @@ bool push(TFT_eSPI& tft, const uint8_t* src, int32_t w, int32_t h, int32_t x, in
     const bool full = !s_valid || s_validW != w || s_validH != h || (s_frameNo % 64) == 0;
     s_frameNo++;
 
+    // Reset this push's region; older band data must not trigger repaint.
+    for (int32_t r = 0; r < h; ++r) s_lastPhysicalRows[y + r] = false;
     // Hash every row, and mark the ones to send. Full: all of them.
     static bool changed[MAX_ROWS];
     int32_t nChanged = 0;
@@ -162,6 +173,7 @@ bool push(TFT_eSPI& tft, const uint8_t* src, int32_t w, int32_t h, int32_t x, in
         tft.startWrite();
         for (int i = 0; i < n; i++) {
             const int32_t r0 = spans[i].r0, r1 = spans[i].r1;
+            for (int32_t r = r0; r < r1; ++r) s_lastPhysicalRows[y + r] = true;
             tft.setAddrWindow(x, y + r0, w, r1 - r0);
             WRITE_PERI_REG(SPI_MOSI_DLEN_REG(SPI_PORT), 511);
             pushPixels(src + (size_t)r0 * (size_t)w, (uint32_t)(r1 - r0) * (uint32_t)w);
@@ -185,6 +197,7 @@ bool enabled() { return false; }
 void invalidate() {}
 void newFrame() {}
 int32_t lastRows() { return 0; }
+bool lastPushTouchedRows(int32_t, int32_t) { return false; }
 uint32_t hashUs() { return 0; }
 uint32_t wireUs() { return 0; }
 bool push(TFT_eSPI&, const uint8_t*, int32_t, int32_t, int32_t, int32_t) { return false; }
