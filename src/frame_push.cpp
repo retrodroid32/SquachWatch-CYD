@@ -132,9 +132,19 @@ bool push(TFT_eSPI& tft, const uint8_t* src, int32_t w, int32_t h, int32_t x, in
     // A span has to be whole bursts: 320 wide, any row is; 240 wide, two.
     const int32_t align = (int32_t)(PX_PER_BURST / gcd32((uint32_t)w, PX_PER_BURST));
 
-    // A frame is every band of it, so the periodic full refresh counts pushes
-    // rather than frames: 64 pushes is 64 frames on one band and 32 on two.
-    const bool full = !s_valid || s_validW != w || s_validH != h || (s_frameNo % 64) == 0;
+    // Only the 3.2 CYD uses frequent multi-band rendering as its normal
+    // memory-safe mode. Synchronize scheduled safety refresh across every
+    // band of a frame, and lower its frequency: formerly one band was forced
+    // every 64 pushes, visibly redrawing even with identical pixels.
+#if defined(CYD32)
+    const uint32_t bands = (h > 0 && tft.height() >= h && tft.height() % h == 0)
+        ? (uint32_t)tft.height() / (uint32_t)h : 1U;
+    const uint32_t period = bands * 240U;
+    const bool periodicFull = (s_frameNo % period) < bands;
+#else
+    const bool periodicFull = (s_frameNo % 64U) == 0U;
+#endif
+    const bool full = !s_valid || s_validW != w || s_validH != h || periodicFull;
     s_frameNo++;
 
     // Hash every row, and mark the ones to send. Full: all of them.
