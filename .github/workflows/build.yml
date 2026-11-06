@@ -85,6 +85,8 @@ jobs:
         run: python3 tools/test_cyd32_fullframe_scanner.py
       - name: Verify PR186 opaque LOG footer with stable button font
         run: python3 tools/test_log_footer.py
+      - name: Verify PR187 rotation clears repacked framebuffer
+        run: python3 tools/test_cyd32_rotation_scrub.py
 
   emulator:
     # Cheap, and it catches the failure mode the merge introduced: the
