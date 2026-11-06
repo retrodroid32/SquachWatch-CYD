@@ -3680,12 +3680,23 @@ static inline void pushFrame(int x, int y) {
             Serial.printf("[roster-push] WARNING state=%u pushes=%u x=%d y=%d\n",
                           (unsigned)state, (unsigned)s_rosterPushesThisLoop, x, y);
         }
+#if defined(CYD32)
+    } else {
+        // Hardware isolation: ST7798 native TFT_eSPI driver instead of
+        // direct-register partial FramePush writes on the 3.2 CYD only.
+        static bool loggedNative = false;
+        if (!loggedNative) {
+            loggedNative=true;
+            Serial.println("[push] CYD32 NATIVE TFT_eSPI pushSprite; FramePush bypassed");
+        }
+        frame.pushSprite(x, y);
+        FramePush::invalidate();
+        sentDirect=true;
+#else
     } else if (frame.getColorDepth() != 8 ||
                !FramePush::push(tft, frame.buf(), frame.bufW(), frame.bufH(), x, y)) {
         frame.pushSprite(x, y);
         FramePush::invalidate();
-#if defined(CYD32)
-        sentDirect=true;
 #endif
     }
 #if defined(CYD32)
@@ -4244,6 +4255,14 @@ void loop() {
         // dependent, so it has to be reissued alongside every
         // setRotation() call, not just at boot.
         applyColorOrder();
+#if defined(CYD32)
+        // Rotation changes LCD GRAM address mapping but does not erase it.
+        // Clear the physical ST7798 ONCE per rotation, never per render
+        // frame; the next native sprite transfer paints the new orientation.
+        tft.fillScreen(Theme::BG);
+        Serial.printf("[rotate] CYD32 native TFT panel clear, angle=%u size=%dx%d\n",
+                      (unsigned)screenRotation, (int)tft.width(), (int)tft.height());
+#endif
         // Landscape and portrait need differently-*shaped* buffers, but
         // not differently-*sized* ones -- a rectangular panel has the
         // same total pixel count either way (320x240 and 240x320 are
