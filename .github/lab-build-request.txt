@@ -1,5 +1,6 @@
-PR182-185-CYD32-FRAME-SCAN-NOV05
-# LAB preview only: PR182 snooze + PR183 Back + PR184 WiFi/redraw + PR185 2.8-style full buffer and scanner.
-# Physical target 3.2 ST7798 CYD, plus 2.8 ST7789 regression.
-# No merge, production tag or release. Preserve NVS and saved settings.
-# 3.2 memory-safe full frame if headroom permits; fallback two-band, no direct entry clears.
+PR186-CYD32-LOG-FOOTER-NOV05
+# Combined verification LAB from the user-confirmed working PR182-185 firmware.
+# Isolated PR186 repair: LOG bottom footer opaque and GLCD labels stable.
+# 3.2 ST7798 primary; includes 2.8 ST7789 regression image.
+# No production merge, tag or GitHub release. Do not erase NVS.
+# Previous working LAB retained as rollback.
