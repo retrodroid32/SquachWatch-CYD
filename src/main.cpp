@@ -3803,6 +3803,19 @@ static inline void drawTwoBand(F&& draw) {
         for (int b = 0; b < s_recoveryBands; ++b) {
             const int y = b * bandH;
             DrawBand::set(y, y + bandH);
+#if defined(CYD32)
+            // This ONE allocation is recycled for every panel band.
+            // Fonts, rows, and animated backgrounds do not all paint
+            // opaque pixels. Without resetting the previous band's bytes,
+            // content from the top band reappears in the lower band,
+            // particularly after portrait/landscape rotation.
+            //
+            // Erase the offscreen buffer before *each* band draw; changed
+            // row hashes still suppress unchanged LCD transfers. Never
+            // clear the physical TFT here or allocate any new memory.
+            frame.resetViewport();
+            frame.fillRect(0, 0, frame.bufW(), frame.bufH(), Theme::BG);
+#endif
             frame.setViewport(0, -y, tft.width(), tft.height(), true);
             const uint32_t drawStartUs = micros();
             draw((TFT_eSPI&)frame, b == 0);
