@@ -75,6 +75,8 @@ jobs:
       - uses: actions/checkout@v7
       - name: Run host tests
         run: make -C test
+      - name: Verify CYD32 native LCD transfer and one-time rotation clear
+        run: python3 tools/test_cyd32_native_push.py
 
   emulator:
     # Cheap, and it catches the failure mode the merge introduced: the
