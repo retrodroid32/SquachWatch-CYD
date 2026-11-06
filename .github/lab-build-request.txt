@@ -1,6 +1,6 @@
-PR187-CYD32-ROTATION-FRAME-SCRUB-NOV06
-# LAB only: PR182 six-choice snooze, PR183 footer, PR184 WiFi/redraw,
-# PR185 2.8-style framebuffer/scan, PR186 Log footer, PR187 rotation scrub.
-# Test on 3.2 ST7798 first, 2.8 ST7789 for regression.
-# Clear reused offscreen sprite after rotation; no repeated physical wipe.
-# Preserve original working LAB; no merge, production tag or release.
+PR187-CYD32-ROTATION-BANDS-R2-NOV06
+# LAB verification only. R2 supersedes earlier PR187 rotation-only preview.
+# Fixes both sprite stride remnants on rotation and cross-band buffer reuse.
+# Contains unmerged PR182-186 snooze, GUI, WiFi, scanner, LOG footer fixes.
+# 3.2 ST7798 primary hardware test and 2.8 ST7789 regression check.
+# No merge/tag/production release; no NVS erase.
