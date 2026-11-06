@@ -29,8 +29,9 @@ checks = {
        tick.count("drawLogFooter(t, bar);") == 3
        and tick.count("Theme::drawButtonBar(t, ButtonId::LOG") == 0,
     "footer remains under modal overlays":
-       "drawLogFooter(t, bar);\n        if (infoPending)" in tick
-       and "drawLogFooter(t, bar);\n        if (confirmPending)" in tick,
+       "else if (confirmPending) drawConfirmPanel" in tick
+       and tick.rindex("drawLogFooter(t, bar);") <
+           tick.rindex("else if (confirmPending) drawConfirmPanel"),
     "background still bounded above footer":
        "const int bodyBottom = bar.y - 4;" in tick,
     "footer is offscreen-buffered as before":
