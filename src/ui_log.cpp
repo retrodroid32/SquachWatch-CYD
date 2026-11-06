@@ -1,6 +1,7 @@
 // SquachWatch-CYD — log screen implementation
 #include "ui_log.h"
 #include "ui_scroll.h"
+#include "draw_band.h"
 #include "clock.h"
 #include "theme.h"
 #include "privacy.h"
@@ -199,6 +200,22 @@ static void drawViewTabs(TFT_eSPI& t) {
     viewTabGeom(t.width(), y, h, dx, ex, bw);
     Theme::drawButton(t, dx, y, bw, h, "DEVICES", g_view == LogView::DEVICES);
     Theme::drawButton(t, ex, y, bw, h, "EVENTS", g_view == LogView::EVENTS);
+}
+
+// Log contents and animated backgrounds end four pixels above the bottom
+// button bar. With the 3.2 CYD's partial-height sprite the untouched gap and
+// space between buttons reused pixels from a previous screen or band.
+// Paint an opaque footer *into the sprite* before buttons, on every path
+// (empty, EVENTS, and DEVICES), so FramePush only transfers changed rows.
+// Pin the GLCD font: LOG rows/tabs can leave a different font selected.
+static void drawLogFooter(TFT_eSPI& t, const Theme::ButtonBarGeom& bar) {
+    const int top = bar.y - 4;
+    if (!DrawBand::has(top, t.height())) return;
+    t.fillRect(0, top, t.width(), t.height() - top, Theme::BG);
+    t.setTextFont(1);
+    t.setTextWrap(false);
+    t.setTextSize(1);
+    Theme::drawButtonBar(t, ButtonId::LOG, Theme::ButtonBarMode::LOG);
 }
 
 void uiLogInit(TFT_eSPI& t) {
@@ -436,7 +453,7 @@ switch (Settings::background()) {
         t.setCursor((w - sw) / 2, bodyTop + bodyH / 3 + 35);
         t.print(sub);
 
-        Theme::drawButtonBar(t, ButtonId::LOG, Theme::ButtonBarMode::LOG);
+        drawLogFooter(t, bar);
         if (infoPending)        Theme::drawInfoPanel(t, w, h, now, infoTypeName, infoText);
         else if (confirmPending) drawConfirmPanel(t, w, h, confirmLabel, confirmWatched, confirmHunted, confirmIgnored);
         return;
@@ -540,7 +557,7 @@ switch (Settings::background()) {
         }
 
         Theme::drawScrollbar(t, w - 4, bodyTop, bodyH, count, max, g_scroll);
-        Theme::drawButtonBar(t, ButtonId::LOG, Theme::ButtonBarMode::LOG);
+        drawLogFooter(t, bar);
         if (infoPending) Theme::drawInfoPanel(t, w, h, now, infoTypeName, infoText);
         // EVENTS is intentionally view-only: historical rows do not open the
         // WATCH/HUNT/IGNORE confirm panel.
@@ -716,7 +733,7 @@ switch (Settings::background()) {
     Theme::drawScrollbar(t, w - 4, bodyTop, bodyH, count, max, g_scroll);
 
     // Bottom soft buttons
-    Theme::drawButtonBar(t, ButtonId::LOG, Theme::ButtonBarMode::LOG);
+    drawLogFooter(t, bar);
 
     if (infoPending)        Theme::drawInfoPanel(t, w, h, now, infoTypeName, infoText);
     else if (confirmPending) drawConfirmPanel(t, w, h, confirmLabel, confirmWatched, confirmHunted, confirmIgnored);
