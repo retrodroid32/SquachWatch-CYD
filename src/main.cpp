@@ -1224,6 +1224,8 @@ static void runTouchCalibration() {
 // Shared by the boot splash and home-screen adaptive multi-band renderer.
 // Must be declared before enterBoot() in CYD32 GNSS builds.
 static uint8_t s_recoveryBands = 1;
+// Track rotation scenes so readback glitch does not affect repacked pixels.
+static uint32_t s_rotatedSceneAt = UINT32_MAX;
 
 // The 2.8 CYD initializes a screen in its offscreen sprite. A 3.2 CYD
 // using the half-height recovery sprite keeps *canvas pointed at the
@@ -4254,6 +4256,17 @@ void loop() {
 #else
             frame.resizeInPlace(tft.width(), tft.height() / s_recoveryBands);
 #endif
+#if defined(CYD32)
+            // One-time scrub of RGB332 bytes after row-stride changes.
+            // The sprite's old orientation is otherwise visible between
+            // non-opaque background draws; do not wipe the physical TFT.
+            frame.resetViewport();
+            frame.fillRect(0, 0, frame.bufW(), frame.bufH(), Theme::BG);
+            Serial.printf("[rotate] CYD32 scrubbed %dx%d sprite; bands=%u panel=%dx%d\n",
+                          (int)frame.bufW(), (int)frame.bufH(),
+                          (unsigned)s_recoveryBands,
+                          (int)tft.width(), (int)tft.height());
+#endif
         } else if (frameBufferOk) {
             // Never got its one-time boot-time allocation in the first
             // place (see setup()) -- same permanent fallback a failed
@@ -4265,6 +4278,9 @@ void loop() {
 #endif
         }
         transitionStart = now;
+#if defined(CYD32)
+        s_rotatedSceneAt = transitionStart;
+#endif
     }
 #endif  // !AWOK
 
@@ -7462,7 +7478,12 @@ void loop() {
         ) {
         const bool targetRoster =
             state == AppState::HUNT_LIST || state == AppState::WATCH_LIST;
-        if (!targetRoster && now - transitionStart < TRANSITION_MS) {
+        if (!targetRoster && now - transitionStart < TRANSITION_MS
+#if defined(CYD32)
+            && transitionStart != s_rotatedSceneAt
+#endif
+            ) {
+            // Ordinary transitions keep their CRT glitch; rotations do not.
             Theme::drawTransitionGlitch(frame, now - transitionStart, TRANSITION_MS);
         }
         FrameProf::lap(FrameProf::POST);
