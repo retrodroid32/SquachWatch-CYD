@@ -35,6 +35,19 @@ checks = {
     'Serial.println("[rotate] frame buffer was never allocated' in rotate,
   "scoped to CYD32 boards, not stable 2.8 render":
     "#if defined(CYD32)" in rotate.split("frame.resizeInPlace(tft.width(), tft.height() / s_recoveryBands);", 1)[1].split("frame.resetViewport();", 1)[0],
+  "banded CYD32 refresh clears recycled pixels before reusing viewport":
+    "for (int b = 0; b < s_recoveryBands; ++b)" in main
+    and main.index("frame.resetViewport();", main.index("for (int b = 0; b < s_recoveryBands; ++b)"))
+        < main.index("frame.fillRect(0, 0, frame.bufW(), frame.bufH(), Theme::BG);",
+                     main.index("for (int b = 0; b < s_recoveryBands; ++b)"))
+        < main.index("frame.setViewport(0, -y, tft.width(), tft.height(), true);",
+                     main.index("for (int b = 0; b < s_recoveryBands; ++b)")),
+  "band scrub is offscreen and scoped to 3.2 only":
+    "#if defined(CYD32)\n            // This ONE allocation" in main
+    and "tft.fillScreen(" not in main[
+        main.index("for (int b = 0; b < s_recoveryBands; ++b)"):
+        main.index("frame.setViewport(0, -y, tft.width(), tft.height(), true);",
+                   main.index("for (int b = 0; b < s_recoveryBands; ++b)"))],
   "sprite clear once per rotation rather than every loop":
     rotate.count("frame.fillRect(0, 0, frame.bufW(), frame.bufH(), Theme::BG);") == 1
     and "frame.fillRect(0, 0, frame.bufW(), frame.bufH(), Theme::BG);" not in post,
