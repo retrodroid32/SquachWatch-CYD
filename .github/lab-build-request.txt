@@ -1,6 +1,6 @@
-PR186-CYD32-LOG-FOOTER-NOV05
-# Combined verification LAB from the user-confirmed working PR182-185 firmware.
-# Isolated PR186 repair: LOG bottom footer opaque and GLCD labels stable.
-# 3.2 ST7798 primary; includes 2.8 ST7789 regression image.
-# No production merge, tag or GitHub release. Do not erase NVS.
-# Previous working LAB retained as rollback.
+PR187-CYD32-ROTATION-FRAME-SCRUB-NOV06
+# LAB only: PR182 six-choice snooze, PR183 footer, PR184 WiFi/redraw,
+# PR185 2.8-style framebuffer/scan, PR186 Log footer, PR187 rotation scrub.
+# Test on 3.2 ST7798 first, 2.8 ST7789 for regression.
+# Clear reused offscreen sprite after rotation; no repeated physical wipe.
+# Preserve original working LAB; no merge, production tag or release.
