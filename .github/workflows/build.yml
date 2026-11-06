@@ -75,6 +75,8 @@ jobs:
       - uses: actions/checkout@v7
       - name: Run host tests
         run: make -C test
+      - name: Verify CYD32 rotated frame scrub and 2.8 path isolation
+        run: python3 tools/test_cyd32_rotation_scrub.py
 
   emulator:
     # Cheap, and it catches the failure mode the merge introduced: the

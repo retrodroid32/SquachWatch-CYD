@@ -1224,6 +1224,10 @@ static void runTouchCalibration() {
 // Shared by the boot splash and home-screen adaptive multi-band renderer.
 // Must be declared before enterBoot() in CYD32 GNSS builds.
 static uint8_t s_recoveryBands = 1;
+// The rotation transition is special: the sprite changes row stride while
+// retaining the same backing allocation. Suppress the brief pixel-readback
+// glitch until the new orientation has a clean fully rendered frame.
+static uint32_t s_rotatedSceneAt = UINT32_MAX;
 static void enterBoot() {
     state = AppState::BOOT;
     bootStart = millis();
@@ -3672,6 +3676,19 @@ static inline void drawTwoBand(F&& draw) {
         for (int b = 0; b < s_recoveryBands; ++b) {
             const int y = b * bandH;
             DrawBand::set(y, y + bandH);
+#if defined(CYD32)
+            // This ONE allocation is recycled for every panel band.
+            // Fonts, rows, and animated backgrounds do not all paint
+            // opaque pixels. Without resetting the previous band's bytes,
+            // content from the top band reappears in the lower band,
+            // particularly after portrait/landscape rotation.
+            //
+            // Erase the offscreen buffer before *each* band draw; changed
+            // row hashes still suppress unchanged LCD transfers. Never
+            // clear the physical TFT here or allocate any new memory.
+            frame.resetViewport();
+            frame.fillRect(0, 0, frame.bufW(), frame.bufH(), Theme::BG);
+#endif
             frame.setViewport(0, -y, tft.width(), tft.height(), true);
             const uint32_t drawStartUs = micros();
             draw((TFT_eSPI&)frame, b == 0);
@@ -4086,7 +4103,7 @@ void loop() {
         screenRotation = (screenRotation + 1) % 4;
         Settings::saveRotation(screenRotation);
         tft.setRotation(screenRotation);
-        FramePush::invalidate();   // the panel was re-initialised; send every row next
+        FramePush::invalidate();   // panel MADCTL geometry changed: full push required
         // The MX/MY/MV bits applyColorOrder() writes are rotation-
         // dependent, so it has to be reissued alongside every
         // setRotation() call, not just at boot.
@@ -4116,6 +4133,23 @@ void loop() {
 #else
             frame.resizeInPlace(tft.width(), tft.height() / s_recoveryBands);
 #endif
+#if defined(CYD32)
+            // Resizing reinterprets exactly the same RGB332 bytes with a
+            // DIFFERENT row stride: 320x240 and 240x320 retain the old
+            // glyphs/rows until every pixel is overwritten. LOG/Settings
+            // backgrounds paint only parts of their scene, so that data
+            // reappears after rotation as huge overlapping text and stripes.
+            //
+            // Erase ONLY the offscreen allocation (full frame or one
+            // recovery band), ONCE per rotation. drawTwoBand() paints all
+            // bands afresh, and FramePush's invalidation above sends every
+            // row without a direct LCD wipe or a repeated extra repaint.
+            frame.resetViewport();
+            frame.fillRect(0, 0, frame.bufW(), frame.bufH(), Theme::BG);
+            Serial.printf("[rotate] CYD32 scrubbed %dx%d sprite; bands=%u panel=%dx%d\n",
+                          (int)frame.bufW(), (int)frame.bufH(),
+                          (unsigned)s_recoveryBands, (int)tft.width(), (int)tft.height());
+#endif
         } else if (frameBufferOk) {
             // Never got its one-time boot-time allocation in the first
             // place (see setup()) -- same permanent fallback a failed
@@ -4127,6 +4161,10 @@ void loop() {
 #endif
         }
         transitionStart = now;
+#if defined(CYD32)
+        s_rotatedSceneAt = transitionStart;
+        // No direct-panel clear: changed-row caching was already invalidated.
+#endif
     }
 #endif  // !AWOK
 
@@ -7317,7 +7355,15 @@ void loop() {
         ) {
         const bool targetRoster =
             state == AppState::HUNT_LIST || state == AppState::WATCH_LIST;
-        if (!targetRoster && now - transitionStart < TRANSITION_MS) {
+        if (!targetRoster && now - transitionStart < TRANSITION_MS
+#if defined(CYD32)
+            // A rotation has just repacked the sprite. Readback-based
+            // glitch lines across a partially painted new orientation
+            // compound the stale-geometry artifact; keep the first frame
+            // clean instead. Ordinary navigation glitches remain intact.
+            && transitionStart != s_rotatedSceneAt
+#endif
+            ) {
             Theme::drawTransitionGlitch(frame, now - transitionStart, TRANSITION_MS);
         }
         FrameProf::lap(FrameProf::POST);
