@@ -13,6 +13,7 @@ The LOG and Settings animated backgrounds do not guarantee an opaque paint of ev
 - CYD32 only: immediately after `resizeInPlace()`, reset viewport and clear **the existing offscreen sprite allocation** with background color, exactly once per rotation.
 - Keep existing `FramePush::invalidate()`, which repaints all physical rows using the new panel orientation; do **not** directly clear the TFT, create another buffer, or allocate/free memory.
 - Skip the short readback-based CRT transition glitch only for a rotation; ordinary screen navigation transitions remain.
+- In CYD32's memory-saving multi-band path, the **same small sprite** is reused for every band. Previously the renderer updated its viewport and overpainted the next band without first clearing pixels from the previous band. Add an offscreen clear **before each band draw**, and leave the existing changed-row hash transfer alone. This prevents upper-screen glyphs from leaking into lower bands even after the one-time rotation scrub.
 - Works in either full-frame (one buffer) or the existing memory-safe 2/4/8/16-band fallback; stable 2.8 path untouched.
 - Include source check `tools/test_cyd32_rotation_scrub.py` in CI.
 
