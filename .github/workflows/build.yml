@@ -83,6 +83,8 @@ jobs:
         run: python3 tools/test_cyd32_rotated_back.py
       - name: Verify PR185 2.8-style framebuffer and raw scan buttons
         run: python3 tools/test_cyd32_fullframe_scanner.py
+      - name: Verify PR186 opaque LOG footer with stable button font
+        run: python3 tools/test_log_footer.py
 
   emulator:
     # Cheap, and it catches the failure mode the merge introduced: the
