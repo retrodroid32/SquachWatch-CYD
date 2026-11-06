@@ -34,7 +34,7 @@ checks = {
   "failsafe for missing sprite stays unchanged":
     'Serial.println("[rotate] frame buffer was never allocated' in rotate,
   "scoped to CYD32 boards, not stable 2.8 render":
-    "#if defined(CYD32)\n            // Resizing reinterprets" in rotate,
+    "#if defined(CYD32)" in rotate.split("frame.resizeInPlace(tft.width(), tft.height() / s_recoveryBands);", 1)[1].split("frame.resetViewport();", 1)[0],
   "sprite clear once per rotation rather than every loop":
     rotate.count("frame.fillRect(0, 0, frame.bufW(), frame.bufH(), Theme::BG);") == 1
     and "frame.fillRect(0, 0, frame.bufW(), frame.bufH(), Theme::BG);" not in post,
