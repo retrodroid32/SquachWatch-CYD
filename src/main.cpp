@@ -3612,10 +3612,30 @@ static inline void pushFrame(int x, int y) {
             Serial.printf("[roster-push] WARNING state=%u pushes=%u x=%d y=%d\n",
                           (unsigned)state, (unsigned)s_rosterPushesThisLoop, x, y);
         }
+#if defined(CYD32)
+    } else {
+        // Hardware isolation: ST7798 sometimes retains old portrait/
+        // landscape rows even after FramePush::invalidate() and offscreen
+        // sprite scrubs. Bypass its raw SPI-register burst writer and
+        // row-hash windows on this board. TFT_eSPI::pushSprite() uses the
+        // display driver's own address-window/SPI transaction implementation
+        // for BOTH full-screen and clipped recovery-band buffers.
+        //
+        // This is intentionally slower but is a controlled hardware
+        // diagnostic, not a new redraw heuristic. 2.8 CYD is unchanged.
+        static bool loggedNative = false;
+        if (!loggedNative) {
+            loggedNative = true;
+            Serial.println("[push] CYD32 NATIVE TFT_eSPI pushSprite; FramePush bypassed");
+        }
+        frame.pushSprite(x, y);
+        FramePush::invalidate();
+#else
     } else if (frame.getColorDepth() != 8 ||
                !FramePush::push(tft, frame.buf(), frame.bufW(), frame.bufH(), x, y)) {
         frame.pushSprite(x, y);
         FramePush::invalidate();
+#endif
     }
     s_pushAccumUs += micros() - t0;
 }
@@ -4091,6 +4111,15 @@ void loop() {
         // dependent, so it has to be reissued alongside every
         // setRotation() call, not just at boot.
         applyColorOrder();
+#if defined(CYD32)
+        // TFT_eSPI::setRotation() updates MADCTL but does not erase GRAM.
+        // On the 3.2 ST7798 that can leave rotated old-orientation pixels
+        // visible until the next complete transfer. Clear the *physical
+        // panel* once, on rotation ONLY. Do not put this in render loops.
+        tft.fillScreen(Theme::BG);
+        Serial.printf("[rotate] CYD32 native TFT panel clear, angle=%u size=%dx%d\n",
+                      (unsigned)screenRotation, (int)tft.width(), (int)tft.height());
+#endif
         // Landscape and portrait need differently-*shaped* buffers, but
         // not differently-*sized* ones -- a rectangular panel has the
         // same total pixel count either way (320x240 and 240x320 are
