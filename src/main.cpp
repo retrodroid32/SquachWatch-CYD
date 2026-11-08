@@ -853,6 +853,13 @@ static bool readTouchRaw(int16_t& a, int16_t& b) {
 // coming back from a reboot into a dimmed screen with no memory of why would
 // look exactly like a broken backlight.
 static bool s_screenDimmed = false;
+#if defined(CYD) && !defined(TWATCH_S3)
+// Classic CYD BOOT/GPIO0 pocket mode: nonpersistent, radios keep running.
+static bool s_pocketDark = false;
+static bool s_pocketArmed = false;
+static bool s_pocketWasDown = false;
+static uint32_t s_pocketDownAt = 0;
+#endif
 #if defined(TWATCH_S3)
 // A watch goes dark, not dim. When the screen timeout lands, the backlight
 // goes off and the ST7789 is put to sleep (DISPOFF, SLPIN: about a milliamp
@@ -881,6 +888,9 @@ static void applyCpuClock();
 
 static void applyBrightness() {
     uint8_t duty = s_screenDimmed ? Settings::dimLevel() : Settings::brightness();
+#if defined(CYD) && !defined(TWATCH_S3)
+    if (s_pocketDark && s_screenDimmed) duty = 0;
+#endif
 #if defined(TWATCH_S3)
     if (s_screenDimmed) {
         if (!s_panelAsleep) {
@@ -907,6 +917,31 @@ static void applyBrightness() {
     ledcWrite(BL_CH_CAP,  duty);
     ledcWrite(BL_CH_AWOK, duty);
 }
+
+// A short BOOT press toggles pocket mode; ignore the held button at boot and
+// long presses, which may be used for power or recovery on other profiles.
+#if defined(CYD) && !defined(TWATCH_S3)
+static void classicPocketButtonTick(uint32_t now) {
+    const bool down = digitalRead(0) == LOW;
+    if (!s_pocketArmed) {
+        if (!down) s_pocketArmed = true;
+        s_pocketWasDown = down;
+        return;
+    }
+    if (down && !s_pocketWasDown) s_pocketDownAt = now;
+    if (!down && s_pocketWasDown) {
+        const uint32_t held = now - s_pocketDownAt;
+        if (held >= 40 && held < 1200) {
+            s_pocketDark = !s_pocketDark;
+            lastTouch = now;
+            s_screenDimmed = s_pocketDark;
+            applyBrightness();
+            Serial.printf("[pocket] classic CYD %s\n", s_pocketDark ? "ON" : "OFF");
+        }
+    }
+    s_pocketWasDown = down;
+}
+#endif
 
 // 240, 160 or 80 MHz. Never lower: the radio needs an 80 MHz APB clock, and
 // the display's SPI divisor and the console's baud divisor are both derived
@@ -3055,6 +3090,9 @@ void setup() {
 #endif
 #endif
     applyBrightness();
+#if defined(CYD) && !defined(TWATCH_S3)
+    pinMode(0, INPUT_PULLUP); // BOOT sampled after startup; never driven
+#endif
     // A saved core clock has to be restored here too, or the setting silently
     // reverts to 240 MHz on every reboot and looks like it never took.
     applyCpuClock();
@@ -3846,6 +3884,10 @@ void loop() {
         }
     }
 
+    // BOOT remains responsive independently of touch and radio scanning.
+#if defined(CYD) && !defined(TWATCH_S3)
+    classicPocketButtonTick(now);
+#endif
     TouchPoint tp = pollTouch();
     // True only on the exact frame a touch begins/ends -- unlike
     // TOUCH_DEBOUNCE_MS below (a cooldown timer that still re-fires on a
@@ -3866,7 +3908,11 @@ void loop() {
     static bool s_swallowTouch = false;
     if (s_screenDimmed && touchJustDown) {
         s_swallowTouch = true;
+#if defined(CYD) && !defined(TWATCH_S3)
+        if (!s_pocketDark) lastTouch = now; // touches cannot wake pocket mode
+#else
         lastTouch = now;
+#endif
     }
     if (!tp.valid) s_swallowTouch = false;
     if (s_swallowTouch) {
@@ -7478,6 +7524,11 @@ void loop() {
             const bool lit = s_crownLitUntil && (int32_t)(s_crownLitUntil - now) > 0;
             wantDim = !alertWantsWake && !lit;
         }
+#endif
+        // Pocket mode overrides timeout NEVER and Desk, but a qualifying
+        // alert temporarily borrows the display without cancelling pocket.
+#if defined(CYD) && !defined(TWATCH_S3)
+        if (s_pocketDark) wantDim = !alertWantsWake;
 #endif
         if (wantDim != s_screenDimmed) {
             s_screenDimmed = wantDim;
