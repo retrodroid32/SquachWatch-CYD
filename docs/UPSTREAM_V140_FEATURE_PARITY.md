@@ -87,3 +87,20 @@ Audited: 2026-11-04. Upstream latest published release: [v1.40.0](https://github
 ## Verification and approval
 
 Each independently scoped feature PR: host tests + full firmware matrix + emulator rendering, then actual 2.8 ST7789 and 3.2 ST7798 validation before approval. Hardware-only features remain compile-only unless tested on their own board. No release/tag and no merge without explicit approval. Maintain published v1.22.0 immutable; prepare the next fork release only after user acceptance.
+
+
+## 2026-11-08 item 1–8 implementation tracking
+
+| Item | Work | Gate |
+|---|---|---|
+| 1 | #189 Arlo OUI detection fix; #191 passive Wi-Fi surveys | New draft PRs; CI and both classic CYDs |
+| 2 | #190 Privacy Mode LOG/RAWSCAN confirmation labels | New draft PR; CI and physical privacy checks |
+| 3 | #178 12/24 clock | Draft; test with #188-integrated master |
+| 4 | #179 CROWD NONE | Draft; paired SquachMesh hardware acceptance |
+| 5 | #180 appearance font controls | Draft; TEXT/XP scaling remains intentionally partial |
+| 6 | #182 tap-to-step snooze | Draft; exact-build 2.8 boot and ALWAYS/OFF persistence not fully verified |
+| 7 | #192 short-BOOT Pocket Mode | New draft; test boot-strapping, screen, alerts, radios on both CYDs |
+| 7 | XP tiles and WATCH radar | Not implemented; requires own UI/layout branches |
+| 8 | New v1.41 multi-board emulator | Not implemented; upstream sim/Makefile includes per-board WASM/LoRa simulation targets absent from fork; isolate after reviewing simulator dependencies |
+
+**Dependency warning:** Earlier #178–#180/#182 were authored against master before CYD32-native LCD #188. Revalidate integration on current master, not just their earlier CI. Do not wholesale replace fork SD/GPS/mesh/display implementation with upstream source. Keep untestable T-Deck/Waveshare/Freenove profiles compile-only.
