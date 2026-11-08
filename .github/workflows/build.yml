@@ -73,6 +73,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+      - name: Verify upstream v1.41 regression
+        run: python3 tools/test_v141_privacy_confirm.py
       - name: Run host tests
         run: make -C test
       - name: Verify CYD32 native LCD transfer and one-time rotation clear
