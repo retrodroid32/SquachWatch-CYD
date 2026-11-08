@@ -31,6 +31,8 @@ concurrency:
 
 jobs:
   firmware:
+    permissions:
+      contents: write # PR193 verification prerelease; no master changes
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -86,6 +88,30 @@ jobs:
           path: lab-firmware/
           if-no-files-found: error
           retention-days: 14
+
+      # Explicitly requested downloadable verification release for PR193 ONLY.
+      # This non-v* / non-lab-* tag does not trigger the production release
+      # pipeline or deploy the production flasher; do not merge this workflow.
+      - name: Publish PR193 verification prerelease
+        if: github.event_name == 'pull_request' && github.event.pull_request.number == 193
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG="verification-pr193-v141-20261108"
+          ZIP="SquachWatch-v141-PR193-CYD28-CYD32-LAB.zip"
+          (cd lab-firmware && zip -qr "../$ZIP" .)
+          test -s "$ZIP"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Verification release already exists; refreshing ZIP"
+            gh release upload "$TAG" "$ZIP" --clobber
+          else
+            gh release create "$TAG" "$ZIP" \
+              --target "${{ github.event.pull_request.head.sha }}" \
+              --title "SquachWatch-CYD v1.41 LAB PR193 — 2.8 and 3.2" \
+              --notes "PR #193 integration verification firmware (Arlo, Privacy Mode, passive Wi-Fi, Pocket Mode, and merged CYD32 display fix). Contains separate 2.8-inch ST7789 and 3.2-inch ST7798 images. All changes remain unmerged and unverified on physical hardware. Not a production update; do not use production OTA. For full context: https://github.com/retrodroid32/SquachWatch-CYD/pull/193" \
+              --prerelease --latest=false
+          fi
 
   tests:
     # The decoders are pure arithmetic over byte buffers, so they run on a
