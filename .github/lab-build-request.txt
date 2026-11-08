@@ -1,3 +1,4 @@
-WATCH149-LANDBACK
-# Experimental LAB build after landscape WATCH BACK touch fix.
-# Triggered only on explicit user hardware regression report.
+PR193-V141-VERIFY
+# Request user-approved verification firmware release for combined upstream v1.41 CYD 2.8 / 3.2 LAB.
+# Successful source artifact: Actions run 42510875672. PR193 remains unmerged.
+# Non-production prerelease tag: verification-pr193-v141-20261108.
