@@ -156,7 +156,7 @@ void fail(Fail f) {
 void startScan() {
     s_netN = 0;
     WiFi.scanDelete();
-    WiFi.scanNetworks(true /* async */, false /* no hidden */);
+    WiFi.scanNetworks(true /* async */, false /* no hidden */, true /* passive */, 150);
     s_state = State::SCANNING;
 }
 
@@ -676,7 +676,7 @@ static void testSavedTask(void*) {
     // after the sniffer-to-STA handoff even though the boot join succeeds.
     // Match bootCheck's direct saved-SSID join; keep 2.8 unchanged.
     const int16_t surveyCount = WifiUsePolicy::SCAN_BEFORE_JOIN ?
-        WiFi.scanNetworks(false, false, false, 180) : -1;
+        WiFi.scanNetworks(false, false, true, 180) : -1;
 #if defined(CYD32)
     Serial.printf("[wifi] USE CYD32 direct join: %s\n", s_testSsid);
 #endif
