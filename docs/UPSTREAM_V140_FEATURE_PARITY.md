@@ -1,3 +1,37 @@
+# Upstream v1.41.0 addendum — reviewed 2026-11-08
+
+Latest verified upstream published release: [v1.41.0 “Return to Sender”](https://github.com/skizzophrenic/SquachWatch-CYD/releases/tag/v1.41.0), released 2026-11-07. The v1.40 checklist below remains a backlog, not a claim of full upstream parity. Fork master has selectively merged #188 native CYD32 LCD transfer; v1.22.0 is still the last published fork release.
+
+## Newly verified general fixes to prioritize on classic 2.8 / 3.2 CYDs
+
+| Upstream v1.41 item | Confirmed fork gap (master audited 2026-11-08) | Action / acceptance |
+|---|---|---|
+| #114: remove false Arlo camera OUI `BC:DD:C2`, add `FC:9C:98`, `48:62:64`, `A4:11:62` high-confidence cameras | Fork `src/signatures.cpp` still has the false Espressif-as-Arlo row and lacks three Arlo rows | New isolated signature-fix PR; host signature regression + hardware BLE/Wi-Fi detections |
+| #114: passive WIFI SCAN / update network picker | Fork implementation not yet audited conclusively for all scan entry points | Audit Wi-Fi active/passive flags, preserve pairing/network UX and verify no probes on both CYDs |
+| #102: Privacy Mode should mask self-names, not type/manufacturer labels | Fork `src/main.cpp` still calls `privLabel(s_confirmLabel)` in LOG and RAWSCAN irrespective of name origin | Add a captured is-name flag, pass through both confirm paths and test RING/vendor versus custom name |
+| CI: passive-scan guard and OUI ownership verification | Not yet compared | Add targeted tests on isolated PRs, then board matrix |
+| Emulator bench UI and real independent T-Deck/T-Watch/Cardputer builds | Existing fork emulator #164 already merged but this multi-board bench is new | Separate browser-emulator PR; check emulator board fidelity, CI and flasher links |
+
+## New hardware-specific features, NOT automatic classic-CYD parity
+
+- T-Deck Meshtastic PKI direct messages, delivery ACK / retry indicators and private DMs list.
+- T-Deck MeshCore Ed25519 identity, advert/contact discovery, path-return or bare ACK receipts, and private DMs; LoRa radar-dot shortcut; MCKEYS/MCADVERT/MCDM console.
+- Waveshare ESP32-C5 Touch LCD 2.8" beta build: compile-only until actual Waveshare board is available. Distinct from the RockBase NM-CYD-C5.
+- Freenove S3 GPS-specific build; our classic CYDs already have independently implemented UBX+NMEA GPS, WiGLE and UTC. Maintain separate board validation.
+- Tab5 touch repair and BOOT-button power-off build flag: board-specific.
+
+## Recommended implementation order
+
+1. Correct #114 Arlo false-positive and ensure passive Wi-Fi scans in isolated PR(s).
+2. Correct #102 LOG privacy confirmation labels in isolated PR.
+3. Hardware-verify staged v1.40 feature PRs #178 (clock format), #179 (CROWD NONE), #180 (fonts); keep #182 snooze separate until its feature and known 2.8 boot issue are confirmed on the exact build.
+4. Add missing POCKET MODE and optional XP tiles / WATCH radar in isolated PRs. Protect the proven 2.8 / 3.2 renderer and #188 fix.
+5. Extend browser emulator separately; compile-only T-Deck/C5/Freenove work remains pending respective boards.
+
+No branch deletions, production merges, version bump, tag or release without explicit hardware verification and user approval.
+
+---
+
 # Upstream v1.40.0 feature parity — selective fork roadmap
 
 Audited: 2026-11-04. Upstream latest published release: [v1.40.0](https://github.com/skizzophrenic/SquachWatch-CYD/releases/tag/v1.40.0), published 2026-10-23. Fork production release: **v1.22.0**, independently developed; these version numbers do not imply equivalent source trees.
