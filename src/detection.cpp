@@ -2189,7 +2189,7 @@ void DetectionEngine::startRawWifiScan() {
     requestRawBleScanMode();
 #else
     if (leavingRawBle) requestRawBleScanMode();
-    WiFi.scanNetworks(true /* async */);
+    WiFi.scanNetworks(true /* async */, true /* hidden */, true /* passive */, 150);
 #endif
 }
 
@@ -2211,7 +2211,7 @@ static void rawWifiScanTick() {
         const uint32_t beforeBlock = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
         wifi_country_t cc = {};
         esp_wifi_get_country(&cc);
-        const int rc = WiFi.scanNetworks(true, true, false, 180);
+        const int rc = WiFi.scanNetworks(true, true, true, 180);
         Serial.printf("[raw-wifi] start rc=%d heap=%lu/%lu country=%.2s ch=%u-%u\n",
                       rc, (unsigned long)beforeHeap, (unsigned long)beforeBlock,
                       cc.cc, (unsigned)cc.schan, (unsigned)(cc.schan + cc.nchan - 1));
