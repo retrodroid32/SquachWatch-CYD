@@ -31,8 +31,6 @@ concurrency:
 
 jobs:
   firmware:
-    permissions:
-      contents: write # PR193 verification prerelease; no master changes
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -89,45 +87,6 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-
-  # Repackage only an already successful and immutable PR193 firmware build.
-  # The earlier build produced all classic board binaries and passed all jobs.
-  verification-release:
-    if: github.event_name == 'pull_request' && github.event.pull_request.number == 193
-    runs-on: ubuntu-latest
-    permissions:
-      actions: read
-      contents: write
-    steps:
-      - name: Download already verified classic-CYD firmware
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          gh run download 42510875672 --repo "${{ github.repository }}" \
-            --name lab-pr-193-classic-cyd --dir lab-firmware
-          test -s lab-firmware/2.8-ST7789/firmware.bin
-          test -s lab-firmware/3.2-ST7798/firmware.bin
-          cat lab-firmware/BUILD-INFO.txt
-      - name: Publish user-requested verification prerelease
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          TAG="verification-pr193-v141-20261108"
-          ZIP="SquachWatch-v141-PR193-CYD28-CYD32-LAB.zip"
-          (cd lab-firmware && zip -qr "../$ZIP" .)
-          test -s "$ZIP"
-          if gh release view "$TAG" --repo "${{ github.repository }}" >/dev/null 2>&1; then
-            gh release upload "$TAG" "$ZIP" --clobber --repo "${{ github.repository }}"
-          else
-            gh release create "$TAG" "$ZIP" \
-              --repo "${{ github.repository }}" \
-              --target "384c2fbb3cb734f8e314e393cb3a871dd697cd6d" \
-              --title "SquachWatch-CYD v1.41 LAB PR193 — 2.8 and 3.2" \
-              --notes "Hardware verification prerelease built from successful GitHub Actions run 42510875672 at firmware source commit 384c2fbb3cb734f8e314e393cb3a871dd697cd6d. Combines Arlo, Privacy Mode, passive Wi-Fi, Pocket Mode and native CYD32 LCD push. Separate ST7789 2.8 and ST7798 3.2 firmware included. Draft PR #193 unmerged; NOT a production release or OTA update. Validate actual hardware before approval." \
-              --prerelease --latest=false
-          fi
 
   tests:
     # The decoders are pure arithmetic over byte buffers, so they run on a
