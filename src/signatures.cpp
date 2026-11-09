@@ -231,7 +231,7 @@ const UuidEntry kUuidTable[] = {
     {0x3500, "Raven",      DetectionType::RAVEN},
     {0xFFFA, "DroneID",    DetectionType::DRONE},     // OpenDroneID
     {0xFD5A, "SmartTag",   DetectionType::SAMSUNG_TAG}, // Samsung's own SIG-assigned UUID for SmartTag discovery
-    {0xFEAA, "FindMyDev",  DetectionType::GOOGLE_TAG},  // Google "Eddystone" service UUID, also used by the Find My Device network
+    // 0xFEAA is generic Eddystone, NOT proof of Google Find My Device.\n    // Keep it out of the SOI table until a corroborated tracker-specific\n    // pattern is available (Pager/Marauder SOI audit, Nov 2026).
 
     // Flipper Zero. It advertises one of three 16-bit service UUIDs, one
     // per case variant -- which is also how the desktop detectors tell a
@@ -531,6 +531,18 @@ DetectionType lookupMfgId(uint16_t mfgId) {
 // headphones. That needs a capture of real bytes from both to get
 // right, and guessing model IDs from memory is how this gets subtly
 // wrong again.
+// A narrower Find My subtype signature. The generic 0x1E FF 4C 00
+// proximity-pairing advert is still displayed as a LOW-confidence candidate;
+// a 0x12 0x19 subtype supports the stronger existing type-level grade.
+bool isSeparatedFindMyPayload(const uint8_t* payload, uint8_t len) {
+    if (!payload || len < 4) return false;
+    for (uint8_t i = 0; i + 3 < len; i++) {
+        if (payload[i] == 0x4C && payload[i+1] == 0x00 &&
+            payload[i+2] == 0x12 && payload[i+3] == 0x19) return true;
+    }
+    return false;
+}
+
 bool isAirTagPayload(const uint8_t* payload, uint8_t len) {
     if (!payload || len < 4) return false;
     for (uint8_t i = 0; i + 3 < len; i++) {
