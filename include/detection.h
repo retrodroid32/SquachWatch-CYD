@@ -243,7 +243,9 @@ public:
     void IRAM_ATTR postWiFi(const uint8_t* mac, int8_t rssi, uint8_t channel,
                             const char* ssid = nullptr, bool encrypted = false,
                             bool pwnagotchi = false, bool remoteId = false,
-                            bool flockWildcardProbe = false);
+                            bool flockWildcardProbe = false,
+                            const uint8_t* remoteIdMessages = nullptr,
+                            uint8_t remoteIdCount = 0);
 
     // Called from the promiscuous WiFi Rx callback (IRAM_ATTR context)
     // when a deauthentication management frame is seen. A single
@@ -270,6 +272,8 @@ public:
     // record is the right number for a screen this size, where the
     // question is "what is that thing" rather than "catalogue the sky".
     void mergeRemoteId(const uint8_t* mac, const uint8_t* payload, uint8_t len);
+    void mergeRemoteIdWifi(const uint8_t* mac, const uint8_t* messages,
+                           uint8_t count);
     const RemoteId::Info& remoteId() const { return _rid; }
     const uint8_t*        remoteIdMac() const { return _ridMac; }
 
@@ -578,6 +582,8 @@ private:
         bool    pwnagotchi;// ssid holds a pwnagotchi's name, not a network's
         bool    remoteId;  // ASTM F3411 Wi-Fi Beacon vendor IE matched
         bool    flockWildcardProbe; // probe request carried empty SSID IE
+        uint8_t ridCount;  // number of selected 25-byte Wi-Fi Remote ID messages
+        uint8_t ridMessages[75]; // fixed bounded 3-message buffer, no heap
     };
 
     // WiFi mailbox (filled in IRAM, drained in loop)
