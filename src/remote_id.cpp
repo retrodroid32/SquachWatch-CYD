@@ -170,32 +170,49 @@ static bool validMessagePack(const uint8_t* pack, uint16_t len) {
     return len >= (uint16_t)(3u + (uint16_t)count * MSG_SIZE);
 }
 
-bool isWifiBeacon(const uint8_t* frame, uint16_t len) {
-    if (!frame || len < 36) return false;
-
+bool wifiBeaconPack(const uint8_t* frame, uint16_t len,
+                    const uint8_t*& pack, uint16_t& packLen) {
+    pack = nullptr;
+    packLen = 0;
+    // Only a real management Beacon, not an arbitrary frame with a matching IE.
+    if (!frame || len < 36 || (frame[0] & 0xFC) != 0x80) return false;
     uint16_t i = 36;
     while (i + 2u <= len) {
         const uint8_t id = frame[i];
         const uint8_t ieLen = frame[i + 1];
         const uint16_t next = (uint16_t)(i + 2u + ieLen);
         if (next > len) return false;
-
         if (id == 0xDD && ieLen >= 8) {
             const uint8_t* d = frame + i + 2;
             const bool asdStan = d[0] == 0xFA && d[1] == 0x0B && d[2] == 0xBC;
             const bool parrot  = d[0] == 0x90 && d[1] == 0x3A && d[2] == 0xE6;
             if ((asdStan || parrot) && (!asdStan || d[3] == 0x0D)) {
-                // Both forms place the message pack after OUI/type + one
-                // service counter byte. Requiring a structurally valid pack
-                // keeps unrelated Parrot vendor IEs from becoming DRONE hits.
-                const uint8_t* pack = d + 5;
-                const uint16_t packLen = (uint16_t)(ieLen - 5);
-                if (validMessagePack(pack, packLen)) return true;
+                const uint8_t* candidate = d + 5;
+                const uint16_t available = (uint16_t)(ieLen - 5);
+                if (validMessagePack(candidate, available)) {
+                    pack = candidate;
+                    packLen = (uint16_t)(3u + (uint16_t)candidate[2] * MSG_SIZE);
+                    return true;
+                }
             }
         }
         i = next;
     }
     return false;
+}
+
+bool isWifiBeacon(const uint8_t* frame, uint16_t len) {
+    const uint8_t* pack = nullptr;
+    uint16_t packLen = 0;
+    return wifiBeaconPack(frame, len, pack, packLen);
+}
+
+bool mergeWifiPack(const uint8_t* pack, uint16_t len, Info& out, uint32_t now) {
+    if (!validMessagePack(pack, len)) return false;
+    const uint8_t count = pack[2];
+    for (uint8_t i = 0; i < count; ++i)
+        mergeMessage(pack + 3u + (uint16_t)i * MSG_SIZE, out, now);
+    return true;
 }
 
 bool isWifiNanAction(const uint8_t* frame, uint16_t len) {
