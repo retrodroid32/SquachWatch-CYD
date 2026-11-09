@@ -501,9 +501,8 @@ switch (Settings::background()) {
             t.print(stamp);
 
             char mac[24];
-            snprintf(mac, sizeof mac, "%02X:%02X:%02X:%02X:%02X:%02X",
-                     r->mac[0], r->mac[1], r->mac[2],
-                     r->mac[3], r->mac[4], r->mac[5]);
+            // Historical BlackBox bytes stay intact; only screen output is redacted.
+            Privacy::mac(mac, sizeof mac, r->mac);
             t.setTextColor(Theme::WHITE, Theme::BG);
             t.setCursor(6, y + 13);
             t.print(mac);
@@ -526,7 +525,11 @@ switch (Settings::background()) {
             else        snprintf(status, sizeof status, "%s", here ? "HERE" : "GONE");
             const int statusW = t.textWidth(status);
 
-            const char* src = r->name[0] ? r->name : (r->vendor[0] ? r->vendor : "UNKNOWN");
+            // Preserve vendor/type fallback: only device-provided names are private.
+            char pv[40];
+            const char* src = r->name[0]
+                ? Privacy::name(r->name, pv, sizeof pv)
+                : (r->vendor[0] ? r->vendor : "UNKNOWN");
             char who[40];
             snprintf(who, sizeof who, "%s", src);
             while (who[0] && t.textWidth(who) > w - statusW - 22)
