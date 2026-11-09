@@ -82,6 +82,9 @@ const char* mfgIdName(uint16_t mfgId);
 // that costs; the short version is that this deliberately trades some
 // precision for actually catching a tag that has just been powered on.
 bool isAirTagPayload(const uint8_t* payload, uint8_t len);
+// True only for the narrower Apple separated Find My 0x12/0x19 subtype.
+// Generic proximity-pairing candidates must be graded LOW, not MED.
+bool isSeparatedFindMyPayload(const uint8_t* payload, uint8_t len);
 
 // iBeacon check, run against the PARSED manufacturer-data field (company
 // ID included, i.e. what NimBLE's getManufacturerData() returns).
