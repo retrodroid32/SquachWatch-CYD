@@ -270,6 +270,7 @@ public:
     // record is the right number for a screen this size, where the
     // question is "what is that thing" rather than "catalogue the sky".
     void mergeRemoteId(const uint8_t* mac, const uint8_t* payload, uint8_t len);
+    void mergeRemoteIdWifiPack(const uint8_t* mac, const uint8_t* pack, uint16_t len);
     const RemoteId::Info& remoteId() const { return _rid; }
     const uint8_t*        remoteIdMac() const { return _ridMac; }
 
