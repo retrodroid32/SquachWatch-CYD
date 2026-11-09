@@ -60,6 +60,13 @@ bool merge(const uint8_t* payload, uint8_t len, Info& out, uint32_t now);
 // become DRONE alerts.
 bool isBluetoothLegacy(const uint8_t* payload, uint8_t len);
 bool isWifiBeacon(const uint8_t* frame, uint16_t len);
+// Return a view into a validated Wi-Fi Beacon ASTM F3411 Message Pack.
+// Only valid while the captured frame remains owned by the caller.
+bool wifiBeaconPack(const uint8_t* frame, uint16_t len,
+                    const uint8_t*& pack, uint16_t& packLen);
+// Decode a bounded Wi-Fi Message Pack (1-9 x 25-byte records) using the
+// same Basic ID, Location and System parser already exercised for BLE.
+bool mergeWifiPack(const uint8_t* pack, uint16_t len, Info& out, uint32_t now);
 bool isWifiNanAction(const uint8_t* frame, uint16_t len);
 
 void reset(Info& out);
