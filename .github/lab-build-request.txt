@@ -1,8 +1,9 @@
-SOI199-200-201-CYD-R2
-# Explicit user-requested hardware LAB firmware from three separate, draft SOI PRs.
-# PR199 Pineapple Pager exact SSIDs; PR200 Eddystone false positives;
-# PR201 Wi-Fi Remote ID Beacon Message Pack decode.
-# Publish under ?lab=1, leave production master unchanged.
-# Do not merge until user validates 2.8 ST7789 and 3.2 ST7798.
-
-# R2: corrected the 20-byte Remote ID test fixture before publication.
+V141-SOI-193-194-195-197-R1
+# Combined hardware LAB update requested by user, based on verified firmware #176.
+# Keeps exact Pager SOI, generic Eddystone suppression and WiFi Remote ID
+# from PR202, adds PR194 serial module candidates, PR195 Apple Find My
+# confidence, PR197 channel-yield, and PR193 v1.41 core Privacy/Pocket
+# Arlo OUI & passive WiFi fixes.
+# Target: 2.8 ST7789 + 3.2 ST7798, same web flasher ?lab=1.
+# Master and every original feature branch remain unchanged and unmerged.
+# Hardware validation required before any merge.
