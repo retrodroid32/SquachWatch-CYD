@@ -656,6 +656,12 @@ class BleScanCallbacks : public NimBLEScanCallbacks {
         if (det.type == DetectionType::FLOCK && matchedByName) {
             det.conf = Confidence::MED_CONF;
         }
+        // SkimmerScanner's common HC/JDY/BT serial-module names identify an
+        // inexpensive radio module, NOT payment-terminal compromise. Even
+        // exact name matches stay LOW until independent evidence arrives.
+        if (det.type == DetectionType::SKIMMER && matchedByName) {
+            det.conf = Confidence::LOW_CONF;
+        }
         // A Remote ID advert carries far more than the fact that it exists.
         // Decode it before the entry is posted so the log row can be named
         // after the actual aircraft rather than after a service UUID.
