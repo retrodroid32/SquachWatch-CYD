@@ -198,6 +198,53 @@ bool isWifiBeacon(const uint8_t* frame, uint16_t len) {
     return false;
 }
 
+// Adapted from ESP32Marauder RemoteIdDecoder::decodeWifiBeacon.
+// Read the complete Wi-Fi vendor element, not the beacon SSID. Pack geometry
+// is checked before touching any message, and only fields our UI understands
+// are copied across the WiFi-task / loop-task mailbox.
+uint8_t wifiBeaconMessages(const uint8_t* frame, uint16_t len,
+                           uint8_t* outMessages, uint8_t maxMessages) {
+    if (!frame || !outMessages || !maxMessages || len < 36 ||
+        (frame[0] & 0xFC) != 0x80) return 0;
+    if (maxMessages > 3) maxMessages = 3;
+    uint16_t i = 36;
+    while (i + 2u <= len) {
+        const uint8_t id = frame[i], ieLen = frame[i + 1];
+        const uint16_t next = (uint16_t)(i + 2u + ieLen);
+        if (next > len) return 0;
+        if (id == 0xDD && ieLen >= 8) {
+            const uint8_t* d = frame + i + 2;
+            const bool astm = d[0] == 0xFA && d[1] == 0x0B &&
+                              d[2] == 0xBC && d[3] == 0x0D;
+            const bool parrot = d[0] == 0x90 && d[1] == 0x3A && d[2] == 0xE6;
+            const uint8_t* pack = d + 5;
+            if ((astm || parrot) &&
+                validMessagePack(pack, (uint16_t)(ieLen - 5))) {
+                uint8_t copied = 0;
+                for (uint8_t j = 0; j < pack[2] && copied < maxMessages; j++) {
+                    const uint8_t* msg = pack + 3u + (uint16_t)j * MSG_SIZE;
+                    const uint8_t type = msg[0] >> 4;
+                    if (type != MSG_BASIC_ID && type != MSG_LOCATION &&
+                        type != MSG_SYSTEM) continue;
+                    memcpy(outMessages + (uint16_t)copied * MSG_SIZE, msg, MSG_SIZE);
+                    ++copied;
+                }
+                return copied;
+            }
+        }
+        i = next;
+    }
+    return 0;
+}
+
+bool mergeWifiMessages(const uint8_t* messages, uint8_t count,
+                       Info& out, uint32_t now) {
+    if (!messages || count == 0 || count > 3) return false;
+    for (uint8_t i = 0; i < count; i++)
+        mergeMessage(messages + (uint16_t)i * MSG_SIZE, out, now);
+    return true;
+}
+
 bool isWifiNanAction(const uint8_t* frame, uint16_t len) {
     // Public Action / vendor-specific NAN frame. Sky-Spy and the OpenDroneID
     // reference implementation both key on the NAN destination plus the
