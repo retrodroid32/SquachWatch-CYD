@@ -80,6 +80,16 @@ int main() {
     ck("vendor label fits Detection::vendor",
        strlen(ssidVendorName("Pineapple_1337")) <= 11);
 
+    suite("Pineapple Pager default SSIDs");
+    ck("pager_open identifies HACKER", lookupSsid("pager_open") == DetectionType::HACKER);
+    ck("pager-open identifies HACKER", lookupSsid("pager-open") == DetectionType::HACKER);
+    ck("case insensitive", lookupSsid("PAGER_OPEN") == DetectionType::HACKER);
+    ck("not arbitrary pager network", lookupSsid("pager-office") == DetectionType::UNKNOWN);
+    ck("no broad prefix", lookupSsid("pager-open-guest") == DetectionType::UNKNOWN);
+    ck("Rayhunter hotspot not classified", lookupSsid("RC400L") == DetectionType::UNKNOWN);
+    ck("Pager vendor label fits", strlen(ssidVendorName("pager-open")) <= 11);
+    ck("Pager vendor label", strcmp(ssidVendorName("pager-open"), "PineapplePg") == 0);
+
     suite("The type's own grade is the conservative one");
 
     // HACKER deliberately bundles exact signatures with guessable strings.
