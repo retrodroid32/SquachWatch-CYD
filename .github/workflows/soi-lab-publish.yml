@@ -23,7 +23,7 @@ jobs:
   publish-soi-lab:
     runs-on: ubuntu-latest
     environment:
-      name: github-pages
+      name: soi-lab-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - name: Download verified immutable SOI LAB build
