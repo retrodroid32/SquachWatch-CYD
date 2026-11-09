@@ -121,7 +121,7 @@ int main() {
     suite("Wi-Fi Beacon Remote ID transport");
     memset(m, 0, sizeof(m));
     m[0] = (uint8_t)(0x0 << 4) | 0x2;
-    memcpy(m + 2, "WIFIRID1234567890ABCD", 20);
+    memcpy(m + 2, "WIFIRID1234567890ABC", 20);
     uint8_t wifi[96];
     uint16_t wifiLen = wifiBeacon(wifi, m);
     ck("ASTM vendor IE recognized", RemoteId::isWifiBeacon(wifi, wifiLen));
@@ -135,7 +135,7 @@ int main() {
     ck("extracted WiFi Beacon body merges",
        RemoteId::mergeWifiMessages(wifiBodies, 1, wifiInfo, 4200));
     ck("WiFi Basic ID serial decoded", wifiInfo.haveBasic &&
-       strcmp(wifiInfo.serial, "WIFIRID1234567890ABCD") == 0);
+       strcmp(wifiInfo.serial, "WIFIRID1234567890ABC") == 0);
 
     uint8_t wifiMulti[128] = {};
     memcpy(wifiMulti, wifi, wifiLen);
