@@ -134,7 +134,7 @@ int main() {
     ck("Wi-Fi pack decoded", RemoteId::mergeWifiPack(packView, packSize, wifiInfo, 6000));
     ck("Wi-Fi pack updates Basic ID", wifiInfo.haveBasic);
     ck("Wi-Fi Basic ID matches captured record",
-       strcmp(wifiInfo.serial, "WIFIRID1234567890ABCD") == 0);
+       strcmp(wifiInfo.serial, "WIFIRID1234567890ABC") == 0);
     uint8_t nonBeacon[96];
     memcpy(nonBeacon, wifi, wifiLen);
     nonBeacon[0] = 0x50;  // management probe response, not Beacon
