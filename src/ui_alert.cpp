@@ -27,6 +27,12 @@ bool uiAlertSnoozeDue(uint32_t now) {
     return s_snoozePrompt && (uint32_t)(now - s_snoozeLastTap) >= 3000u;
 }
 uint8_t uiAlertSnoozeStep() { return s_snoozeStep; }
+static uint16_t snoozeProgress(uint32_t now) {
+    if (!s_snoozePrompt) return 0;
+    const uint32_t elapsed = (uint32_t)(now - s_snoozeLastTap);
+    if (elapsed >= 3000u) return 0;
+    return (uint16_t)(1000u - elapsed * 1000u / 3000u);
+}
 static bool s_redacted = false;
 void uiAlertSetRedacted(bool r) { s_redacted = r; }
 
@@ -720,21 +726,44 @@ void uiAlertTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng,
         t.setCursor(bx + (bw - hw) / 2, by + (bh - t.fontHeight()) / 2);
         t.print("HUNT");
     }
-    // WATCH: one-tap add straight from the detection alert. Once watched,
-    // the same button reads WATCHED and stays non-destructive: removal is
-    // available in WATCH TARGETS or the normal LOG/raw-scan controls.
+    // While cycling a snooze duration, WATCH becomes the two-line
+    // hint used by the previously tested on-card interaction.
     {
         int bx, by, bw, bh;
         watchBtnRect(w, h, bx, by, bw, bh);
-        const bool watched = eng.isWatched(s_last.mac, s_last.channel == 0);
-        Theme::drawButton(t, bx, by, bw, bh,
-                          watched ? "WATCHED" : "WATCH", watched);
+        if (s_snoozePrompt) {
+            Theme::drawButton(t, bx, by, bw, bh, "", false);
+            t.setTextFont(1);
+            t.setTextSize(1);
+            t.setTextWrap(false);
+            t.setTextColor(Theme::CYAN, Theme::BG);
+            const char* a = "TAP AGAIN";
+            const char* b = "TO CHANGE";
+            const int y0 = by + (bh - 17) / 2;
+            t.setCursor(bx + (bw - t.textWidth(a)) / 2, y0); t.print(a);
+            t.setCursor(bx + (bw - t.textWidth(b)) / 2, y0 + 9); t.print(b);
+        } else {
+            const bool watched = eng.isWatched(s_last.mac, s_last.channel == 0);
+            Theme::drawButton(t, bx, by, bw, bh,
+                              watched ? "WATCHED" : "WATCH", watched);
+        }
     }
-    // SNOOZE between the two: tap-to-step, no full-screen picker.
+    // Show each selection INSIDE the existing SNOOZE button, not a modal
+    // or an overlay across the alert. The amber bar counts down from 3 s.
     {
+        static const char* choices[] = {"SNOOZE", "10 MIN", "30 MIN",
+                                        "1 HOUR", "4 HOURS", "ALWAYS", "OFF"};
         int bx, by, bw, bh;
         snoozeBtnRect(w, h, bx, by, bw, bh);
-        Theme::drawButton(t, bx, by, bw, bh, "SNOOZE", false);
+        const uint8_t step = s_snoozePrompt && s_snoozeStep <= 6u ? s_snoozeStep : 0u;
+        Theme::drawButton(t, bx, by, bw, bh, choices[step], step != 0u);
+        if (step) {
+            const int range = bw - 6;
+            const int progress = (int)((uint32_t)range * snoozeProgress(now) / 1000u);
+            t.fillRect(bx + 3, by + bh - 4, range, 2, Theme::BG);
+            if (progress > 0)
+                t.fillRect(bx + 3, by + bh - 4, progress, 2, Theme::AMBER);
+        }
     }
 
     // TV-static snow over the whole screen during the same random burst
@@ -754,26 +783,7 @@ void uiAlertTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng,
     // a screen that keeps rendering underneath" pattern LOG's confirm/
     // info panels use.
     if (infoPending) Theme::drawInfoPanel(t, w, h, now, infoTypeName, infoText);
-    if (s_snoozePrompt) {
-        // Repaint over WATCH hint area without a large modal that obscures the alert.
-        static const char* choices[] = {"", "10 MIN", "30 MIN", "1 HOUR",
-                                        "4 HOURS", "ALWAYS", "OFF"};
-        const int pw = w > 270 ? 228 : w - 18;
-        const int px = (w - pw) / 2;
-        const int py = h / 2 + 18;
-        t.fillRoundRect(px, py, pw, 35, 4, Theme::BG);
-        t.drawRoundRect(px, py, pw, 35, 4, Theme::CYAN);
-        t.setTextSize(1);
-        t.setTextWrap(false);
-        t.setTextColor(Theme::CYAN, Theme::BG);
-        const char* line = choices[s_snoozeStep <= 6 ? s_snoozeStep : 0];
-        t.setCursor(px + (pw - t.textWidth(line)) / 2, py + 5);
-        t.print(line);
-        const char* hint = "TAP AGAIN / LONGER";
-        t.setTextColor(Theme::AMBER, Theme::BG);
-        t.setCursor(px + (pw - t.textWidth(hint)) / 2, py + 21);
-        t.print(hint);
-    }
+
 }
 
 bool uiAlertTouched() {
