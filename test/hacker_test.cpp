@@ -77,6 +77,11 @@ int main() {
     // merely containing the word is not a match.
     ck("but not a network that merely contains it",
        lookupSsid("MyNetwork-pwned") == DetectionType::UNKNOWN);
+    ck("Pager open setup SSID", lookupSsid("pager_open") == DetectionType::HACKER);
+    ck("Pager alternate hyphen SSID", lookupSsid("PAGER-OPEN") == DetectionType::HACKER);
+    ck("PinePager label fits vendor field", strlen(ssidVendorName("pager_open")) <= 11);
+    ck("generic pager word must not match", lookupSsid("pager-printer") == DetectionType::UNKNOWN);
+    ck("nearby unrelated Pager SSID must not match", lookupSsid("my-pager_open") == DetectionType::UNKNOWN);
     ck("vendor label fits Detection::vendor",
        strlen(ssidVendorName("Pineapple_1337")) <= 11);
 
