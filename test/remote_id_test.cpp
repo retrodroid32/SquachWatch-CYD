@@ -134,8 +134,11 @@ int main() {
     ck("Wi-Fi pack updates Basic ID", wifiInfo.haveBasic);
     ck("Wi-Fi Basic ID matches captured record",
        strcmp(wifiInfo.serial, "WIFIRID1234567890ABCD") == 0);
+    uint8_t nonBeacon[96];
+    memcpy(nonBeacon, wifi, wifiLen);
+    nonBeacon[0] = 0x50;  // management probe response, not Beacon
     ck("Wi-Fi packet rejects non-beacon subtype",
-       !RemoteId::isWifiBeacon((const uint8_t[]){0}, 0));
+       !RemoteId::isWifiBeacon(nonBeacon, wifiLen));
     ck("Wi-Fi pack updates timestamp", wifiInfo.at == 6000);
     ck("short pack rejected", !RemoteId::mergeWifiPack(packView, (uint16_t)(packSize - 1), wifiInfo, 6001));
     uint8_t wrongOui[96];
