@@ -11,8 +11,22 @@
 static Detection s_last;
 static bool s_touched = false;
 static bool s_snoozePrompt = false;
-void uiAlertSetSnoozePrompt(bool enabled) { s_snoozePrompt = enabled; }
+static uint8_t s_snoozeStep = 0;
+static uint32_t s_snoozeLastTap = 0;
+void uiAlertSetSnoozePrompt(bool enabled) {
+    s_snoozePrompt = enabled;
+    if (!enabled) s_snoozeStep = 0;
+}
 bool uiAlertSnoozePrompt() { return s_snoozePrompt; }
+void uiAlertAdvanceSnooze(uint32_t now) {
+    s_snoozeStep = (uint8_t)(s_snoozeStep % 6u + 1u);
+    s_snoozeLastTap = now;
+    s_snoozePrompt = true;
+}
+bool uiAlertSnoozeDue(uint32_t now) {
+    return s_snoozePrompt && (uint32_t)(now - s_snoozeLastTap) >= 3000u;
+}
+uint8_t uiAlertSnoozeStep() { return s_snoozeStep; }
 static bool s_redacted = false;
 void uiAlertSetRedacted(bool r) { s_redacted = r; }
 
@@ -144,6 +158,8 @@ void uiAlertInit(TFT_eSPI& t, const Detection& d) {
     s_spamIdentities = 0;
     s_touched = false;
     s_snoozePrompt = false;
+    s_snoozeStep = 0;
+    s_snoozeLastTap = 0;
     s_alertStart = millis();
     s_glitchStep = 0;
     // fillScreen() relies on TFT_eSPI's base-class width/height, which
@@ -714,7 +730,7 @@ void uiAlertTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng,
         Theme::drawButton(t, bx, by, bw, bh,
                           watched ? "WATCHED" : "WATCH", watched);
     }
-    // SNOOZE between the two: opens a 10m/30m/1h/always picker.
+    // SNOOZE between the two: tap-to-step, no full-screen picker.
     {
         int bx, by, bw, bh;
         snoozeBtnRect(w, h, bx, by, bw, bh);
@@ -739,26 +755,24 @@ void uiAlertTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng,
     // info panels use.
     if (infoPending) Theme::drawInfoPanel(t, w, h, now, infoTypeName, infoText);
     if (s_snoozePrompt) {
-        int x, y;
-        snoozePickerRect(w, h, x, y);
-        t.fillRoundRect(x, y, 232, 174, 6, Theme::BG);
-        t.drawRoundRect(x, y, 232, 174, 6, Theme::CYAN);
+        // Repaint over WATCH hint area without a large modal that obscures the alert.
+        static const char* choices[] = {"", "10 MIN", "30 MIN", "1 HOUR",
+                                        "4 HOURS", "ALWAYS", "OFF"};
+        const int pw = w > 270 ? 228 : w - 18;
+        const int px = (w - pw) / 2;
+        const int py = h / 2 + 18;
+        t.fillRoundRect(px, py, pw, 35, 4, Theme::BG);
+        t.drawRoundRect(px, py, pw, 35, 4, Theme::CYAN);
         t.setTextSize(1);
         t.setTextWrap(false);
         t.setTextColor(Theme::CYAN, Theme::BG);
-        const char* title = "SNOOZE THIS DEVICE FOR:";
-        t.setCursor(x + (232 - t.textWidth(title)) / 2, y + 12);
-        t.print(title);
-        Theme::drawButton(t, x + 10,  y + 38, 100, 32, "10 MIN", false);
-        Theme::drawButton(t, x + 122, y + 38, 100, 32, "30 MIN", false);
-        Theme::drawButton(t, x + 10,  y + 78, 100, 32, "1 HOUR", false);
-        Theme::drawButton(t, x + 122, y + 78, 100, 32, "ALWAYS", false);
-        Theme::drawButton(t, x + 10,  y + 125, 212, 32, "CANCEL", false);
-        t.setTextSize(1);
-        const char* tip = "Always: until manually removed";
+        const char* line = choices[s_snoozeStep <= 6 ? s_snoozeStep : 0];
+        t.setCursor(px + (pw - t.textWidth(line)) / 2, py + 5);
+        t.print(line);
+        const char* hint = "TAP AGAIN / LONGER";
         t.setTextColor(Theme::AMBER, Theme::BG);
-        t.setCursor(x + (232 - t.textWidth(tip)) / 2, y + 163);
-        t.print(tip);
+        t.setCursor(px + (pw - t.textWidth(hint)) / 2, py + 21);
+        t.print(hint);
     }
 }
 
