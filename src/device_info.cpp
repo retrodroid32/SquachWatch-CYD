@@ -21,7 +21,7 @@ const Device kDevices[] = {
       "A Flipper Zero: a pocket tool for radio, NFC, RFID and infrared. Mostly a hobby toy, but it can replay signals, copy badges and flood phones with fake Bluetooth popups." },
     { DetectionType::HACKER, "PWNAGOTCHI", "Pwnagotchi", nullptr,
       "A Pwnagotchi: a tiny computer that collects WiFi handshakes so passwords can be cracked later. It broadcasts its own name and catch count to find others like it -- that is what matched." },
-    { DetectionType::HACKER, "PINEAPPLE", "Pineapple", nullptr,
+    { DetectionType::HACKER, "PINEAPPLE", "Pineapple|PinePager", nullptr,
       "A Hak5 WiFi Pineapple, spotted by its setup network. It pretends to be WiFi your phone already trusts and watches whatever joins. Security testers carry them; so do people up to no good." },
     { DetectionType::HACKER, "DEAUTHER", "Deauther", nullptr,
       "An ESP8266 or ESP32 deauther, spotted by its default control network, pwned. It kicks devices off WiFi on command. Popular with hobbyists -- or it is just somebody's joke network name." },
@@ -70,7 +70,7 @@ const Device kDevices[] = {
       "A BT04-A Bluetooth serial module, a cheap HC-05 alternative. Fine inside a robot; suspicious inside a card reader." },
     { DetectionType::SKIMMER, "LINVOR", "Skim-Linvor", "linvor",
       "An HC-06-style module on the prefix its linvor boards use: a Bluetooth serial link of the kind skimmers use to hand over stolen card numbers." },
-    { DetectionType::SKIMMER, "BT SERIAL", "Skim-SPP|Skim-CSR", nullptr,
+    { DetectionType::SKIMMER, "BT SERIAL", "Skim-SPP|Skim-CSR", "BT05|JDY-|MLT-BT|SPP-C",
       "Something offering a Bluetooth serial port, the link skimmers use to pass on stolen card data. Printers, scanners and car dongles use it too -- where you are is the tell." },
 
     // ---- CAMERA -------------------------------------------------------------
