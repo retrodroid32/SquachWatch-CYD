@@ -639,6 +639,13 @@ class BleScanCallbacks : public NimBLEScanCallbacks {
         // none of those tables has a per-row grade, so the type's own
         // grade stands. Only the OUI table needed splitting.
         det.conf = confidenceFor(det.type);
+        // A 30-byte Apple manufacturer advertisement alone can also be an
+        // AirPods proximity-pairing advertisement. Keep detection available,
+        // but label the weak candidate LOW until Find My 0x12/0x19 appears.
+        if (det.type == DetectionType::AIRTAG &&
+            !isSeparatedFindMyPayload(payload.data(), (uint8_t)payload.size())) {
+            det.conf = Confidence::LOW_CONF;
+        }
         // ...except HACKER, which is the one type deliberately holding
         // signatures of very different strength. Reaching here on anything
         // but the name means one of the exact ones matched: a service UUID
