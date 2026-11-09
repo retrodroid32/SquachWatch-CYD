@@ -58,7 +58,7 @@ namespace IgnoreList {
     // millis() deadline (and reset on reboot). ALWAYS is persisted in NVS
     // until the user explicitly un-snoozes it. All choices keep detecting,
     // counting and logging. ALWAYS_ALERT policy bypasses snooze.
-    enum class SnoozeDuration : uint8_t { MIN_10, MIN_30, HOUR_1, ALWAYS };
+    enum class SnoozeDuration : uint8_t { MIN_10, MIN_30, HOUR_1, ALWAYS, HOUR_4 };
     static const uint8_t SNOOZE_MAX = 32;
     bool snooze(const uint8_t* mac, SnoozeDuration duration);
     bool unsnooze(const uint8_t* mac);
