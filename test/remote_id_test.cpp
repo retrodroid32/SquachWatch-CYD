@@ -125,6 +125,42 @@ int main() {
     uint8_t wifi[96];
     uint16_t wifiLen = wifiBeacon(wifi, m);
     ck("ASTM vendor IE recognized", RemoteId::isWifiBeacon(wifi, wifiLen));
+    // Marauder parity: decode selected message bodies, not just detect a
+    // Remote ID vendor IE. This simulates what the loop task receives.
+    wifi[0] = 0x80; // actual IEEE 802.11 beacon frame control
+    uint8_t wifiBodies[75] = {};
+    ck("one WiFi Beacon Remote ID message extracted",
+       RemoteId::wifiBeaconMessages(wifi, wifiLen, wifiBodies, 3) == 1);
+    RemoteId::Info wifiInfo;
+    ck("extracted WiFi Beacon body merges",
+       RemoteId::mergeWifiMessages(wifiBodies, 1, wifiInfo, 4200));
+    ck("WiFi Basic ID serial decoded", wifiInfo.haveBasic &&
+       strcmp(wifiInfo.serial, "WIFIRID1234567890ABCD") == 0);
+
+    uint8_t wifiMulti[128] = {};
+    memcpy(wifiMulti, wifi, wifiLen);
+    wifiMulti[37] = 58; // vendor IE: OUI/type/counter + pack + 2 messages
+    wifiMulti[45] = 2;
+    uint8_t location[25] = {};
+    location[0] = 0x12;
+    put32(location + 5, (int32_t)(40.7128 * 10000000.0));
+    put32(location + 9, (int32_t)(-74.0060 * 10000000.0));
+    memcpy(wifiMulti + wifiLen, location, 25);
+    uint8_t twoBodies[75] = {};
+    ck("two-message WiFi pack is bounded and extracted",
+       RemoteId::wifiBeaconMessages(wifiMulti, (uint16_t)(wifiLen + 25),
+                                    twoBodies, 3) == 2);
+    RemoteId::Info multi;
+    ck("WiFi Basic ID plus Location merge",
+       RemoteId::mergeWifiMessages(twoBodies, 2, multi, 4300) &&
+       multi.haveBasic && multi.haveLoc);
+    ckf("WiFi location latitude", multi.lat, 40.7128f, 0.00002f);
+    ck("malformed WiFi pack refuses to decode",
+       RemoteId::wifiBeaconMessages(wifiMulti, (uint16_t)(wifiLen + 5),
+                                    twoBodies, 3) == 0);
+    ck("non-beacon frame not decoded as Remote ID",
+       RemoteId::wifiBeaconMessages(wifiMulti + 1, (uint16_t)(wifiLen - 1),
+                                    twoBodies, 3) == 0);
     uint8_t wrongOui[96];
     memcpy(wrongOui, wifi, wifiLen);
     wrongOui[38] = 0xFB;
