@@ -4964,33 +4964,41 @@ void loop() {
             // gate LOG's info panel uses, applied here too -- MORE INFO
             // appears on the exact tap that opened it, so without this
             // the still-held finger could instantly dismiss it.
-            // The snooze duration picker owns all touches while visible.
-            // Keep the alert from auto-dismissing until a choice or CANCEL.
+            // Distinct taps advance Snooze; the held finger never repeats.
+            // Three seconds after the last tap, commit exactly once.
             if (uiAlertSnoozePrompt()) {
-                if (tp.valid && (now - lastTouch) > TOUCH_DEBOUNCE_MS) {
-                    const AlertSnoozeChoice choice =
-                        uiAlertHitSnoozeChoice(tp.x, tp.y, tft.width(), tft.height());
-                    if (choice != AlertSnoozeChoice::NONE) {
-                        lastTouch = now;
-                        if (choice == AlertSnoozeChoice::CANCEL) {
-                            uiAlertSetSnoozePrompt(false);
-                            alertStart = now;  // give time to reconsider
-                        } else {
-                            const IgnoreList::SnoozeDuration duration =
-                                choice == AlertSnoozeChoice::MIN_10 ? IgnoreList::SnoozeDuration::MIN_10 :
-                                choice == AlertSnoozeChoice::MIN_30 ? IgnoreList::SnoozeDuration::MIN_30 :
-                                choice == AlertSnoozeChoice::HOUR_1 ? IgnoreList::SnoozeDuration::HOUR_1 :
-                                                                       IgnoreList::SnoozeDuration::ALWAYS;
-                            if (IgnoreList::snooze(s_alertMac, duration)) {
-                                uiAlertSetSnoozePrompt(false);
-                                Theme::showToast("SNOOZED", choice == AlertSnoozeChoice::ALWAYS
-                                    ? "Until you unsnooze" : "Expires automatically", Theme::AMBER);
-                                squachyCatch(lastAlertType, s_alertMac, lastAlertHits, lastAlertRssi, lastAlertConf);
-                                enterClear();
-                            } else {
-                                Theme::showToast("SNOOZE FAILED", "List full or save failed", Theme::RED);
-                            }
-                        }
+                static bool snoozeTouchReady = false;
+                if (!tp.valid) snoozeTouchReady = true;
+                if (tp.valid && snoozeTouchReady && (now - lastTouch) > TOUCH_DEBOUNCE_MS) {
+                    lastTouch = now;
+                    snoozeTouchReady = false;
+                    uiAlertAdvanceSnooze(now);
+                }
+                if (uiAlertSnoozeDue(now)) {
+                    const uint8_t step = uiAlertSnoozeStep();
+                    bool ok = false;
+                    if (step == 6u) {
+                        ok = !IgnoreList::snoozed(s_alertMac) || IgnoreList::unsnooze(s_alertMac);
+                    } else {
+                        const IgnoreList::SnoozeDuration duration =
+                            step == 1u ? IgnoreList::SnoozeDuration::MIN_10 :
+                            step == 2u ? IgnoreList::SnoozeDuration::MIN_30 :
+                            step == 3u ? IgnoreList::SnoozeDuration::HOUR_1 :
+                            step == 4u ? IgnoreList::SnoozeDuration::HOUR_4 :
+                                         IgnoreList::SnoozeDuration::ALWAYS;
+                        ok = IgnoreList::snooze(s_alertMac, duration);
+                    }
+                    if (ok) {
+                        uiAlertSetSnoozePrompt(false);
+                        Theme::showToast(step == 6u ? "SNOOZE OFF" : "SNOOZED",
+                            step == 5u ? "Until you unsnooze" :
+                            step == 6u ? "Alerts restored" : "Expires automatically", Theme::AMBER);
+                        squachyCatch(lastAlertType, s_alertMac, lastAlertHits, lastAlertRssi, lastAlertConf);
+                        enterClear();
+                    } else {
+                        Theme::showToast("SNOOZE FAILED", "List full or save failed", Theme::RED);
+                        uiAlertSetSnoozePrompt(false);
+                        alertStart = now;
                     }
                 }
                 break;
@@ -5053,11 +5061,10 @@ void loop() {
                     squachyCatch(lastAlertType, s_alertMac, lastAlertHits, lastAlertRssi, lastAlertConf);
                     enterClear();
                 } else if (uiAlertHitSnooze(tp.x, tp.y, tft.width(), tft.height())) {
-                    // Ask how long rather than silently snoozing until restart.
-                    // Do not count/dismiss this alert until the user selects
-                    // a duration; CANCEL leaves all policies unchanged.
+                    // First tap selects 10 minutes; further distinct taps cycle
+                    // 30m, 1h, 4h, ALWAYS and OFF before idle commit.
                     lastTouch = now;
-                    uiAlertSetSnoozePrompt(true);
+                    uiAlertAdvanceSnooze(now);
                 } else if (uiAlertHitWatch(tp.x, tp.y, tft.width(), tft.height())) {
                     // One-tap WATCH from an ordinary detection alert. Guard
                     // against toggleWatch*() removing an existing target:
