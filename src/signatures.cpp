@@ -251,6 +251,19 @@ const NameEntry kBtClassicNames[] = {
     {"HC-06",       DetectionType::SKIMMER},
     {"RN42",        DetectionType::SKIMMER},
     {"BT04-A",      DetectionType::SKIMMER},
+    // WiFi Pineapple Pager SkimmerScanner: generic serial radio *modules*.
+    // These are NOT confirmed skimmers. Name-only evidence is LOW in the
+    // detection engine; keep strict exact matches to avoid fuzzy false hits.
+    {"BT04",        DetectionType::SKIMMER},
+    {"BT05",        DetectionType::SKIMMER},
+    {"JDY-08",      DetectionType::SKIMMER},
+    {"JDY-09",      DetectionType::SKIMMER},
+    {"JDY-10",      DetectionType::SKIMMER},
+    {"JDY-16",      DetectionType::SKIMMER},
+    {"JDY-17",      DetectionType::SKIMMER},
+    {"MLT-BT",      DetectionType::SKIMMER},
+    {"SPP-C",       DetectionType::SKIMMER},
+    {"linvor",      DetectionType::SKIMMER},
     {"Flock_Setup", DetectionType::FLOCK},
     {"FS Ext Battery", DetectionType::FLOCK},
 };
@@ -270,6 +283,10 @@ const SsidEntry kSsidPrefixes[] = {
     // setup network, so it is up on a fresh unit and on one somebody has
     // not renamed -- which is most of them, and none of the careful ones.
     {"Pineapple_", "Pineapple",  DetectionType::HACKER},
+    // Pineapple Pager default open-management SSIDs (Pager "Find Hackers"
+    // recon payload). User-controlled text; never upgraded to HIGH.
+    {"pager_open", "PinePager", DetectionType::HACKER},
+    {"pager-open", "PinePager", DetectionType::HACKER},
 
     // The ESP8266/ESP32 deauther family (DSTIKE and the many clones) puts
     // up its own control AP, default SSID "pwned", password "deauther".
