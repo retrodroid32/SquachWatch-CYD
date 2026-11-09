@@ -146,6 +146,21 @@ static void crashReportInit() {
             strncpy(g_lastCrash.task, s.exc_task, sizeof g_lastCrash.task - 1);
             g_lastCrash.task[sizeof g_lastCrash.task - 1] = '\0';
             g_lastCrash.pc    = s.exc_pc;
+#if CONFIG_IDF_TARGET_ARCH_RISCV
+            // Both of these structs are architecture-specific, and the RISC-V
+            // ones share no field names with the Xtensa ones -- see
+            // espcoredump/include/port/riscv/esp_core_dump_summary_port.h.
+            // The Xtensa exc_cause/exc_vaddr pair is mcause/mtval here.
+            g_lastCrash.cause = s.ex_info.mcause;
+            g_lastCrash.vaddr = s.ex_info.mtval;
+            // No backtrace, and not because this is unfinished. RISC-V has no
+            // windowed register ABI, so a backtrace cannot be walked on the
+            // device at all: the IDF stores a raw stack dump instead and
+            // expects GDB or the ELF to turn it into frames on a host. The
+            // crash screen therefore shows task, PC, cause and address on this
+            // board and no frames, which is the truth rather than a gap.
+            g_lastCrash.btN = 0;
+#else
             g_lastCrash.cause = s.ex_info.exc_cause;
             g_lastCrash.vaddr = s.ex_info.exc_vaddr;
             // The backtrace usually starts at the faulting PC itself; the
@@ -154,6 +169,7 @@ static void crashReportInit() {
             uint8_t  n = 0;
             for (; i < s.exc_bt_info.depth && i < 16 && n < 4; i++) g_lastCrash.bt[n++] = s.exc_bt_info.bt[i];
             g_lastCrash.btN = n;
+#endif
             char running[APP_ELF_SHA256_SZ] = { 0 };
             esp_ota_get_app_elf_sha256(running, sizeof running);
             g_lastCrash.dumpOlder =
@@ -903,9 +919,14 @@ static void applyBrightness() {
         applyCpuClock();   // back to CPU CLOCK
     }
 #endif
+#if defined(NM_CYD_C5)
+    // Arduino-ESP32 3.x takes the physical pin, not an LEDC channel.
+    ledcWrite(TFT_BL, duty);
+#else
     ledcWrite(BL_CH_ORIG, duty);
     ledcWrite(BL_CH_CAP,  duty);
     ledcWrite(BL_CH_AWOK, duty);
+#endif
 }
 
 // 240, 160 or 80 MHz. Never lower: the radio needs an 80 MHz APB clock, and
@@ -2023,6 +2044,44 @@ struct KeptEntry {
     std::vector<uint8_t> bytes;
 };
 
+// NVS iteration, either side of the IDF 4 -> IDF 5 signature change.
+//
+// IDF 5 turned both calls inside out: nvs_entry_find now returns esp_err_t and
+// hands the iterator back through an out-parameter, and nvs_entry_next takes
+// the iterator BY POINTER, advances it in place, and -- this is the part worth
+// knowing -- releases it and sets it to NULL itself once the walk is done.
+// These two wrappers put the IDF 4 shape back so the loop in physicalNvsWipe()
+// below reads the same on every board. That loop decides which entries survive
+// a duress wipe, so it is deliberately not the thing being rewritten here.
+#if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 0, 0)
+static nvs_iterator_t sqwNvsEntryFind(const char* part, const char* ns, nvs_type_t type) {
+    nvs_iterator_t it = nullptr;
+    // Anything other than ESP_OK (including ESP_ERR_NVS_NOT_FOUND for an empty
+    // store) leaves no iterator to release.
+    if (nvs_entry_find(part, ns, type, &it) != ESP_OK) return nullptr;
+    return it;
+}
+static nvs_iterator_t sqwNvsEntryNext(nvs_iterator_t it) {
+    if (!it) return nullptr;
+    esp_err_t e = nvs_entry_next(&it);
+    if (e == ESP_OK) return it;
+    // On ESP_ERR_NVS_NOT_FOUND the iterator is already freed and NULLed. On any
+    // other error that is not promised, so release whatever is still held
+    // rather than leak it -- this runs on the wipe path, which must not be the
+    // thing that exhausts the heap.
+    if (it) nvs_release_iterator(it);
+    return nullptr;
+}
+#else
+// Macros, not inline functions, deliberately. An inline wrapper is free in
+// principle and was not quite free in practice: it moved [env:cyd]'s
+// .flash.text by a few bytes, and a board port has no business changing the
+// code generated for boards it cannot test. These expand to the original call
+// exactly, so the IDF 4 builds compile the same instructions they always did.
+#define sqwNvsEntryFind(part, ns, type) nvs_entry_find((part), (ns), (type))
+#define sqwNvsEntryNext(it)             nvs_entry_next((it))
+#endif
+
 static bool safeNamespaceToPreserve(const char* ns) {
     // Explicit allowlist: these contain appearance/control preferences or
     // touch calibration only. Everything else is erased by default.
@@ -2043,7 +2102,7 @@ static void physicalNvsWipe() {
     // which is the one part that mattered, but as a crash, not a quiet reboot.
     kept.reserve(128);
     Serial.printf("[wipe] preserving safe preferences only: heap %lu\n", (unsigned long)ESP.getFreeHeap());
-    nvs_iterator_t it = nvs_entry_find(NVS_DEFAULT_PART_NAME, NULL, NVS_TYPE_ANY);
+    nvs_iterator_t it = sqwNvsEntryFind(NVS_DEFAULT_PART_NAME, NULL, NVS_TYPE_ANY);
     while (it) {
         nvs_entry_info_t info;
         nvs_entry_info(it, &info);
@@ -2079,7 +2138,7 @@ static void physicalNvsWipe() {
             nvs_close(h);
             if (ok) kept.push_back(std::move(e));
         }
-        it = nvs_entry_next(it);
+        it = sqwNvsEntryNext(it);
     }
     nvs_release_iterator(it);
     Serial.printf("[wipe] %u entries kept, heap %lu; erasing\n", (unsigned)kept.size(), (unsigned long)ESP.getFreeHeap());
@@ -2946,7 +3005,17 @@ void setup() {
 #if defined(TWATCH_S3)
     twatchPowerUp();
 #endif
-#if defined(CYD35)
+#if defined(CYD35) || defined(NM_CYD_C5)
+    // On the NM-CYD-C5 this answers a specific open question rather than a
+    // general one. Its bootloader prints
+    //   E MSPI Timing: Failed to allocate dummy cacheline for PSRAM memory barrier!
+    // on every boot. That is arduino-esp32 issue #12587, open since 2026-05-12
+    // and not caused by anything here, and the reporter says PSRAM works
+    // anyway -- so this line is how THIS board says whether it does, rather
+    // than the project taking a stranger's word for it. Nothing in the
+    // firmware asks for PSRAM on a CYD, so the answer is informational
+    // either way.
+    //
     // One-time diagnostic: is PSRAM actually present on this unit? The
     // "no PSRAM" conclusion driving the no-full-framebuffer tradeoff
     // (see `frame`'s declaration up top) was from an earlier pass --
@@ -2976,6 +3045,10 @@ void setup() {
 #if defined(TWATCH_S3) || defined(FREENOVE_S3)
     // S3 board: use its dedicated GPIO45 backlight and leave legacy CYD pins alone.
     pinMode(45, OUTPUT); digitalWrite(45, HIGH);
+#elif defined(NM_CYD_C5)
+    // C5: backlight on GPIO25, while GPIO27 is the WS2812 status LED.
+    // Avoid touching nonexistent GPIO32 or any shared display pins.
+    pinMode(TFT_BL, OUTPUT); digitalWrite(TFT_BL, TFT_BACKLIGHT_ON);
 #else
     pinMode(27, OUTPUT); digitalWrite(27, HIGH);
 #if !defined(FREENOVE32)
@@ -3037,7 +3110,10 @@ void setup() {
 // TOUCH_CS on AWOK, and the capacitive controller's INTERRUPT line on the RL
 // Phantom. Driving a 5 kHz PWM onto either is the kind of fault that looks
 // like dead touch, which is exactly how it presented on the Phantom.
-#if defined(TWATCH_S3) || defined(FREENOVE_S3)
+#if defined(NM_CYD_C5)
+    // Arduino-ESP32 3.x LEDC takes the physical pin, not a channel.
+    ledcAttach(TFT_BL, 5000, 8);
+#elif defined(TWATCH_S3) || defined(FREENOVE_S3)
     // One backlight, GPIO45, on the first channel. The CYD pins below are
     // flash/PSRAM lines and the power chip's interrupt on an S3.
     ledcSetup(BL_CH_ORIG, 5000, 8);
@@ -3305,8 +3381,8 @@ void setup() {
 #endif
 
     // Seed the PRNG so the digital rain starts in a fresh-looking state.
-#if defined(FREENOVE_S3)
-    // Avoid guessing which S3 pins are safe ADC inputs around OPI PSRAM.
+#if defined(FREENOVE_S3) || defined(NM_CYD_C5)
+    // Avoid guessing which S3/C5 pins are safe ADC inputs around OPI PSRAM.
     randomSeed(esp_random());
 #else
     // Analog read on a floating pin is plenty on the classic ESP32 boards.
