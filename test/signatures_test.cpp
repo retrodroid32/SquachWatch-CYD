@@ -26,6 +26,12 @@ static DetectionType lookup4(uint8_t a, uint8_t b, uint8_t c, uint8_t d, Confide
 }
 
 int main() {
+    suite("Eddystone is not a Google tracker identity");
+    ck("generic Eddystone UUID cannot identify Google tracker",
+       lookupUuid(0xFEAA) == DetectionType::UNKNOWN);
+    ck("Tile vendor UUID stays classified", lookupUuid(0xFEED) == DetectionType::TILE);
+    ck("Samsung own UUID stays classified", lookupUuid(0xFD5A) == DetectionType::SAMSUNG_TAG);
+
     suite("Every OUI row is well formed");
 
     int locallyAdministered = 0, gradedAboveLow = 0;
