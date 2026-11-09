@@ -1,4 +1,4 @@
-V141-SOI-193-194-195-197-R2
+V141-SOI-193-194-195-197-R3
 # Combined hardware LAB update requested by user, based on verified firmware #176.
 # Keeps exact Pager SOI, generic Eddystone suppression and WiFi Remote ID
 # from PR202, adds PR194 serial module candidates, PR195 Apple Find My
@@ -10,3 +10,5 @@ V141-SOI-193-194-195-197-R2
 
 # R2: LOG EVENTS privacy screen mask; full-screen alert Snooze tap-to-step incl 4h/ALWAYS/OFF.
 # Regression audit: master is fully retained (0 behind); WATCH/HUNT, SD, GPS, Mesh and CYD32 paths unchanged.
+
+# R3: restore in-button Snooze duration/amber countdown bar, WATCH hint, distinct taps; privacy R2 fix retained.
