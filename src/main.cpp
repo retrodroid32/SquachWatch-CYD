@@ -4967,11 +4967,12 @@ void loop() {
             // Distinct taps advance Snooze; the held finger never repeats.
             // Three seconds after the last tap, commit exactly once.
             if (uiAlertSnoozePrompt()) {
-                static bool snoozeTouchReady = false;
-                if (!tp.valid) snoozeTouchReady = true;
-                if (tp.valid && snoozeTouchReady && (now - lastTouch) > TOUCH_DEBOUNCE_MS) {
+                // Only a NEW finger-down advances one selection.
+                // Holding or dragging does not repeat and a new alert
+                // does not inherit stale static touch state.
+                if (touchJustDown && tp.valid &&
+                    (now - lastTouch) > TOUCH_DEBOUNCE_MS) {
                     lastTouch = now;
-                    snoozeTouchReady = false;
                     uiAlertAdvanceSnooze(now);
                 }
                 if (uiAlertSnoozeDue(now)) {
