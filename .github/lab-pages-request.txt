@@ -1,0 +1,4 @@
+SOI-PR198-PAGES-DEPLOY
+# Deploy the immutable pages-site artifact from successful firmware build
+# 42670285271. Normal publish workflow 42671974328 failed with 0 jobs.
+# Branch-only fallback; preserves production root and updates LAB ?lab=1.
