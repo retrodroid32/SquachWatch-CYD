@@ -132,6 +132,10 @@ int main() {
     RemoteId::Info wifiInfo;
     ck("Wi-Fi pack decoded", RemoteId::mergeWifiPack(packView, packSize, wifiInfo, 6000));
     ck("Wi-Fi pack updates Basic ID", wifiInfo.haveBasic);
+    ck("Wi-Fi Basic ID matches captured record",
+       strcmp(wifiInfo.serial, "WIFIRID1234567890ABCD") == 0);
+    ck("Wi-Fi packet rejects non-beacon subtype",
+       !RemoteId::isWifiBeacon((const uint8_t[]){0}, 0));
     ck("Wi-Fi pack updates timestamp", wifiInfo.at == 6000);
     ck("short pack rejected", !RemoteId::mergeWifiPack(packView, (uint16_t)(packSize - 1), wifiInfo, 6001));
     uint8_t wrongOui[96];
@@ -143,6 +147,30 @@ int main() {
     wrongPack[43] = 0x02;  // pack byte 0: not Message Pack type 0xF
     ck("non-message-pack vendor IE rejected", !RemoteId::isWifiBeacon(wrongPack, wifiLen));
     ck("truncated vendor IE rejected", !RemoteId::isWifiBeacon(wifi, (uint16_t)(wifiLen - 10)));
+
+    // Two-message Wi-Fi pack: Basic ID followed by valid Location.
+    uint8_t two[128] = {0};
+    memcpy(two, wifi, wifiLen);
+    two[37] = (uint8_t)(33 + 25);
+    two[45] = 2;
+    uint8_t locMsg[25] = {};
+    locMsg[0] = 0x12;
+    put32(locMsg + 5, 394321234);
+    put32(locMsg + 9, -862123456);
+    put16(locMsg + 15, 2400);
+    memcpy(two + wifiLen, locMsg, 25);
+    const uint8_t* twoPack = nullptr;
+    uint16_t twoLen = 0;
+    ck("two-message Wi-Fi pack accepted",
+       RemoteId::wifiBeaconPack(two, (uint16_t)(wifiLen + 25), twoPack, twoLen));
+    RemoteId::Info twoInfo;
+    ck("two-message pack decoded", RemoteId::mergeWifiPack(twoPack, twoLen, twoInfo, 7000));
+    ck("two-message Basic ID present", twoInfo.haveBasic);
+    ck("two-message location present", twoInfo.haveLoc);
+    ck("Wi-Fi lat decoded", fabsf(twoInfo.lat - 39.4321234f) < 0.0002f);
+    ck("Wi-Fi lon decoded", fabsf(twoInfo.lon - (-86.2123456f)) < 0.0002f);
+    ck("two-message pack truncated is rejected",
+       !RemoteId::mergeWifiPack(twoPack, (uint16_t)(twoLen - 1), twoInfo, 7001));
 
     uint8_t parrot[96];
     memcpy(parrot, wifi, wifiLen);
