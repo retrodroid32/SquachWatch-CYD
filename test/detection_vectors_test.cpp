@@ -29,6 +29,17 @@ int main() {
     suite("Raw payload vectors");
     const uint8_t findMy[]={0x02,0x01,0x06,0x1E,0xFF,0x4C,0x00,0x12,0x19,0,1,2,3,4,5,6,7};
     ck("Find My manufacturer structure", isAirTagPayload(findMy,sizeof findMy));
+    ck("separated Find My subtype is stronger evidence",
+       isSeparatedFindMyPayload(findMy, sizeof findMy));
+    const uint8_t applePairing[]={0x1E,0xFF,0x4C,0x00,0x07,0x19,0,0,0};
+    ck("ambiguous Apple proximity advert stays a candidate",
+       isAirTagPayload(applePairing, sizeof applePairing));
+    ck("ambiguous Apple pairing advert is not separated Find My",
+       !isSeparatedFindMyPayload(applePairing, sizeof applePairing));
+    ck("generic Eddystone UUID is not a Google tracker",
+       lookupUuid(0xFEAA)==DetectionType::UNKNOWN);
+    ck("Samsung tag specific UUID still matches",
+       lookupUuid(0xFD5A)==DetectionType::SAMSUNG_TAG);
     const uint8_t ib[25]={0x4C,0,0x02,0x15,0xB9,0x40,0x7F,0x30,0xF5,0xF8,0x46,0x6E,0xAF,0xF9,0x25,0x55,0x6B,0x57,0xFE,0x6D,0,0x0A,0,0x2A,0xC5};
     ck("iBeacon block", isIBeacon(ib,sizeof ib));
 
