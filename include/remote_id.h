@@ -61,6 +61,15 @@ bool merge(const uint8_t* payload, uint8_t len, Info& out, uint32_t now);
 bool isBluetoothLegacy(const uint8_t* payload, uint8_t len);
 bool isWifiBeacon(const uint8_t* frame, uint16_t len);
 bool isWifiNanAction(const uint8_t* frame, uint16_t len);
+// Marauder-derived Wi-Fi Beacon message-pack extraction. The callback
+// copies at most three relevant 25-byte messages into a fixed mailbox;
+// parsing/record merging happens later on the Arduino loop thread.
+// Return only complete Basic ID, Location or System messages, bounded by
+// maxMessages (<=3). Unknown message types cannot corrupt telemetry.
+uint8_t wifiBeaconMessages(const uint8_t* frame, uint16_t len,
+                           uint8_t* outMessages, uint8_t maxMessages);
+bool mergeWifiMessages(const uint8_t* messages, uint8_t count,
+                       Info& out, uint32_t now);
 
 void reset(Info& out);
 
