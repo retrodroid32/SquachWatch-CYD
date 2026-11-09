@@ -8,13 +8,6 @@ on:
   workflow_run:
     workflows: ["Build and release firmware"]
     types: [completed]
-  # LAB-only fallback when the workflow_run event fails before scheduling jobs.
-  # This trigger exists ONLY on this unmerged PR198 LAB branch.
-  push:
-    branches:
-      - lab/soi-audit-194-197-20261109
-    paths:
-      - .github/lab-pages-request.txt
 
 permissions:
   contents: read
@@ -28,7 +21,7 @@ concurrency:
 
 jobs:
   publish:
-    if: github.event_name == 'push' || github.event.workflow_run.conclusion == 'success'
+    if: github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     environment:
       name: github-pages
@@ -42,13 +35,7 @@ jobs:
           set -euo pipefail
           rm -rf _site
           mkdir -p _site
-          if [ "${{ github.event_name }}" = "push" ]; then
-            # Immutable already-successful PR198 LAB artifact; no rebuild.
-            RUN_ID=42670285271
-          else
-            RUN_ID="${{ github.event.workflow_run.id }}"
-          fi
-          gh run download "$RUN_ID" \
+          gh run download "${{ github.event.workflow_run.id }}" \
             -R "${{ github.repository }}" -n pages-site -D _site
           test -s _site/index.html
           test -s _site/boards.json
