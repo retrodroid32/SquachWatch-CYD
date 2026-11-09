@@ -133,6 +133,18 @@ int main() {
     ck("bare serial helper rejects non-digits", !isBareSerialName("12345abcde"));
     ck("bare serial helper rejects wrong length", !isBareSerialName("123456789"));
 
+    suite("Pager SkimmerScanner serial-module candidates");
+    ck("JDY-16 named BLE module is SKIMMER candidate",
+       lookupBtName("JDY-16") == DetectionType::SKIMMER);
+    ck("BT05 named BLE module is SKIMMER candidate",
+       lookupBtName("bt05") == DetectionType::SKIMMER);
+    ck("linvor serial module name is a candidate",
+       lookupBtName("linvor") == DetectionType::SKIMMER);
+    ck("similar generic substring is never a skimmer",
+       lookupBtName("Laptop-JDY-16") != DetectionType::SKIMMER);
+    ck("bare serial word is not a match",
+       lookupBtName("Bluetooth") != DetectionType::SKIMMER);
+
     suite("Flock wildcard-probe corroboration");
 
     const uint8_t qca[6] = {0x00,0x03,0x7F,0x50,0x00,0x01};
