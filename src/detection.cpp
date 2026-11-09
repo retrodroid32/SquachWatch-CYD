@@ -893,8 +893,12 @@ bool DetectionEngine::init() {
                 // Use addr2 (the transmitter) as the device identity. In a
                 // normal beacon addr2 and BSSID are the same, but Remote ID
                 // is about the aircraft radio, not the network abstraction.
+                uint8_t messages[75] = {};
+                const uint8_t count = RemoteId::wifiBeaconMessages(
+                    frame, (uint16_t)sigLen, messages, 3);
                 g_engine->postWiFi(frame + 10, pkt->rx_ctrl.rssi,
-                                   pkt->rx_ctrl.channel, ssid, enc, false, true);
+                                   pkt->rx_ctrl.channel, ssid, enc,
+                                   false, true, false, messages, count);
             } else if (pwnagotchiName(frame, sigLen, pwnName, sizeof(pwnName))) {
                 g_engine->postWiFi(frame + 10, pkt->rx_ctrl.rssi,
                                    pkt->rx_ctrl.channel, pwnName, false, true);
@@ -1753,7 +1757,9 @@ void DetectionEngine::clearLog() {
 void IRAM_ATTR DetectionEngine::postWiFi(const uint8_t* mac, int8_t rssi, uint8_t channel,
                                          const char* ssid, bool encrypted,
                                          bool pwnagotchi, bool remoteId,
-                                         bool flockWildcardProbe) {
+                                         bool flockWildcardProbe,
+                                         const uint8_t* remoteIdMessages,
+                                         uint8_t remoteIdCount) {
     if (!mac) return;
     // Group-addressed (broadcast/multicast) destinations can never be a
     // real device: bit 0 of byte 0 is the I/G bit, and every OUI in
@@ -1786,6 +1792,10 @@ void IRAM_ATTR DetectionEngine::postWiFi(const uint8_t* mac, int8_t rssi, uint8_
     e.pwnagotchi = pwnagotchi;
     e.remoteId = remoteId;
     e.flockWildcardProbe = flockWildcardProbe;
+    e.ridCount = (remoteId && remoteIdMessages && remoteIdCount <= 3)
+        ? remoteIdCount : 0;
+    if (e.ridCount)
+        memcpy(e.ridMessages, remoteIdMessages, (size_t)e.ridCount * 25u);
     _wifiQHead = next;
     const uint8_t depth = (uint8_t)((_wifiQHead + WIFI_Q_CAP - _wifiQTail) % WIFI_Q_CAP);
     if (depth > _wifiQHighWater) _wifiQHighWater = depth;
@@ -1907,6 +1917,16 @@ void DetectionEngine::mergeRemoteId(const uint8_t* mac, const uint8_t* payload,
         memcpy(_ridMac, mac, 6);
     }
     RemoteId::merge(payload, len, _rid, millis());
+}
+
+void DetectionEngine::mergeRemoteIdWifi(const uint8_t* mac,
+                                          const uint8_t* messages, uint8_t count) {
+    if (!mac || !messages || !count || count > 3) return;
+    if (memcmp(mac, _ridMac, 6) != 0) {
+        RemoteId::reset(_rid);
+        memcpy(_ridMac, mac, 6);
+    }
+    RemoteId::mergeWifiMessages(messages, count, _rid, millis());
 }
 
 void DetectionEngine::postBle(Detection d) {
@@ -2926,6 +2946,8 @@ void DetectionEngine::processWiFiQ(uint32_t budgetUs, uint8_t maxItems) {
             interrupts();
         }
         processed++;
+        if (e.remoteId && e.ridCount)
+            mergeRemoteIdWifi(e.mac, e.ridMessages, e.ridCount);
         // Checked for every dequeued frame, regardless of what (if
         // anything) it ends up matching below -- a watched AP's own
         // MAC shows up here as addr2 (probe/data) or addr3/BSSID
@@ -3087,7 +3109,11 @@ void DetectionEngine::processWiFiQ(uint32_t budgetUs, uint8_t maxItems) {
             strncpy(d.name, e.ssid, sizeof(d.name) - 1);
         } else if (e.remoteId) {
             d.vendor = "DroneID";
-            if (e.ssid[0]) {
+            if (memcmp(e.mac, _ridMac, 6) == 0 &&
+                _rid.haveBasic && _rid.serial[0]) {
+                strncpy(d.name, _rid.serial, sizeof(d.name) - 1);
+                d.name[sizeof(d.name) - 1] = 0;
+            } else if (e.ssid[0]) {
                 strncpy(d.name, e.ssid, sizeof(d.name) - 1);
                 d.name[sizeof(d.name) - 1] = 0;
             }
