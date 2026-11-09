@@ -125,6 +125,15 @@ int main() {
     uint8_t wifi[96];
     uint16_t wifiLen = wifiBeacon(wifi, m);
     ck("ASTM vendor IE recognized", RemoteId::isWifiBeacon(wifi, wifiLen));
+    const uint8_t* packView = nullptr;
+    uint16_t packSize = 0;
+    ck("Wi-Fi pack extracted", RemoteId::wifiBeaconPack(wifi, wifiLen, packView, packSize));
+    ck("one message size", packSize == 28);
+    RemoteId::Info wifiInfo;
+    ck("Wi-Fi pack decoded", RemoteId::mergeWifiPack(packView, packSize, wifiInfo, 6000));
+    ck("Wi-Fi pack updates Basic ID", wifiInfo.haveBasic);
+    ck("Wi-Fi pack updates timestamp", wifiInfo.at == 6000);
+    ck("short pack rejected", !RemoteId::mergeWifiPack(packView, (uint16_t)(packSize - 1), wifiInfo, 6001));
     uint8_t wrongOui[96];
     memcpy(wrongOui, wifi, wifiLen);
     wrongOui[38] = 0xFB;
