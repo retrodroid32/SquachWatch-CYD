@@ -231,7 +231,7 @@ const UuidEntry kUuidTable[] = {
     {0x3500, "Raven",      DetectionType::RAVEN},
     {0xFFFA, "DroneID",    DetectionType::DRONE},     // OpenDroneID
     {0xFD5A, "SmartTag",   DetectionType::SAMSUNG_TAG}, // Samsung's own SIG-assigned UUID for SmartTag discovery
-    {0xFEAA, "FindMyDev",  DetectionType::GOOGLE_TAG},  // Google "Eddystone" service UUID, also used by the Find My Device network
+    // Generic Eddystone 0xFEAA is NOT proof of a Google Find My tracker.
 
     // Flipper Zero. It advertises one of three 16-bit service UUIDs, one
     // per case variant -- which is also how the desktop detectors tell a
@@ -458,8 +458,16 @@ DetectionType lookupBtName(const char* name) {
     return DetectionType::UNKNOWN;
 }
 
+// Exact default Pineapple Pager SSIDs; arbitrary SSIDs containing "pager"
+// must not be classified. SSIDs are spoofable; HACKER fallback remains MED.
+static bool isPineapplePagerSsid(const char* ssid) {
+    return ssid && (strcasecmp(ssid, "pager_open") == 0 ||
+                    strcasecmp(ssid, "pager-open") == 0);
+}
+
 DetectionType lookupSsid(const char* ssid) {
     if (!ssid) return DetectionType::UNKNOWN;
+    if (isPineapplePagerSsid(ssid)) return DetectionType::HACKER;
     // Exact bare Flock SSID; avoid matching unrelated Flockhart-type SSIDs.
     if (strcasecmp(ssid, "Flock") == 0) return DetectionType::FLOCK;
     for (uint16_t i = 0; i < kSsidCount; i++) {
@@ -485,6 +493,7 @@ const char* mfgIdName(uint16_t mfgId) {
 
 const char* ssidVendorName(const char* ssid) {
     if (!ssid) return nullptr;
+    if (isPineapplePagerSsid(ssid)) return "PineapplePg";
     for (uint16_t i = 0; i < kSsidCount; i++) {
         size_t n = strlen(kSsidPrefixes[i].prefix);
         if (strncasecmp(ssid, kSsidPrefixes[i].prefix, n) == 0) {
