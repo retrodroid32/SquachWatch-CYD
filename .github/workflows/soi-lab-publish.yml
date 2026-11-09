@@ -1,0 +1,47 @@
+name: Publish SOI LAB site (fallback)
+
+# Recovery for GitHub workflow_run Pages event that failed with zero jobs.
+# Exists only on unmerged PR198 LAB branch; never a production deployment.
+on:
+  push:
+    branches:
+      - lab/soi-audit-194-197-20261109
+    paths:
+      - .github/soi-pages-trigger.txt
+
+permissions:
+  contents: read
+  actions: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: soi-lab-pages-20261109
+  cancel-in-progress: false
+
+jobs:
+  publish-soi-lab:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Download verified immutable SOI LAB build
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p _site
+          gh run download 42670285271 -R "${{ github.repository }}" -n pages-site -D _site
+          test -s _site/index.html
+          test -s _site/boards.json
+          test -s _site/versions.json
+          test -s _site/manifest-lab-cyd.json
+          test -s _site/manifest-lab-cyd32-st7798.json
+      - name: Upload exact LAB + production mirror
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: _site
+      - name: Deploy SOI LAB verification firmware
+        id: deployment
+        uses: actions/deploy-pages@v5
