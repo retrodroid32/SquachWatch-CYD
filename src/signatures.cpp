@@ -139,7 +139,10 @@ const OuiEntry kOuiTable[] = {
     // detection stood up while the attribution did not.
     {{0x28, 0x57, 0xBE}, "Hikvision",    DetectionType::CAMERA,     Confidence::HIGH_CONF},
     {{0x00, 0xE0, 0x4C}, "Realtek",      DetectionType::CAMERA,     Confidence::LOW_CONF},
-    {{0xBC, 0xDD, 0xC2}, "Arlo",         DetectionType::CAMERA,     Confidence::LOW_CONF},
+    // Espressif BC:DD:C2 is not an Arlo camera; use vendor-registered OUIs.
+    {{0xFC, 0x9C, 0x98}, "Arlo",         DetectionType::CAMERA,     Confidence::HIGH_CONF},
+    {{0x48, 0x62, 0x64}, "Arlo",         DetectionType::CAMERA,     Confidence::HIGH_CONF},
+    {{0xA4, 0x11, 0x62}, "Arlo",         DetectionType::CAMERA,     Confidence::HIGH_CONF},
     {{0x4C, 0x69, 0x05}, "Blink",        DetectionType::CAMERA,     Confidence::LOW_CONF},
     {{0xA4, 0xC1, 0x38}, "Tuya",         DetectionType::CAMERA,     Confidence::LOW_CONF},
 
@@ -251,6 +254,19 @@ const NameEntry kBtClassicNames[] = {
     {"HC-06",       DetectionType::SKIMMER},
     {"RN42",        DetectionType::SKIMMER},
     {"BT04-A",      DetectionType::SKIMMER},
+    // WiFi Pineapple Pager SkimmerScanner: generic serial radio *modules*.
+    // These are NOT confirmed skimmers. Name-only evidence is LOW in the
+    // detection engine; keep strict exact matches to avoid fuzzy false hits.
+    {"BT04",        DetectionType::SKIMMER},
+    {"BT05",        DetectionType::SKIMMER},
+    {"JDY-08",      DetectionType::SKIMMER},
+    {"JDY-09",      DetectionType::SKIMMER},
+    {"JDY-10",      DetectionType::SKIMMER},
+    {"JDY-16",      DetectionType::SKIMMER},
+    {"JDY-17",      DetectionType::SKIMMER},
+    {"MLT-BT",      DetectionType::SKIMMER},
+    {"SPP-C",       DetectionType::SKIMMER},
+    {"linvor",      DetectionType::SKIMMER},
     {"Flock_Setup", DetectionType::FLOCK},
     {"FS Ext Battery", DetectionType::FLOCK},
 };
@@ -540,6 +556,18 @@ DetectionType lookupMfgId(uint16_t mfgId) {
 // headphones. That needs a capture of real bytes from both to get
 // right, and guessing model IDs from memory is how this gets subtly
 // wrong again.
+// A narrower Find My subtype signature. The generic 0x1E FF 4C 00
+// proximity-pairing advert is still displayed as a LOW-confidence candidate;
+// a 0x12 0x19 subtype supports the stronger existing type-level grade.
+bool isSeparatedFindMyPayload(const uint8_t* payload, uint8_t len) {
+    if (!payload || len < 4) return false;
+    for (uint8_t i = 0; i + 3 < len; i++) {
+        if (payload[i] == 0x4C && payload[i+1] == 0x00 &&
+            payload[i+2] == 0x12 && payload[i+3] == 0x19) return true;
+    }
+    return false;
+}
+
 bool isAirTagPayload(const uint8_t* payload, uint8_t len) {
     if (!payload || len < 4) return false;
     for (uint8_t i = 0; i + 3 < len; i++) {
