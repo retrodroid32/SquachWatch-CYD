@@ -35,6 +35,7 @@ static void put16(uint8_t* p, uint16_t v) {
 
 static uint16_t wifiBeacon(uint8_t* out, const uint8_t* msg) {
     memset(out, 0, 96);
+    out[0] = 0x80; // 802.11 management Beacon subtype
     uint16_t i = 36;  // management header + fixed beacon fields
     out[i++] = 0xDD;  // vendor-specific IE
     out[i++] = 33;    // OUI/type + counter + pack header + one 25-byte message
