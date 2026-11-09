@@ -38,6 +38,43 @@
 // -------- global engine instance (referenced by callbacks) --------
 static DetectionEngine* g_engine = nullptr;
 
+// Wi-Fi RX callback -> Arduino loop: bounded Remote ID Message Pack mailbox.
+// Never decode or write the shared aircraft model inside the radio callback.
+// Each slot holds the ASTM maximum of 9 x 25-byte messages plus 3-byte header.
+struct WifiRemoteIdRecord {
+    uint8_t mac[6];
+    uint8_t len;
+    uint8_t pack[228];
+};
+static WifiRemoteIdRecord s_wifiRidQ[4] = {};
+static uint8_t s_wifiRidHead = 0, s_wifiRidTail = 0;
+static portMUX_TYPE s_wifiRidMutex = portMUX_INITIALIZER_UNLOCKED;
+static void queueWifiRemoteId(const uint8_t mac[6], const uint8_t* pack, uint16_t len) {
+    if (!mac || !pack || len < 28 || len > 228) return;
+    WifiRemoteIdRecord rec = {};
+    memcpy(rec.mac, mac, 6);
+    rec.len = (uint8_t)len;
+    memcpy(rec.pack, pack, len);
+    portENTER_CRITICAL(&s_wifiRidMutex);
+    const uint8_t next = (uint8_t)((s_wifiRidHead + 1u) % 4u);
+    if (next != s_wifiRidTail) {
+        s_wifiRidQ[s_wifiRidHead] = rec;
+        s_wifiRidHead = next;
+    }
+    portEXIT_CRITICAL(&s_wifiRidMutex);
+}
+static bool popWifiRemoteId(WifiRemoteIdRecord& rec) {
+    bool got = false;
+    portENTER_CRITICAL(&s_wifiRidMutex);
+    if (s_wifiRidTail != s_wifiRidHead) {
+        rec = s_wifiRidQ[s_wifiRidTail];
+        s_wifiRidTail = (uint8_t)((s_wifiRidTail + 1u) % 4u);
+        got = true;
+    }
+    portEXIT_CRITICAL(&s_wifiRidMutex);
+    return got;
+}
+
 // NimBLE delivers scan results on its host task. Known detections are copied
 // into DetectionEngine's fixed mailbox and applied by loop(); this mux protects
 // only the tiny head/tail/copy operation, never log processing or flash I/O.
@@ -887,7 +924,11 @@ bool DetectionEngine::init() {
             // device announcing itself to its own kind, not an access point
             // offering a network, and its SSID is throwaway. Its name goes
             // where the SSID would have.
-            const bool remoteId = RemoteId::isWifiBeacon(frame, (uint16_t)sigLen);
+            const uint8_t* ridPack = nullptr;
+            uint16_t ridPackLen = 0;
+            const bool remoteId = RemoteId::wifiBeaconPack(frame, (uint16_t)sigLen,
+                                                              ridPack, ridPackLen);
+            if (remoteId) queueWifiRemoteId(frame + 10, ridPack, ridPackLen);
             char pwnName[33];
             if (remoteId) {
                 // Use addr2 (the transmitter) as the device identity. In a
@@ -1539,6 +1580,11 @@ void DetectionEngine::loop() {
     if (g_rawMode != RawScanMode::REST) {
         hopChannel();
         processWiFiQ(wifiBudgetUs, wifiMax);
+        // Drain at most two Wi-Fi Remote ID packs per loop iteration. Preserve
+        // the existing BLE decode model and never block the radio task.
+        WifiRemoteIdRecord ridRecord;
+        for (uint8_t i = 0; i < 2 && popWifiRemoteId(ridRecord); ++i)
+            mergeRemoteIdWifiPack(ridRecord.mac, ridRecord.pack, ridRecord.len);
         processDeauthQ();
     }
     expireStale();
@@ -1907,6 +1953,18 @@ void DetectionEngine::mergeRemoteId(const uint8_t* mac, const uint8_t* payload,
         memcpy(_ridMac, mac, 6);
     }
     RemoteId::merge(payload, len, _rid, millis());
+}
+
+void DetectionEngine::mergeRemoteIdWifiPack(const uint8_t* mac, const uint8_t* pack,
+                                            uint16_t len) {
+    if (!mac || !pack) return;
+    // Do not merge a different aircraft's Wi-Fi telemetry with a prior BLE
+    // target; the single-identity model already enforces this for BLE.
+    if (memcmp(mac, _ridMac, 6) != 0) {
+        RemoteId::reset(_rid);
+        memcpy(_ridMac, mac, 6);
+    }
+    RemoteId::mergeWifiPack(pack, len, _rid, millis());
 }
 
 void DetectionEngine::postBle(Detection d) {
