@@ -1,3 +1,6 @@
-WATCH149-LANDBACK
-# Experimental LAB build after landscape WATCH BACK touch fix.
-# Triggered only on explicit user hardware regression report.
+SOI-PR198-ALGORITHMS-20261109
+# Lab integration only: Pager/skimmer SOIs PR194, Eddystone/FindMy PR195,
+# Marauder WiFi Remote ID PR196, Wardriver channel yield PR197.
+# CYD 2.8 ST7789 and CYD 3.2 ST7798; browser ?lab=1 validation.
+# Four source PRs draft and unmerged; release LAB firmware ONLY.
+# No production tag, no master merge, and no standard GitHub Release.
