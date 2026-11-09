@@ -1,4 +1,5 @@
-PR193-V141-VERIFY
-# Request user-approved verification firmware release for combined upstream v1.41 CYD 2.8 / 3.2 LAB.
-# Successful source artifact: Actions run 42510875672. PR193 remains unmerged.
-# Non-production prerelease tag: verification-pr193-v141-20261108.
+PR193-V141-CYD-VERIFY
+# LAB firmware for PR193 verification on physical CYD 2.8 ST7789 and CYD 3.2 ST7798.
+# Trigger Build and release firmware LAB workflow and GitHub Pages LAB picker (?lab=1).
+# Isolated LAB branch; master untouched, no production tag or public GitHub Release.
+# This re-triggers a clean run after removing the unauthorized standalone Release job.
