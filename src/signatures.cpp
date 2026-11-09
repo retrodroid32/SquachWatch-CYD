@@ -231,7 +231,10 @@ const UuidEntry kUuidTable[] = {
     {0x3500, "Raven",      DetectionType::RAVEN},
     {0xFFFA, "DroneID",    DetectionType::DRONE},     // OpenDroneID
     {0xFD5A, "SmartTag",   DetectionType::SAMSUNG_TAG}, // Samsung's own SIG-assigned UUID for SmartTag discovery
-    {0xFEAA, "FindMyDev",  DetectionType::GOOGLE_TAG},  // Google "Eddystone" service UUID, also used by the Find My Device network
+    // 0xFEAA is the generic Eddystone service UUID. Many unrelated BLE
+    // proximity beacons use it, so a UUID-only match cannot identify a
+    // Google Find My Device tracker. Leave GOOGLE_TAG reserved for future
+    // product-specific, corroborated signatures; no UUID-only alert here.
 
     // Flipper Zero. It advertises one of three 16-bit service UUIDs, one
     // per case variant -- which is also how the desktop detectors tell a
