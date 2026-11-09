@@ -10,6 +10,7 @@
 #include "regulars.h"
 #include "clock.h"
 #include "ble_adv_utils.h"
+#include "channel_yield.h"
 #include <Arduino.h>
 #include <WiFi.h>
 #include <esp_wifi.h>
@@ -222,6 +223,10 @@ static volatile uint32_t s_wifiRaw = 0;  // every frame the sniffer was handed
 // hopChannel().
 static volatile uint16_t s_chanFrames[14];
 static uint16_t          s_chanRate[14];
+static uint16_t          s_chanYield[14]; // smoothed new AP BSSID/s
+// 32-bit approximate distinct BSSID count per channel dwell (atomic bitset).
+// Deliberately reset on each visit; 56 bytes total and no dynamic allocations.
+static uint32_t          s_chanSeenBssidBits[14] = {};
 #if defined(TWATCH_S3)
 // Two 512-bit memories of Bluetooth addresses, by hash: this five minutes
 // and the five before. An address in neither is an arrival. A collision
@@ -1617,7 +1622,12 @@ void DetectionEngine::hopChannel() {
         const uint32_t spent = now - _lastHopMs;
         const uint32_t f = s_chanFrames[_wifiChannel];
         s_chanFrames[_wifiChannel] = 0;
+        const uint32_t bits = __atomic_exchange_n(
+            &s_chanSeenBssidBits[_wifiChannel], 0u, __ATOMIC_RELAXED);
         if (spent <= 2u * _dwellMs + 200u) {
+            s_chanYield[_wifiChannel] = updateChannelYieldEma(
+                s_chanYield[_wifiChannel],
+                (uint16_t)__builtin_popcount(bits), spent);
             uint32_t rate = f * 16000u / (spent ? spent : 1);
             if (rate > 0xFFFFu) rate = 0xFFFFu;
             s_chanRate[_wifiChannel] = (uint16_t)(((uint32_t)s_chanRate[_wifiChannel] * 3u + rate) / 4u);
@@ -1628,12 +1638,16 @@ void DetectionEngine::hopChannel() {
     s_chanFrames[_wifiChannel] = 0;
     // Shares: 4 for a channel at least a quarter as busy as the busiest,
     // 2 for one with anything on it, 1 for a silent one. Split 3.9 s.
-    uint16_t top = 0;
-    for (uint8_t c = 1; c <= 13; c++) if (s_chanRate[c] > top) top = s_chanRate[c];
+    uint16_t top = 0, topYield = 0;
+    for (uint8_t c = 1; c <= 13; c++) {
+        if (s_chanRate[c] > top) top = s_chanRate[c];
+        if (s_chanYield[c] > topYield) topYield = s_chanYield[c];
+    }
     uint16_t total = 0, mine = 2;
     for (uint8_t c = 1; c <= 13; c++) {
         const uint16_t r = s_chanRate[c];
-        const uint16_t sh = !top ? 2 : (r * 4u >= top ? 4 : (r ? 2 : 1));
+        const uint16_t base = !top ? 2 : ((uint32_t)r * 4u >= top ? 4 : (r ? 2 : 1));
+        const uint16_t sh = base + (channelYieldBonus(s_chanYield[c], topYield) ? 1u : 0u);
         total += sh;
         if (c == _wifiChannel) mine = sh;
     }
@@ -1770,6 +1784,16 @@ void IRAM_ATTR DetectionEngine::postWiFi(const uint8_t* mac, int8_t rssi, uint8_
     // identical rssi/channel, so every frame still lands in that
     // running maximum exactly once.
     if (mac[0] & 0x01) return;
+    if (ssid && ssid[0] && !pwnagotchi && !remoteId &&
+        channel >= 1 && channel <= 13) {
+        uint32_t h = 2166136261u;
+        for (uint8_t i = 0; i < 6; i++) h = (h ^ mac[i]) * 16777619u;
+        // Only capture distinct hash buckets, not packet counts. This is
+        // the extra metric from ESP32DualBandWardriver. Atomic: the
+        // promiscuous task and loop hop can run on different cores.
+        __atomic_fetch_or(&s_chanSeenBssidBits[channel],
+                          (uint32_t)1u << (h & 31u), __ATOMIC_RELAXED);
+    }
     uint8_t next = (_wifiQHead + 1) % WIFI_Q_CAP;
     if (next == _wifiQTail) { _wifiQDropped++; return; } // queue full, drop
     WiFiQEntry& e = (WiFiQEntry&)_wifiQ[_wifiQHead];
