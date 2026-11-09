@@ -231,7 +231,7 @@ const UuidEntry kUuidTable[] = {
     {0x3500, "Raven",      DetectionType::RAVEN},
     {0xFFFA, "DroneID",    DetectionType::DRONE},     // OpenDroneID
     {0xFD5A, "SmartTag",   DetectionType::SAMSUNG_TAG}, // Samsung's own SIG-assigned UUID for SmartTag discovery
-    {0xFEAA, "FindMyDev",  DetectionType::GOOGLE_TAG},  // Google "Eddystone" service UUID, also used by the Find My Device network
+    // 0xFEAA is generic Eddystone, NOT proof of Google Find My Device.\n    // Keep it out of the SOI table until a corroborated tracker-specific\n    // pattern is available (Pager/Marauder SOI audit, Nov 2026).
 
     // Flipper Zero. It advertises one of three 16-bit service UUIDs, one
     // per case variant -- which is also how the desktop detectors tell a
@@ -251,6 +251,19 @@ const NameEntry kBtClassicNames[] = {
     {"HC-06",       DetectionType::SKIMMER},
     {"RN42",        DetectionType::SKIMMER},
     {"BT04-A",      DetectionType::SKIMMER},
+    // WiFi Pineapple Pager SkimmerScanner: generic serial radio *modules*.
+    // These are NOT confirmed skimmers. Name-only evidence is LOW in the
+    // detection engine; keep strict exact matches to avoid fuzzy false hits.
+    {"BT04",        DetectionType::SKIMMER},
+    {"BT05",        DetectionType::SKIMMER},
+    {"JDY-08",      DetectionType::SKIMMER},
+    {"JDY-09",      DetectionType::SKIMMER},
+    {"JDY-10",      DetectionType::SKIMMER},
+    {"JDY-16",      DetectionType::SKIMMER},
+    {"JDY-17",      DetectionType::SKIMMER},
+    {"MLT-BT",      DetectionType::SKIMMER},
+    {"SPP-C",       DetectionType::SKIMMER},
+    {"linvor",      DetectionType::SKIMMER},
     {"Flock_Setup", DetectionType::FLOCK},
     {"FS Ext Battery", DetectionType::FLOCK},
 };
@@ -270,6 +283,10 @@ const SsidEntry kSsidPrefixes[] = {
     // setup network, so it is up on a fresh unit and on one somebody has
     // not renamed -- which is most of them, and none of the careful ones.
     {"Pineapple_", "Pineapple",  DetectionType::HACKER},
+    // Pineapple Pager default open-management SSIDs (Pager "Find Hackers"
+    // recon payload). User-controlled text; never upgraded to HIGH.
+    {"pager_open", "PinePager", DetectionType::HACKER},
+    {"pager-open", "PinePager", DetectionType::HACKER},
 
     // The ESP8266/ESP32 deauther family (DSTIKE and the many clones) puts
     // up its own control AP, default SSID "pwned", password "deauther".
@@ -531,6 +548,18 @@ DetectionType lookupMfgId(uint16_t mfgId) {
 // headphones. That needs a capture of real bytes from both to get
 // right, and guessing model IDs from memory is how this gets subtly
 // wrong again.
+// A narrower Find My subtype signature. The generic 0x1E FF 4C 00
+// proximity-pairing advert is still displayed as a LOW-confidence candidate;
+// a 0x12 0x19 subtype supports the stronger existing type-level grade.
+bool isSeparatedFindMyPayload(const uint8_t* payload, uint8_t len) {
+    if (!payload || len < 4) return false;
+    for (uint8_t i = 0; i + 3 < len; i++) {
+        if (payload[i] == 0x4C && payload[i+1] == 0x00 &&
+            payload[i+2] == 0x12 && payload[i+3] == 0x19) return true;
+    }
+    return false;
+}
+
 bool isAirTagPayload(const uint8_t* payload, uint8_t len) {
     if (!payload || len < 4) return false;
     for (uint8_t i = 0; i + 3 < len; i++) {
