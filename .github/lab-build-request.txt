@@ -1,6 +1,6 @@
-V140-DESK24-CROWDNONE-R1
-# LAB PR #205 on approved R3 master merge a72563e.
-# #178: persistent desk 12/24 clock + timezone and corner clock.
-# #179: main-screen CROWD NONE while preserving SquachMesh transport and desk crowd.
-# Hardware: CYD 2.8 ST7789 and CYD 3.2 ST7798.
-# No production release/tag. Preserve branches. Physical verification required.
+V140-FONTS-AFTER205-R1
+# LAB PR #206, based on #205 verified clock-format and CROWD NONE.
+# Port #180 font categories and face controls, live preview, measured rendering.
+# Build both 2.8 ST7789 and 3.2 ST7798; do not publish production.
+# Keep PR #205/#206 unmerged, original feature branches preserved.
+# Physical verification required after CI; check Snooze/Privacy and GUI regression.
