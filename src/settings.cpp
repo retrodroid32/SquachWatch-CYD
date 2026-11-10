@@ -62,6 +62,16 @@ static uint8_t     s_clockSize     = 1;   // 0 small, 1 medium, 2 large
 static uint8_t     s_clockBackdrop = 0;
 static bool        s_clock24Hour = false;   // 0 plain, 1 rain, 2 snow, 3 toasters, 4 fire, 5 stars, 6 fireflies
 static const uint8_t CLOCK_BG_N  = 7;
+// Fonts isolation A: preferences only. No font UI or font draw-path changes.
+// Keep static data and NVS reads identical to the failed integration.
+static const uint8_t FONT_COUNT = 6;
+static const uint8_t FONT_DEFAULT[FONT_COUNT] = {2, 2, 2, 2, 2, 2};
+static uint8_t s_fontStep[FONT_COUNT] = {2, 2, 2, 2, 2, 2};
+static uint8_t s_fontFace[FONT_COUNT] = {0, 0, 0, 0, 0, 0};
+static const char* const FONT_KEYS[FONT_COUNT] =
+    {"fntMenu", "fntText", "fntBtn", "fntBub", "fntXp", "fntPet"};
+static const char* const FACE_KEYS[FONT_COUNT] =
+    {"fcMenu", "fcText", "fcBtn", "fcBub", "fcXp", "fcPet"};
 // Bit N = DetectionType N enabled. UNKNOWN (0) is never included -- see
 // Types that arrive switched OFF, on a fresh install and on upgrade alike.
 //
@@ -436,6 +446,14 @@ void load() {
     s_clockSize     = s_prefs.getUChar("clksize", 1);
     s_clockBackdrop = s_prefs.getUChar("clkbg", 0);
     s_clock24Hour = s_prefs.getBool("clk24", false);
+    // Bisect A: load/clamp the new keys at boot, deliberately DO NOT
+    // connect them to rendering, navigation, or Settings controls.
+    for (uint8_t i = 0; i < FONT_COUNT; ++i) {
+        s_fontStep[i] = s_prefs.getUChar(FONT_KEYS[i], FONT_DEFAULT[i]);
+        if (s_fontStep[i] > 4) s_fontStep[i] = FONT_DEFAULT[i];
+        s_fontFace[i] = s_prefs.getUChar(FACE_KEYS[i], 0);
+        if (s_fontFace[i] > 2) s_fontFace[i] = 0;
+    }
     if (s_clockFont > 1)     s_clockFont = 0;
     if (s_clockSize > 2)     s_clockSize = 1;
     if (s_clockBackdrop >= CLOCK_BG_N) s_clockBackdrop = 0;
