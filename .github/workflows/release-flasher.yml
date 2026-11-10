@@ -561,6 +561,11 @@ jobs:
           label = "${{ steps.ver.outputs.label }}"
           ver   = "${{ steps.ver.outputs.version }}"
           matrix = json.load(open("web-flasher/boards.json"))
+          # LAB firmware may require an updated OTA partition layout.
+          # The mirrored production esp32-partitions.bin must remain
+          # byte-for-byte unchanged. Serve THIS build's partition table
+          # under a lab-only name and reference it from every LAB manifest.
+          shutil.copy("esp32-partitions.bin", "_site/lab-esp32-partitions.bin")
           for cfg in matrix["boards"]:
               if not cfg.get("lab"):
                   continue
@@ -578,6 +583,9 @@ jobs:
                       # its firmware, or the S3 watch's own bootloader and
                       # table -- comes from THIS build, under a lab- name, so a
                       # release that never carried the board still serves it.
+                      if part["path"] == "esp32-partitions.bin":
+                          part["path"] = "lab-esp32-partitions.bin"
+                          continue
                       if part["path"].startswith("esp32-"):
                           continue
                       shutil.copy(part["path"], "_site/lab-" + part["path"])
