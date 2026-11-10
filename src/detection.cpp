@@ -1976,27 +1976,24 @@ void DetectionEngine::processDeauthQ() {
 
 void DetectionEngine::mergeRemoteId(const uint8_t* mac, const uint8_t* payload,
                                     uint8_t len) {
-    if (!mac || !payload) return;
-    // A different aircraft means the accumulated record is no longer about
-    // the same object, and half of one drone merged onto half of another
-    // would read as a plausible aircraft that does not exist.
-    if (memcmp(mac, _ridMac, 6) != 0) {
-        RemoteId::reset(_rid);
-        memcpy(_ridMac, mac, 6);
-    }
-    RemoteId::merge(payload, len, _rid, millis());
+    // BLE host callback: independent contact per MAC+transport. Never mix
+    // another aircraft's partial messages into the current UI snapshot.
+    const RemoteId::Tracker::Contact* contact =
+        _ridTracker.ingestBle(mac, payload, len, millis());
+    if (!contact) return;
+    _rid = contact->info;  // legacy most-recent aircraft UI remains unchanged
+    memcpy(_ridMac, contact->mac, sizeof(_ridMac));
 }
 
 void DetectionEngine::mergeRemoteIdWifiPack(const uint8_t* mac, const uint8_t* pack,
                                             uint16_t len) {
-    if (!mac || !pack) return;
-    // Do not merge a different aircraft's Wi-Fi telemetry with a prior BLE
-    // target; the single-identity model already enforces this for BLE.
-    if (memcmp(mac, _ridMac, 6) != 0) {
-        RemoteId::reset(_rid);
-        memcpy(_ridMac, mac, 6);
-    }
-    RemoteId::mergeWifiPack(pack, len, _rid, millis());
+    // Called after the bounded Wi-Fi callback queue is drained in loop().
+    // Keep BLE and Wi-Fi identities separate even when the MAC bytes match.
+    const RemoteId::Tracker::Contact* contact =
+        _ridTracker.ingestWifiPack(mac, pack, len, millis());
+    if (!contact) return;
+    _rid = contact->info;
+    memcpy(_ridMac, contact->mac, sizeof(_ridMac));
 }
 
 void DetectionEngine::postBle(Detection d) {
