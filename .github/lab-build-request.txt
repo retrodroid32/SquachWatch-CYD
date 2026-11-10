@@ -1,7 +1,6 @@
-V140-CLOCK-CROWD-RECOVERY-R3
-# PR #207: explicitly rerun lab publication via Build and release firmware.
-# The generic Build workflow only creates PR artifacts and does not deploy Pages.
-# Source remains the user-validated #205 firmware; no Fonts changes.
-# Publish to LAB web installer via release-flasher.yml -> publish-pages.yml.
-# Both CYD 2.8 ST7789 and CYD 3.2 ST7798.
-# No production release, tag, or merge. Preserve original branches.
+V140-FONTS-BISECT-A-NVS-R1
+# PR #209: isolate black-screen root cause, from user-verified Recovery R3.
+# ONLY 12 Fonts NVS key loads + serial checksum, no Fonts UI/render changes.
+# CYD 2.8 ST7789 and 3.2 ST7798; verify boot before further stage.
+# Publish via web installer LAB workflow and GitHub Pages.
+# Preserve Recovery R3, PRs 206/208, no merge/tag/production release.
