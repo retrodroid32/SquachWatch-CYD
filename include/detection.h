@@ -271,12 +271,11 @@ public:
     void mergeRemoteIdWifiPack(const uint8_t* mac, const uint8_t* pack, uint16_t len);
     const RemoteId::Info& remoteId() const { return _rid; }
     const uint8_t*        remoteIdMac() const { return _ridMac; }
-    uint8_t remoteIdTrackCount(uint32_t now) const {
-        return _ridTracker.liveCount(now);
-    }
-    const RemoteId::Tracker::Contact* remoteIdTrack(uint8_t index, uint32_t now) const {
-        return _ridTracker.contactAt(index, now);
-    }
+    // BLE RX and Wi-Fi queue drain run on different FreeRTOS tasks.
+    // Return copied read-only contacts, never pointers to a moving table.
+    uint8_t remoteIdTrackCount(uint32_t now) const;
+    bool copyRemoteIdTrack(uint8_t index, uint32_t now,
+                           RemoteId::Tracker::Contact& out) const;
 
     // Called from the BT Classic inquiry callback when a name match hits.
     void postBtClassic(Detection d);
