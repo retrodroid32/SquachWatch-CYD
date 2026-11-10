@@ -62,8 +62,11 @@ jobs:
           python tools/board_matrix.py validate
           python -m py_compile tools/mirror_pages.py
 
-      - name: Build CI board matrix
-        run: pio run $(python tools/board_matrix.py pio-args ci)
+      - name: Build CI board matrix and guard final app image size
+        run: |
+          set -euo pipefail
+          pio run $(python tools/board_matrix.py pio-args ci)
+          python3 tools/check_app_image_sizes.py $(python tools/board_matrix.py list release)
 
       # LAB firmware only: explicitly avoid production releases and tags.
       - name: Package classic CYD LAB firmware
@@ -102,6 +105,8 @@ jobs:
           python3 tools/test_v141_privacy_confirm.py
           python3 tools/test_v141_passive_wifi.py
           python3 tools/test_v141_pocket_mode.py
+      - name: Reproduce actual 2.8-inch firmware overflow regression
+        run: python3 tools/test_check_app_image_sizes.py
       - name: Run host tests
         run: make -C test
       - name: Verify CYD32 native LCD transfer and one-time rotation clear
