@@ -108,6 +108,7 @@ jobs:
         run: |
           set -euo pipefail
           python3 tools/test_check_app_image_sizes.py
+          python3 tools/test_verify_lab_site_partitions.py
           python3 tools/board_matrix.py validate
           python3 -m py_compile tools/mirror_pages.py
           for guard in \
