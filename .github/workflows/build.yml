@@ -65,6 +65,29 @@ jobs:
       - name: Build CI board matrix
         run: pio run $(python tools/board_matrix.py pio-args ci)
 
+      # LAB firmware only: explicitly avoid production releases and tags.
+      - name: Package classic CYD LAB firmware
+        if: github.event_name == 'pull_request'
+        run: |
+          set -euo pipefail
+          mkdir -p lab-firmware/2.8-ST7789 lab-firmware/3.2-ST7798
+          cp .pio/build/cyd/firmware.bin .pio/build/cyd/bootloader.bin .pio/build/cyd/partitions.bin lab-firmware/2.8-ST7789/
+          cp .pio/build/cyd32-st7798/firmware.bin .pio/build/cyd32-st7798/bootloader.bin .pio/build/cyd32-st7798/partitions.bin lab-firmware/3.2-ST7798/
+          cp "$HOME/.platformio/packages/framework-arduinoespressif32/tools/partitions/boot_app0.bin" lab-firmware/otadata.bin
+          printf 'LAB PR #%s\nPR head: %s\nBuilt checkout: %s\nProfiles: cyd and cyd32-st7798\nDo not publish as production\n' \
+            '${{ github.event.pull_request.number }}' '${{ github.event.pull_request.head.sha }}' "$(git rev-parse HEAD)" \
+            > lab-firmware/BUILD-INFO.txt
+          test "$(stat -c%s lab-firmware/otadata.bin)" -eq 8192
+      - name: Upload classic CYD LAB firmware
+        if: github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v7
+        with:
+          name: lab-pr-${{ github.event.pull_request.number }}-classic-cyd
+          path: lab-firmware/
+          if-no-files-found: error
+          retention-days: 14
+
+
   tests:
     # The decoders are pure arithmetic over byte buffers, so they run on a
     # desktop with no board and no display. Worth a job of their own: the
@@ -73,6 +96,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+      - name: Verify v1.41 combined Arlo, Privacy, Passive Wi-Fi and Pocket guards
+        run: |
+          python3 tools/test_v141_arlo_oui.py
+          python3 tools/test_v141_privacy_confirm.py
+          python3 tools/test_v141_passive_wifi.py
+          python3 tools/test_v141_pocket_mode.py
       - name: Run host tests
         run: make -C test
       - name: Verify CYD32 native LCD transfer and one-time rotation clear

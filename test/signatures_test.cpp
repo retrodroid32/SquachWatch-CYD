@@ -26,6 +26,12 @@ static DetectionType lookup4(uint8_t a, uint8_t b, uint8_t c, uint8_t d, Confide
 }
 
 int main() {
+    suite("Eddystone is not a Google tracker identity");
+    ck("generic Eddystone UUID cannot identify Google tracker",
+       lookupUuid(0xFEAA) == DetectionType::UNKNOWN);
+    ck("Tile vendor UUID stays classified", lookupUuid(0xFEED) == DetectionType::TILE);
+    ck("Samsung own UUID stays classified", lookupUuid(0xFD5A) == DetectionType::SAMSUNG_TAG);
+
     suite("Every OUI row is well formed");
 
     int locallyAdministered = 0, gradedAboveLow = 0;
@@ -132,6 +138,18 @@ int main() {
     ck("bare serial helper accepts exactly 10 digits", isBareSerialName("1234567890"));
     ck("bare serial helper rejects non-digits", !isBareSerialName("12345abcde"));
     ck("bare serial helper rejects wrong length", !isBareSerialName("123456789"));
+
+    suite("Conservative Bluetooth serial-module SOIs");
+    ck("JDY-16 is only a candidate for a serial-module-based skimmer",
+       lookupBtName("JDY-16") == DetectionType::SKIMMER);
+    ck("BT05 case-insensitive candidate",
+       lookupBtName("bt05") == DetectionType::SKIMMER);
+    ck("linvor module candidate",
+       lookupBtName("linvor") == DetectionType::SKIMMER);
+    ck("unrelated name containing module string is not a match",
+       lookupBtName("Laptop-JDY-16") != DetectionType::SKIMMER);
+    ck("generic Bluetooth is not a skimmer",
+       lookupBtName("Bluetooth") != DetectionType::SKIMMER);
 
     suite("Flock wildcard-probe corroboration");
 

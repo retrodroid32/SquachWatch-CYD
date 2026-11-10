@@ -35,6 +35,7 @@ static void put16(uint8_t* p, uint16_t v) {
 
 static uint16_t wifiBeacon(uint8_t* out, const uint8_t* msg) {
     memset(out, 0, 96);
+    out[0] = 0x80; // 802.11 management Beacon subtype
     uint16_t i = 36;  // management header + fixed beacon fields
     out[i++] = 0xDD;  // vendor-specific IE
     out[i++] = 33;    // OUI/type + counter + pack header + one 25-byte message
@@ -125,6 +126,22 @@ int main() {
     uint8_t wifi[96];
     uint16_t wifiLen = wifiBeacon(wifi, m);
     ck("ASTM vendor IE recognized", RemoteId::isWifiBeacon(wifi, wifiLen));
+    const uint8_t* packView = nullptr;
+    uint16_t packSize = 0;
+    ck("Wi-Fi pack extracted", RemoteId::wifiBeaconPack(wifi, wifiLen, packView, packSize));
+    ck("one message size", packSize == 28);
+    RemoteId::Info wifiInfo;
+    ck("Wi-Fi pack decoded", RemoteId::mergeWifiPack(packView, packSize, wifiInfo, 6000));
+    ck("Wi-Fi pack updates Basic ID", wifiInfo.haveBasic);
+    ck("Wi-Fi Basic ID matches captured record",
+       strcmp(wifiInfo.serial, "WIFIRID1234567890ABC") == 0);
+    uint8_t nonBeacon[96];
+    memcpy(nonBeacon, wifi, wifiLen);
+    nonBeacon[0] = 0x50;  // management probe response, not Beacon
+    ck("Wi-Fi packet rejects non-beacon subtype",
+       !RemoteId::isWifiBeacon(nonBeacon, wifiLen));
+    ck("Wi-Fi pack updates timestamp", wifiInfo.at == 6000);
+    ck("short pack rejected", !RemoteId::mergeWifiPack(packView, (uint16_t)(packSize - 1), wifiInfo, 6001));
     uint8_t wrongOui[96];
     memcpy(wrongOui, wifi, wifiLen);
     wrongOui[38] = 0xFB;
@@ -134,6 +151,30 @@ int main() {
     wrongPack[43] = 0x02;  // pack byte 0: not Message Pack type 0xF
     ck("non-message-pack vendor IE rejected", !RemoteId::isWifiBeacon(wrongPack, wifiLen));
     ck("truncated vendor IE rejected", !RemoteId::isWifiBeacon(wifi, (uint16_t)(wifiLen - 10)));
+
+    // Two-message Wi-Fi pack: Basic ID followed by valid Location.
+    uint8_t two[128] = {0};
+    memcpy(two, wifi, wifiLen);
+    two[37] = (uint8_t)(33 + 25);
+    two[45] = 2;
+    uint8_t locMsg[25] = {};
+    locMsg[0] = 0x12;
+    put32(locMsg + 5, 394321234);
+    put32(locMsg + 9, -862123456);
+    put16(locMsg + 15, 2400);
+    memcpy(two + wifiLen, locMsg, 25);
+    const uint8_t* twoPack = nullptr;
+    uint16_t twoLen = 0;
+    ck("two-message Wi-Fi pack accepted",
+       RemoteId::wifiBeaconPack(two, (uint16_t)(wifiLen + 25), twoPack, twoLen));
+    RemoteId::Info twoInfo;
+    ck("two-message pack decoded", RemoteId::mergeWifiPack(twoPack, twoLen, twoInfo, 7000));
+    ck("two-message Basic ID present", twoInfo.haveBasic);
+    ck("two-message location present", twoInfo.haveLoc);
+    ck("Wi-Fi lat decoded", fabsf(twoInfo.lat - 39.4321234f) < 0.0002f);
+    ck("Wi-Fi lon decoded", fabsf(twoInfo.lon - (-86.2123456f)) < 0.0002f);
+    ck("two-message pack truncated is rejected",
+       !RemoteId::mergeWifiPack(twoPack, (uint16_t)(twoLen - 1), twoInfo, 7001));
 
     uint8_t parrot[96];
     memcpy(parrot, wifi, wifiLen);

@@ -11,8 +11,28 @@
 static Detection s_last;
 static bool s_touched = false;
 static bool s_snoozePrompt = false;
-void uiAlertSetSnoozePrompt(bool enabled) { s_snoozePrompt = enabled; }
+static uint8_t s_snoozeStep = 0;
+static uint32_t s_snoozeLastTap = 0;
+void uiAlertSetSnoozePrompt(bool enabled) {
+    s_snoozePrompt = enabled;
+    if (!enabled) s_snoozeStep = 0;
+}
 bool uiAlertSnoozePrompt() { return s_snoozePrompt; }
+void uiAlertAdvanceSnooze(uint32_t now) {
+    s_snoozeStep = (uint8_t)(s_snoozeStep % 6u + 1u);
+    s_snoozeLastTap = now;
+    s_snoozePrompt = true;
+}
+bool uiAlertSnoozeDue(uint32_t now) {
+    return s_snoozePrompt && (uint32_t)(now - s_snoozeLastTap) >= 3000u;
+}
+uint8_t uiAlertSnoozeStep() { return s_snoozeStep; }
+static uint16_t snoozeProgress(uint32_t now) {
+    if (!s_snoozePrompt) return 0;
+    const uint32_t elapsed = (uint32_t)(now - s_snoozeLastTap);
+    if (elapsed >= 3000u) return 0;
+    return (uint16_t)(1000u - elapsed * 1000u / 3000u);
+}
 static bool s_redacted = false;
 void uiAlertSetRedacted(bool r) { s_redacted = r; }
 
@@ -144,6 +164,8 @@ void uiAlertInit(TFT_eSPI& t, const Detection& d) {
     s_spamIdentities = 0;
     s_touched = false;
     s_snoozePrompt = false;
+    s_snoozeStep = 0;
+    s_snoozeLastTap = 0;
     s_alertStart = millis();
     s_glitchStep = 0;
     // fillScreen() relies on TFT_eSPI's base-class width/height, which
@@ -704,21 +726,44 @@ void uiAlertTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng,
         t.setCursor(bx + (bw - hw) / 2, by + (bh - t.fontHeight()) / 2);
         t.print("HUNT");
     }
-    // WATCH: one-tap add straight from the detection alert. Once watched,
-    // the same button reads WATCHED and stays non-destructive: removal is
-    // available in WATCH TARGETS or the normal LOG/raw-scan controls.
+    // While cycling a snooze duration, WATCH becomes the two-line
+    // hint used by the previously tested on-card interaction.
     {
         int bx, by, bw, bh;
         watchBtnRect(w, h, bx, by, bw, bh);
-        const bool watched = eng.isWatched(s_last.mac, s_last.channel == 0);
-        Theme::drawButton(t, bx, by, bw, bh,
-                          watched ? "WATCHED" : "WATCH", watched);
+        if (s_snoozePrompt) {
+            Theme::drawButton(t, bx, by, bw, bh, "", false);
+            t.setTextFont(1);
+            t.setTextSize(1);
+            t.setTextWrap(false);
+            t.setTextColor(Theme::CYAN, Theme::BG);
+            const char* a = "TAP AGAIN";
+            const char* b = "TO CHANGE";
+            const int y0 = by + (bh - 17) / 2;
+            t.setCursor(bx + (bw - t.textWidth(a)) / 2, y0); t.print(a);
+            t.setCursor(bx + (bw - t.textWidth(b)) / 2, y0 + 9); t.print(b);
+        } else {
+            const bool watched = eng.isWatched(s_last.mac, s_last.channel == 0);
+            Theme::drawButton(t, bx, by, bw, bh,
+                              watched ? "WATCHED" : "WATCH", watched);
+        }
     }
-    // SNOOZE between the two: opens a 10m/30m/1h/always picker.
+    // Show each selection INSIDE the existing SNOOZE button, not a modal
+    // or an overlay across the alert. The amber bar counts down from 3 s.
     {
+        static const char* choices[] = {"SNOOZE", "10 MIN", "30 MIN",
+                                        "1 HOUR", "4 HOURS", "ALWAYS", "OFF"};
         int bx, by, bw, bh;
         snoozeBtnRect(w, h, bx, by, bw, bh);
-        Theme::drawButton(t, bx, by, bw, bh, "SNOOZE", false);
+        const uint8_t step = s_snoozePrompt && s_snoozeStep <= 6u ? s_snoozeStep : 0u;
+        Theme::drawButton(t, bx, by, bw, bh, choices[step], step != 0u);
+        if (step) {
+            const int range = bw - 6;
+            const int progress = (int)((uint32_t)range * snoozeProgress(now) / 1000u);
+            t.fillRect(bx + 3, by + bh - 4, range, 2, Theme::BG);
+            if (progress > 0)
+                t.fillRect(bx + 3, by + bh - 4, progress, 2, Theme::AMBER);
+        }
     }
 
     // TV-static snow over the whole screen during the same random burst
@@ -738,28 +783,7 @@ void uiAlertTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng,
     // a screen that keeps rendering underneath" pattern LOG's confirm/
     // info panels use.
     if (infoPending) Theme::drawInfoPanel(t, w, h, now, infoTypeName, infoText);
-    if (s_snoozePrompt) {
-        int x, y;
-        snoozePickerRect(w, h, x, y);
-        t.fillRoundRect(x, y, 232, 174, 6, Theme::BG);
-        t.drawRoundRect(x, y, 232, 174, 6, Theme::CYAN);
-        t.setTextSize(1);
-        t.setTextWrap(false);
-        t.setTextColor(Theme::CYAN, Theme::BG);
-        const char* title = "SNOOZE THIS DEVICE FOR:";
-        t.setCursor(x + (232 - t.textWidth(title)) / 2, y + 12);
-        t.print(title);
-        Theme::drawButton(t, x + 10,  y + 38, 100, 32, "10 MIN", false);
-        Theme::drawButton(t, x + 122, y + 38, 100, 32, "30 MIN", false);
-        Theme::drawButton(t, x + 10,  y + 78, 100, 32, "1 HOUR", false);
-        Theme::drawButton(t, x + 122, y + 78, 100, 32, "ALWAYS", false);
-        Theme::drawButton(t, x + 10,  y + 125, 212, 32, "CANCEL", false);
-        t.setTextSize(1);
-        const char* tip = "Always: until manually removed";
-        t.setTextColor(Theme::AMBER, Theme::BG);
-        t.setCursor(x + (232 - t.textWidth(tip)) / 2, y + 163);
-        t.print(tip);
-    }
+
 }
 
 bool uiAlertTouched() {

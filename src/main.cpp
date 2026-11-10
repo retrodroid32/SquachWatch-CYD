@@ -853,6 +853,13 @@ static bool readTouchRaw(int16_t& a, int16_t& b) {
 // coming back from a reboot into a dimmed screen with no memory of why would
 // look exactly like a broken backlight.
 static bool s_screenDimmed = false;
+#if defined(CYD) && !defined(TWATCH_S3)
+// Classic CYD BOOT/GPIO0 pocket mode: nonpersistent, radios keep running.
+static bool s_pocketDark = false;
+static bool s_pocketArmed = false;
+static bool s_pocketWasDown = false;
+static uint32_t s_pocketDownAt = 0;
+#endif
 #if defined(TWATCH_S3)
 // A watch goes dark, not dim. When the screen timeout lands, the backlight
 // goes off and the ST7789 is put to sleep (DISPOFF, SLPIN: about a milliamp
@@ -881,6 +888,9 @@ static void applyCpuClock();
 
 static void applyBrightness() {
     uint8_t duty = s_screenDimmed ? Settings::dimLevel() : Settings::brightness();
+#if defined(CYD) && !defined(TWATCH_S3)
+    if (s_pocketDark && s_screenDimmed) duty = 0;
+#endif
 #if defined(TWATCH_S3)
     if (s_screenDimmed) {
         if (!s_panelAsleep) {
@@ -907,6 +917,31 @@ static void applyBrightness() {
     ledcWrite(BL_CH_CAP,  duty);
     ledcWrite(BL_CH_AWOK, duty);
 }
+
+// A short BOOT press toggles pocket mode; ignore the held button at boot and
+// long presses, which may be used for power or recovery on other profiles.
+#if defined(CYD) && !defined(TWATCH_S3)
+static void classicPocketButtonTick(uint32_t now) {
+    const bool down = digitalRead(0) == LOW;
+    if (!s_pocketArmed) {
+        if (!down) s_pocketArmed = true;
+        s_pocketWasDown = down;
+        return;
+    }
+    if (down && !s_pocketWasDown) s_pocketDownAt = now;
+    if (!down && s_pocketWasDown) {
+        const uint32_t held = now - s_pocketDownAt;
+        if (held >= 40 && held < 1200) {
+            s_pocketDark = !s_pocketDark;
+            lastTouch = now;
+            s_screenDimmed = s_pocketDark;
+            applyBrightness();
+            Serial.printf("[pocket] classic CYD %s\n", s_pocketDark ? "ON" : "OFF");
+        }
+    }
+    s_pocketWasDown = down;
+}
+#endif
 
 // 240, 160 or 80 MHz. Never lower: the radio needs an 80 MHz APB clock, and
 // the display's SPI divisor and the console's baud divisor are both derived
@@ -1037,8 +1072,13 @@ static char s_confirmName[sizeof(Detection::name)]     = "";
 static char s_alertVendor[16]   = "";
 static char s_alertName[sizeof(Detection::name)]       = "";
 static char    s_confirmLabel[24];
+// Only self-reported device names and SSIDs are private. Vendor/type labels are public.
+static bool s_confirmLabelIsName = false;
 static const char* privLabel(const char* in) { static char b[40]; return Privacy::name(in, b, sizeof b); }
 static const char* privName(const char* in)  { static char b[40]; return Privacy::name(in, b, sizeof b); }
+static const char* confirmLabelOnScreen() {
+    return s_confirmLabelIsName ? privLabel(s_confirmLabel) : s_confirmLabel;
+}
 // LOG's long-press sets this per-row (BLE vs WiFi isn't implied by a
 // "current mode" the way it is for RAWSCAN, which already knows that
 // from s_rawScanIsBle) -- RAWSCAN's own WATCH/HUNT branches don't
@@ -3055,6 +3095,9 @@ void setup() {
 #endif
 #endif
     applyBrightness();
+#if defined(CYD) && !defined(TWATCH_S3)
+    pinMode(0, INPUT_PULLUP); // BOOT sampled after startup; never driven
+#endif
     // A saved core clock has to be restored here too, or the setting silently
     // reverts to 240 MHz on every reboot and looks like it never took.
     applyCpuClock();
@@ -3846,6 +3889,10 @@ void loop() {
         }
     }
 
+    // BOOT remains responsive independently of touch and radio scanning.
+#if defined(CYD) && !defined(TWATCH_S3)
+    classicPocketButtonTick(now);
+#endif
     TouchPoint tp = pollTouch();
     // True only on the exact frame a touch begins/ends -- unlike
     // TOUCH_DEBOUNCE_MS below (a cooldown timer that still re-fires on a
@@ -3866,7 +3913,11 @@ void loop() {
     static bool s_swallowTouch = false;
     if (s_screenDimmed && touchJustDown) {
         s_swallowTouch = true;
+#if defined(CYD) && !defined(TWATCH_S3)
+        if (!s_pocketDark) lastTouch = now; // touches cannot wake pocket mode
+#else
         lastTouch = now;
+#endif
     }
     if (!tp.valid) s_swallowTouch = false;
     if (s_swallowTouch) {
@@ -4913,33 +4964,42 @@ void loop() {
             // gate LOG's info panel uses, applied here too -- MORE INFO
             // appears on the exact tap that opened it, so without this
             // the still-held finger could instantly dismiss it.
-            // The snooze duration picker owns all touches while visible.
-            // Keep the alert from auto-dismissing until a choice or CANCEL.
+            // Distinct taps advance Snooze; the held finger never repeats.
+            // Three seconds after the last tap, commit exactly once.
             if (uiAlertSnoozePrompt()) {
-                if (tp.valid && (now - lastTouch) > TOUCH_DEBOUNCE_MS) {
-                    const AlertSnoozeChoice choice =
-                        uiAlertHitSnoozeChoice(tp.x, tp.y, tft.width(), tft.height());
-                    if (choice != AlertSnoozeChoice::NONE) {
-                        lastTouch = now;
-                        if (choice == AlertSnoozeChoice::CANCEL) {
-                            uiAlertSetSnoozePrompt(false);
-                            alertStart = now;  // give time to reconsider
-                        } else {
-                            const IgnoreList::SnoozeDuration duration =
-                                choice == AlertSnoozeChoice::MIN_10 ? IgnoreList::SnoozeDuration::MIN_10 :
-                                choice == AlertSnoozeChoice::MIN_30 ? IgnoreList::SnoozeDuration::MIN_30 :
-                                choice == AlertSnoozeChoice::HOUR_1 ? IgnoreList::SnoozeDuration::HOUR_1 :
-                                                                       IgnoreList::SnoozeDuration::ALWAYS;
-                            if (IgnoreList::snooze(s_alertMac, duration)) {
-                                uiAlertSetSnoozePrompt(false);
-                                Theme::showToast("SNOOZED", choice == AlertSnoozeChoice::ALWAYS
-                                    ? "Until you unsnooze" : "Expires automatically", Theme::AMBER);
-                                squachyCatch(lastAlertType, s_alertMac, lastAlertHits, lastAlertRssi, lastAlertConf);
-                                enterClear();
-                            } else {
-                                Theme::showToast("SNOOZE FAILED", "List full or save failed", Theme::RED);
-                            }
-                        }
+                // Only a NEW finger-down advances one selection.
+                // Holding or dragging does not repeat and a new alert
+                // does not inherit stale static touch state.
+                if (touchJustDown && tp.valid &&
+                    (now - lastTouch) > TOUCH_DEBOUNCE_MS) {
+                    lastTouch = now;
+                    uiAlertAdvanceSnooze(now);
+                }
+                if (uiAlertSnoozeDue(now)) {
+                    const uint8_t step = uiAlertSnoozeStep();
+                    bool ok = false;
+                    if (step == 6u) {
+                        ok = !IgnoreList::snoozed(s_alertMac) || IgnoreList::unsnooze(s_alertMac);
+                    } else {
+                        const IgnoreList::SnoozeDuration duration =
+                            step == 1u ? IgnoreList::SnoozeDuration::MIN_10 :
+                            step == 2u ? IgnoreList::SnoozeDuration::MIN_30 :
+                            step == 3u ? IgnoreList::SnoozeDuration::HOUR_1 :
+                            step == 4u ? IgnoreList::SnoozeDuration::HOUR_4 :
+                                         IgnoreList::SnoozeDuration::ALWAYS;
+                        ok = IgnoreList::snooze(s_alertMac, duration);
+                    }
+                    if (ok) {
+                        uiAlertSetSnoozePrompt(false);
+                        Theme::showToast(step == 6u ? "SNOOZE OFF" : "SNOOZED",
+                            step == 5u ? "Until you unsnooze" :
+                            step == 6u ? "Alerts restored" : "Expires automatically", Theme::AMBER);
+                        squachyCatch(lastAlertType, s_alertMac, lastAlertHits, lastAlertRssi, lastAlertConf);
+                        enterClear();
+                    } else {
+                        Theme::showToast("SNOOZE FAILED", "List full or save failed", Theme::RED);
+                        uiAlertSetSnoozePrompt(false);
+                        alertStart = now;
                     }
                 }
                 break;
@@ -5002,11 +5062,10 @@ void loop() {
                     squachyCatch(lastAlertType, s_alertMac, lastAlertHits, lastAlertRssi, lastAlertConf);
                     enterClear();
                 } else if (uiAlertHitSnooze(tp.x, tp.y, tft.width(), tft.height())) {
-                    // Ask how long rather than silently snoozing until restart.
-                    // Do not count/dismiss this alert until the user selects
-                    // a duration; CANCEL leaves all policies unchanged.
+                    // First tap selects 10 minutes; further distinct taps cycle
+                    // 30m, 1h, 4h, ALWAYS and OFF before idle commit.
                     lastTouch = now;
-                    uiAlertSetSnoozePrompt(true);
+                    uiAlertAdvanceSnooze(now);
                 } else if (uiAlertHitWatch(tp.x, tp.y, tft.width(), tft.height())) {
                     // One-tap WATCH from an ordinary detection alert. Guard
                     // against toggleWatch*() removing an existing target:
@@ -5261,7 +5320,7 @@ void loop() {
             // Nothing on LOG moves by the call -- the note about
             // drawActiveBackground in ui_log.cpp is a comment, not a call.
             drawTwoBand([&](TFT_eSPI& t, bool) {
-                uiLogTick(t, now, engine, 0, s_confirmPending, privLabel(s_confirmLabel),
+                uiLogTick(t, now, engine, 0, s_confirmPending, confirmLabelOnScreen(),
                           s_infoPending, infoTypeName, infoText,
                           engine.isWatched(s_confirmMac, s_confirmIsBle),
                           engine.isHunted(s_confirmMac, s_confirmIsBle),
@@ -5464,7 +5523,8 @@ void loop() {
                         s_confirmDetection = *d;
                         snprintf(s_confirmVendor, sizeof s_confirmVendor, "%s", vendorText(*d));
                         memcpy(s_confirmName,   d->name,   sizeof s_confirmName);
-                        const char* lbl = d->name[0] ? d->name : vendorText(*d);
+                        s_confirmLabelIsName = d->name[0] != 0;
+                        const char* lbl = s_confirmLabelIsName ? d->name : vendorText(*d);
                         strncpy(s_confirmLabel, lbl, sizeof(s_confirmLabel) - 1);
                         s_confirmLabel[sizeof(s_confirmLabel) - 1] = 0;
                         s_confirmPending = true;
@@ -5480,7 +5540,7 @@ void loop() {
                                (engine.rawWifiScanDone() || engine.rawWifiScanFailed()));
             // 2.8 and 3.2 use the same buffered renderer on both radios.
             drawTwoBand([&](TFT_eSPI& t, bool advance) {
-                uiRawScanTick(t, now, engine, s_rawScanIsBle, done, s_confirmPending, privLabel(s_confirmLabel),
+                uiRawScanTick(t, now, engine, s_rawScanIsBle, done, s_confirmPending, confirmLabelOnScreen(),
                               engine.isWatched(s_confirmMac, s_rawScanIsBle),
                               engine.isHunted(s_confirmMac, s_rawScanIsBle),
                               IgnoreList::contains(s_confirmMac), advance);
@@ -5600,6 +5660,7 @@ void loop() {
                             const RawBleResult* r = engine.rawBleAt((uint8_t)row);
                             if (r) {
                                 memcpy(s_confirmMac, r->mac, 6);
+                                s_confirmLabelIsName = true; // BLE self-name / placeholder
                                 strncpy(s_confirmLabel, r->name[0] ? r->name : "Unnamed device",
                                         sizeof(s_confirmLabel) - 1);
                                 haveTarget = true;
@@ -5609,6 +5670,7 @@ void loop() {
                             if (bssid) {
                                 memcpy(s_confirmMac, bssid, 6);
                                 const char* ssid = engine.rawWifiSsid((uint8_t)row);
+                                s_confirmLabelIsName = true; // Wi-Fi SSID / hidden placeholder
                                 strncpy(s_confirmLabel, ssid[0] ? ssid : "(hidden)", sizeof(s_confirmLabel) - 1);
                                 haveTarget = true;
                             }
@@ -7478,6 +7540,11 @@ void loop() {
             const bool lit = s_crownLitUntil && (int32_t)(s_crownLitUntil - now) > 0;
             wantDim = !alertWantsWake && !lit;
         }
+#endif
+        // Pocket mode overrides timeout NEVER and Desk, but a qualifying
+        // alert temporarily borrows the display without cancelling pocket.
+#if defined(CYD) && !defined(TWATCH_S3)
+        if (s_pocketDark) wantDim = !alertWantsWake;
 #endif
         if (wantDim != s_screenDimmed) {
             s_screenDimmed = wantDim;

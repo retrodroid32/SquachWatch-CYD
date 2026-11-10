@@ -10,6 +10,7 @@
 #include "regulars.h"
 #include "clock.h"
 #include "ble_adv_utils.h"
+#include "channel_yield.h"
 #include <Arduino.h>
 #include <WiFi.h>
 #include <esp_wifi.h>
@@ -37,6 +38,43 @@
 
 // -------- global engine instance (referenced by callbacks) --------
 static DetectionEngine* g_engine = nullptr;
+
+// Wi-Fi RX callback -> Arduino loop: bounded Remote ID Message Pack mailbox.
+// Never decode or write the shared aircraft model inside the radio callback.
+// Each slot holds the ASTM maximum of 9 x 25-byte messages plus 3-byte header.
+struct WifiRemoteIdRecord {
+    uint8_t mac[6];
+    uint8_t len;
+    uint8_t pack[228];
+};
+static WifiRemoteIdRecord s_wifiRidQ[4] = {};
+static uint8_t s_wifiRidHead = 0, s_wifiRidTail = 0;
+static portMUX_TYPE s_wifiRidMutex = portMUX_INITIALIZER_UNLOCKED;
+static void queueWifiRemoteId(const uint8_t mac[6], const uint8_t* pack, uint16_t len) {
+    if (!mac || !pack || len < 28 || len > 228) return;
+    WifiRemoteIdRecord rec = {};
+    memcpy(rec.mac, mac, 6);
+    rec.len = (uint8_t)len;
+    memcpy(rec.pack, pack, len);
+    portENTER_CRITICAL(&s_wifiRidMutex);
+    const uint8_t next = (uint8_t)((s_wifiRidHead + 1u) % 4u);
+    if (next != s_wifiRidTail) {
+        s_wifiRidQ[s_wifiRidHead] = rec;
+        s_wifiRidHead = next;
+    }
+    portEXIT_CRITICAL(&s_wifiRidMutex);
+}
+static bool popWifiRemoteId(WifiRemoteIdRecord& rec) {
+    bool got = false;
+    portENTER_CRITICAL(&s_wifiRidMutex);
+    if (s_wifiRidTail != s_wifiRidHead) {
+        rec = s_wifiRidQ[s_wifiRidTail];
+        s_wifiRidTail = (uint8_t)((s_wifiRidTail + 1u) % 4u);
+        got = true;
+    }
+    portEXIT_CRITICAL(&s_wifiRidMutex);
+    return got;
+}
 
 // NimBLE delivers scan results on its host task. Known detections are copied
 // into DetectionEngine's fixed mailbox and applied by loop(); this mux protects
@@ -222,6 +260,10 @@ static volatile uint32_t s_wifiRaw = 0;  // every frame the sniffer was handed
 // hopChannel().
 static volatile uint16_t s_chanFrames[14];
 static uint16_t          s_chanRate[14];
+static uint16_t          s_chanYield[14]; // smoothed new AP BSSID/s
+// 32-bit approximate distinct BSSID count per channel dwell (atomic bitset).
+// Deliberately reset on each visit; 56 bytes total and no dynamic allocations.
+static uint32_t          s_chanSeenBssidBits[14] = {};
 #if defined(TWATCH_S3)
 // Two 512-bit memories of Bluetooth addresses, by hash: this five minutes
 // and the five before. An address in neither is an arrival. A collision
@@ -639,6 +681,11 @@ class BleScanCallbacks : public NimBLEScanCallbacks {
         // none of those tables has a per-row grade, so the type's own
         // grade stands. Only the OUI table needed splitting.
         det.conf = confidenceFor(det.type);
+        // Common Apple proximity payloads can be AirPods or other accessories.
+        // Only the narrower Find My subtype retains the type-level grade.
+        if (det.type == DetectionType::AIRTAG &&
+            !isSeparatedFindMyPayload(payload.data(), (uint8_t)payload.size()))
+            det.conf = Confidence::LOW_CONF;
         // ...except HACKER, which is the one type deliberately holding
         // signatures of very different strength. Reaching here on anything
         // but the name means one of the exact ones matched: a service UUID
@@ -656,6 +703,9 @@ class BleScanCallbacks : public NimBLEScanCallbacks {
         if (det.type == DetectionType::FLOCK && matchedByName) {
             det.conf = Confidence::MED_CONF;
         }
+        // Generic Bluetooth serial modules are not proof of a skimmer.
+        if (det.type == DetectionType::SKIMMER && matchedByName)
+            det.conf = Confidence::LOW_CONF;
         // A Remote ID advert carries far more than the fact that it exists.
         // Decode it before the entry is posted so the log row can be named
         // after the actual aircraft rather than after a service UUID.
@@ -887,7 +937,11 @@ bool DetectionEngine::init() {
             // device announcing itself to its own kind, not an access point
             // offering a network, and its SSID is throwaway. Its name goes
             // where the SSID would have.
-            const bool remoteId = RemoteId::isWifiBeacon(frame, (uint16_t)sigLen);
+            const uint8_t* ridPack = nullptr;
+            uint16_t ridPackLen = 0;
+            const bool remoteId = RemoteId::wifiBeaconPack(frame, (uint16_t)sigLen,
+                                                              ridPack, ridPackLen);
+            if (remoteId) queueWifiRemoteId(frame + 10, ridPack, ridPackLen);
             char pwnName[33];
             if (remoteId) {
                 // Use addr2 (the transmitter) as the device identity. In a
@@ -1539,6 +1593,11 @@ void DetectionEngine::loop() {
     if (g_rawMode != RawScanMode::REST) {
         hopChannel();
         processWiFiQ(wifiBudgetUs, wifiMax);
+        // Drain at most two Wi-Fi Remote ID packs per loop iteration. Preserve
+        // the existing BLE decode model and never block the radio task.
+        WifiRemoteIdRecord ridRecord;
+        for (uint8_t i = 0; i < 2 && popWifiRemoteId(ridRecord); ++i)
+            mergeRemoteIdWifiPack(ridRecord.mac, ridRecord.pack, ridRecord.len);
         processDeauthQ();
     }
     expireStale();
@@ -1617,7 +1676,12 @@ void DetectionEngine::hopChannel() {
         const uint32_t spent = now - _lastHopMs;
         const uint32_t f = s_chanFrames[_wifiChannel];
         s_chanFrames[_wifiChannel] = 0;
+        const uint32_t bits = __atomic_exchange_n(
+            &s_chanSeenBssidBits[_wifiChannel], 0u, __ATOMIC_RELAXED);
         if (spent <= 2u * _dwellMs + 200u) {
+            s_chanYield[_wifiChannel] = updateChannelYieldEma(
+                s_chanYield[_wifiChannel],
+                (uint16_t)__builtin_popcount(bits), spent);
             uint32_t rate = f * 16000u / (spent ? spent : 1);
             if (rate > 0xFFFFu) rate = 0xFFFFu;
             s_chanRate[_wifiChannel] = (uint16_t)(((uint32_t)s_chanRate[_wifiChannel] * 3u + rate) / 4u);
@@ -1628,12 +1692,16 @@ void DetectionEngine::hopChannel() {
     s_chanFrames[_wifiChannel] = 0;
     // Shares: 4 for a channel at least a quarter as busy as the busiest,
     // 2 for one with anything on it, 1 for a silent one. Split 3.9 s.
-    uint16_t top = 0;
-    for (uint8_t c = 1; c <= 13; c++) if (s_chanRate[c] > top) top = s_chanRate[c];
+    uint16_t top = 0, topYield = 0;
+    for (uint8_t c = 1; c <= 13; c++) {
+        if (s_chanRate[c] > top) top = s_chanRate[c];
+        if (s_chanYield[c] > topYield) topYield = s_chanYield[c];
+    }
     uint16_t total = 0, mine = 2;
     for (uint8_t c = 1; c <= 13; c++) {
         const uint16_t r = s_chanRate[c];
-        const uint16_t sh = !top ? 2 : (r * 4u >= top ? 4 : (r ? 2 : 1));
+        const uint16_t base = !top ? 2 : ((uint32_t)r * 4u >= top ? 4 : (r ? 2 : 1));
+        const uint16_t sh = base + (channelYieldBonus(s_chanYield[c], topYield) ? 1u : 0u);
         total += sh;
         if (c == _wifiChannel) mine = sh;
     }
@@ -1770,6 +1838,16 @@ void IRAM_ATTR DetectionEngine::postWiFi(const uint8_t* mac, int8_t rssi, uint8_
     // identical rssi/channel, so every frame still lands in that
     // running maximum exactly once.
     if (mac[0] & 0x01) return;
+    if (ssid && ssid[0] && !pwnagotchi && !remoteId &&
+        channel >= 1 && channel <= 13) {
+        uint32_t h = 2166136261u;
+        for (uint8_t i = 0; i < 6; i++) h = (h ^ mac[i]) * 16777619u;
+        // Only capture distinct hash buckets, not packet counts. This is
+        // the extra metric from ESP32DualBandWardriver. Atomic: the
+        // promiscuous task and loop hop can run on different cores.
+        __atomic_fetch_or(&s_chanSeenBssidBits[channel],
+                          (uint32_t)1u << (h & 31u), __ATOMIC_RELAXED);
+    }
     uint8_t next = (_wifiQHead + 1) % WIFI_Q_CAP;
     if (next == _wifiQTail) { _wifiQDropped++; return; } // queue full, drop
     WiFiQEntry& e = (WiFiQEntry&)_wifiQ[_wifiQHead];
@@ -1907,6 +1985,18 @@ void DetectionEngine::mergeRemoteId(const uint8_t* mac, const uint8_t* payload,
         memcpy(_ridMac, mac, 6);
     }
     RemoteId::merge(payload, len, _rid, millis());
+}
+
+void DetectionEngine::mergeRemoteIdWifiPack(const uint8_t* mac, const uint8_t* pack,
+                                            uint16_t len) {
+    if (!mac || !pack) return;
+    // Do not merge a different aircraft's Wi-Fi telemetry with a prior BLE
+    // target; the single-identity model already enforces this for BLE.
+    if (memcmp(mac, _ridMac, 6) != 0) {
+        RemoteId::reset(_rid);
+        memcpy(_ridMac, mac, 6);
+    }
+    RemoteId::mergeWifiPack(pack, len, _rid, millis());
 }
 
 void DetectionEngine::postBle(Detection d) {
@@ -2189,7 +2279,7 @@ void DetectionEngine::startRawWifiScan() {
     requestRawBleScanMode();
 #else
     if (leavingRawBle) requestRawBleScanMode();
-    WiFi.scanNetworks(true /* async */);
+    WiFi.scanNetworks(true /* async */, true /* hidden */, true /* passive */, 150);
 #endif
 }
 
@@ -2211,7 +2301,7 @@ static void rawWifiScanTick() {
         const uint32_t beforeBlock = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
         wifi_country_t cc = {};
         esp_wifi_get_country(&cc);
-        const int rc = WiFi.scanNetworks(true, true, false, 180);
+        const int rc = WiFi.scanNetworks(true, true, true, 180);
         Serial.printf("[raw-wifi] start rc=%d heap=%lu/%lu country=%.2s ch=%u-%u\n",
                       rc, (unsigned long)beforeHeap, (unsigned long)beforeBlock,
                       cc.cc, (unsigned)cc.schan, (unsigned)(cc.schan + cc.nchan - 1));
