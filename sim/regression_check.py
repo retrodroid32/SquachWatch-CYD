@@ -10,6 +10,8 @@ CASES=[
  ("stripes-jail-ball-portrait","clear",["--jail","--pet","1","--frames","8","--portrait"],(240,320)),
  ("camera-alert","alert",["--alert","9","--frames","6"],(320,240)),
  ("settings","settings",[],(320,240)),
+ ("fonts-landscape","settings",[],(320,240)),
+ ("fonts-portrait","settings",["--portrait"],(240,320)),
  ("alert-rules","alertrules",[],(320,240)),
  ("log","log",[],(320,240)),
  ("log-portrait","log",["--portrait"],(240,320)),
@@ -63,7 +65,9 @@ def main():
         td=Path(td)
         for name,screen,opts,expected in CASES:
             out=td/(name+".png")
-            subprocess.run([str(BIN),screen,str(out),*opts],cwd=HERE,check=True)
+            env=os.environ.copy()
+            if name.startswith("fonts-"): env["SQUACHSIM_PAGE"]="6"
+            subprocess.run([str(BIN),screen,str(out),*opts],cwd=HERE,check=True,env=env)
             size,colors,ratio=stats(out)
             assert size==expected, f"{name}: {size} != {expected}"
             assert colors>=8, f"{name}: only {colors} colours"
