@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Source integration guards for the upstream v1.40 font backport.
+"""Source integration guards for the staged, boot-safe font-settings bring-up.
 
 Full firmware/simulator builds remain mandatory; these do not replace
 2.8/3.2-inch portrait/landscape touch and clipping hardware validation.
@@ -33,18 +33,19 @@ checks = {
     "persists steps and faces":
         's_prefs.putUChar(FONT_KEYS[(int)k], step)' in settings and
         's_prefs.putUChar(FACE_KEYS[(int)k], face)' in settings,
-    "font ranges and measurement in theme":
+    "font settings use bounded ranges":
         "void fontRange(TFT_eSPI& t" in theme and
-        "t.textWidth(label) <= w - 6" in theme and
-        "t.fontHeight() <= h - 2" in theme,
+        "void setFontDelta(TFT_eSPI& t" in theme and
+        "if (step < lo) step = lo;" in theme,
     "no unsupported XP font exposed":
-        "case FontKind::XP_TILES:" in theme and
-        "lo = 0; hi = 0; return;" in theme,
-    "measured bubble box":
-        "s_bubbleHeight = t.fontHeight();" in theme and
-        "int  bubbleTextH()  { return s_bubbleHeight; }" in theme,
-    "pet metrics included":
-        "Theme::petFontOn(t);" in pet and "Theme::petFontOff(t);" in pet,
+        "case Settings::FontKind::XP_TILES:" in theme and
+        "lo = hi = 0;" in theme,
+    "proven bubble and pet rendering preserved":
+        "#if BUBBLE_FONT == 2" in theme and
+        "Theme::petFontOn(t);" not in pet,
+    "global button renderer held at recovered baseline":
+        "int requested = (int)ts + fontDelta" not in theme and
+        "uint8_t ts = uiTextSize(t, textSize);" in theme,
     "dedicated nested FONTS page":
         "FONTS = 6" in ui_h and "uiSettingsParentPage()" in ui,
     "six actual FONTS rows":
@@ -63,4 +64,4 @@ checks = {
 for label, ok in checks.items():
     print(("PASS" if ok else "FAIL") + ": " + label)
 assert all(checks.values()), "font backport integration incomplete"
-print(f"Font-controls integration: {len(checks)} checks PASS")
+print(f"Staged font settings: {len(checks)} checks PASS; global rendering unchanged")
