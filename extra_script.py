@@ -58,15 +58,3 @@ env.Append(BUILD_FLAGS=['-DFIRMWARE_VERSION=\\"%s\\"' % get_version()])
 # The environment name, as SQW_ENV. A Bluetooth update is signed for exactly
 # one build and the board checks the signature against its own name.
 env.Append(BUILD_FLAGS=['-DSQW_ENV=\\"%s\\"' % env["PIOENV"]])
-
-# Keep both 1.875 MiB OTA application slots. The classic CYD builds crossed
-# that boundary even though PlatformIO's ELF-section estimate still passed.
-# LTO removes redundant application/library code without deleting features
-# or moving any NVS, OTA or coredump partitions.
-# Apply to the classic CYD family first; other boards retain their validated
-# compiler settings. The full real-image-size gate runs after compilation.
-if env["PIOENV"] in {
-    "cyd", "cyd-fast", "cyd-ili9341", "cyd-ili9341-fast",
-    "cyd32-st7798", "cyd32-st7798-fast"
-}:
-    env.Append(CCFLAGS=["-flto"], CXXFLAGS=["-flto"], LINKFLAGS=["-flto"])
