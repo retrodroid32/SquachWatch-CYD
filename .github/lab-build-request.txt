@@ -1,6 +1,7 @@
-V140-FONTS-BISECT-A-NVS-R1
-# PR #209: isolate black-screen root cause, from user-verified Recovery R3.
-# ONLY 12 Fonts NVS key loads + serial checksum, no Fonts UI/render changes.
-# CYD 2.8 ST7789 and 3.2 ST7798; verify boot before further stage.
-# Publish via web installer LAB workflow and GitHub Pages.
-# Preserve Recovery R3, PRs 206/208, no merge/tag/production release.
+V140-FONTS-BISECT-A-NVS-R2
+# PR #209: gated LAB firmware publication of NVS-only diagnostic build.
+# Exact Recovery R3 application code except for 12 Fonts NVS key reads,
+# clamping, and serial checksum. No Fonts UI or global rendering changes.
+# NEW: release workflow has required CI gate before build and Pages artifact.
+# Boards: CYD 2.8 ST7789 and CYD 3.2 ST7798.
+# DO NOT MERGE, tag or create a production release; hardware gate pending.
