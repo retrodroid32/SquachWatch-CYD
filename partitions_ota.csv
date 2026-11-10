@@ -19,9 +19,10 @@
 #   coredump at 0x3F0000, 64 KB — same place, so the crash summary still works.
 #
 # WHAT CHANGED:
-#   app0/app1  0x1E0000 (1,966,080 bytes) each. The firmware is ~1.42 MB today,
-#              so that is roughly 540 KB of headroom per slot — enough for the
-#              OTA code and the TLS stack that WiFi updates will need.
+#   app0/app1  0x1F0000 (2,031,616 bytes) each. Both app starts are 64KB aligned.
+#              The 2026-11-10 upstream features crossed the former 0x1E0000
+#              limit; the actual firmware.bin (not PlatformIO's ELF estimate)
+#              now has 64 KB more space in EACH OTA slot. CI guards binary size.
 #   spiffs     gone. Arduino's min_spiffs.csv keeps a 128 KB scrap of it; this
 #              project never mounts a filesystem (the SD card is its own thing,
 #              see sd_log.cpp), so that space goes to the app slots instead.
@@ -29,19 +30,21 @@
 # Layout, for reading at a glance:
 #   0x009000  20 KB   nvs
 #   0x00E000   8 KB   otadata      which slot the bootloader should run
-#   0x010000   1.9 MB app0
-#   0x1F0000   1.9 MB app1
-#   0x3D0000  128 KB  (free)       deliberately unassigned, see below
-#   0x3F0000  64 KB   coredump
+#   0x010000   1.9375 MB app0 (0x1F0000 bytes), ends at 0x200000
+#   0x200000   1.9375 MB app1 (0x1F0000 bytes), ends at 0x3F0000
+#   0x3F0000  64 KB coredump (unchanged)
 #
-# The 128 KB hole before coredump is not waste: partition offsets must stay
-# aligned to 64 KB, and growing either app slot into it would push app1 across
-# an alignment boundary. Leaving it unnamed keeps the table honest and leaves
-# somewhere for a future filesystem to land without moving anything.
+# 2026-11-10 LAB migration: the former 128KB gap at 0x3D0000 was split
+# evenly between app0/app1 (+0x10000 each). app1 is MOVED from 0x1F0000 to
+# 0x200000; USB web flashing MUST write the matching partition table at 0x8000
+# and boot_app0 OTA metadata at 0xE000. NVS (0x9000) and coredump (0x3F0000)
+# do not move, so saved settings survive a normal, non-erase web flash.
+# Do NOT attempt this partition migration as OTA firmware-only update:
+# a firmware-only image does not install a new partition table.
 #
 # Name,   Type, SubType, Offset,   Size,     Flags
 nvs,      data, nvs,     0x9000,   0x5000,
 otadata,  data, ota,     0xe000,   0x2000,
-app0,     app,  ota_0,   0x10000,  0x1E0000,
-app1,     app,  ota_1,   0x1F0000, 0x1E0000,
+app0,     app,  ota_0,   0x10000,  0x1F0000,
+app1,     app,  ota_1,   0x200000, 0x1F0000,
 coredump, data, coredump,0x3F0000, 0x10000,
