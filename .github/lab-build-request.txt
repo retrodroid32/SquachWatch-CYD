@@ -1,14 +1,6 @@
-V141-SOI-193-194-195-197-R3
-# Combined hardware LAB update requested by user, based on verified firmware #176.
-# Keeps exact Pager SOI, generic Eddystone suppression and WiFi Remote ID
-# from PR202, adds PR194 serial module candidates, PR195 Apple Find My
-# confidence, PR197 channel-yield, and PR193 v1.41 core Privacy/Pocket
-# Arlo OUI & passive WiFi fixes.
-# Target: 2.8 ST7789 + 3.2 ST7798, same web flasher ?lab=1.
-# Master and every original feature branch remain unchanged and unmerged.
-# Hardware validation required before any merge.
-
-# R2: LOG EVENTS privacy screen mask; full-screen alert Snooze tap-to-step incl 4h/ALWAYS/OFF.
-# Regression audit: master is fully retained (0 behind); WATCH/HUNT, SD, GPS, Mesh and CYD32 paths unchanged.
-
-# R3: restore in-button Snooze duration/amber countdown bar, WATCH hint, distinct taps; privacy R2 fix retained.
+V140-DESK24-CROWDNONE-R1
+# LAB PR #205 on approved R3 master merge a72563e.
+# #178: persistent desk 12/24 clock + timezone and corner clock.
+# #179: main-screen CROWD NONE while preserving SquachMesh transport and desk crowd.
+# Hardware: CYD 2.8 ST7789 and CYD 3.2 ST7798.
+# No production release/tag. Preserve branches. Physical verification required.
