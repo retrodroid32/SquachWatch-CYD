@@ -1,5 +1,7 @@
-V140-CLOCK-CROWD-RECOVERY-R2
-# PR #207: recover from #206 Fonts R1 black-screen regression.
-# Exact firmware source from previously user-hardware-verified PR #205.
-# No #180 Fonts changes. CYD 2.8 ST7789 and 3.2 ST7798.
-# Web installer LAB only, do not release/tag/merge production.
+V140-CLOCK-CROWD-RECOVERY-R3
+# PR #207: explicitly rerun lab publication via Build and release firmware.
+# The generic Build workflow only creates PR artifacts and does not deploy Pages.
+# Source remains the user-validated #205 firmware; no Fonts changes.
+# Publish to LAB web installer via release-flasher.yml -> publish-pages.yml.
+# Both CYD 2.8 ST7789 and CYD 3.2 ST7798.
+# No production release, tag, or merge. Preserve original branches.
