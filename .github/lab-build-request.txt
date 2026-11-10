@@ -1,9 +1,12 @@
-V140-OTA-IMAGE-FIT-R1
-# PR #211: black screen root-cause fix for 2.8 CYD ST7789.
-# Actual prior NVS diagnostic firmware.bin = 1966320 bytes; partition 1966080.
-# New CI / release guard requires >=8192 bytes of real binary headroom
-# in the smallest actual built app partition, NOT just ELF estimates.
-# Apply CYD LTO to reduce binary without moving OTA/NVS/coredump partitions.
-# Same isolated NVS-only firmware code as PR #209; no Fonts UI yet.
-# Build for 2.8 ST7789 and 3.2 ST7798. Verify physical hardware.
-# Keep Recovery R3 and prior branches, no production tag/release/merge.
+V140-OTA-PARTITION-FIX-R2
+# PR #211: fix physical black screens from overflowing 0x1E0000 app slot.
+# Enlarged classic 4MB ESP32 app0/app1 to 0x1F0000 (+64KiB EACH).
+# USB-only LAB migration: app0 remains 0x10000; app1 moves 0x200000.
+# NVS and coredump offsets unchanged. NO erase-all flash.
+# Lab installer manifest MUST reference lab-esp32-partitions.bin from THIS build.
+# Production esp32-partitions.bin and site retained unchanged.
+# Final exact firmware.bin/image-partition guard >=8192B headroom plus
+# LAB packaged-manifest SHA and partition-size validation, fail-closed CI.
+# LTO experiment FAILED in CI and was completely reverted.
+# Same NVS-only diagnostic app; no Fonts GUI yet.
+# 2.8 ST7789 & 3.2 ST7798 hardware PASS required, no merge/production release.
