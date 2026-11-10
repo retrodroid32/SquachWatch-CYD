@@ -1,14 +1,10 @@
-V141-SOI-193-194-195-197-R3
-# Combined hardware LAB update requested by user, based on verified firmware #176.
-# Keeps exact Pager SOI, generic Eddystone suppression and WiFi Remote ID
-# from PR202, adds PR194 serial module candidates, PR195 Apple Find My
-# confidence, PR197 channel-yield, and PR193 v1.41 core Privacy/Pocket
-# Arlo OUI & passive WiFi fixes.
-# Target: 2.8 ST7789 + 3.2 ST7798, same web flasher ?lab=1.
-# Master and every original feature branch remain unchanged and unmerged.
-# Hardware validation required before any merge.
-
-# R2: LOG EVENTS privacy screen mask; full-screen alert Snooze tap-to-step incl 4h/ALWAYS/OFF.
-# Regression audit: master is fully retained (0 behind); WATCH/HUNT, SD, GPS, Mesh and CYD32 paths unchanged.
-
-# R3: restore in-button Snooze duration/amber countdown bar, WATCH hint, distinct taps; privacy R2 fix retained.
+RID-MULTI8-LAB-R1
+# PR #213: bounded 8-contact Remote ID assembler.
+# BLE Legacy/Wi-Fi Beacon remain separate identities, 30-second TTL.
+# Parser tests verify alternating multiple drones, spoof-resistant keying,
+# invalid input, oldest replacement and millis rollover.
+# Hardware gates: 2.8 ST7789 and 3.2 ST7798 physical test.
+# Uses approved larger OTA partition table 0x1F0000, app1 0x200000.
+# Web installer MUST serve lab-esp32-partitions.bin alongside firmware.bin.
+# Enforce exact-SHA CI success and >=8192 bytes final binary headroom.
+# No production version/tag or merge. Preserve recovery branch and all PRs.
