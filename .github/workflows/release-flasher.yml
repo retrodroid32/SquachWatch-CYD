@@ -54,6 +54,7 @@ permissions:
   # Least privilege for this workflow: it creates/reads GitHub Releases.
   # Pages/id-token permissions live only in publish-pages.yml.
   contents: write
+  actions: read
 
 # One run per tag at a time. The v1.7.7 push started this workflow twice in
 # the same second -- same commit, same tag, same event -- and the two raced:
@@ -93,8 +94,87 @@ jobs:
           esac
           echo "skip=false" >> "$GITHUB_OUTPUT"
 
-  build-and-release:
+  # Publication gate is part of THIS workflow: unlike the independent
+  # pull_request Build workflow, a failed test here makes the entire
+  # release/LAB run fail and prevents workflow_run Pages deployment.
+  ci-gate:
     needs: preflight
+    if: needs.preflight.outputs.skip != 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out exact firmware source
+        uses: actions/checkout@v7
+      - name: Check source guards and Python files
+        run: |
+          set -euo pipefail
+          python3 tools/test_check_app_image_sizes.py
+          python3 tools/test_verify_lab_site_partitions.py
+          python3 tools/board_matrix.py validate
+          python3 -m py_compile tools/mirror_pages.py
+          for guard in \
+            tools/test_v141_arlo_oui.py \
+            tools/test_v141_privacy_confirm.py \
+            tools/test_v141_passive_wifi.py \
+            tools/test_v141_pocket_mode.py \
+            tools/test_desk_clock_format.py \
+            tools/test_crowd_none.py \
+            tools/test_check_app_image_sizes.py \
+            tools/test_verify_lab_site_partitions.py; do
+            if test -f "$guard"; then
+              python3 "$guard"
+            fi
+          done
+      - name: Run native host tests
+        run: make -C test
+      - name: Verify CYD32 LCD and rotation regression
+        run: |
+          if test -f tools/test_cyd32_native_push.py; then
+            python3 tools/test_cyd32_native_push.py
+          fi
+      - name: Build emulator and verify UI regression
+        run: |
+          make -C sim -j"$(nproc)"
+          make -C sim regression
+      # The independent PR Build contains the complete CI firmware matrix.
+      # Never publish a branch LAB while that exact commit is still building.
+      - name: Wait for matching PR Build success before LAB publication
+        if: github.event_name == 'push' && github.ref_type == 'branch'
+        timeout-minutes: 25
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_SHA: ${{ github.sha }}
+          TARGET_BRANCH: ${{ github.ref_name }}
+          TARGET_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          # Fail closed if this branch has no PR Build for THIS commit.
+          # Matching the SHA avoids accidentally accepting an older PASS.
+          for attempt in $(seq 1 100); do
+            runs="$(gh api "repos/${TARGET_REPO}/actions/workflows/build.yml/runs?event=pull_request&branch=${TARGET_BRANCH}&per_page=50")"
+            match="$(jq -c --arg sha "$TARGET_SHA"               '[.workflow_runs[] | select(.head_sha == $sha)] | sort_by(.run_number) | last // empty' <<<"$runs")"
+            if [ -n "$match" ]; then
+              status="$(jq -r '.status' <<<"$match")"
+              conclusion="$(jq -r '.conclusion // ""' <<<"$match")"
+              run_id="$(jq -r '.id' <<<"$match")"
+              echo "Matching PR Build $run_id for $TARGET_SHA: $status $conclusion"
+              if [ "$status" = "completed" ]; then
+                if [ "$conclusion" = "success" ]; then
+                  echo "::notice::PR Build $run_id passed for exact LAB commit; release permitted"
+                  exit 0
+                fi
+                echo "::error::PR Build $run_id concluded $conclusion; blocking LAB publication"
+                exit 1
+              fi
+            else
+              echo "No PR Build found yet for $TARGET_BRANCH at $TARGET_SHA ($attempt/100)"
+            fi
+            sleep 12
+          done
+          echo "::error::Matching PR Build did not pass within gate timeout; LAB publication blocked"
+          exit 1
+
+  build-and-release:
+    needs: [preflight, ci-gate]
     if: needs.preflight.outputs.skip != 'true'
     runs-on: ubuntu-latest
     steps:
@@ -207,6 +287,9 @@ jobs:
         run: |
           set -euo pipefail
           pio run $(python tools/board_matrix.py pio-args release)
+          # Compare FINAL ESP32 image bytes to the actual partition table.
+          # The ELF estimate overlooked a 240-byte overflow and shipped black-screen LAB firmware.
+          python3 tools/check_app_image_sizes.py $(python tools/board_matrix.py list release)
           # Compile-only capacitive Phantom: CI/source coverage, never published.
           pio run -e rlphantom
 
@@ -480,6 +563,11 @@ jobs:
           label = "${{ steps.ver.outputs.label }}"
           ver   = "${{ steps.ver.outputs.version }}"
           matrix = json.load(open("web-flasher/boards.json"))
+          # LAB firmware may require an updated OTA partition layout.
+          # The mirrored production esp32-partitions.bin must remain
+          # byte-for-byte unchanged. Serve THIS build's partition table
+          # under a lab-only name and reference it from every LAB manifest.
+          shutil.copy("esp32-partitions.bin", "_site/lab-esp32-partitions.bin")
           for cfg in matrix["boards"]:
               if not cfg.get("lab"):
                   continue
@@ -497,6 +585,9 @@ jobs:
                       # its firmware, or the S3 watch's own bootloader and
                       # table -- comes from THIS build, under a lab- name, so a
                       # release that never carried the board still serves it.
+                      if part["path"] == "esp32-partitions.bin":
+                          part["path"] = "lab-esp32-partitions.bin"
+                          continue
                       if part["path"].startswith("esp32-"):
                           continue
                       shutil.copy(part["path"], "_site/lab-" + part["path"])
@@ -652,6 +743,9 @@ jobs:
         run: |
           set -euo pipefail
           python tools/board_matrix.py validate
+          if [ "${{ steps.ver.outputs.is_lab }}" = "true" ]; then
+            python3 tools/verify_lab_site_partitions.py --expected-classic-slot-size 0x1F0000
+          fi
           test -s _site/index.html
           test -s _site/boards.json
           test -s _site/versions.json
