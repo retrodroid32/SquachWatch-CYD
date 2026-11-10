@@ -320,7 +320,10 @@ void reset() {
 // size 1 with a hard edge and no tail curve -- it should read as an
 // interruption, not as the device speaking.
 static void bubble(TFT_eSPI& t, int x, int y, int screenW, const char* s) {
-    t.setTextSize(1);
+    Theme::petFontOn(t);
+    if (t.textWidth(s) > screenW - 16) { // one line must fit the panel
+        t.setTextFont(1); t.setTextSize(1);
+    }
     const int w = t.textWidth(s) + 8;
     const int h = t.fontHeight() + 5;
     if (x + w > screenW - 2) x = screenW - 2 - w;
@@ -330,6 +333,7 @@ static void bubble(TFT_eSPI& t, int x, int y, int screenW, const char* s) {
     t.setTextColor(Theme::WHITE, Theme::BG);
     t.setCursor(x + 4, y + 3);
     t.print(s);
+    Theme::petFontOff(t);
 }
 
 // One visit: in from the left, a beat standing beside Squachy, and out the
@@ -418,8 +422,10 @@ static void yetiTick(TFT_eSPI& t, uint32_t now, int screenW, int cx, int halfW, 
     const bool talking = (s_yPhase == YPhase::TALK) ||
                          (s_yPhase == YPhase::NAP && now - s_yAt < 1800u);
     if (talking && s_yLine) {
-        t.setTextSize(1);
-        const int bw = t.textWidth(s_yLine) + 8;
+        Theme::petFontOn(t);
+        int bw = t.textWidth(s_yLine) + 8;
+        if (bw > screenW - 8) { t.setTextFont(1); t.setTextSize(1); bw = t.textWidth(s_yLine) + 8; }
+        Theme::petFontOff(t);
         int bx = (int)s_yX + Theme::YETI_W / 2 - bw / 2;
         int by = baseY - Theme::YETI_H - 16;
         if (by < 22) by = 22;
@@ -662,8 +668,10 @@ void tick(TFT_eSPI& t, uint32_t now, int screenW, int bandTop, int bandBottom) {
     // which is where the whole joke went the first time. Level with him, and
     // on whichever side has the room.
     if (s_phase == Phase::PERCH || s_phase == Phase::HECKLE) {
-        t.setTextSize(1);
-        const int bw = t.textWidth(QUIPS[s_quip]) + 8;
+        Theme::petFontOn(t);
+        int bw = t.textWidth(QUIPS[s_quip]) + 8;
+        if (bw > screenW - 8) { t.setTextFont(1); t.setTextSize(1); bw = t.textWidth(QUIPS[s_quip]) + 8; }
+        Theme::petFontOff(t);
         const int bx = ((int)s_x + SPR + 4 + bw <= screenW - 2)
                        ? (int)s_x + SPR + 4
                        : (int)s_x - bw - 4;
