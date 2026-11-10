@@ -1,6 +1,7 @@
-V140-FONTS-AFTER205-R1
-# LAB PR #206, based on #205 verified clock-format and CROWD NONE.
-# Port #180 font categories and face controls, live preview, measured rendering.
-# Build both 2.8 ST7789 and 3.2 ST7798; do not publish production.
-# Keep PR #205/#206 unmerged, original feature branches preserved.
-# Physical verification required after CI; check Snooze/Privacy and GUI regression.
+V140-FONTS-SAFE-STAGE1-R1
+# PR #208: staged Fonts settings after PR #206 black-screen hardware failure.
+# Known-good recovery #207 app draw paths preserved globally; Fonts page only.
+# Includes prefs, face/size slider, preview, nested BACK, isolated font helpers.
+# Does NOT yet enable full theme/pet/bubble/button renderer customizations.
+# Target CYD 2.8 ST7789 and 3.2 ST7798, web flasher ?lab=1.
+# Hardware boot and GUI acceptance required; do not merge or tag/release.
