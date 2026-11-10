@@ -1,6 +1,5 @@
-V140-DESK24-CROWDNONE-R1
-# LAB PR #205 on approved R3 master merge a72563e.
-# #178: persistent desk 12/24 clock + timezone and corner clock.
-# #179: main-screen CROWD NONE while preserving SquachMesh transport and desk crowd.
-# Hardware: CYD 2.8 ST7789 and CYD 3.2 ST7798.
-# No production release/tag. Preserve branches. Physical verification required.
+V140-CLOCK-CROWD-RECOVERY-R2
+# PR #207: recover from #206 Fonts R1 black-screen regression.
+# Exact firmware source from previously user-hardware-verified PR #205.
+# No #180 Fonts changes. CYD 2.8 ST7789 and 3.2 ST7798.
+# Web installer LAB only, do not release/tag/merge production.
