@@ -1,7 +1,9 @@
-V140-FONTS-BISECT-A-NVS-R2
-# PR #209: gated LAB firmware publication of NVS-only diagnostic build.
-# Exact Recovery R3 application code except for 12 Fonts NVS key reads,
-# clamping, and serial checksum. No Fonts UI or global rendering changes.
-# NEW: release workflow has required CI gate before build and Pages artifact.
-# Boards: CYD 2.8 ST7789 and CYD 3.2 ST7798.
-# DO NOT MERGE, tag or create a production release; hardware gate pending.
+V140-FONTS-BISECT-A-NVS-R3
+# PR #209: same NVS-only diagnostic firmware as R2.
+# FIX: release-flasher CI gate waits until the independent PR Build
+# for THIS SAME source SHA has fully completed with conclusion=success.
+# No Pages publication if PR Build is still running, fails, or is absent.
+# Then release firmware matrix / site packaging / Pages deployment.
+# No Fonts UI, button, pet, bubble or display rendering changes.
+# CYD 2.8 ST7789 / 3.2 ST7798. Web installer LAB only.
+# Preserve Recovery R3. No merge, tag, or production release.
