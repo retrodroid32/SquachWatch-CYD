@@ -107,6 +107,8 @@ jobs:
       - name: Check source guards and Python files
         run: |
           set -euo pipefail
+          python3 tools/test_check_app_image_sizes.py
+          python3 tools/test_verify_lab_site_partitions.py
           python3 tools/board_matrix.py validate
           python3 -m py_compile tools/mirror_pages.py
           for guard in \
@@ -284,6 +286,9 @@ jobs:
         run: |
           set -euo pipefail
           pio run $(python tools/board_matrix.py pio-args release)
+          # Compare FINAL ESP32 image bytes to the actual partition table.
+          # The ELF estimate overlooked a 240-byte overflow and shipped black-screen LAB firmware.
+          python3 tools/check_app_image_sizes.py $(python tools/board_matrix.py list release)
           # Compile-only capacitive Phantom: CI/source coverage, never published.
           pio run -e rlphantom
 
@@ -557,6 +562,11 @@ jobs:
           label = "${{ steps.ver.outputs.label }}"
           ver   = "${{ steps.ver.outputs.version }}"
           matrix = json.load(open("web-flasher/boards.json"))
+          # LAB firmware may require an updated OTA partition layout.
+          # The mirrored production esp32-partitions.bin must remain
+          # byte-for-byte unchanged. Serve THIS build's partition table
+          # under a lab-only name and reference it from every LAB manifest.
+          shutil.copy("esp32-partitions.bin", "_site/lab-esp32-partitions.bin")
           for cfg in matrix["boards"]:
               if not cfg.get("lab"):
                   continue
@@ -574,6 +584,9 @@ jobs:
                       # its firmware, or the S3 watch's own bootloader and
                       # table -- comes from THIS build, under a lab- name, so a
                       # release that never carried the board still serves it.
+                      if part["path"] == "esp32-partitions.bin":
+                          part["path"] = "lab-esp32-partitions.bin"
+                          continue
                       if part["path"].startswith("esp32-"):
                           continue
                       shutil.copy(part["path"], "_site/lab-" + part["path"])
@@ -729,6 +742,9 @@ jobs:
         run: |
           set -euo pipefail
           python tools/board_matrix.py validate
+          if [ "${{ steps.ver.outputs.is_lab }}" = "true" ]; then
+            python3 tools/verify_lab_site_partitions.py --expected-classic-slot-size 0x1F0000
+          fi
           test -s _site/index.html
           test -s _site/boards.json
           test -s _site/versions.json

@@ -63,7 +63,10 @@ jobs:
           python -m py_compile tools/mirror_pages.py
 
       - name: Build CI board matrix
-        run: pio run $(python tools/board_matrix.py pio-args ci)
+        run: |
+          set -euo pipefail
+          pio run $(python tools/board_matrix.py pio-args ci)
+          python3 tools/check_app_image_sizes.py $(python tools/board_matrix.py list release)
 
       # LAB firmware only: explicitly avoid production releases and tags.
       - name: Package classic CYD LAB firmware
@@ -105,6 +108,8 @@ jobs:
           python3 tools/test_desk_clock_format.py
           python3 tools/test_crowd_none.py
           python3 tools/test_fonts_bisect_a.py
+          python3 tools/test_check_app_image_sizes.py
+          python3 tools/test_verify_lab_site_partitions.py
       - name: Run host tests
         run: make -C test
       - name: Verify CYD32 native LCD transfer and one-time rotation clear
