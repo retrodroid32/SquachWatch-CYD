@@ -50,6 +50,9 @@ struct WifiRemoteIdRecord {
 static WifiRemoteIdRecord s_wifiRidQ[4] = {};
 static uint8_t s_wifiRidHead = 0, s_wifiRidTail = 0;
 static portMUX_TYPE s_wifiRidMutex = portMUX_INITIALIZER_UNLOCKED;
+ // BLE RX callbacks and Wi-Fi queue drains run in different FreeRTOS tasks.
+ // Keep the bounded contact table and its legacy latest-info snapshot atomic.
+static portMUX_TYPE s_remoteIdMutex = portMUX_INITIALIZER_UNLOCKED;
 static void queueWifiRemoteId(const uint8_t mac[6], const uint8_t* pack, uint16_t len) {
     if (!mac || !pack || len < 28 || len > 228) return;
     WifiRemoteIdRecord rec = {};
@@ -1976,24 +1979,49 @@ void DetectionEngine::processDeauthQ() {
 
 void DetectionEngine::mergeRemoteId(const uint8_t* mac, const uint8_t* payload,
                                     uint8_t len) {
-    // BLE host callback: independent contact per MAC+transport. Never mix
-    // another aircraft's partial messages into the current UI snapshot.
+    // BLE host callback: independent MAC+transport record. Wi-Fi decoding
+    // also runs on the Arduino loop, so guard both writers with one lock.
+    if (!mac || !payload) return;
+    const uint32_t now = millis();
+    portENTER_CRITICAL(&s_remoteIdMutex);
     const RemoteId::Tracker::Contact* contact =
-        _ridTracker.ingestBle(mac, payload, len, millis());
-    if (!contact) return;
-    _rid = contact->info;  // legacy most-recent aircraft UI remains unchanged
-    memcpy(_ridMac, contact->mac, sizeof(_ridMac));
+        _ridTracker.ingestBle(mac, payload, len, now);
+    if (contact) {
+        _rid = contact->info;  // preserve existing most-recent UI
+        memcpy(_ridMac, contact->mac, sizeof(_ridMac));
+    }
+    portEXIT_CRITICAL(&s_remoteIdMutex);
 }
 
 void DetectionEngine::mergeRemoteIdWifiPack(const uint8_t* mac, const uint8_t* pack,
                                             uint16_t len) {
-    // Called after the bounded Wi-Fi callback queue is drained in loop().
-    // Keep BLE and Wi-Fi identities separate even when the MAC bytes match.
+    // Radio callback only enqueues; we decode in the regular loop.
+    if (!mac || !pack) return;
+    const uint32_t now = millis();
+    portENTER_CRITICAL(&s_remoteIdMutex);
     const RemoteId::Tracker::Contact* contact =
-        _ridTracker.ingestWifiPack(mac, pack, len, millis());
-    if (!contact) return;
-    _rid = contact->info;
-    memcpy(_ridMac, contact->mac, sizeof(_ridMac));
+        _ridTracker.ingestWifiPack(mac, pack, len, now);
+    if (contact) {
+        _rid = contact->info;
+        memcpy(_ridMac, contact->mac, sizeof(_ridMac));
+    }
+    portEXIT_CRITICAL(&s_remoteIdMutex);
+}
+
+uint8_t DetectionEngine::remoteIdTrackCount(uint32_t now) const {
+    portENTER_CRITICAL(&s_remoteIdMutex);
+    const uint8_t n = _ridTracker.liveCount(now);
+    portEXIT_CRITICAL(&s_remoteIdMutex);
+    return n;
+}
+
+bool DetectionEngine::copyRemoteIdTrack(uint8_t index, uint32_t now,
+                                        RemoteId::Tracker::Contact& out) const {
+    portENTER_CRITICAL(&s_remoteIdMutex);
+    const RemoteId::Tracker::Contact* rec = _ridTracker.contactAt(index, now);
+    if (rec) out = *rec;
+    portEXIT_CRITICAL(&s_remoteIdMutex);
+    return rec != nullptr;
 }
 
 void DetectionEngine::postBle(Detection d) {
