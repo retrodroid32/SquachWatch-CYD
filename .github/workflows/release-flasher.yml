@@ -107,6 +107,7 @@ jobs:
       - name: Check source guards and Python files
         run: |
           set -euo pipefail
+          python3 tools/test_check_app_image_sizes.py
           python3 tools/board_matrix.py validate
           python3 -m py_compile tools/mirror_pages.py
           for guard in \
@@ -284,6 +285,9 @@ jobs:
         run: |
           set -euo pipefail
           pio run $(python tools/board_matrix.py pio-args release)
+          # Compare FINAL ESP32 image bytes to the actual partition table.
+          # The ELF estimate overlooked a 240-byte overflow and shipped black-screen LAB firmware.
+          python3 tools/check_app_image_sizes.py $(python tools/board_matrix.py list release)
           # Compile-only capacitive Phantom: CI/source coverage, never published.
           pio run -e rlphantom
 
