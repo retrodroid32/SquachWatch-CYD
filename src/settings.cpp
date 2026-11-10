@@ -454,6 +454,13 @@ void load() {
         s_fontFace[i] = s_prefs.getUChar(FACE_KEYS[i], 0);
         if (s_fontFace[i] > 2) s_fontFace[i] = 0;
     }
+    // Diagnostic makes the read visible in serial and prevents dead-code
+    // elimination from turning this hardware bisect into a no-op.
+    uint16_t fontCheck = 0;
+    for (uint8_t i = 0; i < FONT_COUNT; ++i)
+        fontCheck = (uint16_t)(fontCheck * 17u + s_fontStep[i] * 3u + s_fontFace[i]);
+    Serial.printf("[fonts-bisect-a] NVS keys=%u checksum=%u; UI/render unchanged\n",
+                  (unsigned)(FONT_COUNT * 2), (unsigned)fontCheck);
     if (s_clockFont > 1)     s_clockFont = 0;
     if (s_clockSize > 2)     s_clockSize = 1;
     if (s_clockBackdrop >= CLOCK_BG_N) s_clockBackdrop = 0;
