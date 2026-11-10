@@ -1,9 +1,9 @@
-V140-FONTS-BISECT-A-NVS-R3
-# PR #209: same NVS-only diagnostic firmware as R2.
-# FIX: release-flasher CI gate waits until the independent PR Build
-# for THIS SAME source SHA has fully completed with conclusion=success.
-# No Pages publication if PR Build is still running, fails, or is absent.
-# Then release firmware matrix / site packaging / Pages deployment.
-# No Fonts UI, button, pet, bubble or display rendering changes.
-# CYD 2.8 ST7789 / 3.2 ST7798. Web installer LAB only.
-# Preserve Recovery R3. No merge, tag, or production release.
+V140-OTA-IMAGE-FIT-R1
+# PR #211: black screen root-cause fix for 2.8 CYD ST7789.
+# Actual prior NVS diagnostic firmware.bin = 1966320 bytes; partition 1966080.
+# New CI / release guard requires >=8192 bytes of real binary headroom
+# in the smallest actual built app partition, NOT just ELF estimates.
+# Apply CYD LTO to reduce binary without moving OTA/NVS/coredump partitions.
+# Same isolated NVS-only firmware code as PR #209; no Fonts UI yet.
+# Build for 2.8 ST7789 and 3.2 ST7798. Verify physical hardware.
+# Keep Recovery R3 and prior branches, no production tag/release/merge.
