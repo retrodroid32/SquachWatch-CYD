@@ -54,6 +54,7 @@ permissions:
   # Least privilege for this workflow: it creates/reads GitHub Releases.
   # Pages/id-token permissions live only in publish-pages.yml.
   contents: write
+  actions: read
 
 # One run per tag at a time. The v1.7.7 push started this workflow twice in
 # the same second -- same commit, same tag, same event -- and the two raced:
@@ -131,6 +132,43 @@ jobs:
         run: |
           make -C sim -j"$(nproc)"
           make -C sim regression
+      # The independent PR Build contains the complete CI firmware matrix.
+      # Never publish a branch LAB while that exact commit is still building.
+      - name: Wait for matching PR Build success before LAB publication
+        if: github.event_name == 'push' && github.ref_type == 'branch'
+        timeout-minutes: 25
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_SHA: ${{ github.sha }}
+          TARGET_BRANCH: ${{ github.ref_name }}
+          TARGET_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          # Fail closed if this branch has no PR Build for THIS commit.
+          # Matching the SHA avoids accidentally accepting an older PASS.
+          for attempt in $(seq 1 100); do
+            runs="$(gh api "repos/${TARGET_REPO}/actions/workflows/build.yml/runs?event=pull_request&branch=${TARGET_BRANCH}&per_page=50")"
+            match="$(jq -c --arg sha "$TARGET_SHA"               '[.workflow_runs[] | select(.head_sha == $sha)] | sort_by(.run_number) | last // empty' <<<"$runs")"
+            if [ -n "$match" ]; then
+              status="$(jq -r '.status' <<<"$match")"
+              conclusion="$(jq -r '.conclusion // ""' <<<"$match")"
+              run_id="$(jq -r '.id' <<<"$match")"
+              echo "Matching PR Build $run_id for $TARGET_SHA: $status $conclusion"
+              if [ "$status" = "completed" ]; then
+                if [ "$conclusion" = "success" ]; then
+                  echo "::notice::PR Build $run_id passed for exact LAB commit; release permitted"
+                  exit 0
+                fi
+                echo "::error::PR Build $run_id concluded $conclusion; blocking LAB publication"
+                exit 1
+              fi
+            else
+              echo "No PR Build found yet for $TARGET_BRANCH at $TARGET_SHA ($attempt/100)"
+            fi
+            sleep 12
+          done
+          echo "::error::Matching PR Build did not pass within gate timeout; LAB publication blocked"
+          exit 1
 
   build-and-release:
     needs: [preflight, ci-gate]
