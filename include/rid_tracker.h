@@ -57,13 +57,21 @@ public:
         return n;
     }
 
+    // Enumerate live contacts densely in [0, liveCount(now)); holes left by
+    // expiration/eviction must not make a future list silently skip aircraft.
     const Contact* contactAt(uint8_t index, uint32_t now) const {
-        if (index >= kCapacity || !isFresh(_contacts[index], now)) return nullptr;
-        return &_contacts[index];
+        uint8_t seen = 0;
+        for (uint8_t slot = 0; slot < kCapacity; ++slot) {
+            if (!isFresh(_contacts[slot], now)) continue;
+            if (seen++ == index) return &_contacts[slot];
+        }
+        return nullptr;
     }
 
+    // Latest is a physical slot, not a dense live ordinal.
     const Contact* latest(uint32_t now) const {
-        return _latest < kCapacity ? contactAt(_latest, now) : nullptr;
+        if (_latest >= kCapacity || !isFresh(_contacts[_latest], now)) return nullptr;
+        return &_contacts[_latest];
     }
 
     const Contact* find(const uint8_t* mac, Transport source, uint32_t now) const {

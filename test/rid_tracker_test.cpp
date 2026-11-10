@@ -113,5 +113,27 @@ int main() {
        fresh && strcmp(fresh->info.serial,"NEW")==0 && !fresh->info.haveLoc
        && fresh->observations==1);
 
+    suite("Dense enumeration with an expired middle slot");
+    Tracker sparse;
+    const uint8_t c0[6] = {0x02,0,0,0,0,0};
+    const uint8_t c1[6] = {0x02,0,0,0,0,1};
+    const uint8_t c2[6] = {0x02,0,0,0,0,2};
+    basic("AIR-0"); sparse.ingestBle(c0,legacy(),sizeof(ad),1000);
+    basic("AIR-1"); sparse.ingestBle(c1,legacy(),sizeof(ad),1001);
+    basic("AIR-2"); sparse.ingestBle(c2,legacy(),sizeof(ad),1002);
+    basic("AIR-0"); sparse.ingestBle(c0,legacy(),sizeof(ad),15000);
+    basic("AIR-2"); sparse.ingestBle(c2,legacy(),sizeof(ad),15001);
+    ck("only two live records remain", sparse.liveCount(32000) == 2);
+    ck("dense ordinal zero finds first aircraft",
+       sparse.contactAt(0,32000) &&
+       strcmp(sparse.contactAt(0,32000)->info.serial,"AIR-0")==0);
+    ck("dense ordinal one skips expired middle record",
+       sparse.contactAt(1,32000) &&
+       strcmp(sparse.contactAt(1,32000)->info.serial,"AIR-2")==0);
+    ck("ordinal equal to liveCount is unavailable", sparse.contactAt(2,32000)==nullptr);
+    ck("latest still points to physical slot of AIR-2",
+       sparse.latest(32000) &&
+       strcmp(sparse.latest(32000)->info.serial,"AIR-2")==0);
+
     return report();
 }

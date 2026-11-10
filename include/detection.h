@@ -267,7 +267,10 @@ public:
     // Assemble up to eight aircraft independently across alternating
     // broadcasts; keep the legacy latest-record getter for the current UI.
     // The full table is read-only; callers must use millis() for the TTL.
-    void mergeRemoteId(const uint8_t* mac, const uint8_t* payload, uint8_t len);
+    // Returns a snapshot for THIS aircraft, never a racy global latest
+    // record that a concurrent Wi-Fi Remote ID packet may have replaced.
+    bool mergeRemoteId(const uint8_t* mac, const uint8_t* payload, uint8_t len,
+                       RemoteId::Info* decoded = nullptr);
     void mergeRemoteIdWifiPack(const uint8_t* mac, const uint8_t* pack, uint16_t len);
     const RemoteId::Info& remoteId() const { return _rid; }
     const uint8_t*        remoteIdMac() const { return _ridMac; }

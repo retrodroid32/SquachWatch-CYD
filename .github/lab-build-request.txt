@@ -1,5 +1,7 @@
-RID-MULTI8-LAB-R2
+RID-MULTI8-LAB-R3
 # PR #213: bounded 8-contact Remote ID assembler with concurrency fix.
+# R3: BLE names use an atomic per-MAC snapshot; enumerate live contacts
+# densely even when one middle slot has expired. Host test covers holes.
 # BLE NimBLE host callbacks and Wi-Fi queue loop share an RTOS critical section.
 # Read-only contact diagnostics return copies under same lock; no live pointers.
 # Track key is (MAC, transport), 30-second TTL, fixed ring of 8 contacts.

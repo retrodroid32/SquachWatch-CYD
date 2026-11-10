@@ -713,10 +713,10 @@ class BleScanCallbacks : public NimBLEScanCallbacks {
         // Decode it before the entry is posted so the log row can be named
         // after the actual aircraft rather than after a service UUID.
         if (det.type == DetectionType::DRONE) {
-            g_engine->mergeRemoteId(mac, adv->getPayload().data(),
-                                    (uint8_t)adv->getPayload().size());
-            const RemoteId::Info& rid = g_engine->remoteId();
-            if (rid.haveBasic && rid.serial[0]) {
+            RemoteId::Info rid;
+            if (g_engine->mergeRemoteId(mac, adv->getPayload().data(),
+                                        (uint8_t)adv->getPayload().size(), &rid) &&
+                rid.haveBasic && rid.serial[0]) {
                 strncpy(det.name, rid.serial, sizeof(det.name) - 1);
                 det.name[sizeof(det.name) - 1] = '\0';
             }
@@ -1977,20 +1977,25 @@ void DetectionEngine::processDeauthQ() {
     }
 }
 
-void DetectionEngine::mergeRemoteId(const uint8_t* mac, const uint8_t* payload,
-                                    uint8_t len) {
+bool DetectionEngine::mergeRemoteId(const uint8_t* mac, const uint8_t* payload,
+                                    uint8_t len, RemoteId::Info* decoded) {
     // BLE host callback: independent MAC+transport record. Wi-Fi decoding
     // also runs on the Arduino loop, so guard both writers with one lock.
-    if (!mac || !payload) return;
+    if (!mac || !payload) return false;
     const uint32_t now = millis();
     portENTER_CRITICAL(&s_remoteIdMutex);
     const RemoteId::Tracker::Contact* contact =
         _ridTracker.ingestBle(mac, payload, len, now);
+    const bool accepted = contact != nullptr;
     if (contact) {
         _rid = contact->info;  // preserve existing most-recent UI
         memcpy(_ridMac, contact->mac, sizeof(_ridMac));
+        // Copy under the same lock: BLE log labels must describe this
+        // packet's MAC, even if Wi-Fi updates the latest record next.
+        if (decoded) *decoded = contact->info;
     }
     portEXIT_CRITICAL(&s_remoteIdMutex);
+    return accepted;
 }
 
 void DetectionEngine::mergeRemoteIdWifiPack(const uint8_t* mac, const uint8_t* pack,
