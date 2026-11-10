@@ -61,6 +61,14 @@ static uint8_t     s_clockFont     = 0;   // 0 segments, 1 Bangers
 static uint8_t     s_clockSize     = 1;   // 0 small, 1 medium, 2 large
 static uint8_t     s_clockBackdrop = 0;
 static bool        s_clock24Hour = false;   // 0 plain, 1 rain, 2 snow, 3 toasters, 4 fire, 5 stars, 6 fireflies
+// Font preferences use the same NVS keys as upstream v1.40.0.
+static const uint8_t FONT_DEFAULT[(int)FontKind::COUNT] = {2, 2, 2, 2, 2, 2};
+static uint8_t s_fontStep[(int)FontKind::COUNT] = {2, 2, 2, 2, 2, 2};
+static uint8_t s_fontFace[(int)FontKind::COUNT] = {0, 0, 0, 0, 0, 0};
+static const char* const FONT_KEYS[(int)FontKind::COUNT] =
+    {"fntMenu", "fntText", "fntBtn", "fntBub", "fntXp", "fntPet"};
+static const char* const FACE_KEYS[(int)FontKind::COUNT] =
+    {"fcMenu", "fcText", "fcBtn", "fcBub", "fcXp", "fcPet"};
 static const uint8_t CLOCK_BG_N  = 7;
 // Bit N = DetectionType N enabled. UNKNOWN (0) is never included -- see
 // Types that arrive switched OFF, on a fresh install and on upgrade alike.
@@ -436,6 +444,12 @@ void load() {
     s_clockSize     = s_prefs.getUChar("clksize", 1);
     s_clockBackdrop = s_prefs.getUChar("clkbg", 0);
     s_clock24Hour = s_prefs.getBool("clk24", false);
+    for (int i = 0; i < (int)FontKind::COUNT; ++i) {
+        s_fontStep[i] = s_prefs.getUChar(FONT_KEYS[i], FONT_DEFAULT[i]);
+        if (s_fontStep[i] > 4) s_fontStep[i] = FONT_DEFAULT[i];
+        s_fontFace[i] = s_prefs.getUChar(FACE_KEYS[i], 0);
+        if (s_fontFace[i] > 2) s_fontFace[i] = 0;
+    }
     if (s_clockFont > 1)     s_clockFont = 0;
     if (s_clockSize > 2)     s_clockSize = 1;
     if (s_clockBackdrop >= CLOCK_BG_N) s_clockBackdrop = 0;
@@ -590,6 +604,22 @@ void        cycleClockFont()    { s_clockFont = (uint8_t)((s_clockFont + 1) % 2)
 uint8_t     clockSize()         { return s_clockSize; }
 const char* clockSizeName()     { static const char* const N[3] = { "SMALL", "MEDIUM", "LARGE" }; return N[s_clockSize]; }
 void        cycleClockSize()    { s_clockSize = (uint8_t)((s_clockSize + 1) % 3); s_prefs.putUChar("clksize", s_clockSize); }
+uint8_t fontStep(FontKind k) {
+    return (uint8_t)k < (uint8_t)FontKind::COUNT ? s_fontStep[(int)k] : 2;
+}
+uint8_t fontFace(FontKind k) {
+    return (uint8_t)k < (uint8_t)FontKind::COUNT ? s_fontFace[(int)k] : 0;
+}
+void setFontStep(FontKind k, uint8_t step) {
+    if ((uint8_t)k >= (uint8_t)FontKind::COUNT || step > 4 || s_fontStep[(int)k] == step) return;
+    s_fontStep[(int)k] = step;
+    s_prefs.putUChar(FONT_KEYS[(int)k], step);
+}
+void setFontFace(FontKind k, uint8_t face) {
+    if ((uint8_t)k >= (uint8_t)FontKind::COUNT || face > 2 || s_fontFace[(int)k] == face) return;
+    s_fontFace[(int)k] = face;
+    s_prefs.putUChar(FACE_KEYS[(int)k], face);
+}
 uint8_t     clockBackdrop()     { return s_clockBackdrop; }
 const char* clockBackdropName() {
     static const char* const N[CLOCK_BG_N] = { "PLAIN", "RAIN", "SNOW", "TOASTERS", "FIRE", "STARFIELD", "FIREFLIES" };
