@@ -104,6 +104,7 @@ jobs:
           python3 tools/test_v141_pocket_mode.py
           python3 tools/test_desk_clock_format.py
           python3 tools/test_crowd_none.py
+          python3 tools/test_fonts_bisect_a.py
       - name: Run host tests
         run: make -C test
       - name: Verify CYD32 native LCD transfer and one-time rotation clear
