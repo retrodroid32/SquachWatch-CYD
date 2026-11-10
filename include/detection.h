@@ -6,6 +6,7 @@
 #include "state.h"
 #include "sd_log.h"
 #include "remote_id.h"
+#include "rid_tracker.h"
 #include "spam_watch.h"
 #include <Preferences.h>
 #include <cstring>   // memcmp, for the inline isWatched()/isHunted() below
@@ -263,16 +264,19 @@ public:
     // call for every advert; it returns immediately for anything that is
     // not a Remote ID message.
     //
-    // Only ONE aircraft is kept, the most recent, and it resets whenever a
-    // different MAC starts talking. A drone sends Basic ID, Location and
-    // System as separate adverts, so a single accumulating record is what
-    // turns three partial messages into one useful answer -- and one
-    // record is the right number for a screen this size, where the
-    // question is "what is that thing" rather than "catalogue the sky".
+    // Assemble up to eight aircraft independently across alternating
+    // broadcasts; keep the legacy latest-record getter for the current UI.
+    // The full table is read-only; callers must use millis() for the TTL.
     void mergeRemoteId(const uint8_t* mac, const uint8_t* payload, uint8_t len);
     void mergeRemoteIdWifiPack(const uint8_t* mac, const uint8_t* pack, uint16_t len);
     const RemoteId::Info& remoteId() const { return _rid; }
     const uint8_t*        remoteIdMac() const { return _ridMac; }
+    uint8_t remoteIdTrackCount(uint32_t now) const {
+        return _ridTracker.liveCount(now);
+    }
+    const RemoteId::Tracker::Contact* remoteIdTrack(uint8_t index, uint32_t now) const {
+        return _ridTracker.contactAt(index, now);
+    }
 
     // Called from the BT Classic inquiry callback when a name match hits.
     void postBtClassic(Detection d);
@@ -709,6 +713,7 @@ private:
     // The most recently decoded Remote ID broadcast, and whose it is.
     RemoteId::Info _rid;
     uint8_t        _ridMac[6] = {0, 0, 0, 0, 0, 0};
+    RemoteId::Tracker _ridTracker;  // 8 bounded aircraft; no dynamic allocation
 
     // Detection log
     Detection  _log[LOG_CAP];
