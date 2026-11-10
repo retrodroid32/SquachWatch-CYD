@@ -438,26 +438,9 @@ bool lockButtonHit(int x, int y, int w) {
 #define BUBBLE_FONT 2
 #endif
 #if BUBBLE_FONT == 2
-// The font/height are a unit: Squachy's wrap and box calculation reads the
-// same height as the actual face. Default 0/2 stays the historical font 2.
-static int s_bubbleHeight = 16;
-void bubbleFontOn(TFT_eSPI& t) {
-    const int delta = (int)Settings::fontStep(Settings::FontKind::BUBBLES) - 2;
-    const bool pixel = Settings::fontFace(Settings::FontKind::BUBBLES) == 1;
-    if (pixel) {
-        t.setTextFont(1);
-        t.setTextSize((uint8_t)(delta < 0 ? 1 : delta > 0 ? 3 : 2));
-    } else if (delta < 0) {
-        t.setTextFont(1);
-        t.setTextSize(1);
-    } else {
-        t.setTextFont(2);
-        t.setTextSize((uint8_t)(delta > 0 ? 2 : 1));
-    }
-    s_bubbleHeight = t.fontHeight();
-}
-void bubbleFontOff(TFT_eSPI& t) { t.setTextFont(1); t.setTextSize(1); }
-int  bubbleTextH()  { return s_bubbleHeight; }
+void bubbleFontOn(TFT_eSPI& t)  { t.setTextFont(2); }
+void bubbleFontOff(TFT_eSPI& t) { t.setTextFont(1); }
+int  bubbleTextH()  { return 16; }
 int  bubbleAscent() { return 0; }
 #else
 static int s_bubAb = -1, s_bubBb = 0;
@@ -507,9 +490,7 @@ void drawPinnedBack(TFT_eSPI& t, const char* label) {
     // second band it lands outside the buffer and draws nothing at all. A
     // strip with no label on it. Shared helpers say what they want.
     t.setTextFont(1);
-    uint8_t sz = uiMenuTextSize(t);
-    while (sz > 1 && sz * 8 > h - 4) --sz;
-    t.setTextSize(sz);
+    t.setTextSize(uiMenuTextSize(t));
     t.setTextColor(CYAN, BG);
     t.setCursor((w - t.textWidth(label)) / 2, y + (h - t.fontHeight()) / 2);
     t.print(label);
@@ -554,40 +535,35 @@ void drawTitleBar(TFT_eSPI& t, const char* title) {
 }
 
 uint8_t uiTextSize(TFT_eSPI& t, uint8_t base) {
-    // TEXT can step down the bigger board's body text, not above the
-    // size hard-coded layouts were drawn for on the classic 2.8/3.2.
-    if (base == 1 && t.width() >= 400)
-        return fontDelta(Settings::FontKind::TEXT) < 0 ? 1 : 2;
-    return base;
+    return (base == 1 && t.width() >= 400) ? 2 : base;
 }
 
+uint8_t uiMenuTextSize(TFT_eSPI& t) {
+    return t.width() >= 400 ? 3 : 2;
+}
+
+// Staged font-controls bring-up: retain ALL proven recovery rendering paths.
+// These helpers power only the Fonts settings page and its preview in this LAB.
+// Do not apply font changes to global button/bubble/pet draw routines before
+// a physical boot/display gate on both classic CYDs.
 int8_t fontDelta(Settings::FontKind k) {
-    const int v = (int)Settings::fontStep(k) - 2;
-    return (int8_t)(v < -2 ? -2 : v > 2 ? 2 : v);
+    int step = (int)Settings::fontStep(k) - 2;
+    if (step < -2) step = -2;
+    if (step > 2) step = 2;
+    return (int8_t)step;
 }
-
 void fontRange(TFT_eSPI& t, Settings::FontKind k, int8_t& lo, int8_t& hi) {
-    using Settings::FontKind;
     switch (k) {
-        case FontKind::MENUS:
-            lo = (int8_t)(t.width() >= 400 ? -2 : -1);
-            hi = (int8_t)(t.height() < 200 ? 0 : 1);
-            return;
-        case FontKind::TEXT:
-            lo = (int8_t)(t.width() >= 400 ? -1 : 0); hi = 0; return;
-        case FontKind::BUTTONS:
-            lo = 0; hi = 2; return; // actual labels must fit their boxes
-        case FontKind::BUBBLES:
-            lo = -1; hi = 1; return; // wrapText + bubbleTextH provide layout
-        case FontKind::PETS:
-            lo = 0; hi = 1; return;
-        case FontKind::XP_TILES:
-            lo = 0; hi = 0; return; // XP counter UI backport is separate
-        default:
-            lo = hi = 0; return;
+        case Settings::FontKind::MENUS: lo = (int8_t)(t.width() >= 400 ? -2 : -1);
+            hi = (int8_t)(t.height() < 200 ? 0 : 1); break;
+        case Settings::FontKind::TEXT: lo = (int8_t)(t.width() >= 400 ? -1 : 0); hi = 0; break;
+        case Settings::FontKind::BUTTONS: lo = 0; hi = 2; break;
+        case Settings::FontKind::BUBBLES: lo = -1; hi = 1; break;
+        case Settings::FontKind::PETS: lo = 0; hi = 1; break;
+        case Settings::FontKind::XP_TILES: lo = hi = 0; break;
+        default: lo = hi = 0; break;
     }
 }
-
 void setFontDelta(TFT_eSPI& t, Settings::FontKind k, int step) {
     int8_t lo = 0, hi = 0;
     fontRange(t, k, lo, hi);
@@ -595,19 +571,15 @@ void setFontDelta(TFT_eSPI& t, Settings::FontKind k, int step) {
     if (step > hi) step = hi;
     Settings::setFontStep(k, (uint8_t)(step + 2));
 }
-
 const char* fontStepName(int8_t s) {
     static const char* const names[5] = {"TINY", "SMALLER", "NORMAL", "BIGGER", "HUGE"};
     if (s < -2) s = -2;
     if (s > 2) s = 2;
     return names[s + 2];
 }
-
 bool fontHasFace(Settings::FontKind k) {
-    return k == Settings::FontKind::MENUS ||
-           k == Settings::FontKind::BUTTONS ||
-           k == Settings::FontKind::BUBBLES ||
-           k == Settings::FontKind::PETS;
+    return k == Settings::FontKind::MENUS || k == Settings::FontKind::BUTTONS ||
+           k == Settings::FontKind::BUBBLES || k == Settings::FontKind::PETS;
 }
 bool fontSmooth(Settings::FontKind k) {
     const uint8_t face = Settings::fontFace(k);
@@ -616,29 +588,15 @@ bool fontSmooth(Settings::FontKind k) {
     return k == Settings::FontKind::BUBBLES;
 }
 void toggleFontFace(Settings::FontKind k) {
-    if (fontHasFace(k))
-        Settings::setFontFace(k, fontSmooth(k) ? 1 : 2);
-}
-uint8_t uiMenuTextSize(TFT_eSPI& t) {
-    int size = (t.width() >= 400 ? 3 : 2) + fontDelta(Settings::FontKind::MENUS);
-    if (size < 1) size = 1;
-    if (size > 4) size = 4;
-    return (uint8_t)size;
+    if (fontHasFace(k)) Settings::setFontFace(k, fontSmooth(k) ? 1 : 2);
 }
 void petFontOn(TFT_eSPI& t) {
     const bool smooth = fontSmooth(Settings::FontKind::PETS);
-    const int delta = fontDelta(Settings::FontKind::PETS);
     t.setTextFont(smooth ? 2 : 1);
-    t.setTextSize((uint8_t)(smooth ? 1 : (delta > 0 ? 2 : 1)));
+    t.setTextSize((uint8_t)(smooth ? 1 : (fontDelta(Settings::FontKind::PETS) > 0 ? 2 : 1)));
 }
-void petFontOff(TFT_eSPI& t) {
-    t.setTextFont(1); t.setTextSize(1);
-}
-int xpTileScale() {
-    // This fork's classic counters are not yet XP tiles. Keep the
-    // published UI until the independent XP-style feature is ported.
-    return 1;
-}
+void petFontOff(TFT_eSPI& t) { t.setTextFont(1); t.setTextSize(1); }
+int xpTileScale() { return 1; }
 
 void drawButton(TFT_eSPI& t, int x, int y, int w, int h,
                 const char* label, bool pressed, uint8_t textSize) {
@@ -658,36 +616,12 @@ void drawButton(TFT_eSPI& t, int x, int y, int w, int h,
         t.setTextSize(ts);
         if (t.textWidth(label) > w - 6) ts = textSize;
     }
-    // Measure each candidate against the actual button, not the panel width.
-    // Oversized labels gracefully fall back instead of overlapping borders.
-    int requested = (int)ts + fontDelta(Settings::FontKind::BUTTONS);
-    if (requested > 4) requested = 4;
-    if (requested < 1) requested = 1;
-    t.setTextFont(1);
-    int chosen = ts;
-    for (int trySize = requested; trySize >= 1; --trySize) {
-        t.setTextSize((uint8_t)trySize);
-        if (t.textWidth(label) <= w - 6 && t.fontHeight() <= h - 2) {
-            chosen = trySize;
-            break;
-        }
-    }
-    t.setTextSize((uint8_t)chosen);
-    // Explicit SMOOTH face only where the box really holds it.
-    const uint8_t face = Settings::fontFace(Settings::FontKind::BUTTONS);
-    if (face == 2 && chosen <= 2) {
-        t.setTextFont(2);
-        t.setTextSize(1);
-        if (t.textWidth(label) > w - 6 || t.fontHeight() > h - 2) {
-            t.setTextFont(1); t.setTextSize((uint8_t)chosen);
-        }
-    }
+    t.setTextSize(ts);
     t.setTextColor(fg, fill);
-    const int tw = t.textWidth(label);
-    const int th = t.fontHeight();
+    int tw = t.textWidth(label);
+    int th = t.fontHeight();
     t.setCursor(x + (w - tw) / 2, y + (h - th) / 2);
     t.print(label);
-    t.setTextFont(1); t.setTextSize(1);
 }
 
 void drawWin95Button(TFT_eSPI& t, int x, int y, int w, int h,
@@ -722,32 +656,15 @@ void drawWin95Button(TFT_eSPI& t, int x, int y, int w, int h,
     // the tell that it is a costume. Centred on the FACE rather than on the
     // whole rect, so the bevel does not pull the text off-centre, then the
     // one-pixel press offset on top.
-    t.setTextFont(1);
     t.setTextSize(1);
     t.setTextWrap(false);
     t.setTextColor(BLACK, W95_FACE);
-    // Win95 buttons also use the bounded BUTTONS ladder.
-    int size = 1 + fontDelta(Settings::FontKind::BUTTONS);
-    if (size < 1) size = 1;
-    if (size > 4) size = 4;
-    for (; size > 1; --size) {
-        t.setTextSize((uint8_t)size);
-        if (t.textWidth(label) <= w - 8 && t.fontHeight() <= h - 4) break;
-    }
-    t.setTextSize((uint8_t)size);
-    if (Settings::fontFace(Settings::FontKind::BUTTONS) == 2 && size <= 2) {
-        t.setTextFont(2); t.setTextSize(1);
-        if (t.textWidth(label) > w - 8 || t.fontHeight() > h - 4) {
-            t.setTextFont(1); t.setTextSize((uint8_t)size);
-        }
-    }
     const int tw = t.textWidth(label);
     const int th = t.fontHeight();
     const int ox = sunken ? 1 : 0;
     t.setCursor(x + 2 + (w - 4 - tw) / 2 + ox,
                 y + 2 + (h - 4 - th) / 2 + ox);
     t.print(label);
-    t.setTextFont(1); t.setTextSize(1);
 }
 
 ButtonBarGeom computeButtonBar(int screenW, int screenH) {
