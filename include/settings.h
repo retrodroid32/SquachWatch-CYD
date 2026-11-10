@@ -83,6 +83,14 @@ namespace Settings {
     // The desk clock defaults to the historical 12-hour display.
     bool        clock24Hour();
     void        toggleClock24Hour();
+    // Upstream v1.38+ FONTS: each category stores a 0..4 step, default 2
+    // (no visual difference on existing installations).
+    enum class FontKind : uint8_t { MENUS = 0, TEXT, BUTTONS, BUBBLES, XP_TILES, PETS, COUNT };
+    uint8_t fontStep(FontKind k);
+    void setFontStep(FontKind k, uint8_t step);
+    // Face 0 = existing built-in face; 1 = pixel, 2 = smooth.
+    uint8_t fontFace(FontKind k);
+    void setFontFace(FontKind k, uint8_t face);
     void       cyclePrevBackground(); // same, but backward
 
     // Disables the two CLEAR-screen gestures that cycle background
