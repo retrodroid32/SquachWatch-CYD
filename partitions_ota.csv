@@ -1,50 +1,18 @@
-# SquachWatch-CYD — two-slot partition table, for over-the-air updates.
+# SquachWatch-CYD classic 4MB flash: dual OTA plus safe BlackBox Events (R5)
 #
-# WHY THIS EXISTS. Every release up to and including v1.6.0 shipped on Arduino's
-# huge_app.csv: one 3 MB app slot and 896 KB of SPIFFS that nothing ever touched.
-# One slot cannot take an OTA update — the board has to receive a new build into
-# a second slot while still running the old one, and be able to fall back if the
-# new one does not boot. So the app space is split in two here.
+# R4 filled the original raw BlackBox gap with its expanded OTA app1.
+# R5 reduces app1 to 0x1E4000 to reserve 48KB raw, unpartitioned flash at
+# 0x3E4000..0x3F0000 for Events. app0 and coredump remain unchanged.
+# CI verifies actual firmware.bin fits BOTH slots with >=8192B free.
 #
-# THE ORDER THIS HAS TO SHIP IN. A partition table cannot itself be replaced
-# over the air: the bootloader reads it before any app runs. So this must go out
-# as a NORMAL web-flasher release that people install over USB, and only builds
-# AFTER that one can be delivered by OTA. Shipping OTA first would offer an
-# update that bricks the update path.
-#
-# WHAT IS DELIBERATELY UNCHANGED:
-#   nvs      at 0x9000, 20 KB — settings, the PIN and its duress twin, mesh
-#            pairings, Squachy's stats. Same offset and same size as huge_app,
-#            which is what lets a board keep all of it across the migration.
-#   coredump at 0x3F0000, 64 KB — same place, so the crash summary still works.
-#
-# WHAT CHANGED:
-#   app0/app1  0x1F0000 (2,031,616 bytes) each. Both app starts are 64KB aligned.
-#              The 2026-11-10 upstream features crossed the former 0x1E0000
-#              limit; the actual firmware.bin (not PlatformIO's ELF estimate)
-#              now has 64 KB more space in EACH OTA slot. CI guards binary size.
-#   spiffs     gone. Arduino's min_spiffs.csv keeps a 128 KB scrap of it; this
-#              project never mounts a filesystem (the SD card is its own thing,
-#              see sd_log.cpp), so that space goes to the app slots instead.
-#
-# Layout, for reading at a glance:
-#   0x009000  20 KB   nvs
-#   0x00E000   8 KB   otadata      which slot the bootloader should run
-#   0x010000   1.9375 MB app0 (0x1F0000 bytes), ends at 0x200000
-#   0x200000   1.9375 MB app1 (0x1F0000 bytes), ends at 0x3F0000
-#   0x3F0000  64 KB coredump (unchanged)
-#
-# 2026-11-10 LAB migration: the former 128KB gap at 0x3D0000 was split
-# evenly between app0/app1 (+0x10000 each). app1 is MOVED from 0x1F0000 to
-# 0x200000; USB web flashing MUST write the matching partition table at 0x8000
-# and boot_app0 OTA metadata at 0xE000. NVS (0x9000) and coredump (0x3F0000)
-# do not move, so saved settings survive a normal, non-erase web flash.
-# Do NOT attempt this partition migration as OTA firmware-only update:
-# a firmware-only image does not install a new partition table.
+# This layout requires USB browser installation of matching partitions.bin
+# at offset 0x8000 and OTA metadata with firmware. OTA firmware-only updates
+# cannot change the partition map. Do NOT erase full flash or NVS settings.
+# Previous events in old R4-overwritten raw flash cannot be recovered.
 #
 # Name,   Type, SubType, Offset,   Size,     Flags
 nvs,      data, nvs,     0x9000,   0x5000,
 otadata,  data, ota,     0xe000,   0x2000,
 app0,     app,  ota_0,   0x10000,  0x1F0000,
-app1,     app,  ota_1,   0x200000, 0x1F0000,
+app1,     app,  ota_1,   0x200000,0x1E4000,
 coredump, data, coredump,0x3F0000, 0x10000,

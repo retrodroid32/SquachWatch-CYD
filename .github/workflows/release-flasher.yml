@@ -109,6 +109,7 @@ jobs:
           set -euo pipefail
           python3 tools/test_check_app_image_sizes.py
           python3 tools/test_verify_lab_site_partitions.py
+          python3 tools/test_blackbox_ota_layout.py
           python3 tools/board_matrix.py validate
           python3 -m py_compile tools/mirror_pages.py
           for guard in \
@@ -119,7 +120,8 @@ jobs:
             tools/test_desk_clock_format.py \
             tools/test_crowd_none.py \
             tools/test_check_app_image_sizes.py \
-            tools/test_verify_lab_site_partitions.py; do
+            tools/test_verify_lab_site_partitions.py \
+            tools/test_blackbox_ota_layout.py; do
             if test -f "$guard"; then
               python3 "$guard"
             fi

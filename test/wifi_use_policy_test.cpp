@@ -1,3 +1,6 @@
+#ifndef CYD32
+#define CYD 1
+#endif
 #include "wifi_use_policy.h"
 #include <cassert>
 #include <cstdio>
@@ -53,15 +56,19 @@ int main() {
     assert(!WifiUsePolicy::retry(true, true, true, false));
     const uint8_t bandCounts[] = { 1, 2, 4, 16 };
     for (uint8_t bands : bandCounts) {
-        assert(!WifiScreenPolicy::keyboardDirectPanel(true, bands));
-        assert(!WifiScreenPolicy::networksDirectPanel(true, bands));
+        const bool direct = bands > 1;
+        assert(WifiScreenPolicy::keyboardDirectPanel(true, bands) == direct);
+        assert(WifiScreenPolicy::networksDirectPanel(true, bands) == direct);
     }
-    assert(!WifiScreenPolicy::networksDirectPanel(false, 1));
-    // 2.8 uses only the buffered path: unchanged 400ms settle semantics.
+    assert(WifiScreenPolicy::networksDirectPanel(false, 1));
+    assert(WifiScreenPolicy::keyboardDirectPanel(false, 1));
+    // Buffered rendering preserved; unbuffered/partial recovery now incremental.
+    assert(WifiScreenPolicy::passwordFullPaint(true, true, 0, 400));
+    assert(!WifiScreenPolicy::passwordFullPaint(false, true, 399, 400));
     assert(WifiScreenPolicy::passwordFullPaint(true, false, 0, 400));
     assert(WifiScreenPolicy::passwordFullPaint(false, false, 399, 400));
     assert(!WifiScreenPolicy::passwordFullPaint(false, false, 400, 400));
-    puts("PASS: 2.8 WiFi USE and UI render policy unchanged");
+    puts("PASS: 2.8 WiFi USE framebuffer-loan and direct-fallback policy");
 #endif
     return 0;
 }

@@ -82,8 +82,8 @@ int main() {
     suite("A full ring keeps its newest");
     for (uint16_t i = 101; i <= 5000; i++) BlackBox::noteDetection(det(i), false);
     s = walkDets();
-    ck("no more than 30 sectors of records", s.n <= 30 * 63);
-    ck("at least 29 sectors of records", s.n >= 29 * 63);
+    ck("no more than 10 sectors of records", s.n <= 10 * 63);
+    ck("at least 9 sectors of records", s.n >= 9 * 63);
     ck("the newest is the last written", s.first == 5000 && s.ordered);
     ck("the oldest kept is a recent one", s.last == (uint16_t)(5000 - s.n + 1));
     BlackBox::testReopen();
@@ -143,7 +143,7 @@ int main() {
     {
         uint8_t* f = BlackBox::testFlash();
         srand(7);
-        for (uint32_t i = 0; i < 32u * 4096u; i++) f[i] = (uint8_t)rand();
+        for (uint32_t i = 0; i < 12u * 4096u; i++) f[i] = (uint8_t)rand();
         BlackBox::testReopen();
         ck("nothing kept from noise", BlackBox::detectionsKept() == 0 && BlackBox::crashesKept() == 0);
         ck("the boot count starts over", BlackBox::bootNumber() == 1);
@@ -161,7 +161,7 @@ int main() {
     {
         uint8_t* f = BlackBox::testFlash();
         bool blank = true;
-        for (uint32_t i = 0; i < 32u * 4096u; i++) if (f[i] != 0xFF) { blank = false; break; }
+        for (uint32_t i = 0; i < 12u * 4096u; i++) if (f[i] != 0xFF) { blank = false; break; }
         ck("every byte erased", blank);
     }
 

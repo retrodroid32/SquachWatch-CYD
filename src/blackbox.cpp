@@ -21,12 +21,14 @@ namespace BlackBox {
 namespace {
 
 #if defined(TWATCH_S3)
-const uint32_t BASE    = 0x810000;   // the gap after app1; see partitions_twatch.csv
+const uint32_t BASE    = 0x810000;   // T-Watch layout unchanged
+const uint8_t  SECTORS = 32;
 #else
-const uint32_t BASE    = 0x3D0000;   // the gap after app1; see partitions_ota.csv
+// Classic CYD R5 reserves a safe 48KB raw ring after app1.
+const uint32_t BASE    = 0x3E4000;
+const uint8_t  SECTORS = 12;
 #endif
 const uint32_t SECTOR  = 4096;
-const uint8_t  SECTORS = 32;
 const uint32_t SIZE    = SECTORS * SECTOR;
 const uint16_t REC     = 64;
 const uint16_t PER     = SECTOR / REC - 1;   // slot 0 is the header: 63 records
@@ -213,7 +215,7 @@ Ring s_boots(KIND_BOOT, 0, 2);
 Ring s_dets (KIND_DET, 2, 24);
 Ring s_batt (KIND_BATT, 26, 6);
 #else
-Ring s_dets (KIND_DET, 2, 30);
+Ring s_dets (KIND_DET, 2, SECTORS - 2);
 #endif
 bool     s_ready     = false;
 uint16_t s_bootNo    = 1;

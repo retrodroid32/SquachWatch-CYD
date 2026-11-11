@@ -1772,7 +1772,8 @@ static void lendFrameToDownload(bool preservePanel) {
 }
 static void restoreFrameBuffer() {
     if (!s_frameLent) return;
-#if defined(CYD32)
+#if defined(CYD)
+    // Both classic CYDs lend their framebuffer during saved WiFi USE.
     // USE temporarily lends the full ~77KB sprite so FreeRTOS and the
     // WiFi STA driver can allocate during association. Do not steal the
     // memory back before its worker finishes and radio detection resumes.
@@ -6235,7 +6236,7 @@ void loop() {
             lastTouch = now;
             // The board redraws only what changed, so it is the same with the
             // frame buffer and without it (given up for a download).
-#if defined(CYD32)
+#if defined(CYD)
             if (WifiScreenPolicy::keyboardDirectPanel(frameBufferOk, s_recoveryBands)) {
                 // A 3.2-inch board may be unbuffered, or may have recovered
                 // only a partial-height sprite after WiFi USE. In either
@@ -6276,7 +6277,7 @@ void loop() {
             else if (test != OtaWifi::SavedTest::IDLE) {
                 OtaWifi::clearSavedTest();
                 engine.stopUpdateRadio();
-#if defined(CYD32)
+#if defined(CYD)
                 // Recovery can choose smaller bands if the WiFi heap is
                 // fragmented. Never hold the large framebuffer during USE.
                 restoreFrameBuffer();
@@ -6288,8 +6289,8 @@ void loop() {
                     default:                               Theme::showToast("CONNECTION FAILED", "Try again or move closer", Theme::AMBER); break;
                 }
             }
-#if defined(CYD32)
-            // When 3.2-inch WiFi has lent its framebuffer (or recovered
+#if defined(CYD)
+            // When a classic CYD has lent its framebuffer (or recovered
             // only a small sprite band), don't clear/repaint the full LCD
             // for every finger down/up. The incremental painter updates only
             // the rows, buttons and toast region whose content changed.
@@ -6311,7 +6312,9 @@ void loop() {
                             } else {
                                 OtaWifi::useSaved((uint8_t)s);
                                 engine.startUpdateRadio();
-#if defined(CYD32)
+#if defined(CYD)
+                                // Free the 77KB framebuffer before allocating
+                                // the 6144-byte saved-network WiFi task.
                                 // Boot WiFi succeeds before UI/frame allocation.
                                 // USE previously tried to create a 6KB task
                                 // with the 77KB sprite still resident; failure
@@ -6323,7 +6326,7 @@ void loop() {
                                     Theme::showToast("CONNECTING", "Testing saved WiFi only", Theme::CYAN);
                                 else {
                                     engine.stopUpdateRadio();
-#if defined(CYD32)
+#if defined(CYD)
                                     restoreFrameBuffer();
 #endif
                                     Theme::showToast("WIFI CAN'T START", OtaWifi::savedTestStartIssue(), Theme::AMBER);
