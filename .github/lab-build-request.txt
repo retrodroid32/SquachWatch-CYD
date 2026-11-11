@@ -1,20 +1,13 @@
-HUNT-RSSI-SNAPSHOT-FOCUS-R3
-# PR #215 R3: fix live HUNT 0% flicker AND slow return to zero.
-# Root cause: frame captures millis() at loop start, NimBLE callback can
-# update lastSeenMs afterwards; unsigned now - lastSeenMs underflows and
-# instantly makes a live signal look expired. R1/R2 timer increases only
-# hid this bug and made signal-off detection unacceptably slow.
-# R3: signed wrap-safe age comparison, fresh millis at HUNT render.
-# R3: HUNT RSSI history/count/timestamp read as one protected snapshot;
-# NimBLE writer and HUNT target modifications use one portMUX.
-# R3: on WiFi HUNT, stay on the observed BSSID's channel while receiving,
-# resume normal channel sweep after 2s silence to reacquire channel changes.
-# New loss windows: BLE 4.0s; WiFi 6.5s, instead of BLE 9/WiFi 15s.
-# Current RSSI changes as each radio sample arrives; do NOT ease into 0.
-# Confirmed lost: 0% / NO SIGNAL, not last held dBm and never 0 dBm.
-# One serial [hunt-rssi] diagnostic only on live/absent transitions
-# (radio, age, count, channel; never logs MAC or private details).
-# Native tests cover time inversion, callback-before-render race, packet
-# gaps, channel focus/release, true OFF, reacquisition and millis rollover.
-# LAB builds for CYD2.8 ST7789 + CYD3.2 ST7798, no production tag/release.
-# Preserve original PR #214 and other LAB branches. DO NOT MERGE.
+V141-DESK24-CROWDNONE-HUNTR3-R1
+# Upstream 1.41 classic-CYD parity continuation on owner-validated HUNT R3 master.
+# Fresh, isolated LAB integration of original staged #178 clock 12/24-hour
+# option and #179 CROWD NONE, from draft #214; no duplicate source changes.
+# 1.41 core #189-192 (Arlo, Privacy, passive WiFi, Pocket) already in master.
+# Base/master ecd38b321699644c558e17c9e593f64b64e7f748 includes merged #215
+# HUNT R3 freshness/snapshot fix; preserve all of its source files untouched.
+# Persistent desk CLOCK FORMAT 12/24: default 12, NVS clk24.
+# CLEAR CROWD NONE: hide visitors only, no SquachMesh radio/message changes.
+# CI native, emulator, full board matrix and published LAB firmware:
+# hardware testing required for classic CYD 2.8 ST7789 and CYD 3.2 ST7798.
+# HUNT on/off, BOOT Pocket Mode, WIFI USE, SD/GPS, Events, SquachMesh smoke.
+# Do not merge/release/tag/delete branches until owner approves.

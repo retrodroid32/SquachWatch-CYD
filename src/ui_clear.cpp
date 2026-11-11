@@ -1719,7 +1719,7 @@ static int16_t s_cornerClockPillR = -1;
 static int16_t drawCornerClock(TFT_eSPI& t, int w) {
     if (!Clock::trusted()) return -1;
     char tm[8];
-    Clock::formatTime(tm, sizeof tm, true);
+    Clock::formatTime(tm, sizeof tm, !Settings::clock24Hour());
     t.setTextSize(2);
     const int icons = Theme::titleBarRightIconsX(w);
     const int right = icons - (icons < w ? 2 : 4);
@@ -2436,6 +2436,7 @@ static const SquachMesh::Peer* rawGuest(uint32_t now) {
     // lesson, and a real peer turning up must not walk onto the stage.
     if (const SquachMesh::Peer* d = MeshTutor::guest()) return d;
     if (s_guest) return s_guest;          // the emulator's --peer, when set
+    if (Settings::meshCrowd() == 0) return nullptr; // NONE: no real visitors
     if (const SquachMesh::Peer* p = Mesh::peer()) { s_realSeenAt = now; return p; }
 #if SQUACH_MESH_DEMO
     // The synthetic visitor is a FALLBACK, not the feature: it fills an empty
@@ -2453,6 +2454,7 @@ static const SquachMesh::Peer* rawGuest(uint32_t now) {
 static uint32_t rawGuestId(uint32_t now) {
     if (MeshTutor::guest()) return 0x7070u;
     if (s_guest) return 0x5111u;
+    if (Settings::meshCrowd() == 0) return 0; // ends a visit when NONE is chosen
     if (Mesh::peer()) {
         const uint8_t* m = Mesh::peerMac();
         uint32_t h = 2166136261u;                  // FNV-1a, plenty for six bytes
@@ -2973,7 +2975,7 @@ void uiClearTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool adv
         // The cap is PEERS, and the setting counts bodies: we are the one it
         // does not have to ask the radio about. Asking for `crowdMax` of them
         // and then drawing ourselves as well would put nine on an UP TO 8.
-        const uint8_t peerCap = (uint8_t)((crowdMax > 8 ? 8 : crowdMax) - 1);
+        const uint8_t peerCap = crowdMax > 1 ? (uint8_t)((crowdMax > 8 ? 8 : crowdMax) - 1) : 0;
         if (crowdMax > 1) crowdN = Mesh::squadList(now, crowd, peerCap);
         if (crowdMax > 1 && crowdN >= 2) {
             uiClearDrawCrowd(t, now, crowd, crowdN, titleBottom, squachyBottom, step, msgFresh, 22);

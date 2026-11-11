@@ -148,7 +148,7 @@ static const uint8_t SYSTEM_ROWS_N = sizeof(SYSTEM_ROWS) / sizeof(SYSTEM_ROWS[0]
 static const SettingsRow DESK_ROWS[] = {
     SettingsRow::DESK_OPEN, SettingsRow::DESK_BACKGROUND,
     SettingsRow::CLOCK_FONT, SettingsRow::CLOCK_SIZE, SettingsRow::CLOCK_BACKDROP,
-    SettingsRow::TIME_ZONE,
+    SettingsRow::CLOCK_FORMAT, SettingsRow::TIME_ZONE,
 #if SQUACH_MESH
     SettingsRow::DESK_SQUAD, SettingsRow::DESK_CROWD, SettingsRow::DESK_VISIT,
 #endif
@@ -222,6 +222,7 @@ static RowGroupId groupFor(SettingsRow r) {
         case SettingsRow::CLOCK_FONT:
         case SettingsRow::CLOCK_SIZE:
         case SettingsRow::CLOCK_BACKDROP:
+        case SettingsRow::CLOCK_FORMAT:
             return RowGroupId::DESK;
         case SettingsRow::DESK_SQUAD:
         case SettingsRow::DESK_CROWD:
@@ -813,6 +814,9 @@ static void rowContent(SettingsRow r, const DetectionEngine& eng, char* valBuf, 
             break;
         case SettingsRow::CLOCK_BACKDROP:
             label = "CLOCK BG"; value = Settings::clockBackdropName();
+            break;
+        case SettingsRow::CLOCK_FORMAT:
+            label = "CLOCK FORMAT"; value = Settings::clock24Hour() ? "24 HOUR" : "12 HOUR";
             break;
 #if SQUACH_MESH
         case SettingsRow::DESK_SQUAD:
