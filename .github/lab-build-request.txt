@@ -1,13 +1,15 @@
-V141-DESK24-CROWDNONE-HUNTR3-R1
-# Upstream 1.41 classic-CYD parity continuation on owner-validated HUNT R3 master.
-# Fresh, isolated LAB integration of original staged #178 clock 12/24-hour
-# option and #179 CROWD NONE, from draft #214; no duplicate source changes.
-# 1.41 core #189-192 (Arlo, Privacy, passive WiFi, Pocket) already in master.
-# Base/master ecd38b321699644c558e17c9e593f64b64e7f748 includes merged #215
-# HUNT R3 freshness/snapshot fix; preserve all of its source files untouched.
-# Persistent desk CLOCK FORMAT 12/24: default 12, NVS clk24.
-# CLEAR CROWD NONE: hide visitors only, no SquachMesh radio/message changes.
-# CI native, emulator, full board matrix and published LAB firmware:
-# hardware testing required for classic CYD 2.8 ST7789 and CYD 3.2 ST7798.
-# HUNT on/off, BOOT Pocket Mode, WIFI USE, SD/GPS, Events, SquachMesh smoke.
-# Do not merge/release/tag/delete branches until owner approves.
+FONT209-NVS-ONLY-POST216-R1
+# Isolated #209 source-level recovery on merged #216 current master.
+# SIX step keys and SIX face keys are loaded and clamped at boot.
+# Serial trace: [fonts-bisect-a] NVS keys=12 checksum=...
+# No UI/font rendering/menu/pet/bubble/display changes in this stage.
+# Previous font black screen was confirmed due to obsolete OTA app slot
+# overflow; the accepted #211/#212 fix plus #213 BlackBox partition reserve
+# and exact firmware.bin >=8192B headroom checks remain in this baseline.
+# Do NOT apply original stale #209 diagnostic partition/workflow code.
+# Flash via LAB site with matching USB partition table, never OTA-only
+# when upgrading from an older partition map; preserve NVS.
+# Hardware gate: 2.8 ST7789 + 3.2 ST7798 cold boot, rotate, SD/GPS,
+# HUNT R3, wifi USE, SquachMesh, 12/24 + CROWD NONE; serial checksum.
+# Next font UI (#180) stays isolated pending NVS stage approval.
+# No merge, master push, tags, or production release.
