@@ -1,4 +1,4 @@
-FONT-ALL6-LIVE-CUSTOM-BUTTONS-R1
+FONT-ALL6-LIVE-CUSTOM-BUTTONS-R2
 # Successor to PR #221, stacked on the OTA-safe post-#216 master ancestry.
 # MENUS/BUTTONS/BUBBLES/PETS retained, with all six real category controls.
 # TEXT sizes measured INFO modal body and DIAGNOSTICS report rows.
@@ -11,3 +11,6 @@ FONT-ALL6-LIVE-CUSTOM-BUTTONS-R1
 # Real CYD 2.8 ST7789 first, then 3.2 ST7798 in both rotations.
 # Serial, SD, GPS UBX 115200, WiFi USE, LOG Events and SquachMesh regressions.
 # LAB only. Do not merge, tag, ship production, or delete prior branches.
+
+# R2: bound BUTTONS independently of TEXT, fix alert source include,
+# adapt regression guard to consolidated fit helper.

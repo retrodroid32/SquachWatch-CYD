@@ -693,7 +693,8 @@ void drawButton(TFT_eSPI& t, int x, int y, int w, int h,
     // cut off. So the step-up has to earn its place -- measure it, and keep
     // the smaller size if it does not fit. That makes this self-limiting for
     // every button on every screen instead of a list of exceptions.
-    uint8_t ts = uiTextSize(t, textSize);
+    // A button stays in the BUTTONS family even when body TEXT is enlarged.
+    uint8_t ts = (textSize == 1 && t.width() >= 400) ? 2 : textSize;
     selectCategoryFont(t, Settings::FontKind::BUTTONS, label, w - 6, h - 2, ts);
     t.setTextColor(fg, fill);
     const int tw = t.textWidth(label);

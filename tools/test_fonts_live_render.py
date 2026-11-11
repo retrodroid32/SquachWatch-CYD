@@ -8,8 +8,8 @@ pet=(root/"src/pet.cpp").read_text()
 sq=(root/"src/squachy.cpp").read_text()
 head=(root/"include/theme.h").read_text()
 for marker in ('Settings::fontStep(Settings::FontKind::BUBBLES)', 's_bubbleHeight = t.fontHeight()',
-               'fontDelta(Settings::FontKind::MENUS)', 'fontDelta(Settings::FontKind::BUTTONS)',
-               't.textWidth(label) <= w - 6', 't.fontHeight() <= h - 2',
+               'fontDelta(Settings::FontKind::MENUS)', 'selectCategoryFont(t, Settings::FontKind::BUTTONS',
+               't.textWidth(label) <= maxW', 't.fontHeight() <= maxH',
                'void petFontOn(', 'void petFontOff('):
     assert marker in theme, marker
 assert 'Theme::uiMenuTextSize(t)' in ui
@@ -24,4 +24,4 @@ assert 'Settings::FontKind::XP_TILES' in theme
 assert 'void xpTileFontOn(' in theme and 'void selectCategoryFont(' in theme
 assert 't.setTextFont(1); t.setTextSize(1);' in ui, 'restore drawing font state'
 assert "0x1E4000" in (root/"partitions_ota.csv").read_text()
-print("PASS Stage C live bounded menus/buttons/bubbles/pets + honest pending categories")
+print("PASS font backport: real bounded menus/buttons/bubbles/pets, TEXT and XP active")

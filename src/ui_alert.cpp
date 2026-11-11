@@ -1,6 +1,7 @@
 // SquachWatch-CYD — ALERT screen implementation
 #include "ui_alert.h"
 #include "theme.h"
+#include "settings.h"
 #include "privacy.h"
 #include "signatures.h"
 #include "detection.h"
