@@ -125,7 +125,13 @@ void DetectionEngine::pushLog(const Detection& d) {
 }
 
 // Radio-fed entry points: inert here, nothing calls them in the sim.
-void DetectionEngine::postWiFi(const uint8_t*, int8_t, uint8_t, const char*, bool, bool, bool, bool) {}
+void DetectionEngine::postWiFi(const uint8_t* mac, int8_t rssi, uint8_t,
+                               const char*, bool, bool, bool, bool) {
+    // The real RX callback queues its packets and processWiFiQ() feeds the
+    // active HUNT target. This host shim has no Wi-Fi radio/queue, so deliver
+    // the same input directly into HUNT for deterministic loss tests.
+    if (mac) checkHuntWifi(mac, rssi);
+}
 void DetectionEngine::postDeauth(const uint8_t*, int8_t, uint8_t) {}
 void DetectionEngine::postBle(Detection d) {
     pushLog(d);

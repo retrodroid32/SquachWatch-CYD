@@ -77,7 +77,7 @@ int main() {
     SimClock::nowMs = 1000;
     ck("Wi-Fi HUNT selected", eng.huntWifi(wifi, "Test AP"));
     ck("same MAC wrong transport ignored", !eng.huntSignalFresh(SimClock::nowMs));
-    eng.checkHuntWifi(wifi, -56);
+    eng.postWiFi(wifi, -56, 6);
     ck("first Wi-Fi beacon captured", eng.huntSignalFresh(SimClock::nowMs));
     // 12-second gaps model two missed channel sweeps while radio is
     // broadcasting. Original R1 dropped out after five seconds.
@@ -85,14 +85,14 @@ int main() {
         SimClock::nowMs = 1000u + (uint32_t)i * 12000u - 250u;
         ck("still live despite missed Wi-Fi sweeps", eng.huntSignalFresh(SimClock::nowMs));
         SimClock::nowMs += 250u;
-        eng.checkHuntWifi(wifi, (int8_t)(-56 - i));
+        eng.postWiFi(wifi, (int8_t)(-56 - i), 6);
         ck("Wi-Fi reception refreshes reading immediately", eng.huntSignalFresh(SimClock::nowMs));
     }
     SimClock::nowMs += HuntSignal::WIFI_LOST_AFTER_MS + 1u;
     ck("actual Wi-Fi silence eventually reaches zero", !eng.huntSignalFresh(SimClock::nowMs));
     ck("roster retains target after loss", eng.huntTargetInfo(1, info) && info.seen);
     SimClock::nowMs += 100u;
-    eng.checkHuntWifi(wifi, -61);
+    eng.postWiFi(wifi, -61, 6);
     ck("Wi-Fi return resets pre-outage CAUGHT history",
        eng.huntSignalFresh(SimClock::nowMs) && eng.huntRssiCount() == 1 &&
        eng.huntRssiAt(0) == -61);
