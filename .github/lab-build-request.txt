@@ -12,3 +12,5 @@ HUNT-RSSI-DEBOUNCE-R2
 # packets over several minutes plus genuine loss/recovery and millis rollover.
 # LAB only: CYD 2.8 ST7789 + 3.2 ST7798 hardware testing required.
 # Preserve PR #214 and master. No merge, tag or production release.
+# R2 CI follow-up: native WiFi HUNT tests now drive public postWiFi()
+# through simulator RX shim; no private methods exposed in firmware.
