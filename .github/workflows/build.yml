@@ -105,6 +105,8 @@ jobs:
           python3 tools/test_v141_privacy_confirm.py
           python3 tools/test_v141_passive_wifi.py
           python3 tools/test_v141_pocket_mode.py
+          python3 tools/test_desk_clock_format.py
+          python3 tools/test_crowd_none.py
       - name: Reject oversized OTA images and mismatched LAB manifests
         run: |
           python3 tools/test_check_app_image_sizes.py

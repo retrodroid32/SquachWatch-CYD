@@ -39,7 +39,7 @@ static bool        s_aura = true;
 // the hardware cannot hear: the ninth board in the room evicts the first, and
 // the screen would still show eight.
 static const uint8_t CROWD_MAX = 8;
-static uint8_t     s_meshCrowd = 1;   // how many on screen at once, 1..CROWD_MAX
+static uint8_t     s_meshCrowd = 1;   // how many on screen at once, 0=NONE, 1..CROWD_MAX
 static bool        s_deskSquad     = false;   // the squad on the desk clock as well
 static uint8_t     s_deskCrowd     = 1;       // the desk's own HOW MANY
 static bool        s_deskFullVisit = false;   // one visitor: the whole visit, not a chat
@@ -59,7 +59,8 @@ static uint8_t     s_deskBg     = 255;     // 255: not picked yet, follow s_back
 static bool        s_deskActive = false;
 static uint8_t     s_clockFont     = 0;   // 0 segments, 1 Bangers
 static uint8_t     s_clockSize     = 1;   // 0 small, 1 medium, 2 large
-static uint8_t     s_clockBackdrop = 0;   // 0 plain, 1 rain, 2 snow, 3 toasters, 4 fire, 5 stars, 6 fireflies
+static uint8_t     s_clockBackdrop = 0;
+static bool        s_clock24Hour = false;   // 0 plain, 1 rain, 2 snow, 3 toasters, 4 fire, 5 stars, 6 fireflies
 static const uint8_t CLOCK_BG_N  = 7;
 // Bit N = DetectionType N enabled. UNKNOWN (0) is never included -- see
 // Types that arrive switched OFF, on a fresh install and on upgrade alike.
@@ -403,7 +404,7 @@ void load() {
     // Both off unless asked for. See the note in settings.h.
     s_meshDetect   = s_prefs.getBool("meshrx", false);
     s_meshCrowd    = s_prefs.getUChar("crowd", 1);
-    if (s_meshCrowd < 1 || s_meshCrowd > CROWD_MAX) s_meshCrowd = 1;
+    if (s_meshCrowd > CROWD_MAX) s_meshCrowd = 1;
     // Two draws exactly what one does -- see cycleMeshCrowd(). An older build
     // could not have stored it, but a hand-edited NVS can, and a setting that
     // does nothing is worse than one that moved.
@@ -411,8 +412,10 @@ void load() {
     s_deskSquad     = s_prefs.getBool("crwdesk", false);
     // Follows the main screen's until the desk has one of its own: the two
     // were one setting, and a board upgraded mid-use should look the same.
-    s_deskCrowd     = s_prefs.getUChar("dskcrwd", s_meshCrowd);
-    if (s_deskCrowd < 1 || s_deskCrowd > CROWD_MAX || s_deskCrowd == 2) s_deskCrowd = s_meshCrowd;
+    // Desk has no NONE option: a main-screen NONE must not zero its default.
+    s_deskCrowd     = s_prefs.getUChar("dskcrwd", s_meshCrowd ? s_meshCrowd : 1);
+    if (s_deskCrowd < 1 || s_deskCrowd > CROWD_MAX || s_deskCrowd == 2)
+        s_deskCrowd = s_meshCrowd ? s_meshCrowd : 1;
     s_deskFullVisit = s_prefs.getBool("dskvisit", false);
     s_meshTransmit = s_prefs.getBool("meshtx", false);
     s_meshConsent  = s_prefs.getBool("meshok", false);
@@ -432,6 +435,7 @@ void load() {
     s_clockFont     = s_prefs.getUChar("clkfont", 0);
     s_clockSize     = s_prefs.getUChar("clksize", 1);
     s_clockBackdrop = s_prefs.getUChar("clkbg", 0);
+    s_clock24Hour = s_prefs.getBool("clk24", false);
     if (s_clockFont > 1)     s_clockFont = 0;
     if (s_clockSize > 2)     s_clockSize = 1;
     if (s_clockBackdrop >= CLOCK_BG_N) s_clockBackdrop = 0;
@@ -593,6 +597,8 @@ const char* clockBackdropName() {
 }
 void        cycleClockBackdrop() { s_clockBackdrop = (uint8_t)((s_clockBackdrop + 1) % CLOCK_BG_N); s_prefs.putUChar("clkbg", s_clockBackdrop); }
 void        cyclePrevClockBackdrop() { s_clockBackdrop = (uint8_t)((s_clockBackdrop + CLOCK_BG_N - 1) % CLOCK_BG_N); s_prefs.putUChar("clkbg", s_clockBackdrop); }
+bool        clock24Hour() { return s_clock24Hour; }
+void        toggleClock24Hour() { s_clock24Hour = !s_clock24Hour; s_prefs.putBool("clk24", s_clock24Hour); }
 
 Background deskBackground() {
     if (s_deskBg != 255 && backgroundSelectable((Background)s_deskBg)) return (Background)s_deskBg;
@@ -929,7 +935,8 @@ uint8_t deskCrowd() { return s_deskCrowd; }
 static const char* crowdLabel(uint8_t n) {
     // ONE is a different thing, not a count of one: it is the ordinary visit,
     // with the set pieces and the emotes that a crowd stands down.
-    if (n <= 1) return "ONE";
+    if (n == 0) return "NONE";
+    if (n == 1) return "ONE";
     static char b[10];
     snprintf(b, sizeof b, "UP TO %u", (unsigned)n);
     return b;
@@ -953,8 +960,10 @@ static uint8_t nextCrowd(uint8_t c) {
     if (n == 2) n = 3;
     return n;
 }
+// Main-screen CROWD cycles NONE -> ONE -> 3..8 -> NONE.
+// NONE hides visiting avatars; squad presence and messages still work.
 void cycleMeshCrowd() {
-    s_meshCrowd = nextCrowd(s_meshCrowd);
+    s_meshCrowd = s_meshCrowd >= CROWD_MAX ? 0 : nextCrowd(s_meshCrowd);
     s_prefs.putUChar("crowd", s_meshCrowd);
 }
 void cycleDeskCrowd() {
