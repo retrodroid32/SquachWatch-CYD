@@ -746,7 +746,7 @@ jobs:
           set -euo pipefail
           python tools/board_matrix.py validate
           if [ "${{ steps.ver.outputs.is_lab }}" = "true" ]; then
-            python3 tools/verify_lab_site_partitions.py --expected-classic-slot-size 0x1F0000
+            python3 tools/verify_lab_site_partitions.py --expected-classic-slot-size 0x1E4000
           fi
           test -s _site/index.html
           test -s _site/boards.json

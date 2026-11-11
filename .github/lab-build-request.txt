@@ -1,5 +1,6 @@
-RID-MULTI8-EVENTS-WIFI-R5
+RID-MULTI8-EVENTS-WIFI-R6
 # PR #213: bounded 8-contact Remote ID assembler with concurrency fix.
+# R6: publish gate checks effective smaller OTA slot for reserved Events.
 # R5: restore BlackBox Events in non-overlapping 48KB flash gap.
 # R5: classic 2.8 CYD frees framebuffer before WiFi saved-network USE.
 # USB flash with matching partitions.bin is REQUIRED; OTA-only unsafe.
