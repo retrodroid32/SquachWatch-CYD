@@ -25,7 +25,7 @@ static const int TOP_MARGIN = 32;
 
 // One scroll position per page, not one shared: see SettingsPage in the header.
 static SettingsPage s_page = SettingsPage::MAIN;
-static int g_scrollFor[6] = { 0, 0, 0, 0, 0, 0 };
+static int g_scrollFor[7] = { 0, 0, 0, 0, 0, 0, 0 };
 #define g_scroll (g_scrollFor[(uint8_t)s_page])
 
 // BACK is pinned along the bottom now. Height of that strip, reserved out of
@@ -104,6 +104,7 @@ static const SettingsRow APPEARANCE_ROWS[] = {
     // appears once it has been earned; see buildDisplayList().
     SettingsRow::SQUACHY_SIZE, SettingsRow::OUTFIT, SettingsRow::PET,
     SettingsRow::SHADES_COLOR, SettingsRow::BANTER, SettingsRow::AURA,
+    SettingsRow::FONTS,
     // Then how the SCREEN looks.
     SettingsRow::THEME, SettingsRow::BACKGROUND, SettingsRow::BACKGROUND_LOCK, SettingsRow::BRIGHTNESS,
     SettingsRow::INVERT, SettingsRow::RGB_SWAP, SettingsRow::ROTATION_LOCK,
@@ -155,6 +156,12 @@ static const SettingsRow DESK_ROWS[] = {
 };
 static const uint8_t DESK_ROWS_N = sizeof(DESK_ROWS) / sizeof(DESK_ROWS[0]);
 static const uint8_t APPEARANCE_ROWS_N = sizeof(APPEARANCE_ROWS) / sizeof(APPEARANCE_ROWS[0]);
+// Stage-B Fonts: six fixed-geometry rows, scrollable above a stable preview.
+static const SettingsRow FONT_ROWS[] = {
+    SettingsRow::FONT_MENUS, SettingsRow::FONT_TEXT, SettingsRow::FONT_BUTTONS,
+    SettingsRow::FONT_BUBBLES, SettingsRow::FONT_PETS, SettingsRow::FONT_XP
+};
+static const uint8_t FONT_ROWS_N = sizeof(FONT_ROWS) / sizeof(FONT_ROWS[0]);
 // The display buffers below are sized off the longest of the lists (the
 // DESK MODE page's is checked against it just below).
 // It used to be the main one, until that list lost its NICKNAME row and
@@ -162,6 +169,7 @@ static const uint8_t APPEARANCE_ROWS_N = sizeof(APPEARANCE_ROWS) / sizeof(APPEAR
 static const uint8_t LIST_MAX_N = (APPEARANCE_ROWS_N > ALL_ROWS_N ? APPEARANCE_ROWS_N : ALL_ROWS_N) > IgnoreList::SNOOZE_MAX ? (APPEARANCE_ROWS_N > ALL_ROWS_N ? APPEARANCE_ROWS_N : ALL_ROWS_N) : IgnoreList::SNOOZE_MAX;
 static_assert(SYSTEM_ROWS_N <= LIST_MAX_N, "the display list is sized off LIST_MAX_N");
 static_assert(DESK_ROWS_N <= LIST_MAX_N, "the display list is sized off LIST_MAX_N");
+static_assert(FONT_ROWS_N <= LIST_MAX_N, "font rows must fit settings buffers");
 #if defined(TWATCH_S3)
 static_assert(WATCH_ROWS_N <= LIST_MAX_N, "the display list is sized off LIST_MAX_N");
 #endif
@@ -190,7 +198,7 @@ static bool isSquachyOnlyRow(SettingsRow r) {
            r == SettingsRow::PET || r == SettingsRow::AURA;
 }
 
-enum class RowGroupId : uint8_t { APPEARANCE, BEHAVIOR, SQUACHY, SYSTEM, DESK, SQUAD, WATCH };
+enum class RowGroupId : uint8_t { APPEARANCE, BEHAVIOR, SQUACHY, SYSTEM, DESK, SQUAD, WATCH, FONTS };
 
 static RowGroupId groupFor(SettingsRow r) {
     // Appearance sits with the Squachy rows because that is where it was asked
@@ -245,7 +253,15 @@ static RowGroupId groupFor(SettingsRow r) {
         case SettingsRow::OUTFIT:
         case SettingsRow::PET:
         case SettingsRow::BANTER:
+        case SettingsRow::FONTS:
             return RowGroupId::APPEARANCE;
+        case SettingsRow::FONT_MENUS:
+        case SettingsRow::FONT_TEXT:
+        case SettingsRow::FONT_BUTTONS:
+        case SettingsRow::FONT_BUBBLES:
+        case SettingsRow::FONT_PETS:
+        case SettingsRow::FONT_XP:
+            return RowGroupId::FONTS;
         case SettingsRow::BORING_MODE:
         case SettingsRow::CONFIDENCE:
         case SettingsRow::AUTO_QUIET:
@@ -279,6 +295,7 @@ static const char* groupName(RowGroupId g) {
         case RowGroupId::DESK:       return "DESK";
         case RowGroupId::SQUAD:      return "SQUAD";
         case RowGroupId::WATCH:      return "WATCH";
+        case RowGroupId::FONTS:      return "FONT PREVIEW";
         default:                     return "SYSTEM";
     }
 }
@@ -294,6 +311,7 @@ static uint16_t groupColor(RowGroupId g) {
         case RowGroupId::DESK:       return Theme::CYAN;
         case RowGroupId::SQUAD:      return Theme::GREEN;
         case RowGroupId::WATCH:      return Theme::AMBER;
+        case RowGroupId::FONTS:      return Theme::CYAN;
         default:                     return Theme::VAPOR_PURPLE;
     }
 }
@@ -329,6 +347,7 @@ static uint8_t buildDisplayList(DisplayItem* out) {
     if (s_page == SettingsPage::APPEARANCE) { src = APPEARANCE_ROWS; srcN = APPEARANCE_ROWS_N; }
     else if (s_page == SettingsPage::SYSTEM) { src = SYSTEM_ROWS;    srcN = SYSTEM_ROWS_N; }
     else if (s_page == SettingsPage::DESK)   { src = DESK_ROWS;      srcN = DESK_ROWS_N; }
+    else if (s_page == SettingsPage::FONTS)  { src = FONT_ROWS;      srcN = FONT_ROWS_N; }
 #if defined(TWATCH_S3)
     else if (s_page == SettingsPage::WATCH)  { src = WATCH_ROWS;     srcN = WATCH_ROWS_N; }
 #endif
@@ -445,6 +464,12 @@ static void computeGeom(TFT_eSPI& t, int screenH, int& top, int& bodyBottom,
     // The pinned BACK strip owns the bottom of the screen, so the list stops
     // above it -- otherwise the last row draws underneath and cannot be tapped.
     bodyBottom = screenH - Theme::pinnedBackH(t.width()) - 2;
+    if (s_page == SettingsPage::FONTS) {
+        bodyBottom -= 42;  // 40px persistent preview between rows and pinned UP
+        t.setTextFont(1); t.setTextSize(1);
+        rowH = 34; headerH = 15; tallH = 34;
+        return;
+    }
     t.setTextSize(Theme::uiMenuTextSize(t));
     // Two pixels taller than the text strictly needs on each side: a 24 px
     // row was a near miss for a thumb, 26 is not, and seven of them still
@@ -468,7 +493,7 @@ void uiSettingsInit(TFT_eSPI& t) {
     // memory is for moving BETWEEN pages inside one visit -- carrying it
     // across a fresh entry would drop you mid-list with no idea why.
     s_page = SettingsPage::MAIN;
-    for (uint8_t i = 0; i < 6; i++) g_scrollFor[i] = 0;
+    for (uint8_t i = 0; i < 7; i++) g_scrollFor[i] = 0;
     // Any pending question dies with the screen. Coming back to Settings and
     // finding a confirm panel still up from last time would be answering
     // something you no longer remember asking.
@@ -606,6 +631,9 @@ void uiSettingsOpenPage(SettingsPage p) {
 }
 
 SettingsPage uiSettingsCurrentPage() { return s_page; }
+SettingsPage uiSettingsParentPage() {
+    return s_page == SettingsPage::FONTS ? SettingsPage::APPEARANCE : SettingsPage::MAIN;
+}
 
 void uiSettingsOpenAppearance(bool open) {
     uiSettingsOpenPage(open ? SettingsPage::APPEARANCE : SettingsPage::MAIN);
@@ -775,6 +803,93 @@ static void drawRow(TFT_eSPI& t, int w, int y, int hgt, const char* label,
     }
 }
 
+// Stage-B local font preference controls. The ordinary UI, pet, bubble,
+// buttons and themes still use their pre-existing font metrics.
+static Settings::FontKind fontKindForRow(SettingsRow row) {
+    switch (row) {
+        case SettingsRow::FONT_TEXT: return Settings::FontKind::TEXT;
+        case SettingsRow::FONT_BUTTONS: return Settings::FontKind::BUTTONS;
+        case SettingsRow::FONT_BUBBLES: return Settings::FontKind::BUBBLES;
+        case SettingsRow::FONT_PETS: return Settings::FontKind::PETS;
+        case SettingsRow::FONT_XP: return Settings::FontKind::XP_TILES;
+        default: return Settings::FontKind::MENUS;
+    }
+}
+static Settings::FontKind s_fontPreview = Settings::FontKind::MENUS;
+
+static void drawFontRow(TFT_eSPI& t, int w, int y, int h,
+                        const char* label, SettingsRow row) {
+    rowPanel(t, w, y, h);
+    const auto kind = fontKindForRow(row);
+    const int step = Settings::fontStep(kind);
+    const int face = Settings::fontFace(kind);
+    t.setTextFont(1); t.setTextSize(1);
+    t.setTextColor(Theme::CYAN, Theme::BG);
+    t.setCursor(8, y + 4); t.print(label);
+    t.setTextColor(Theme::W95_SHADOW, Theme::BG);
+    t.setCursor(8, y + 19);
+    t.print(face == 2 ? "SMOOTH" : (face == 1 ? "PIXEL" : "DEFAULT"));
+    const int left = 77, right = w - 88, mid = y + h / 2;
+    t.drawFastHLine(left, mid, right - left + 1, Theme::PURPLE);
+    for (int n = 0; n < 5; n++) {
+        const int x = left + (right-left)*n/4;
+        t.drawFastVLine(x, mid - 4, 9, Theme::CYAN);
+    }
+    const int marker = left + (right-left)*step/4;
+    t.fillCircle(marker, mid, 4, Theme::VAPOR_PINK);
+    t.drawRect(w-82, y+4, 33, h-9, Theme::CYAN);
+    t.drawRect(w-42, y+4, 33, h-9, Theme::CYAN);
+    t.setTextColor(Theme::WHITE, Theme::BG);
+    t.setCursor(w-68,y+10); t.print("-");
+    t.setCursor(w-28,y+10); t.print("+");
+}
+static void drawFontPreview(TFT_eSPI& t, int w, int y) {
+    const int height = 39;
+    t.fillRect(4, y, w - 12, height, Theme::BG);
+    t.drawRect(4, y, w - 12, height, Theme::CYAN);
+    static const char* const names[6] =
+        {"MENUS","TEXT","BUTTONS","BUBBLES","XP TILES","PETS"};
+    const uint8_t id = (uint8_t)s_fontPreview;
+    const int step = Settings::fontStep(s_fontPreview);
+    const int face = Settings::fontFace(s_fontPreview);
+    t.setTextFont(1); t.setTextSize(1);
+    t.setTextColor(Theme::CYAN, Theme::BG);
+    t.setCursor(9,y+4); t.print("PREVIEW");
+    t.setTextColor(Theme::WHITE, Theme::BG);
+    t.setCursor(9,y+20); t.print(names[id]);
+    // In-page sample is intentional: never change global renderer at Stage B.
+    t.setTextFont(face == 2 ? 2 : 1);
+    t.setTextSize((face == 2 || step < 3) ? 1 : 2);
+    const char* sample = "Aa 12:34";
+    const int x = w - 10 - t.textWidth(sample);
+    if (x > 108 && t.fontHeight() < height - 8) {
+        t.setCursor(x,y+15); t.print(sample);
+    }
+    t.setTextFont(1); t.setTextSize(1);
+}
+
+void uiSettingsFontTap(TFT_eSPI& t, int x, int y, int screenW, int screenH) {
+    if (s_page != SettingsPage::FONTS) return;
+    const SettingsRow row = uiSettingsHitTest(t,x,y,screenW,screenH);
+    if (row < SettingsRow::FONT_MENUS || row > SettingsRow::FONT_XP) return;
+    const auto kind = fontKindForRow(row);
+    s_fontPreview = kind;
+    if (x < 70) {
+        Settings::setFontFace(kind, (uint8_t)((Settings::fontFace(kind)+1)%3));
+        return;
+    }
+    int step = Settings::fontStep(kind);
+    const int left = 77, right = screenW - 88;
+    if (x >= screenW-43) step++;
+    else if (x >= screenW-83) step--;
+    else if (x >= left && x <= right)
+        step = ((x-left)*4 + (right-left)/2)/(right-left);
+    else return;
+    if (step < 0) step = 0;
+    if (step > 4) step = 4;
+    Settings::setFontStep(kind, (uint8_t)step);
+}
+
 // Fills in what a row actually shows. valBuf is scratch space for
 // rows that need to format a number — only valid for the duration of
 // the caller's own loop iteration, not held onto afterward.
@@ -789,6 +904,9 @@ static void rowContent(SettingsRow r, const DetectionEngine& eng, char* valBuf, 
         case SettingsRow::SYSTEM:
             label = "SYSTEM"; value = OtaCore::availableVersion()[0] ? "UPDATE >" : ">";
             break;
+        case SettingsRow::FONTS:
+            label = "FONTS"; value = ">";
+            break;
         // The tracking rows. Their whole reason to exist is naming the thing,
         // so the value is the target's own label rather than a state word.
         case SettingsRow::WATCH_TARGET:
@@ -797,6 +915,12 @@ static void rowContent(SettingsRow r, const DetectionEngine& eng, char* valBuf, 
         case SettingsRow::HUNT_TARGET:
             label = "HUNTING"; value = s_huntLabel;
             break;
+        case SettingsRow::FONT_MENUS: label = "MENUS"; break;
+        case SettingsRow::FONT_TEXT: label = "TEXT"; break;
+        case SettingsRow::FONT_BUTTONS: label = "BUTTONS"; break;
+        case SettingsRow::FONT_BUBBLES: label = "BUBBLES"; break;
+        case SettingsRow::FONT_PETS: label = "PETS"; break;
+        case SettingsRow::FONT_XP: label = "XP TILES"; break;
         case SettingsRow::BACKGROUND:
             label = "BACKGROUND"; value = Settings::backgroundName(Settings::background());
             break;
@@ -1147,6 +1271,7 @@ switch (Settings::background()) {
     else if (s_page == SettingsPage::DESK)   pageTitle = ">> DESK MODE <<";
     else if (s_page == SettingsPage::WATCH)  pageTitle = ">> WATCH SETTINGS <<";
     else if (s_page == SettingsPage::SNOOZES) pageTitle = ">> SNOOZES <<";
+    else if (s_page == SettingsPage::FONTS)   pageTitle = ">> FONTS <<";
     Theme::drawTitleBar(t, pageTitle);
 
     // +6, not +4: four group headers plus the two tracking rows.
@@ -1191,6 +1316,8 @@ switch (Settings::background()) {
             const bool off = Settings::boringMode() && isSquachyOnlyRow(items[idx].row);
             if (off) {
                 drawRow(t, w, y, itemH, label, "boring mode", false, Theme::W95_SHADOW, h > w);
+            } else if (s_page == SettingsPage::FONTS) {
+                drawFontRow(t, w, y, itemH, label, items[idx].row);
             } else if (isTwoLineRow(items[idx].row)) {
                 drawTwoLineRow(t, w, y, itemH, label, value, groupColor(items[idx].group),
                                items[idx].row == SettingsRow::BACKGROUND ||
@@ -1207,6 +1334,8 @@ switch (Settings::background()) {
     }
 
     Theme::drawScrollbar(t, w - 4, top, bodyBottom - top, n, visibleCount, g_scroll);
+    if (s_page == SettingsPage::FONTS && DrawBand::has(bodyBottom, bodyBottom+41))
+        drawFontPreview(t, w, bodyBottom+1);
 
     // The way out, always on screen. Drawn before the panels so a confirm or
     // an explanation sits over it rather than under.
