@@ -788,7 +788,26 @@ static void drawRow(TFT_eSPI& t, int w, int y, int hgt, const char* label,
     // backing below stays anyway: it costs nothing now and it is what keeps
     // text crisp if a row is ever drawn without a panel behind it.
     rowPanel(t, w, y, hgt);
-    t.setTextSize(compact ? 1 : Theme::uiMenuTextSize(t));
+    t.setTextFont(1);
+    // Portrait used compact labels to avoid overlap. A larger chosen menu
+    // face is allowed only when its actual text fits the entire row.
+    uint8_t size = compact ? (Theme::fontDelta(Settings::FontKind::MENUS) > 0 ? 2 : 1)
+                           : Theme::uiMenuTextSize(t);
+    t.setTextSize(size);
+    // A bigger MENUS setting must never overlap the right-side value.
+    while (size > 1 && value && t.textWidth(label) + t.textWidth(value) + 34 > w) {
+        t.setTextSize(--size);
+    }
+    // A SMOOTH menu face uses the built-in 16-row font only where it fits
+    // both the full row and its right-aligned setting value.
+    if (Settings::fontFace(Settings::FontKind::MENUS) == 2) {
+        t.setTextFont(2);
+        t.setTextSize(1);
+        if (t.fontHeight() > hgt - 6 ||
+            (value && t.textWidth(label) + t.textWidth(value) + 34 > w)) {
+            t.setTextFont(1); t.setTextSize(size);
+        }
+    }
     t.setTextColor(danger ? Theme::RED : labelColor, Theme::BG);
     t.setCursor(8, y + (hgt - t.fontHeight()) / 2);
     t.print(label);
@@ -801,10 +820,11 @@ static void drawRow(TFT_eSPI& t, int w, int y, int hgt, const char* label,
         t.setCursor(w - 18 - vw, y + (hgt - t.fontHeight()) / 2);
         t.print(value);
     }
+    t.setTextFont(1); t.setTextSize(1);
 }
 
-// Stage-B local font preference controls. The ordinary UI, pet, bubble,
-// buttons and themes still use their pre-existing font metrics.
+// Stage C: MENUS/BUTTONS/BUBBLES/PETS affect actual rendering. TEXT and XP
+// stay clearly marked as preview-only until layout-specific work is safe.
 static Settings::FontKind fontKindForRow(SettingsRow row) {
     switch (row) {
         case SettingsRow::FONT_TEXT: return Settings::FontKind::TEXT;
@@ -828,7 +848,9 @@ static void drawFontRow(TFT_eSPI& t, int w, int y, int h,
     t.setCursor(8, y + 4); t.print(label);
     t.setTextColor(Theme::W95_SHADOW, Theme::BG);
     t.setCursor(8, y + 19);
-    t.print(face == 2 ? "SMOOTH" : (face == 1 ? "PIXEL" : "DEFAULT"));
+    const bool pending = kind == Settings::FontKind::TEXT || kind == Settings::FontKind::XP_TILES;
+    t.print(pending ? "PREVIEW ONLY" : (face == 2 ? "SMOOTH" : (face == 1 ? "PIXEL" : "DEFAULT")));
+    if (pending) return; // no fake controls for unsupported categories
     const int left = 77, right = w - 88, mid = y + h / 2;
     t.drawFastHLine(left, mid, right - left + 1, Theme::PURPLE);
     for (int n = 0; n < 5; n++) {
@@ -854,7 +876,7 @@ static void drawFontPreview(TFT_eSPI& t, int w, int y) {
     const int face = Settings::fontFace(s_fontPreview);
     t.setTextFont(1); t.setTextSize(1);
     t.setTextColor(Theme::CYAN, Theme::BG);
-    t.setCursor(9,y+4); t.print("PREVIEW");
+    t.setCursor(9,y+4); t.print("FONT PREVIEW");
     t.setTextColor(Theme::WHITE, Theme::BG);
     t.setCursor(9,y+20); t.print(names[id]);
     // In-page sample is intentional: never change global renderer at Stage B.
@@ -874,6 +896,7 @@ void uiSettingsFontTap(TFT_eSPI& t, int x, int y, int screenW, int screenH) {
     if (row < SettingsRow::FONT_MENUS || row > SettingsRow::FONT_XP) return;
     const auto kind = fontKindForRow(row);
     s_fontPreview = kind;
+    if (kind == Settings::FontKind::TEXT || kind == Settings::FontKind::XP_TILES) return;
     if (x < 70) {
         Settings::setFontFace(kind, (uint8_t)((Settings::fontFace(kind)+1)%3));
         return;

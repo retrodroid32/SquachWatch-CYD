@@ -22,7 +22,10 @@ if "SettingsPage::FONTS" not in ui:
     assert "FontKind" not in h and "uiSettingsFontTap" not in main
 else:
     assert "FontKind" in h and "uiSettingsFontTap" in main
-assert "fontDelta(" not in theme
+if (root / "tools/test_fonts_live_render.py").exists():
+    assert "fontDelta(" in theme and "s_bubbleHeight = t.fontHeight()" in theme
+else:
+    assert "fontDelta(" not in theme
 # Do not regress the hard-won OTA partition and BIN size safety mechanisms.
 part = (root / "partitions_ota.csv").read_text(encoding="utf-8")
 ci = (root / ".github/workflows/build.yml").read_text(encoding="utf-8")

@@ -2040,7 +2040,8 @@ static void drawBubble(TFT_eSPI& t, int cx, int topY, const char* text,
 
 static void drawBubbleIn(TFT_eSPI& t, int cx, int topY, const char* text,
                          uint32_t now, bool mayRise, int tailX) {
-    t.setTextSize(1);
+    // bubbleFontOn() already selected the persisted face and size.
+    // Do not reset it here; all box heights/line wraps use those same metrics.
     t.setTextWrap(false);
     int screenW = t.width();
     int maxW = screenW - 16;   // widest a wrapped bubble is allowed to get

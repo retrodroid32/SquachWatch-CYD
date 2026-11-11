@@ -119,6 +119,7 @@ jobs:
             tools/test_v141_pocket_mode.py \
             tools/test_desk_clock_format.py \
             tools/test_crowd_none.py \
+            tools/test_fonts_live_render.py \
             tools/test_check_app_image_sizes.py \
             tools/test_verify_lab_site_partitions.py \
             tools/test_blackbox_ota_layout.py; do
