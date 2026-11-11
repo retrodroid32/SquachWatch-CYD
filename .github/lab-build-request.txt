@@ -1,19 +1,20 @@
-RID-MULTI8-EVENTS-WIFI-R6
-# PR #213: bounded 8-contact Remote ID assembler with concurrency fix.
-# R6: publish gate checks effective smaller OTA slot for reserved Events.
-# R5: restore BlackBox Events in non-overlapping 48KB flash gap.
-# R5: classic 2.8 CYD frees framebuffer before WiFi saved-network USE.
-# USB flash with matching partitions.bin is REQUIRED; OTA-only unsafe.
-# Merge blocked until both boards physically validate Events, WiFi and UI.
-# R4: update emulator's real Remote ID decoder adapter to the new API.
-# R3: BLE names use an atomic per-MAC snapshot; enumerate live contacts
-# densely even when one middle slot has expired. Host test covers holes.
-# BLE NimBLE host callbacks and Wi-Fi queue loop share an RTOS critical section.
-# Read-only contact diagnostics return copies under same lock; no live pointers.
-# Track key is (MAC, transport), 30-second TTL, fixed ring of 8 contacts.
-# Host vectors test interleaved drones, MAC/transport separation, expiry,
-# oldest eviction, malformed frames and 32-bit millis wraparound.
-# Correct 0x1F0000 OTA partition per slot; independent PR Build must PASS
-# before this release may build and Pages can deploy.
-# CYD 2.8 ST7789 and 3.2 ST7798 hardware acceptance still required.
-# No merge, tag or production release; preserve all other branches.
+HUNT-RSSI-SNAPSHOT-FOCUS-R3
+# PR #215 R3: fix live HUNT 0% flicker AND slow return to zero.
+# Root cause: frame captures millis() at loop start, NimBLE callback can
+# update lastSeenMs afterwards; unsigned now - lastSeenMs underflows and
+# instantly makes a live signal look expired. R1/R2 timer increases only
+# hid this bug and made signal-off detection unacceptably slow.
+# R3: signed wrap-safe age comparison, fresh millis at HUNT render.
+# R3: HUNT RSSI history/count/timestamp read as one protected snapshot;
+# NimBLE writer and HUNT target modifications use one portMUX.
+# R3: on WiFi HUNT, stay on the observed BSSID's channel while receiving,
+# resume normal channel sweep after 2s silence to reacquire channel changes.
+# New loss windows: BLE 4.0s; WiFi 6.5s, instead of BLE 9/WiFi 15s.
+# Current RSSI changes as each radio sample arrives; do NOT ease into 0.
+# Confirmed lost: 0% / NO SIGNAL, not last held dBm and never 0 dBm.
+# One serial [hunt-rssi] diagnostic only on live/absent transitions
+# (radio, age, count, channel; never logs MAC or private details).
+# Native tests cover time inversion, callback-before-render race, packet
+# gaps, channel focus/release, true OFF, reacquisition and millis rollover.
+# LAB builds for CYD2.8 ST7789 + CYD3.2 ST7798, no production tag/release.
+# Preserve original PR #214 and other LAB branches. DO NOT MERGE.

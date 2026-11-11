@@ -17,6 +17,7 @@
 // screen full of detections, but it is NOT exercising the real matching
 // logic that decides what counts as a detection in the first place.
 #include "detection.h"
+#include "hunt_signal.h"
 #include "ignore_list.h"
 #include <cstring>
 
@@ -124,7 +125,13 @@ void DetectionEngine::pushLog(const Detection& d) {
 }
 
 // Radio-fed entry points: inert here, nothing calls them in the sim.
-void DetectionEngine::postWiFi(const uint8_t*, int8_t, uint8_t, const char*, bool, bool, bool, bool) {}
+void DetectionEngine::postWiFi(const uint8_t* mac, int8_t rssi, uint8_t channel,
+                               const char*, bool, bool, bool, bool) {
+    // The real RX callback queues its packets and processWiFiQ() feeds the
+    // active HUNT target. This host shim has no Wi-Fi radio/queue, so deliver
+    // the same input directly into HUNT for deterministic loss tests.
+    if (mac) checkHuntWifi(mac, rssi, channel);
+}
 void DetectionEngine::postDeauth(const uint8_t*, int8_t, uint8_t) {}
 void DetectionEngine::postBle(Detection d) {
     pushLog(d);
@@ -369,6 +376,14 @@ bool DetectionEngine::huntWifi(const uint8_t* bssid, const char* ssid) {
 
 void DetectionEngine::noteHuntRssi(HuntEntry& e, int8_t rssi) {
     const uint32_t now = millis();
+    // A new packet after silence starts a new RSSI trend. Never use an old
+    // strong reading as the previous sample for HOT/CAUGHT on reacquisition.
+    if (HuntSignal::restartHistory(e.rssiCount, e.lastSeenMs, now,
+                                   e.kind == WatchKind::WIFI)) {
+        e.rssiHead = 0;
+        e.rssiCount = 0;
+        e.rssiLastMs = 0;
+    }
     e.lastSeenMs = now;
     if (e.rssiCount && now - e.rssiLastMs < WATCH_RSSI_SAMPLE_MS) return;
     e.rssiLastMs = now;
@@ -387,25 +402,48 @@ void DetectionEngine::checkHuntBle(const uint8_t* mac, int8_t rssi) {
     }
 }
 
-void DetectionEngine::checkHuntWifi(const uint8_t* mac, int8_t rssi) {
+void DetectionEngine::checkHuntWifi(const uint8_t* mac, int8_t rssi, uint8_t channel) {
     for (uint8_t i = 0; i < _huntTargetCount; i++) {
         HuntEntry& e = _huntTargets[i];
         if (e.kind == WatchKind::WIFI && memcmp(e.mac, mac, 6) == 0) {
+            if (channel >= 1 && channel <= 13) e.channel = channel;
             noteHuntRssi(e, rssi);
             return;
         }
     }
 }
 
-uint8_t DetectionEngine::huntRssiCount() const {
+bool DetectionEngine::huntSignalSnapshot(HuntSignalSnapshot& out) const {
+    out = HuntSignalSnapshot();
     const int8_t found = findHuntTarget(_huntMac, _huntKind);
-    return found >= 0 ? _huntTargets[(uint8_t)found].rssiCount : 0;
+    if (found < 0) return false;
+    const HuntEntry& e = _huntTargets[(uint8_t)found];
+    out.kind = e.kind;
+    out.channel = e.channel;
+    out.samples = e.rssiCount;
+    out.lastSeenMs = e.lastSeenMs;
+    for (uint8_t n = 0; n < out.samples && n < 8; ++n)
+        out.rssi[n] = huntEntryRssiAt(e, n);
+    return true;
+}
+
+uint8_t DetectionEngine::huntRssiCount() const {
+    HuntSignalSnapshot s;
+    return huntSignalSnapshot(s) ? s.samples : 0;
 }
 
 int8_t DetectionEngine::huntRssiAt(uint8_t idx) const {
-    const int8_t found = findHuntTarget(_huntMac, _huntKind);
-    return found >= 0 ? huntEntryRssiAt(_huntTargets[(uint8_t)found], idx) : 0;
+    HuntSignalSnapshot s;
+    return huntSignalSnapshot(s) && idx < s.samples ? s.rssi[idx] : 0;
 }
+
+bool DetectionEngine::huntSignalFresh(uint32_t now) const {
+    HuntSignalSnapshot s;
+    return huntSignalSnapshot(s) &&
+           HuntSignal::fresh(s.samples, s.lastSeenMs, now,
+                             s.kind == WatchKind::WIFI);
+}
+
 
 // ---- housekeeping the real engine runs from loop() -------------------
 void DetectionEngine::processWiFiQ(uint32_t, uint8_t) {}

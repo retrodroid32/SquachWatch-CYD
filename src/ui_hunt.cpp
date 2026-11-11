@@ -1,5 +1,6 @@
 // SquachWatch-CYD — HUNT MODE screen implementation
 #include "ui_hunt.h"
+#include "hunt_signal.h"
 #include "theme.h"
 #include "privacy.h"
 #include "squachy.h"
@@ -53,6 +54,7 @@ static const uint32_t CAUGHT_HOLD = 5000;
 static uint32_t s_caughtUntil = 0;
 static bool     s_caughtFired = false;
 static bool     s_gaugeStarted = false;
+static bool     s_prevSignalLive = false;  // transition-only serial diagnostic
 
 // HUNT list view. The stored target array keeps selection order; this index
 // array is rebuilt by RSSI every frame so the actual records never move while
@@ -72,6 +74,7 @@ void uiHuntInit(TFT_eSPI& t) {
     s_caughtUntil     = 0;
     s_caughtFired     = false;
     s_gaugeStarted    = false;
+    s_prevSignalLive = false;
     s_listScroll      = 0;
 }
 
@@ -140,7 +143,8 @@ static void huntListGeom(TFT_eSPI& t, int w, int h,
 }
 
 static int huntListScore(const DetectionEngine::HuntTargetInfo& info, uint32_t now) {
-    if (!info.seen || now - info.lastSeenMs > 10000) return -200;
+    if (!HuntSignal::fresh(info.samples, info.lastSeenMs, now,
+                               info.kind == DetectionEngine::WatchKind::WIFI)) return -200;
     return (int)info.rssi;
 }
 
@@ -217,7 +221,8 @@ static void drawHuntList(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng) 
         DetectionEngine::HuntTargetInfo info;
         if (!eng.huntTargetInfo(s_listOrder[pos], info)) continue;
         const int y = top + row * rowH;
-        const bool fresh = info.seen && now - info.lastSeenMs <= 10000;
+        const bool fresh = HuntSignal::fresh(info.samples, info.lastSeenMs, now,
+                               info.kind == DetectionEngine::WatchKind::WIFI);
 
         t.drawFastHLine(6, y + rowH - 1, w - 12, Theme::PURPLE);
 
@@ -244,7 +249,7 @@ static void drawHuntList(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng) 
         t.setCursor(8, y + 18);
         t.print(info.kind == DetectionEngine::WatchKind::BLE ? "BLE" : "WIFI");
         if (info.seen) {
-            const uint32_t age = (now - info.lastSeenMs) / 1000;
+            const uint32_t age = (uint32_t)HuntSignal::ageMs(info.lastSeenMs, now) / 1000;
             t.printf("   seen %lus ago", (unsigned long)age);
         } else {
             t.print("   waiting for signal");
@@ -315,7 +320,34 @@ void uiHuntTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool adva
     t.setCursor((w - (lw < maxLw ? lw : maxLw)) / 2, labelY);
     t.print(label);
 
-    uint8_t rssiN = eng.huntRssiCount();
+    // One atomic snapshot of target, count, chronological RSSI, timestamp
+    // and radio type. The NimBLE host task can publish new observations
+    // while this frame is being rendered. Separate getters once mixed a
+    // new timestamp with an old count and caused false 0% flashes.
+    DetectionEngine::HuntSignalSnapshot signal;
+    const bool haveTarget = eng.huntSignalSnapshot(signal);
+    const uint32_t huntNow = millis();  // never reuse a loop-start timestamp
+    const bool live = haveTarget &&
+        HuntSignal::fresh(signal.samples, signal.lastSeenMs, huntNow,
+                          signal.kind == DetectionEngine::WatchKind::WIFI);
+    const uint8_t storedRssiN = haveTarget ? signal.samples : 0;
+    const uint8_t rssiN = live ? storedRssiN : 0;
+    if (live != s_prevSignalLive) {
+        Serial.printf("[hunt-rssi] radio=%s live=%u samples=%u age=%ld ms channel=%u\n",
+                      signal.kind == DetectionEngine::WatchKind::WIFI ? "WIFI" : "BLE",
+                      (unsigned)live, (unsigned)storedRssiN,
+                      (long)(haveTarget ? HuntSignal::ageMs(signal.lastSeenMs, huntNow) : -1),
+                      (unsigned)signal.channel);
+        s_prevSignalLive = live;
+    }
+    // History is kept for the HUNT roster but must NEVER drive a live
+    // needle, numeric reading, trend or CAUGHT badge after signal loss.
+    if (!live) {
+        s_hotFired = false;
+        s_caughtUntil = 0;
+        s_caughtFired = false;
+        s_lastTrend = RssiTrend::UNKNOWN;
+    }
 
     // First-ever sample for this target -- fires once, well before
     // there's enough history for a warmer/colder trend (needs 3+).
@@ -344,7 +376,7 @@ void uiHuntTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool adva
     float frac = 0.0f;
     int8_t latestRssi = RSSI_LO;
     if (rssiN > 0) {
-        latestRssi = eng.huntRssiAt(rssiN - 1);
+        latestRssi = signal.rssi[rssiN - 1];
         int v = latestRssi;
         if (v < RSSI_LO) v = RSSI_LO;
         if (v > RSSI_HI) v = RSSI_HI;
@@ -365,8 +397,8 @@ void uiHuntTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool adva
         s_hotFired = false;
     }
     // The catch: this sample and the one before both at arm's length.
-    if (rssiN >= 2 && latestRssi >= CAUGHT_DBM && eng.huntRssiAt(rssiN - 2) >= CAUGHT_DBM) {
-        s_caughtUntil = now + CAUGHT_HOLD;
+    if (rssiN >= 2 && latestRssi >= CAUGHT_DBM && signal.rssi[rssiN - 2] >= CAUGHT_DBM) {
+        s_caughtUntil = huntNow + CAUGHT_HOLD;
         if (!s_caughtFired) {
             s_caughtFired = true;
             Squachy::huntReaction(Squachy::HuntMoment::HOT);
@@ -383,7 +415,7 @@ void uiHuntTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool adva
     // LOG arrows even though the underlying meaning is now identical.
     char rbuf[16];
     if (rssiN > 0) snprintf(rbuf, sizeof(rbuf), "%d dBm", (int)latestRssi);
-    else           snprintf(rbuf, sizeof(rbuf), "-- dBm");
+    else           snprintf(rbuf, sizeof(rbuf), "%s", HuntSignal::absentReadout(storedRssiN > 0));
     t.setTextSize(2);
     int rw = t.textWidth(rbuf);
     t.setTextColor(Theme::WHITE, Theme::BG);
@@ -394,12 +426,12 @@ void uiHuntTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool adva
     // would silently query the wrong thing here.
     int readoutH = t.fontHeight();
 
-    const char* trend = "WAITING FOR SIGNAL...";
+    const char* trend = HuntSignal::absentStatus(storedRssiN > 0);
     uint16_t trendColor = Theme::WHITE;
     const uint8_t trendCount = rssiN > 8 ? 8 : rssiN;
     const uint8_t trendStart = (uint8_t)(rssiN - trendCount);
     const RssiTrend cur = trendCount
-        ? classifyRssiTrend((int)eng.huntRssiAt(trendStart), (int)latestRssi, trendCount)
+        ? classifyRssiTrend((int)signal.rssi[trendStart], (int)latestRssi, trendCount)
         : RssiTrend::UNKNOWN;
     if (cur == RssiTrend::APPROACHING) {
         trend = "GETTING WARMER";
