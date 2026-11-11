@@ -65,7 +65,11 @@ const OuiEntry kOuiTable[] = {
     // observed radio is airborne; several vendors also make controllers,
     // docks, cameras, gimbals or related networked equipment.
     //
-    // DJI: current public registry set (10 MA-L blocks).
+    // DJI: all 10 IEEE MA-L allocations registered to SZ DJI TECHNOLOGY
+    // CO.,LTD. Sources, reported dates, and interpretation caveats:
+    // docs/DJI_OUI_REGISTRY.md (MACLookup public registry, 2026-11-10).
+    // HIGH is *vendor registration* confidence, NOT validated Remote ID or
+    // evidence of an airborne aircraft. Preserve existing classifications.
     {{0x04, 0xA8, 0x5A}, "DJI",          DetectionType::DRONE,      Confidence::HIGH_CONF},
     {{0x0C, 0x9A, 0xE6}, "DJI",          DetectionType::DRONE,      Confidence::HIGH_CONF},
     {{0x34, 0xD2, 0x62}, "DJI",          DetectionType::DRONE,      Confidence::HIGH_CONF},
