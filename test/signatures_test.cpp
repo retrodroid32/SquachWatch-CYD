@@ -186,9 +186,42 @@ int main() {
 
     suite("Drone manufacturer OUIs");
 
-    ck("DJI current MA-L block is DRONE",
-       lookup(0x4C, 0x43, 0xF6, &conf) == DetectionType::DRONE);
-    ck("DJI block graded HIGH", conf == Confidence::HIGH_CONF);
+    // All ten MA-L allocations registered to SZ DJI TECHNOLOGY CO.,LTD.
+    // This tests *manufacturer classification*, not a valid Remote ID,
+    // an airborne aircraft or a specific DJI model. Source and dates:
+    // docs/DJI_OUI_REGISTRY.md (MACLookup IEEE-based registry, 2026-11).
+    static constexpr uint8_t kDjiOui[10][3] = {
+        {0x04,0xA8,0x5A}, {0x0C,0x9A,0xE6}, {0x34,0xD2,0x62},
+        {0x48,0x1C,0xB9}, {0x4C,0x43,0xF6}, {0x58,0xB8,0x58},
+        {0x60,0x60,0x1F}, {0x88,0x29,0x85}, {0x8C,0x58,0x23},
+        {0xE4,0x7A,0x2C},
+    };
+    int djiMisses = 0, djiLabelMisses = 0, djiConfidenceMisses = 0;
+    int djiRows = 0;
+    for (const auto& prefix : kDjiOui) {
+        for (uint8_t tail = 0; tail < 2; ++tail) {
+            const uint8_t mac[6] = {prefix[0], prefix[1], prefix[2],
+                                    tail ? (uint8_t)0xFF : (uint8_t)0x00,
+                                    tail ? (uint8_t)0xFF : (uint8_t)0x00,
+                                    tail ? (uint8_t)0xFF : (uint8_t)0x00};
+            Confidence grade = Confidence::LOW_CONF;
+            if (lookupOui(mac, &grade) != DetectionType::DRONE) ++djiMisses;
+            const char* vendor = ouiVendorName(mac);
+            if (!vendor || std::strcmp(vendor, "DJI") != 0) ++djiLabelMisses;
+            if (grade != Confidence::HIGH_CONF) ++djiConfidenceMisses;
+        }
+        for (uint16_t i = 0; i < kOuiCount; ++i)
+            if (std::memcmp(kOuiTable[i].b, prefix, 3) == 0 &&
+                std::strcmp(kOuiTable[i].name, "DJI") == 0) ++djiRows;
+    }
+    ck("all 10 DJI MA-L prefixes classify every suffix as DRONE family", djiMisses == 0);
+    ck("all 10 DJI prefixes display their manufacturer label", djiLabelMisses == 0);
+    ck("all 10 DJI prefixes retain existing vendor confidence", djiConfidenceMisses == 0);
+    ck("exactly 10 DJI OUI rows, no duplicate registry entries", djiRows == 10);
+    const uint8_t syntheticLookalike[6] = {0x06, 0xA8, 0x5A, 0, 0, 1};
+    ck("locally administered lookalike is not registered DJI",
+       ouiVendorName(syntheticLookalike) == nullptr ||
+       std::strcmp(ouiVendorName(syntheticLookalike), "DJI") != 0);
     ck("Parrot is DRONE",
        lookup(0x90, 0x3A, 0xE6, &conf) == DetectionType::DRONE);
     ck("Skydio is DRONE",

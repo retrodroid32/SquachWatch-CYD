@@ -11,6 +11,16 @@ Confidence:
 
 ---
 
+## DJI manufacturer OUI reference
+
+The complete **10-prefix** DJI MA-L registry, dates, source links and the
+crucial distinction between registered-vendor evidence and decoded Remote ID
+are documented in [DJI OUI registry](DJI_OUI_REGISTRY.md).
+The existing signature table classifies these prefixes in the DRONE family;
+an OUI alone is **not** proof that a drone is flying or broadcasting Remote ID.
+
+---
+
 ## Flock Safety — `FLOCK` — **path-dependent confidence**
 
 **Current Wi-Fi database:** SquachWatch now tracks the 32 active field prefixes
