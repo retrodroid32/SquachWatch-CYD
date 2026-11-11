@@ -1,16 +1,20 @@
-HUNT-RSSI-DEBOUNCE-R2
-# PR #215 R2: fix R1 0% / NO SIGNAL flicker while a target is still active.
-# R1 5s expiry was too short for passive 13-channel WiFi sweeping and BLE
-# coex advertisement gaps. R2 uses radio-aware grace windows:
-#   BLE: 9 seconds; WiFi: 15 seconds (more than three ~4s channel sweeps).
-# New received packets refresh RSSI immediately. On confirmed absence,
-# strength is still 0% / NO SIGNAL, NOT 0 dBm or the frozen last sample.
-# Post-loss reacquisition resets stale trend and CAUGHT history; a normal
-# missed sweep does not reset the RSSI history or trigger spurious HOT.
-# Both HUNT roster and full-screen gauge share the same transport timeout.
-# Added virtual-radio intermittent reception tests with 7s BLE / 12s WiFi
-# packets over several minutes plus genuine loss/recovery and millis rollover.
-# LAB only: CYD 2.8 ST7789 + 3.2 ST7798 hardware testing required.
-# Preserve PR #214 and master. No merge, tag or production release.
-# R2 CI follow-up: native WiFi HUNT tests now drive public postWiFi()
-# through simulator RX shim; no private methods exposed in firmware.
+HUNT-RSSI-SNAPSHOT-FOCUS-R3
+# PR #215 R3: fix live HUNT 0% flicker AND slow return to zero.
+# Root cause: frame captures millis() at loop start, NimBLE callback can
+# update lastSeenMs afterwards; unsigned now - lastSeenMs underflows and
+# instantly makes a live signal look expired. R1/R2 timer increases only
+# hid this bug and made signal-off detection unacceptably slow.
+# R3: signed wrap-safe age comparison, fresh millis at HUNT render.
+# R3: HUNT RSSI history/count/timestamp read as one protected snapshot;
+# NimBLE writer and HUNT target modifications use one portMUX.
+# R3: on WiFi HUNT, stay on the observed BSSID's channel while receiving,
+# resume normal channel sweep after 2s silence to reacquire channel changes.
+# New loss windows: BLE 4.0s; WiFi 6.5s, instead of BLE 9/WiFi 15s.
+# Current RSSI changes as each radio sample arrives; do NOT ease into 0.
+# Confirmed lost: 0% / NO SIGNAL, not last held dBm and never 0 dBm.
+# One serial [hunt-rssi] diagnostic only on live/absent transitions
+# (radio, age, count, channel; never logs MAC or private details).
+# Native tests cover time inversion, callback-before-render race, packet
+# gaps, channel focus/release, true OFF, reacquisition and millis rollover.
+# LAB builds for CYD2.8 ST7789 + CYD3.2 ST7798, no production tag/release.
+# Preserve original PR #214 and other LAB branches. DO NOT MERGE.

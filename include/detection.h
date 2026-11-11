@@ -486,6 +486,16 @@ public:
         uint32_t  lastSeenMs = 0;
         bool      seen = false;
     };
+    // Single coherent HUNT gauge snapshot. NimBLE writes on its host task;
+    // the frame renderer must not mix a newly arrived timestamp with an
+    // old sample count or a half-reset RSSI history.
+    struct HuntSignalSnapshot {
+        WatchKind kind = WatchKind::NONE;
+        uint8_t channel = 0;
+        uint8_t samples = 0;
+        uint32_t lastSeenMs = 0;
+        int8_t rssi[8] = {0};  // chronological, oldest first
+    };
     enum class HuntToggle : uint8_t { ADDED, REMOVED, FULL };
 
     HuntToggle toggleHuntBle(const uint8_t* mac, const char* name);
@@ -507,6 +517,7 @@ public:
     const char* huntLabel() const { return _huntLabel; }
     uint8_t huntRssiCount() const;
     int8_t  huntRssiAt(uint8_t idx) const;
+    bool    huntSignalSnapshot(HuntSignalSnapshot& out) const;
     // True only while the selected HUNT target has actually been heard
     // within the short radio-loss window (not the 60s LOG retention).
     bool    huntSignalFresh(uint32_t now) const;
@@ -699,6 +710,7 @@ private:
         uint8_t   rssiCount = 0;
         uint32_t  rssiLastMs = 0;
         uint32_t  lastSeenMs = 0;
+        uint8_t   channel = 0; // last received Wi-Fi channel; zero for BLE/unknown
     };
     HuntEntry _huntTargets[HUNT_TARGET_CAP] = {};
     uint8_t   _huntTargetCount = 0;
@@ -711,7 +723,7 @@ private:
 
     int8_t  findHuntTarget(const uint8_t* mac, WatchKind kind) const;
     HuntToggle toggleHunt(const uint8_t* mac, const char* label, WatchKind kind);
-    void    checkHuntWifi(const uint8_t* mac, int8_t rssi);
+    void    checkHuntWifi(const uint8_t* mac, int8_t rssi, uint8_t channel);
     void    noteHuntRssi(HuntEntry& e, int8_t rssi);
     int8_t  huntEntryRssiAt(const HuntEntry& e, uint8_t idx) const;
 

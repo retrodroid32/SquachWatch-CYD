@@ -54,6 +54,9 @@ static portMUX_TYPE s_wifiRidMutex = portMUX_INITIALIZER_UNLOCKED;
  // BLE RX callbacks and Wi-Fi queue drains run in different FreeRTOS tasks.
  // Keep the bounded contact table and its legacy latest-info snapshot atomic.
 static portMUX_TYPE s_remoteIdMutex = portMUX_INITIALIZER_UNLOCKED;
+// HUNT BLE writes arrive from NimBLE's host task while the gauge reads
+// from the Arduino loop. Never render an RSSI count/timestamp mid-update.
+static portMUX_TYPE s_huntMutex = portMUX_INITIALIZER_UNLOCKED;
 static void queueWifiRemoteId(const uint8_t mac[6], const uint8_t* pack, uint16_t len) {
     if (!mac || !pack || len < 28 || len > 228) return;
     WifiRemoteIdRecord rec = {};
@@ -1672,6 +1675,23 @@ void DetectionEngine::hopChannel() {
     // still sees every channel; the shortest look still outlasts a router's
     // beacon interval (about 100 ms).
     const uint32_t now = millis();
+    // While the user is actively hunting a Wi-Fi target, spend airtime on
+    // the observed BSSID's actual channel instead of sweeping 13 others.
+    // Resume the normal adaptive sweep if no target packet arrives within
+    // two seconds; this also lets us reacquire an AP that changes channel.
+    // No retune is attempted during raw scans, REST, or Wi-Fi USE (caller
+    // already excludes those modes).
+    HuntSignalSnapshot hunt;
+    if (huntSignalSnapshot(hunt) && hunt.kind == WatchKind::WIFI &&
+        HuntSignal::focusWifi(hunt.channel, hunt.samples, hunt.lastSeenMs, now)) {
+        if (_wifiChannel != hunt.channel) {
+            _wifiChannel = hunt.channel;
+            _lastHopMs = now;
+            s_chanFrames[_wifiChannel] = 0;
+            esp_wifi_set_channel(_wifiChannel, WIFI_SECOND_CHAN_NONE);
+        }
+        return;
+    }
     if (now - _lastHopMs < _dwellMs) return;
     {
         // How busy the channel being left was: frames a second, times 16.
@@ -2818,9 +2838,12 @@ int8_t DetectionEngine::huntEntryRssiAt(const HuntEntry& e, uint8_t idx) const {
     return e.rssiHist[(uint8_t)((start + idx) % HUNT_RSSI_CAP)];
 }
 
+
 DetectionEngine::HuntToggle DetectionEngine::toggleHunt(const uint8_t* mac,
                                                          const char* label,
                                                          WatchKind kind) {
+    if (!mac) return HuntToggle::FULL;
+    portENTER_CRITICAL(&s_huntMutex);
     const int8_t found = findHuntTarget(mac, kind);
     if (found >= 0) {
         const bool wasActive = (_huntKind == kind && memcmp(_huntMac, mac, 6) == 0);
@@ -2830,12 +2853,18 @@ DetectionEngine::HuntToggle DetectionEngine::toggleHunt(const uint8_t* mac,
             _huntTargetCount--;
             memset(&_huntTargets[_huntTargetCount], 0, sizeof(_huntTargets[0]));
         }
-        if (wasActive) deactivateHunt();
+        if (wasActive) {
+            _huntKind = WatchKind::NONE;
+            memset(_huntMac, 0, sizeof _huntMac);
+            _huntLabel[0] = 0;
+        }
+        portEXIT_CRITICAL(&s_huntMutex);
         return HuntToggle::REMOVED;
     }
-
-    if (_huntTargetCount >= HUNT_TARGET_CAP) return HuntToggle::FULL;
-
+    if (_huntTargetCount >= HUNT_TARGET_CAP) {
+        portEXIT_CRITICAL(&s_huntMutex);
+        return HuntToggle::FULL;
+    }
     HuntEntry& e = _huntTargets[_huntTargetCount++];
     e = HuntEntry();
     e.kind = kind;
@@ -2843,6 +2872,7 @@ DetectionEngine::HuntToggle DetectionEngine::toggleHunt(const uint8_t* mac,
     const char* fallback = (kind == WatchKind::BLE) ? "Unnamed device" : "(hidden)";
     strncpy(e.label, (label && label[0]) ? label : fallback, sizeof(e.label) - 1);
     e.label[sizeof(e.label) - 1] = 0;
+    portEXIT_CRITICAL(&s_huntMutex);
     return HuntToggle::ADDED;
 }
 
@@ -2854,65 +2884,95 @@ DetectionEngine::HuntToggle DetectionEngine::toggleHuntWifi(const uint8_t* bssid
     return toggleHunt(bssid, ssid, WatchKind::WIFI);
 }
 
+
 bool DetectionEngine::isHunted(const uint8_t* mac, bool ble) const {
-    return findHuntTarget(mac, ble ? WatchKind::BLE : WatchKind::WIFI) >= 0;
+    portENTER_CRITICAL(&s_huntMutex);
+    const bool found = findHuntTarget(mac, ble ? WatchKind::BLE : WatchKind::WIFI) >= 0;
+    portEXIT_CRITICAL(&s_huntMutex);
+    return found;
 }
 
+
 bool DetectionEngine::huntTargetInfo(uint8_t idx, HuntTargetInfo& out) const {
-    if (idx >= _huntTargetCount) return false;
-    const HuntEntry& e = _huntTargets[idx];
+    HuntEntry local;
+    portENTER_CRITICAL(&s_huntMutex);
+    const bool valid = idx < _huntTargetCount;
+    if (valid) local = _huntTargets[idx];
+    portEXIT_CRITICAL(&s_huntMutex);
+    if (!valid) return false;
     out = HuntTargetInfo();
-    out.kind = e.kind;
-    memcpy(out.mac, e.mac, 6);
-    strncpy(out.label, e.label, sizeof(out.label) - 1);
+    out.kind = local.kind;
+    memcpy(out.mac, local.mac, 6);
+    strncpy(out.label, local.label, sizeof(out.label) - 1);
     out.label[sizeof(out.label) - 1] = 0;
-    out.samples = e.rssiCount;
-    out.lastSeenMs = e.lastSeenMs;
-    out.seen = e.rssiCount > 0;
-    if (e.rssiCount) {
-        out.rssi = huntEntryRssiAt(e, (uint8_t)(e.rssiCount - 1));
-        out.previousRssi = (e.rssiCount >= 2)
-            ? huntEntryRssiAt(e, (uint8_t)(e.rssiCount - 2))
+    out.samples = local.rssiCount;
+    out.lastSeenMs = local.lastSeenMs;
+    out.seen = local.rssiCount > 0;
+    if (local.rssiCount) {
+        out.rssi = huntEntryRssiAt(local, (uint8_t)(local.rssiCount - 1));
+        out.previousRssi = (local.rssiCount >= 2)
+            ? huntEntryRssiAt(local, (uint8_t)(local.rssiCount - 2))
             : out.rssi;
-        out.trend = classifyRssiTrend((int)huntEntryRssiAt(e, 0),
-                                     (int)out.rssi, e.rssiCount);
+        out.trend = classifyRssiTrend((int)huntEntryRssiAt(local, 0),
+                                     (int)out.rssi, local.rssiCount);
     }
     return true;
 }
 
+
 bool DetectionEngine::activateHuntTarget(uint8_t idx) {
-    if (idx >= _huntTargetCount) return false;
+    portENTER_CRITICAL(&s_huntMutex);
+    if (idx >= _huntTargetCount) {
+        portEXIT_CRITICAL(&s_huntMutex);
+        return false;
+    }
     const HuntEntry& e = _huntTargets[idx];
     _huntKind = e.kind;
     memcpy(_huntMac, e.mac, 6);
     strncpy(_huntLabel, e.label, sizeof(_huntLabel) - 1);
     _huntLabel[sizeof(_huntLabel) - 1] = 0;
+    portEXIT_CRITICAL(&s_huntMutex);
     return true;
 }
 
+
 void DetectionEngine::deactivateHunt() {
+    portENTER_CRITICAL(&s_huntMutex);
     _huntKind = WatchKind::NONE;
     memset(_huntMac, 0, sizeof _huntMac);
     _huntLabel[0] = 0;
+    portEXIT_CRITICAL(&s_huntMutex);
 }
+
 
 void DetectionEngine::clearHunt() {
-    if (_huntKind == WatchKind::NONE) return;
-    const int8_t found = findHuntTarget(_huntMac, _huntKind);
-    if (found >= 0) {
-        for (uint8_t i = (uint8_t)found; i + 1 < _huntTargetCount; i++)
-            _huntTargets[i] = _huntTargets[i + 1];
-        _huntTargetCount--;
-        memset(&_huntTargets[_huntTargetCount], 0, sizeof(_huntTargets[0]));
+    portENTER_CRITICAL(&s_huntMutex);
+    if (_huntKind != WatchKind::NONE) {
+        const int8_t found = findHuntTarget(_huntMac, _huntKind);
+        if (found >= 0) {
+            for (uint8_t i = (uint8_t)found; i + 1 < _huntTargetCount; i++)
+                _huntTargets[i] = _huntTargets[i + 1];
+            _huntTargetCount--;
+            memset(&_huntTargets[_huntTargetCount], 0, sizeof(_huntTargets[0]));
+        }
+        _huntKind = WatchKind::NONE;
+        memset(_huntMac, 0, sizeof _huntMac);
+        _huntLabel[0] = 0;
     }
-    deactivateHunt();
+    portEXIT_CRITICAL(&s_huntMutex);
 }
 
+
 void DetectionEngine::clearHunts() {
+    portENTER_CRITICAL(&s_huntMutex);
     memset(_huntTargets, 0, sizeof _huntTargets);
     _huntTargetCount = 0;
-    deactivateHunt();
+    _huntKind = WatchKind::NONE;
+    memset(_huntMac, 0, sizeof _huntMac);
+    _huntLabel[0] = 0;
+    portEXIT_CRITICAL(&s_huntMutex);
 }
+
 
 bool DetectionEngine::huntBle(const uint8_t* mac, const char* name) {
     int8_t idx = findHuntTarget(mac, WatchKind::BLE);
@@ -2920,12 +2980,15 @@ bool DetectionEngine::huntBle(const uint8_t* mac, const char* name) {
         if (toggleHunt(mac, name, WatchKind::BLE) != HuntToggle::ADDED) return false;
         idx = findHuntTarget(mac, WatchKind::BLE);
     } else if (name && name[0]) {
+        portENTER_CRITICAL(&s_huntMutex);
         strncpy(_huntTargets[(uint8_t)idx].label, name,
                 sizeof(_huntTargets[(uint8_t)idx].label) - 1);
         _huntTargets[(uint8_t)idx].label[sizeof(_huntTargets[(uint8_t)idx].label) - 1] = 0;
+        portEXIT_CRITICAL(&s_huntMutex);
     }
     return idx >= 0 && activateHuntTarget((uint8_t)idx);
 }
+
 
 bool DetectionEngine::huntWifi(const uint8_t* bssid, const char* ssid) {
     int8_t idx = findHuntTarget(bssid, WatchKind::WIFI);
@@ -2933,9 +2996,11 @@ bool DetectionEngine::huntWifi(const uint8_t* bssid, const char* ssid) {
         if (toggleHunt(bssid, ssid, WatchKind::WIFI) != HuntToggle::ADDED) return false;
         idx = findHuntTarget(bssid, WatchKind::WIFI);
     } else if (ssid && ssid[0]) {
+        portENTER_CRITICAL(&s_huntMutex);
         strncpy(_huntTargets[(uint8_t)idx].label, ssid,
                 sizeof(_huntTargets[(uint8_t)idx].label) - 1);
         _huntTargets[(uint8_t)idx].label[sizeof(_huntTargets[(uint8_t)idx].label) - 1] = 0;
+        portEXIT_CRITICAL(&s_huntMutex);
     }
     return idx >= 0 && activateHuntTarget((uint8_t)idx);
 }
@@ -2959,42 +3024,67 @@ void DetectionEngine::noteHuntRssi(HuntEntry& e, int8_t rssi) {
 }
 
 void DetectionEngine::checkHuntBle(const uint8_t* mac, int8_t rssi) {
+    if (!mac) return;
+    portENTER_CRITICAL(&s_huntMutex);
     for (uint8_t i = 0; i < _huntTargetCount; i++) {
         HuntEntry& e = _huntTargets[i];
         if (e.kind == WatchKind::BLE && memcmp(e.mac, mac, 6) == 0) {
             noteHuntRssi(e, rssi);
-            return;
+            break;
         }
     }
+    portEXIT_CRITICAL(&s_huntMutex);
 }
 
-void DetectionEngine::checkHuntWifi(const uint8_t* mac, int8_t rssi) {
+void DetectionEngine::checkHuntWifi(const uint8_t* mac, int8_t rssi, uint8_t channel) {
+    if (!mac) return;
+    portENTER_CRITICAL(&s_huntMutex);
     for (uint8_t i = 0; i < _huntTargetCount; i++) {
         HuntEntry& e = _huntTargets[i];
         if (e.kind == WatchKind::WIFI && memcmp(e.mac, mac, 6) == 0) {
+            if (channel >= 1 && channel <= 13) e.channel = channel;
             noteHuntRssi(e, rssi);
-            return;
+            break;
         }
     }
+    portEXIT_CRITICAL(&s_huntMutex);
+}
+
+bool DetectionEngine::huntSignalSnapshot(HuntSignalSnapshot& out) const {
+    out = HuntSignalSnapshot();
+    HuntEntry local;
+    portENTER_CRITICAL(&s_huntMutex);
+    const int8_t ix = findHuntTarget(_huntMac, _huntKind);
+    const bool valid = ix >= 0;
+    if (valid) local = _huntTargets[(uint8_t)ix];
+    portEXIT_CRITICAL(&s_huntMutex);
+    if (!valid) return false;
+    out.kind = local.kind;
+    out.channel = local.channel;
+    out.samples = local.rssiCount;
+    out.lastSeenMs = local.lastSeenMs;
+    for (uint8_t n = 0; n < out.samples && n < 8; ++n)
+        out.rssi[n] = huntEntryRssiAt(local, n);
+    return true;
 }
 
 uint8_t DetectionEngine::huntRssiCount() const {
-    const int8_t found = findHuntTarget(_huntMac, _huntKind);
-    return found >= 0 ? _huntTargets[(uint8_t)found].rssiCount : 0;
+    HuntSignalSnapshot s;
+    return huntSignalSnapshot(s) ? s.samples : 0;
 }
 
 int8_t DetectionEngine::huntRssiAt(uint8_t idx) const {
-    const int8_t found = findHuntTarget(_huntMac, _huntKind);
-    return found >= 0 ? huntEntryRssiAt(_huntTargets[(uint8_t)found], idx) : 0;
+    HuntSignalSnapshot s;
+    return huntSignalSnapshot(s) && idx < s.samples ? s.rssi[idx] : 0;
 }
 
 bool DetectionEngine::huntSignalFresh(uint32_t now) const {
-    const int8_t found = findHuntTarget(_huntMac, _huntKind);
-    if (found < 0) return false;
-    const HuntEntry& e = _huntTargets[(uint8_t)found];
-    return HuntSignal::fresh(e.rssiCount, e.lastSeenMs, now,
-                             e.kind == WatchKind::WIFI);
+    HuntSignalSnapshot s;
+    return huntSignalSnapshot(s) &&
+           HuntSignal::fresh(s.samples, s.lastSeenMs, now,
+                             s.kind == WatchKind::WIFI);
 }
+
 
 // Same vendor, ignoring the locally-administered bit. Multi-SSID and
 // mesh APs routinely derive per-radio BSSIDs by setting that bit on
@@ -3068,7 +3158,7 @@ void DetectionEngine::processWiFiQ(uint32_t budgetUs, uint8_t maxItems) {
         // MAC shows up here as addr2 (probe/data) or addr3/BSSID
         // (beacon), same offsets postWiFi() was already called with.
         checkWatchWifi(e.mac, e.rssi);
-        checkHuntWifi(e.mac, e.rssi);
+        checkHuntWifi(e.mac, e.rssi, e.channel);
         // Every captured frame feeds the spectrum-waterfall's channel
         // activity level, whether or not it ends up matching anything
         // below — this is meant to reflect real ambient RF traffic,
