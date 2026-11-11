@@ -109,6 +109,7 @@ jobs:
         run: |
           python3 tools/test_check_app_image_sizes.py
           python3 tools/test_verify_lab_site_partitions.py
+          python3 tools/test_blackbox_ota_layout.py
       - name: Run host tests
         run: make -C test
       - name: Verify CYD32 native LCD transfer and one-time rotation clear

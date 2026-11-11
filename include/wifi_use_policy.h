@@ -38,7 +38,7 @@ inline bool passwordFullPaint(bool pendingFirstPaint, bool directPanel,
 // canvas's height. The recovery sprite covers only a band, not the full
 // display, so it must never receive a full-screen keyboard layout pass.
 inline bool keyboardDirectPanel(bool framebufferReady, uint8_t bands) {
-#if defined(CYD32)
+#if defined(CYD32) || defined(CYD)
     // A full-size sprite is the ONLY surface that can safely redraw the
     // keyboard every frame. After WiFi memory loans, the 3.2 may have no
     // framebuffer OR only 2/4/8/16 short sprite bands.
@@ -71,7 +71,7 @@ inline bool networksRowChanged(int row, int selected, int priorSelected,
 }
 
 inline bool networksDirectPanel(bool framebufferReady, uint8_t bands) {
-#if defined(CYD32)
+#if defined(CYD32) || defined(CYD)
     return !framebufferReady || bands > 1;
 #else
     (void)framebufferReady; (void)bands;

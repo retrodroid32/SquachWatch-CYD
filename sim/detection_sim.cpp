@@ -135,14 +135,27 @@ void DetectionEngine::postBle(Detection d) {
 // a radio, but the Remote ID decoder is pure arithmetic over a byte
 // buffer -- so the emulator runs the REAL one, and the drone info panel it
 // renders is showing genuinely decoded values rather than a mock-up.
-void DetectionEngine::mergeRemoteId(const uint8_t* mac, const uint8_t* payload,
-                                    uint8_t len) {
-    if (!mac || !payload) return;
-    if (memcmp(mac, _ridMac, 6) != 0) {
-        RemoteId::reset(_rid);
-        memcpy(_ridMac, mac, 6);
-    }
-    RemoteId::merge(payload, len, _rid, millis());
+bool DetectionEngine::mergeRemoteId(const uint8_t* mac, const uint8_t* payload,
+                                    uint8_t len, RemoteId::Info* decoded) {
+    if (!mac || !payload) return false;
+    // The emulator is single-threaded, but it must use the same per-MAC
+    // tracker and return contract as real radio processing.
+    const RemoteId::Tracker::Contact* contact =
+        _ridTracker.ingestBle(mac, payload, len, millis());
+    if (!contact) return false;
+    _rid = contact->info;
+    memcpy(_ridMac, contact->mac, sizeof(_ridMac));
+    if (decoded) *decoded = contact->info;
+    return true;
+}
+uint8_t DetectionEngine::remoteIdTrackCount(uint32_t now) const {
+    return _ridTracker.liveCount(now);
+}
+bool DetectionEngine::copyRemoteIdTrack(uint8_t index, uint32_t now,
+                                        RemoteId::Tracker::Contact& out) const {
+    const RemoteId::Tracker::Contact* record = _ridTracker.contactAt(index, now);
+    if (record) out = *record;
+    return record != nullptr;
 }
 void DetectionEngine::postBtClassic(Detection d) { pushLog(d); }
 void DetectionEngine::postRawBle(RawBleResult r) {

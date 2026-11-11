@@ -1,15 +1,16 @@
 // SquachWatch-CYD — the black box
 //
 // What the board saw and how it last went down, kept across restarts without
-// an SD card. It lives in the 128 KB the partition table leaves unassigned
-// between app1 and the core dump (0x3D0000-0x3F0000): no table change, so no
-// board needs a USB reinstall to have it. See partitions_ota.csv.
+// an SD card. Classic CYD R5 uses the raw 48KB flash gap at
+// 0x3E4000-0x3F0000, outside the resized second OTA app slot. USB flash
+// must also install partitions.bin; firmware-only OTA cannot migrate it.
+// T-Watch retains its former 128KB ring. See partitions_ota.csv.
 //
 // Two rings of 4 KB sectors, each sector a header and 63 records of 64 bytes:
 //   sectors 0-1   boots: one record a boot, with the crash details when the
 //                 boot was a crash -- about a hundred boots back
-//   sectors 2-31  detections: one record a sighting, first sight or back
-//                 after going quiet -- about 1,800 back
+//   sectors 2-11  classic CYD Events: about 630 stored sightings
+//   sectors 2-31  T-Watch S3 Events/battery: original layout unchanged
 // A full ring erases its oldest sector. Nothing here is trusted until its
 // header and checksum say it is ours: before v1.7.0 this space was SPIFFS,
 // so an old board arrives with somebody else's bytes in it.

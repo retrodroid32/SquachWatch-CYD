@@ -50,6 +50,9 @@ struct WifiRemoteIdRecord {
 static WifiRemoteIdRecord s_wifiRidQ[4] = {};
 static uint8_t s_wifiRidHead = 0, s_wifiRidTail = 0;
 static portMUX_TYPE s_wifiRidMutex = portMUX_INITIALIZER_UNLOCKED;
+ // BLE RX callbacks and Wi-Fi queue drains run in different FreeRTOS tasks.
+ // Keep the bounded contact table and its legacy latest-info snapshot atomic.
+static portMUX_TYPE s_remoteIdMutex = portMUX_INITIALIZER_UNLOCKED;
 static void queueWifiRemoteId(const uint8_t mac[6], const uint8_t* pack, uint16_t len) {
     if (!mac || !pack || len < 28 || len > 228) return;
     WifiRemoteIdRecord rec = {};
@@ -710,10 +713,10 @@ class BleScanCallbacks : public NimBLEScanCallbacks {
         // Decode it before the entry is posted so the log row can be named
         // after the actual aircraft rather than after a service UUID.
         if (det.type == DetectionType::DRONE) {
-            g_engine->mergeRemoteId(mac, adv->getPayload().data(),
-                                    (uint8_t)adv->getPayload().size());
-            const RemoteId::Info& rid = g_engine->remoteId();
-            if (rid.haveBasic && rid.serial[0]) {
+            RemoteId::Info rid;
+            if (g_engine->mergeRemoteId(mac, adv->getPayload().data(),
+                                        (uint8_t)adv->getPayload().size(), &rid) &&
+                rid.haveBasic && rid.serial[0]) {
                 strncpy(det.name, rid.serial, sizeof(det.name) - 1);
                 det.name[sizeof(det.name) - 1] = '\0';
             }
@@ -1974,29 +1977,56 @@ void DetectionEngine::processDeauthQ() {
     }
 }
 
-void DetectionEngine::mergeRemoteId(const uint8_t* mac, const uint8_t* payload,
-                                    uint8_t len) {
-    if (!mac || !payload) return;
-    // A different aircraft means the accumulated record is no longer about
-    // the same object, and half of one drone merged onto half of another
-    // would read as a plausible aircraft that does not exist.
-    if (memcmp(mac, _ridMac, 6) != 0) {
-        RemoteId::reset(_rid);
-        memcpy(_ridMac, mac, 6);
+bool DetectionEngine::mergeRemoteId(const uint8_t* mac, const uint8_t* payload,
+                                    uint8_t len, RemoteId::Info* decoded) {
+    // BLE host callback: independent MAC+transport record. Wi-Fi decoding
+    // also runs on the Arduino loop, so guard both writers with one lock.
+    if (!mac || !payload) return false;
+    const uint32_t now = millis();
+    portENTER_CRITICAL(&s_remoteIdMutex);
+    const RemoteId::Tracker::Contact* contact =
+        _ridTracker.ingestBle(mac, payload, len, now);
+    const bool accepted = contact != nullptr;
+    if (contact) {
+        _rid = contact->info;  // preserve existing most-recent UI
+        memcpy(_ridMac, contact->mac, sizeof(_ridMac));
+        // Copy under the same lock: BLE log labels must describe this
+        // packet's MAC, even if Wi-Fi updates the latest record next.
+        if (decoded) *decoded = contact->info;
     }
-    RemoteId::merge(payload, len, _rid, millis());
+    portEXIT_CRITICAL(&s_remoteIdMutex);
+    return accepted;
 }
 
 void DetectionEngine::mergeRemoteIdWifiPack(const uint8_t* mac, const uint8_t* pack,
                                             uint16_t len) {
+    // Radio callback only enqueues; we decode in the regular loop.
     if (!mac || !pack) return;
-    // Do not merge a different aircraft's Wi-Fi telemetry with a prior BLE
-    // target; the single-identity model already enforces this for BLE.
-    if (memcmp(mac, _ridMac, 6) != 0) {
-        RemoteId::reset(_rid);
-        memcpy(_ridMac, mac, 6);
+    const uint32_t now = millis();
+    portENTER_CRITICAL(&s_remoteIdMutex);
+    const RemoteId::Tracker::Contact* contact =
+        _ridTracker.ingestWifiPack(mac, pack, len, now);
+    if (contact) {
+        _rid = contact->info;
+        memcpy(_ridMac, contact->mac, sizeof(_ridMac));
     }
-    RemoteId::mergeWifiPack(pack, len, _rid, millis());
+    portEXIT_CRITICAL(&s_remoteIdMutex);
+}
+
+uint8_t DetectionEngine::remoteIdTrackCount(uint32_t now) const {
+    portENTER_CRITICAL(&s_remoteIdMutex);
+    const uint8_t n = _ridTracker.liveCount(now);
+    portEXIT_CRITICAL(&s_remoteIdMutex);
+    return n;
+}
+
+bool DetectionEngine::copyRemoteIdTrack(uint8_t index, uint32_t now,
+                                        RemoteId::Tracker::Contact& out) const {
+    portENTER_CRITICAL(&s_remoteIdMutex);
+    const RemoteId::Tracker::Contact* rec = _ridTracker.contactAt(index, now);
+    if (rec) out = *rec;
+    portEXIT_CRITICAL(&s_remoteIdMutex);
+    return rec != nullptr;
 }
 
 void DetectionEngine::postBle(Detection d) {
