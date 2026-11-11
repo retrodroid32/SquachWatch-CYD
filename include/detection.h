@@ -507,6 +507,9 @@ public:
     const char* huntLabel() const { return _huntLabel; }
     uint8_t huntRssiCount() const;
     int8_t  huntRssiAt(uint8_t idx) const;
+    // True only while the selected HUNT target has actually been heard
+    // within the short radio-loss window (not the 60s LOG retention).
+    bool    huntSignalFresh(uint32_t now) const;
 
     // Called from the BLE scan callback (every advertisement, any
     // mode) -- public for the same reason postBle()/postRawBle() are:

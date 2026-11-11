@@ -17,6 +17,7 @@
 // screen full of detections, but it is NOT exercising the real matching
 // logic that decides what counts as a detection in the first place.
 #include "detection.h"
+#include "hunt_signal.h"
 #include "ignore_list.h"
 #include <cstring>
 
@@ -369,6 +370,13 @@ bool DetectionEngine::huntWifi(const uint8_t* bssid, const char* ssid) {
 
 void DetectionEngine::noteHuntRssi(HuntEntry& e, int8_t rssi) {
     const uint32_t now = millis();
+    // A new packet after silence starts a new RSSI trend. Never use an old
+    // strong reading as the previous sample for HOT/CAUGHT on reacquisition.
+    if (HuntSignal::restartHistory(e.rssiCount, e.lastSeenMs, now)) {
+        e.rssiHead = 0;
+        e.rssiCount = 0;
+        e.rssiLastMs = 0;
+    }
     e.lastSeenMs = now;
     if (e.rssiCount && now - e.rssiLastMs < WATCH_RSSI_SAMPLE_MS) return;
     e.rssiLastMs = now;
@@ -405,6 +413,13 @@ uint8_t DetectionEngine::huntRssiCount() const {
 int8_t DetectionEngine::huntRssiAt(uint8_t idx) const {
     const int8_t found = findHuntTarget(_huntMac, _huntKind);
     return found >= 0 ? huntEntryRssiAt(_huntTargets[(uint8_t)found], idx) : 0;
+}
+
+bool DetectionEngine::huntSignalFresh(uint32_t now) const {
+    const int8_t found = findHuntTarget(_huntMac, _huntKind);
+    if (found < 0) return false;
+    const HuntEntry& e = _huntTargets[(uint8_t)found];
+    return HuntSignal::fresh(e.rssiCount, e.lastSeenMs, now);
 }
 
 // ---- housekeeping the real engine runs from loop() -------------------

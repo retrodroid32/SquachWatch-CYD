@@ -1,5 +1,6 @@
 // SquachWatch-CYD — HUNT MODE screen implementation
 #include "ui_hunt.h"
+#include "hunt_signal.h"
 #include "theme.h"
 #include "privacy.h"
 #include "squachy.h"
@@ -140,7 +141,7 @@ static void huntListGeom(TFT_eSPI& t, int w, int h,
 }
 
 static int huntListScore(const DetectionEngine::HuntTargetInfo& info, uint32_t now) {
-    if (!info.seen || now - info.lastSeenMs > 10000) return -200;
+    if (!HuntSignal::fresh(info.samples, info.lastSeenMs, now)) return -200;
     return (int)info.rssi;
 }
 
@@ -217,7 +218,7 @@ static void drawHuntList(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng) 
         DetectionEngine::HuntTargetInfo info;
         if (!eng.huntTargetInfo(s_listOrder[pos], info)) continue;
         const int y = top + row * rowH;
-        const bool fresh = info.seen && now - info.lastSeenMs <= 10000;
+        const bool fresh = HuntSignal::fresh(info.samples, info.lastSeenMs, now);
 
         t.drawFastHLine(6, y + rowH - 1, w - 12, Theme::PURPLE);
 
@@ -315,7 +316,17 @@ void uiHuntTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool adva
     t.setCursor((w - (lw < maxLw ? lw : maxLw)) / 2, labelY);
     t.print(label);
 
-    uint8_t rssiN = eng.huntRssiCount();
+    const uint8_t storedRssiN = eng.huntRssiCount();
+    const bool live = eng.huntSignalFresh(now);
+    const uint8_t rssiN = live ? storedRssiN : 0;
+    // History is kept for the HUNT roster but it must NEVER drive a live
+    // needle, numeric reading, trend or CAUGHT badge after signal loss.
+    if (!live) {
+        s_hotFired = false;
+        s_caughtUntil = 0;
+        s_caughtFired = false;
+        s_lastTrend = RssiTrend::UNKNOWN;
+    }
 
     // First-ever sample for this target -- fires once, well before
     // there's enough history for a warmer/colder trend (needs 3+).
@@ -383,7 +394,7 @@ void uiHuntTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool adva
     // LOG arrows even though the underlying meaning is now identical.
     char rbuf[16];
     if (rssiN > 0) snprintf(rbuf, sizeof(rbuf), "%d dBm", (int)latestRssi);
-    else           snprintf(rbuf, sizeof(rbuf), "-- dBm");
+    else           snprintf(rbuf, sizeof(rbuf), "%s", HuntSignal::absentReadout(storedRssiN > 0));
     t.setTextSize(2);
     int rw = t.textWidth(rbuf);
     t.setTextColor(Theme::WHITE, Theme::BG);
@@ -394,7 +405,7 @@ void uiHuntTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool adva
     // would silently query the wrong thing here.
     int readoutH = t.fontHeight();
 
-    const char* trend = "WAITING FOR SIGNAL...";
+    const char* trend = HuntSignal::absentStatus(storedRssiN > 0);
     uint16_t trendColor = Theme::WHITE;
     const uint8_t trendCount = rssiN > 8 ? 8 : rssiN;
     const uint8_t trendStart = (uint8_t)(rssiN - trendCount);
