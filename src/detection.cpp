@@ -2944,7 +2944,8 @@ void DetectionEngine::noteHuntRssi(HuntEntry& e, int8_t rssi) {
     const uint32_t now = millis();
     // A new packet after silence starts a new RSSI trend. Never use an old
     // strong reading as the previous sample for HOT/CAUGHT on reacquisition.
-    if (HuntSignal::restartHistory(e.rssiCount, e.lastSeenMs, now)) {
+    if (HuntSignal::restartHistory(e.rssiCount, e.lastSeenMs, now,
+                                   e.kind == WatchKind::WIFI)) {
         e.rssiHead = 0;
         e.rssiCount = 0;
         e.rssiLastMs = 0;
@@ -2991,7 +2992,8 @@ bool DetectionEngine::huntSignalFresh(uint32_t now) const {
     const int8_t found = findHuntTarget(_huntMac, _huntKind);
     if (found < 0) return false;
     const HuntEntry& e = _huntTargets[(uint8_t)found];
-    return HuntSignal::fresh(e.rssiCount, e.lastSeenMs, now);
+    return HuntSignal::fresh(e.rssiCount, e.lastSeenMs, now,
+                             e.kind == WatchKind::WIFI);
 }
 
 // Same vendor, ignoring the locally-administered bit. Multi-SSID and

@@ -141,7 +141,8 @@ static void huntListGeom(TFT_eSPI& t, int w, int h,
 }
 
 static int huntListScore(const DetectionEngine::HuntTargetInfo& info, uint32_t now) {
-    if (!HuntSignal::fresh(info.samples, info.lastSeenMs, now)) return -200;
+    if (!HuntSignal::fresh(info.samples, info.lastSeenMs, now,
+                               info.kind == DetectionEngine::WatchKind::WIFI)) return -200;
     return (int)info.rssi;
 }
 
@@ -218,7 +219,8 @@ static void drawHuntList(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng) 
         DetectionEngine::HuntTargetInfo info;
         if (!eng.huntTargetInfo(s_listOrder[pos], info)) continue;
         const int y = top + row * rowH;
-        const bool fresh = HuntSignal::fresh(info.samples, info.lastSeenMs, now);
+        const bool fresh = HuntSignal::fresh(info.samples, info.lastSeenMs, now,
+                               info.kind == DetectionEngine::WatchKind::WIFI);
 
         t.drawFastHLine(6, y + rowH - 1, w - 12, Theme::PURPLE);
 

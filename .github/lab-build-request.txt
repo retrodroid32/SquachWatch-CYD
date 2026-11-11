@@ -1,11 +1,14 @@
-HUNT-RSSI-ZERO-LOSS-R1
-# Scoped HUNT signal-loss fix from master e49a50f (post #213).
-# Gauge formerly displayed frozen last dBm forever after transmitter stopped.
-# Treat samples older than 5 seconds as NO SIGNAL: zero strength needle,
-# 0% readout; do NOT label the absence of RF as 0 dBm.
-# Fresh BLE/WiFi packet resumes live RSSI; clear stale RSSI trend history.
-# Prevent HOT and CAUGHT on old samples, and remove stale CAUGHT badge.
-# HUNT roster shows OUT after the same 5-second freshness policy.
-# Host tests cover loss, fresh return, wrong MAC and millis rollover.
-# Preserve PR #214; do not merge or tag without further explicit approval.
-# Test on CYD 2.8 ST7789 and 3.2 ST7798 using controlled BLE/WiFi emitter.
+HUNT-RSSI-DEBOUNCE-R2
+# PR #215 R2: fix R1 0% / NO SIGNAL flicker while a target is still active.
+# R1 5s expiry was too short for passive 13-channel WiFi sweeping and BLE
+# coex advertisement gaps. R2 uses radio-aware grace windows:
+#   BLE: 9 seconds; WiFi: 15 seconds (more than three ~4s channel sweeps).
+# New received packets refresh RSSI immediately. On confirmed absence,
+# strength is still 0% / NO SIGNAL, NOT 0 dBm or the frozen last sample.
+# Post-loss reacquisition resets stale trend and CAUGHT history; a normal
+# missed sweep does not reset the RSSI history or trigger spurious HOT.
+# Both HUNT roster and full-screen gauge share the same transport timeout.
+# Added virtual-radio intermittent reception tests with 7s BLE / 12s WiFi
+# packets over several minutes plus genuine loss/recovery and millis rollover.
+# LAB only: CYD 2.8 ST7789 + 3.2 ST7798 hardware testing required.
+# Preserve PR #214 and master. No merge, tag or production release.
