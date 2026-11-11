@@ -1,19 +1,9 @@
-RID-MULTI8-EVENTS-WIFI-R6
-# PR #213: bounded 8-contact Remote ID assembler with concurrency fix.
-# R6: publish gate checks effective smaller OTA slot for reserved Events.
-# R5: restore BlackBox Events in non-overlapping 48KB flash gap.
-# R5: classic 2.8 CYD frees framebuffer before WiFi saved-network USE.
-# USB flash with matching partitions.bin is REQUIRED; OTA-only unsafe.
-# Merge blocked until both boards physically validate Events, WiFi and UI.
-# R4: update emulator's real Remote ID decoder adapter to the new API.
-# R3: BLE names use an atomic per-MAC snapshot; enumerate live contacts
-# densely even when one middle slot has expired. Host test covers holes.
-# BLE NimBLE host callbacks and Wi-Fi queue loop share an RTOS critical section.
-# Read-only contact diagnostics return copies under same lock; no live pointers.
-# Track key is (MAC, transport), 30-second TTL, fixed ring of 8 contacts.
-# Host vectors test interleaved drones, MAC/transport separation, expiry,
-# oldest eviction, malformed frames and 32-bit millis wraparound.
-# Correct 0x1F0000 OTA partition per slot; independent PR Build must PASS
-# before this release may build and Pages can deploy.
-# CYD 2.8 ST7789 and 3.2 ST7798 hardware acceptance still required.
-# No merge, tag or production release; preserve all other branches.
+V140-DESK24-CROWDNONE-POST213-R1
+# Integration LAB from approved merge of PR #213 on master e49a50f.
+# Refresh old PR #205 without rewriting or merging its original branch.
+# 12/24-hour desk/corner/zone clock; persistent NVS clk24 (12-hour default).
+# Main screen CROWD NONE hides visiting avatars but keeps SquachMesh radio/messages.
+# Desk crowd remains independent and defaults to ONE if main CROWD NONE.
+# Retain 48KB safe Events ring and CYD2.8 WiFi USE framebuffer fix from R6.
+# 2.8 ST7789 and 3.2 ST7798 must hardware-test; no production release/tag.
+# Branch and PR remain LAB/draft until owner approves merge.

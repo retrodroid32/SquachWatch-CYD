@@ -80,6 +80,9 @@ namespace Settings {
     const char* clockBackdropName();
     void        cycleClockBackdrop();
     void        cyclePrevClockBackdrop();
+    // The desk clock defaults to the historical 12-hour display.
+    bool        clock24Hour();
+    void        toggleClock24Hour();
     void       cyclePrevBackground(); // same, but backward
 
     // Disables the two CLEAR-screen gestures that cycle background
