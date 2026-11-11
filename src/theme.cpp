@@ -554,11 +554,10 @@ void drawTitleBar(TFT_eSPI& t, const char* title) {
 }
 
 uint8_t uiTextSize(TFT_eSPI& t, uint8_t base) {
-    // TEXT can step down the bigger board's body text, not above the
-    // size hard-coded layouts were drawn for on the classic 2.8/3.2.
-    if (base == 1 && t.width() >= 400)
-        return fontDelta(Settings::FontKind::TEXT) < 0 ? 1 : 2;
-    return base;
+    // Stage C keeps TEXT unchanged on both classic boards. Most body labels
+    // have fixed-height layout and need a separate measured/layout-safe port.
+    // Only four explicitly supported categories change live text here.
+    return (base == 1 && t.width() >= 400) ? 2 : base;
 }
 
 int8_t fontDelta(Settings::FontKind k) {

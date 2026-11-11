@@ -19,6 +19,8 @@ drawbubble = sq.split('static void drawBubbleIn(TFT_eSPI& t, int cx, int topY, c
 assert 't.setTextSize(1);' not in drawbubble[:240], "Bubble draw must respect selected size"
 assert 'int8_t fontDelta(Settings::FontKind k)' in head
 assert 'PREVIEW ONLY' in ui and 'kind == Settings::FontKind::XP_TILES' in ui
+textpart = theme.split("uint8_t uiTextSize(", 1)[1].split("int8_t fontDelta(", 1)[0]
+assert "fontDelta(" not in textpart, "TEXT must stay preview-only on both classic CYDs"
 assert 't.setTextFont(1); t.setTextSize(1);' in ui, 'restore drawing font state'
 assert "0x1E4000" in (root/"partitions_ota.csv").read_text()
 print("PASS Stage C live bounded menus/buttons/bubbles/pets + honest pending categories")
