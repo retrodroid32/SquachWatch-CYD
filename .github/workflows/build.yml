@@ -130,3 +130,25 @@ jobs:
         run: make -C sim -j"$(nproc)"
       - name: Run UI screenshot regression suite
         run: make -C sim regression
+
+      # Preview for the reviewer without publishing or replacing production Pages.
+      # This stages the fork's pre-existing WASM, not a newly rebuilt browser
+      # binary. The workbench page explicitly says the bundle can lag firmware.
+      - name: Assemble isolated browser workbench preview
+        if: github.event_name == 'pull_request'
+        run: |
+          set -euo pipefail
+          mkdir -p browser-preview/emulator
+          cp web-flasher/emulator/index.html web-flasher/emulator/squachsim.js web-flasher/emulator/squachsim.wasm browser-preview/emulator/
+          printf '%s\n' 'SquachWatch v1.41 CYD emulator workbench preview' 'This uses the checked-in classic CYD WASM; no updated/other-board WASM was built.' 'Run: python3 -m http.server 8000 --directory browser-preview' 'Open: http://localhost:8000/emulator/' 'No production Pages deployment or real radio transmission.' > browser-preview/README.txt
+          test -s browser-preview/emulator/index.html
+          test -s browser-preview/emulator/squachsim.js
+          test -s browser-preview/emulator/squachsim.wasm
+      - name: Upload browser workbench preview (LAB)
+        if: github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v7
+        with:
+          name: lab-pr-${{ github.event.pull_request.number }}-emulator-workbench
+          path: browser-preview/
+          if-no-files-found: error
+          retention-days: 14
