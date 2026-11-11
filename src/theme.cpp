@@ -507,12 +507,18 @@ void drawPinnedBack(TFT_eSPI& t, const char* label) {
     // second band it lands outside the buffer and draws nothing at all. A
     // strip with no label on it. Shared helpers say what they want.
     t.setTextFont(1);
-    uint8_t sz = uiMenuTextSize(t);
-    while (sz > 1 && sz * 8 > h - 4) --sz;
-    t.setTextSize(sz);
+    // Pinned navigation is a BUTTON, not a MENU row. Keep font 1 for the
+    // ST7798 split-band viewport; FONT2 can draw outside its sprite band.
+    int sz = 2 + fontDelta(Settings::FontKind::BUTTONS);
+    if (sz > 4) sz = 4;
+    if (sz < 1) sz = 1;
+    t.setTextSize((uint8_t)sz);
+    while (sz > 1 && (t.fontHeight() > h - 4 || t.textWidth(label) > w - 8))
+        t.setTextSize((uint8_t)--sz);
     t.setTextColor(CYAN, BG);
     t.setCursor((w - t.textWidth(label)) / 2, y + (h - t.fontHeight()) / 2);
     t.print(label);
+    t.setTextFont(1); t.setTextSize(1);
 }
 
 bool pinnedBackHit(int x, int y, int screenW, int screenH) {
@@ -667,12 +673,22 @@ static int s_xpTextH = 16;
 void xpTileFontOn(TFT_eSPI& t) {
     const int delta = fontDelta(Settings::FontKind::XP_TILES);
     const uint8_t face = Settings::fontFace(Settings::FontKind::XP_TILES);
-    if (delta < 0) {
-        t.setTextFont(1); t.setTextSize(1);
-    } else if (face == 1) {
-        t.setTextFont(1); t.setTextSize((uint8_t)(delta > 0 ? 3 : 2));
-    } else {
+    // Five default steps: tiny pixel, standard pixel, original smooth,
+    // large pixel, extra-large smooth. All use the same measured box height.
+    if (face == 1) {
+        t.setTextFont(1);
+        t.setTextSize((uint8_t)(delta <= -2 ? 1 : delta < 0 ? 2 :
+                               delta == 0 ? 2 : delta == 1 ? 3 : 4));
+    } else if (face == 2) {
         t.setTextFont(2); t.setTextSize((uint8_t)(delta > 0 ? 2 : 1));
+    } else if (delta == -2) {
+        t.setTextFont(1); t.setTextSize(1);
+    } else if (delta == -1) {
+        t.setTextFont(1); t.setTextSize(2);
+    } else if (delta == 1) {
+        t.setTextFont(1); t.setTextSize(3);
+    } else {
+        t.setTextFont(2); t.setTextSize((uint8_t)(delta > 1 ? 2 : 1));
     }
     s_xpTextH = t.fontHeight();
 }
