@@ -18,9 +18,10 @@ assert 'Theme::petFontOn(t);' in pet and 'Theme::petFontOff(t);' in pet
 drawbubble = sq.split('static void drawBubbleIn(TFT_eSPI& t, int cx, int topY, const char* text,', 2)[-1]
 assert 't.setTextSize(1);' not in drawbubble[:240], "Bubble draw must respect selected size"
 assert 'int8_t fontDelta(Settings::FontKind k)' in head
-assert 'PREVIEW ONLY' in ui and 'kind == Settings::FontKind::XP_TILES' in ui
-textpart = theme.split("uint8_t uiTextSize(", 1)[1].split("int8_t fontDelta(", 1)[0]
-assert "fontDelta(" not in textpart, "TEXT must stay preview-only on both classic CYDs"
+assert 'PREVIEW ONLY' not in ui, "all six settings must be functional"
+assert 'Settings::FontKind::TEXT' in theme
+assert 'Settings::FontKind::XP_TILES' in theme
+assert 'void xpTileFontOn(' in theme and 'void selectCategoryFont(' in theme
 assert 't.setTextFont(1); t.setTextSize(1);' in ui, 'restore drawing font state'
 assert "0x1E4000" in (root/"partitions_ota.csv").read_text()
 print("PASS Stage C live bounded menus/buttons/bubbles/pets + honest pending categories")

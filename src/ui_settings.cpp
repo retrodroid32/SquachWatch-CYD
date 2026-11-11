@@ -823,8 +823,8 @@ static void drawRow(TFT_eSPI& t, int w, int y, int hgt, const char* label,
     t.setTextFont(1); t.setTextSize(1);
 }
 
-// Stage C: MENUS/BUTTONS/BUBBLES/PETS affect actual rendering. TEXT and XP
-// stay clearly marked as preview-only until layout-specific work is safe.
+// Stage D: all six categories have live targets. TEXT uses measured info/
+// diagnostics content; XP TILES styles the Desk SquachMesh message window.
 static Settings::FontKind fontKindForRow(SettingsRow row) {
     switch (row) {
         case SettingsRow::FONT_TEXT: return Settings::FontKind::TEXT;
@@ -848,9 +848,7 @@ static void drawFontRow(TFT_eSPI& t, int w, int y, int h,
     t.setCursor(8, y + 4); t.print(label);
     t.setTextColor(Theme::W95_SHADOW, Theme::BG);
     t.setCursor(8, y + 19);
-    const bool pending = kind == Settings::FontKind::TEXT || kind == Settings::FontKind::XP_TILES;
-    t.print(pending ? "PREVIEW ONLY" : (face == 2 ? "SMOOTH" : (face == 1 ? "PIXEL" : "DEFAULT")));
-    if (pending) return; // no fake controls for unsupported categories
+    t.print(face == 2 ? "SMOOTH" : (face == 1 ? "PIXEL" : "DEFAULT"));
     const int left = 77, right = w - 88, mid = y + h / 2;
     t.drawFastHLine(left, mid, right - left + 1, Theme::PURPLE);
     for (int n = 0; n < 5; n++) {
@@ -862,8 +860,10 @@ static void drawFontRow(TFT_eSPI& t, int w, int y, int h,
     t.drawRect(w-82, y+4, 33, h-9, Theme::CYAN);
     t.drawRect(w-42, y+4, 33, h-9, Theme::CYAN);
     t.setTextColor(Theme::WHITE, Theme::BG);
+    Theme::selectCategoryFont(t, Settings::FontKind::BUTTONS, "+", 20, h - 10, 1);
     t.setCursor(w-68,y+10); t.print("-");
     t.setCursor(w-28,y+10); t.print("+");
+    t.setTextFont(1); t.setTextSize(1);
 }
 static void drawFontPreview(TFT_eSPI& t, int w, int y) {
     const int height = 39;
@@ -896,7 +896,6 @@ void uiSettingsFontTap(TFT_eSPI& t, int x, int y, int screenW, int screenH) {
     if (row < SettingsRow::FONT_MENUS || row > SettingsRow::FONT_XP) return;
     const auto kind = fontKindForRow(row);
     s_fontPreview = kind;
-    if (kind == Settings::FontKind::TEXT || kind == Settings::FontKind::XP_TILES) return;
     if (x < 70) {
         Settings::setFontFace(kind, (uint8_t)((Settings::fontFace(kind)+1)%3));
         return;

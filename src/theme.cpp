@@ -554,10 +554,11 @@ void drawTitleBar(TFT_eSPI& t, const char* title) {
 }
 
 uint8_t uiTextSize(TFT_eSPI& t, uint8_t base) {
-    // Stage C keeps TEXT unchanged on both classic boards. Most body labels
-    // have fixed-height layout and need a separate measured/layout-safe port.
-    // Only four explicitly supported categories change live text here.
-    return (base == 1 && t.width() >= 400) ? 2 : base;
+    // Apply TEXT where the caller already opted into scalable body type.
+    // Fixed-height diagnostic rows and info panels measure their own text.
+    const int size = (int)base + fontDelta(Settings::FontKind::TEXT);
+    const int safe = size < 1 ? 1 : size > 3 ? 3 : size;
+    return (uint8_t)safe;
 }
 
 int8_t fontDelta(Settings::FontKind k) {
@@ -633,11 +634,51 @@ void petFontOn(TFT_eSPI& t) {
 void petFontOff(TFT_eSPI& t) {
     t.setTextFont(1); t.setTextSize(1);
 }
-int xpTileScale() {
-    // This fork's classic counters are not yet XP tiles. Keep the
-    // published UI until the independent XP-style feature is ported.
-    return 1;
+int xpTileScale() { return (int)Settings::fontStep(Settings::FontKind::XP_TILES); }
+
+// Shared by ordinary buttons, keyboard keys, alert actions and XP tabs.
+// Every caller supplies the SAME actual label and its pixel rectangle.
+// Large settings fall back safely; font 1 at 1x is the smallest built-in glyph.
+void selectCategoryFont(TFT_eSPI& t, Settings::FontKind kind, const char* label,
+                        int maxW, int maxH, uint8_t baseSize, uint8_t baseFont) {
+    const int delta = fontDelta(kind);
+    const uint8_t face = Settings::fontFace(kind);
+    const uint8_t wantedFont = face == 2 ? 2 : face == 1 ? 1 : baseFont;
+    int wantedSize = (wantedFont == 2 ? 1 : (int)baseSize) + delta;
+    if (wantedSize < 1) wantedSize = 1;
+    if (wantedSize > 4) wantedSize = 4;
+    for (int attempt = 0; attempt < 2; ++attempt) {
+        const uint8_t font = attempt == 0 ? wantedFont : 1;
+        const int size = attempt == 0 ? wantedSize : ((int)baseSize + delta > 4 ? 4 : (int)baseSize + delta);
+        t.setTextFont(font);
+        for (int scale = size < 1 ? 1 : size; scale >= 1; --scale) {
+            t.setTextSize((uint8_t)scale);
+            if ((!label || !*label ||
+                 (t.textWidth(label) <= maxW && t.fontHeight() <= maxH))) return;
+        }
+    }
+    t.setTextFont(1);
+    t.setTextSize(1);
 }
+
+// Separate XP/Desk message-card typography from Squachy's BUBBLES setting.
+// Default face/step 0/2 preserves the original 16px proportional message.
+static int s_xpTextH = 16;
+void xpTileFontOn(TFT_eSPI& t) {
+    const int delta = fontDelta(Settings::FontKind::XP_TILES);
+    const uint8_t face = Settings::fontFace(Settings::FontKind::XP_TILES);
+    if (delta < 0) {
+        t.setTextFont(1); t.setTextSize(1);
+    } else if (face == 1) {
+        t.setTextFont(1); t.setTextSize((uint8_t)(delta > 0 ? 3 : 2));
+    } else {
+        t.setTextFont(2); t.setTextSize((uint8_t)(delta > 0 ? 2 : 1));
+    }
+    s_xpTextH = t.fontHeight();
+}
+void xpTileFontOff(TFT_eSPI& t) { t.setTextFont(1); t.setTextSize(1); }
+int xpTileTextH() { return s_xpTextH; }
+int xpTileAscent() { return 0; }
 
 void drawButton(TFT_eSPI& t, int x, int y, int w, int h,
                 const char* label, bool pressed, uint8_t textSize) {
@@ -653,34 +694,7 @@ void drawButton(TFT_eSPI& t, int x, int y, int w, int h,
     // the smaller size if it does not fit. That makes this self-limiting for
     // every button on every screen instead of a list of exceptions.
     uint8_t ts = uiTextSize(t, textSize);
-    if (ts != textSize) {
-        t.setTextSize(ts);
-        if (t.textWidth(label) > w - 6) ts = textSize;
-    }
-    // Measure each candidate against the actual button, not the panel width.
-    // Oversized labels gracefully fall back instead of overlapping borders.
-    int requested = (int)ts + fontDelta(Settings::FontKind::BUTTONS);
-    if (requested > 4) requested = 4;
-    if (requested < 1) requested = 1;
-    t.setTextFont(1);
-    int chosen = ts;
-    for (int trySize = requested; trySize >= 1; --trySize) {
-        t.setTextSize((uint8_t)trySize);
-        if (t.textWidth(label) <= w - 6 && t.fontHeight() <= h - 2) {
-            chosen = trySize;
-            break;
-        }
-    }
-    t.setTextSize((uint8_t)chosen);
-    // Explicit SMOOTH face only where the box really holds it.
-    const uint8_t face = Settings::fontFace(Settings::FontKind::BUTTONS);
-    if (face == 2 && chosen <= 2) {
-        t.setTextFont(2);
-        t.setTextSize(1);
-        if (t.textWidth(label) > w - 6 || t.fontHeight() > h - 2) {
-            t.setTextFont(1); t.setTextSize((uint8_t)chosen);
-        }
-    }
+    selectCategoryFont(t, Settings::FontKind::BUTTONS, label, w - 6, h - 2, ts);
     t.setTextColor(fg, fill);
     const int tw = t.textWidth(label);
     const int th = t.fontHeight();
@@ -725,21 +739,8 @@ void drawWin95Button(TFT_eSPI& t, int x, int y, int w, int h,
     t.setTextSize(1);
     t.setTextWrap(false);
     t.setTextColor(BLACK, W95_FACE);
-    // Win95 buttons also use the bounded BUTTONS ladder.
-    int size = 1 + fontDelta(Settings::FontKind::BUTTONS);
-    if (size < 1) size = 1;
-    if (size > 4) size = 4;
-    for (; size > 1; --size) {
-        t.setTextSize((uint8_t)size);
-        if (t.textWidth(label) <= w - 8 && t.fontHeight() <= h - 4) break;
-    }
-    t.setTextSize((uint8_t)size);
-    if (Settings::fontFace(Settings::FontKind::BUTTONS) == 2 && size <= 2) {
-        t.setTextFont(2); t.setTextSize(1);
-        if (t.textWidth(label) > w - 8 || t.fontHeight() > h - 4) {
-            t.setTextFont(1); t.setTextSize((uint8_t)size);
-        }
-    }
+    // Same bounded font choice as the keyboard, alert and standard buttons.
+    selectCategoryFont(t, Settings::FontKind::BUTTONS, label, w - 8, h - 4, 1);
     const int tw = t.textWidth(label);
     const int th = t.fontHeight();
     const int ox = sunken ? 1 : 0;
@@ -9911,19 +9912,26 @@ void drawInfoPanel(TFT_eSPI& t, int w, int h, uint32_t now,
 
     Squachy::drawWaving(t, squachyCx, squachyBaseY, now, squachyScale, nullptr, true, squachyWander);
 
-    t.setTextSize(1);
     t.setTextWrap(false);
     t.setTextColor(WHITE, BG);
+    selectCategoryFont(t, Settings::FontKind::TEXT, "Aa 12:34", textMaxW,
+                       btnY - textTop - 3, 1);
     char lines[INFO_MAX_LINES][48];
     uint8_t n = wrapText(t, text, textMaxW, lines, INFO_MAX_LINES);
+    int lineH = t.fontHeight() + 4;
+    if (n * lineH > btnY - textTop - 3) {
+        t.setTextFont(1); t.setTextSize(1);
+        lineH = t.fontHeight() + 4;
+        n = wrapText(t, text, textMaxW, lines, INFO_MAX_LINES);
+    }
     int ly = textTop;
     for (uint8_t i = 0; i < n; i++) {
         int lw = t.textWidth(lines[i]);
         t.setCursor(px + (pw - lw) / 2, ly);
         t.print(lines[i]);
-        ly += 12;
+        ly += lineH;
     }
-
+    t.setTextFont(1); t.setTextSize(1);
     drawButton(t, btnX, btnY, btnW, btnH, "[ GOT IT ]", false, 2);
 }
 

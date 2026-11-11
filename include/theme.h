@@ -260,6 +260,14 @@ namespace Theme {
     void petFontOn(TFT_eSPI& t);
     void petFontOff(TFT_eSPI& t);
     int xpTileScale();
+    // Bounded glyph selection shared by hand-drawn button/key labels and text.
+    // Caller restores setTextFont(1)/setTextSize(1) after drawing.
+    void selectCategoryFont(TFT_eSPI& t, Settings::FontKind kind, const char* label,
+                            int maxW, int maxH, uint8_t baseSize = 1, uint8_t baseFont = 1);
+    void xpTileFontOn(TFT_eSPI& t);
+    void xpTileFontOff(TFT_eSPI& t);
+    int xpTileTextH();
+    int xpTileAscent();
 
 
     void drawButton(TFT_eSPI& t, int x, int y, int w, int h,

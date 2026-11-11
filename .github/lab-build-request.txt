@@ -1,14 +1,13 @@
-FONT-LIVE-RENDER-4CATEGORIES-R2
-# Stage C stacked on PR #220, which stacks on safe PR #219.
-# MENUS: visible menu row sizes/faces with measured value/label fit.
-# BUTTONS: real standard + Win95 buttons obey size/face within each box.
-# BUBBLES: Squachy's live speech obeys face/size; geometry measures same font.
-# PETS: Shaggy/Yeti speech uses selected face and measured width fallback.
-# TEXT and XP TILES remain preview-only, not falsely advertised as live.
-# R2: explicitly preserve old TEXT rendering on wide screens too.
-# Prior OTA-safe 0x1E4000 smallest slot layout retained, 8KiB image guard.
-# Lab USB installer must deliver matching current partitions (no stale-table OTA).
-# CYD 2.8 ST7789 FIRST, then CYD 3.2 ST7798; both rotate/touch/watch/hunt.
-# Validate persistent NVS, all four live categories, SD, UBX GPS, WIFI USE,
-# LOG Events, privacy, SquachMesh 2-way; serial heap/frame; no flicker.
-# This is a LAB checkpoint, not production. Do not merge/tag/release.
+FONT-ALL6-LIVE-CUSTOM-BUTTONS-R1
+# Successor to PR #221, stacked on the OTA-safe post-#216 master ancestry.
+# MENUS/BUTTONS/BUBBLES/PETS retained, with all six real category controls.
+# TEXT sizes measured INFO modal body and DIAGNOSTICS report rows.
+# XP TILES sizes Desk SquachMesh XP-style MESSAGE card body independently.
+# Custom BUTTONS: WiFi password/QWERTY/PIN keys, payphone, alert MORE/HUNT,
+# snooze hint, and System Properties bold buttons/tabs use bounded text fit.
+# Small/long buttons still clamp to their physical rectangles rather than clip.
+# No touch geometry, framebuffer, WiFi/mesh, NVS key or partition changes.
+# Full firmware.bin <= smallest OTA slot minus 8KiB, matching LAB partitions.
+# Real CYD 2.8 ST7789 first, then 3.2 ST7798 in both rotations.
+# Serial, SD, GPS UBX 115200, WiFi USE, LOG Events and SquachMesh regressions.
+# LAB only. Do not merge, tag, ship production, or delete prior branches.

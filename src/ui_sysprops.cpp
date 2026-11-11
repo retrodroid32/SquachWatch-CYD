@@ -69,8 +69,7 @@ bool in(int x, int y, int bx, int by, int bw, int bh) {
 int boldWidth(TFT_eSPI& t, const char* s);   // below, with bold()
 struct Buttons { int updX, updW, laterX, laterW, closeX, closeW; };
 Buttons buttons(TFT_eSPI& t, const Geom& g) {
-    Theme::bubbleFontOn(t);
-    t.setTextSize(1);
+    t.setTextFont(2); t.setTextSize(1);  // stable geometry; independent of BUBBLES
     Buttons b;
     const int right = g.x + g.w - 6;
     b.laterW = boldWidth(t, "Later") + 24;      if (b.laterW < 64) b.laterW = 64;
@@ -139,8 +138,10 @@ const uint16_t LABEL_RED = 0x9800;
 // here, centred the same way drawWin95Button centres its own.
 void boldButton(TFT_eSPI& t, int x, int y, int w, int h, const char* label) {
     Theme::drawWin95Button(t, x, y, w, h, "", false);
+    Theme::selectCategoryFont(t, Settings::FontKind::BUTTONS, label, w - 10, h - 6, 1, 2);
     const int tw = boldWidth(t, label);
     bold(t, x + 2 + (w - 4 - tw) / 2, y + 2 + (h - 4 - t.fontHeight()) / 2, label);
+    t.setTextFont(1); t.setTextSize(1);
 }
 
 // `src`, cut to what fits in `maxW` pixels of the current font. Proportional
@@ -348,8 +349,11 @@ void uiSysPropsTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool 
         const int tx = g.x + 4 + i * g.tabW;
         const bool on = (i == s_tab);
         raised(t, tx, on ? g.tabY - 2 : g.tabY, g.tabW, on ? TAB_H + 4 : TAB_H);
+        Theme::selectCategoryFont(t, Settings::FontKind::BUTTONS, TAB_NAME[i],
+                                  g.tabW - 8, TAB_H - 5, 1, 2);
         bold(t, tx + (g.tabW - boldWidth(t, TAB_NAME[i])) / 2, g.tabY + (on ? 1 : 3),
              TAB_NAME[i], on ? NAVY : Theme::W95_DKSHADOW);
+        t.setTextFont(2); t.setTextSize(1);
     }
 
     sunken(t, g.px, g.py, g.pw, g.ph);

@@ -6,6 +6,7 @@
 #endif
 #include "clock.h"
 #include "theme.h"
+#include "settings.h"
 #include "detection.h"
 #if SQUACH_MESH
 #include "meshtalk.h"
@@ -93,7 +94,14 @@ static int drawLine(TFT_eSPI& t, int y, uint16_t labelColor,
 // so pagination always matches the actual rendered line count.
 static int diagRowHeight(TFT_eSPI& t, const DiagRow& row,
                          int screenW, int y, bool paint) {
-    const int lineH = 11;
+    // TEXT changes real diagnostic body type. The row's measured height and
+    // character width are shared by pagination and printing, so large font
+    // values never shift touch/footer geometry or clip whole rows.
+    const int textDelta = Theme::fontDelta(Settings::FontKind::TEXT);
+    const int size = textDelta > 0 && strlen(row.value) <= 48 &&
+                     strlen(row.label) <= 12 ? 2 : 1;
+    t.setTextFont(1); t.setTextSize((uint8_t)size);
+    const int lineH = t.fontHeight() + 3;
     const int xLabel = 8;
     const int xValue = xLabel + t.textWidth(row.label) + 7;
     const char* p = row.value;
@@ -107,7 +115,7 @@ static int diagRowHeight(TFT_eSPI& t, const DiagRow& row,
 
     do {
         const int x = nLines == 0 ? xValue : xLabel;
-        int maxChars = (screenW - 8 - x) / 6;
+        int maxChars = (screenW - 8 - x) / (6 * size);
         if (maxChars < 1) maxChars = 1;
         const size_t available = strlen(p);
         size_t take = available < (size_t)maxChars ? available : (size_t)maxChars;
@@ -133,6 +141,7 @@ static int diagRowHeight(TFT_eSPI& t, const DiagRow& row,
         ++nLines;
     } while (*p);
 
+    t.setTextFont(1); t.setTextSize(1);
     return nLines * lineH + 4;
 }
 

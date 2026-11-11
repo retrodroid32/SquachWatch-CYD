@@ -440,8 +440,7 @@ static void drawPinPad(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bo
         const char* lab = (i == 9) ? "DEL" : (i <= 8) ? KEY_D[i] : (i == 10) ? "0" : "";
         if (!lab[0]) continue;                       // * and # left blank
         bevel(t, kx, ky, KW, KH, Theme::TASKBAR, STEEL_LT, STEEL, STEEL_DK, STEEL_SH, false);
-        t.setTextSize(2);
-        if (t.textWidth(lab) > KW - 6) t.setTextSize(1);
+        Theme::selectCategoryFont(t, Settings::FontKind::BUTTONS, lab, KW - 6, KH - 4, 2);
         t.setTextColor(Theme::WHITE);
         t.setCursor(kx + (KW - t.textWidth(lab)) / 2, ky + (KH - t.fontHeight()) / 2);
         t.print(lab);
@@ -659,8 +658,7 @@ void uiPhoneTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool adv
             const bool lit = (s_armed == (int8_t)i);
             Theme::drawSteelKey(t, k.x, k.y, k.w, k.h, lit);
             const char* lab = keyLabel(k.ch);
-            t.setTextSize(2);
-            if (t.textWidth(lab) > k.w - 6) t.setTextSize(1);
+            Theme::selectCategoryFont(t, Settings::FontKind::BUTTONS, lab, k.w - 6, k.h - 4, 2);
             t.setTextColor(lit ? Theme::VAPOR_YELLOW : Theme::WHITE);
             t.setCursor(k.x + (k.w - t.textWidth(lab)) / 2, k.y + (k.h - t.fontHeight()) / 2);
             t.print(lab);
@@ -679,13 +677,13 @@ void uiPhoneTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool adv
             const bool lit = (s_liveKey == i);
             bevel(t, kx, ky, KW, KH, lit ? Theme::PURPLE : Theme::TASKBAR,
                   STEEL_LT, STEEL, STEEL_DK, STEEL_SH, false);
-            t.setTextSize(2);
+            Theme::selectCategoryFont(t, Settings::FontKind::BUTTONS, KEY_D[i], KW - 6, 19, 2);
             t.setTextColor(Theme::WHITE);
-            t.setCursor(kx + (KW - t.textWidth(KEY_D[i])) / 2, ky + 5);
+            t.setCursor(kx + (KW - t.textWidth(KEY_D[i])) / 2, ky + (19 - t.fontHeight()) / 2 + 2);
             t.print(KEY_D[i]);
             const char* small = padLabel(i);
             if (small[0]) {
-                t.setTextSize(1);
+                Theme::selectCategoryFont(t, Settings::FontKind::BUTTONS, small, KW - 6, 8, 1);
                 t.setTextColor(lit ? Theme::VAPOR_YELLOW : STEEL_LT);
                 t.setCursor(kx + (KW - t.textWidth(small)) / 2, ky + KH - 9);
                 t.print(small);

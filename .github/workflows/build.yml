@@ -110,6 +110,7 @@ jobs:
           python3 tools/test_fonts_bisect_a.py
           python3 tools/test_fonts_preview_stage_b.py
           python3 tools/test_fonts_live_render.py
+          python3 tools/test_fonts_stage_d.py
       - name: Reject oversized OTA images and mismatched LAB manifests
         run: |
           python3 tools/test_check_app_image_sizes.py
