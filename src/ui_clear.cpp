@@ -1736,10 +1736,12 @@ static int16_t s_wpX = 0, s_wpY = 0, s_wpW = 0, s_wpH = 0;
 static int16_t s_hpX = 0, s_hpY = 0, s_hpW = 0, s_hpH = 0;
 
 static void drawTargetPill(TFT_eSPI& t, int x, int y, const char* txt, uint16_t accent,
-                           bool hunting,
+                           bool hunting, int maxLabelW,
                            int16_t& hitX, int16_t& hitY, int16_t& hitW, int16_t& hitH,
                            bool& hitOn) {
-    const int bh = 16;
+    const int bh = 20; // size-2 text fits without growing into the counter row
+    Theme::selectCategoryFont(t, Settings::FontKind::BUTTONS,
+                              txt, maxLabelW, bh - 3, 1);
     const int bw = 16 + t.textWidth(txt) + 7;
     t.fillRoundRect(x, y, bw, bh, 4, Theme::BG);
     t.drawRoundRect(x, y, bw, bh, 4, accent);
@@ -1748,8 +1750,9 @@ static void drawTargetPill(TFT_eSPI& t, int x, int y, const char* txt, uint16_t 
     t.fillCircle(x + 9, y + bh / 2, 1, accent);
     if (hunting) t.drawFastHLine(x + 3, y + bh / 2, 12, accent);
     t.setTextColor(accent, Theme::BG);
-    t.setCursor(x + 16, y + (bh - 8) / 2);
+    t.setCursor(x + 16, y + (bh - t.fontHeight()) / 2);
     t.print(txt);
+    t.setTextFont(1); t.setTextSize(1);
 
     // Give a resistive-screen finger a little forgiveness without extending
     // into the counter row below. Horizontal growth stays small so the pills
@@ -1774,18 +1777,26 @@ static void drawTargetPills(TFT_eSPI& t, int screenW, int counterTextTop,
     snprintf(huntText, sizeof huntText, "HUNT %u", (unsigned)huntCount);
 
     const int edge = 6;
-    const int bh = 16;
+    const int bh = 20;
+    // Both pills may be visible in 240px portrait; measure each against
+    // a half-screen quota with the same font used for drawing and hit tests.
+    const int maxLabelW = watching && hunting
+        ? (screenW - edge * 2 - 6) / 2 - 23
+        : screenW - edge * 2 - 23;
     // Four clear pixels between the pill and the first counter text row.
     const int y = counterTextTop - bh - 4;
 
     if (watching) {
-        drawTargetPill(t, edge, y, watchText, Theme::CYAN, false,
+        drawTargetPill(t, edge, y, watchText, Theme::CYAN, false, maxLabelW,
                        s_wpX, s_wpY, s_wpW, s_wpH, s_watchPillOn);
     }
     if (hunting) {
+        Theme::selectCategoryFont(t, Settings::FontKind::BUTTONS,
+                                  huntText, maxLabelW, bh - 3, 1);
         const int huntW = 16 + t.textWidth(huntText) + 7;
+        t.setTextFont(1); t.setTextSize(1);
         const int x = screenW - edge - huntW;
-        drawTargetPill(t, x, y, huntText, Theme::AMBER, true,
+        drawTargetPill(t, x, y, huntText, Theme::AMBER, true, maxLabelW,
                        s_hpX, s_hpY, s_hpW, s_hpH, s_huntPillOn);
     }
 }

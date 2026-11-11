@@ -7,7 +7,8 @@ theme=read("src/theme.cpp")
 ui=read("src/ui_settings.cpp")
 desk=read("src/ui_desk.cpp")
 diag=read("src/ui_diagnostics.cpp")
-for key in ("src/ui_alert.cpp","src/ui_phone.cpp","src/ui_wifipass.cpp","src/ui_sysprops.cpp"):
+for key in ("src/ui_alert.cpp","src/ui_phone.cpp","src/ui_wifipass.cpp",
+            "src/ui_sysprops.cpp","src/ui_clear.cpp"):
     src=read(key)
     assert "selectCategoryFont(t, Settings::FontKind::BUTTONS" in src, key
 for symbol in ("void selectCategoryFont(", "void xpTileFontOn(", "xpTileTextH()", "fontDelta(Settings::FontKind::TEXT)"):

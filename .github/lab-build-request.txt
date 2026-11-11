@@ -1,4 +1,4 @@
-FONT-ALL6-LIVE-CUSTOM-BUTTONS-R3
+FONT-ALL6-LIVE-CUSTOM-BUTTONS-R4
 # Successor to PR #221, stacked on the OTA-safe post-#216 master ancestry.
 # MENUS/BUTTONS/BUBBLES/PETS retained, with all six real category controls.
 # TEXT sizes measured INFO modal body and DIAGNOSTICS report rows.
@@ -17,3 +17,6 @@ FONT-ALL6-LIVE-CUSTOM-BUTTONS-R3
 
 # R3: pinned BACK/UP strips now obey BUTTONS where safe, pixel-only for
 # ST7798 split bands; XP default 0-4 yields distinct message-card sizes.
+
+# R4: WATCH/HUNT custom target pills on CLEAR now use bounded BUTTONS font;
+# 240px portrait dual-pill quota retains nonoverlap and correct hit rectangles.
