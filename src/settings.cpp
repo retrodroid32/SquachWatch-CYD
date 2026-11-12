@@ -615,6 +615,26 @@ void        cycleClockFont()    { s_clockFont = (uint8_t)((s_clockFont + 1) % 2)
 uint8_t     clockSize()         { return s_clockSize; }
 const char* clockSizeName()     { static const char* const N[3] = { "SMALL", "MEDIUM", "LARGE" }; return N[s_clockSize]; }
 void        cycleClockSize()    { s_clockSize = (uint8_t)((s_clockSize + 1) % 3); s_prefs.putUChar("clksize", s_clockSize); }
+uint8_t fontStep(FontKind k) {
+    return (uint8_t)k < FONT_COUNT ? s_fontStep[(uint8_t)k] : 2;
+}
+uint8_t fontFace(FontKind k) {
+    return (uint8_t)k < FONT_COUNT ? s_fontFace[(uint8_t)k] : 0;
+}
+void setFontStep(FontKind k, uint8_t value) {
+    if ((uint8_t)k >= FONT_COUNT || value > 4) return;
+    const uint8_t i = (uint8_t)k;
+    if (s_fontStep[i] == value) return;
+    s_fontStep[i] = value;
+    s_prefs.putUChar(FONT_KEYS[i], value);
+}
+void setFontFace(FontKind k, uint8_t value) {
+    if ((uint8_t)k >= FONT_COUNT || value > 2) return;
+    const uint8_t i = (uint8_t)k;
+    if (s_fontFace[i] == value) return;
+    s_fontFace[i] = value;
+    s_prefs.putUChar(FACE_KEYS[i], value);
+}
 uint8_t     clockBackdrop()     { return s_clockBackdrop; }
 const char* clockBackdropName() {
     static const char* const N[CLOCK_BG_N] = { "PLAIN", "RAIN", "SNOW", "TOASTERS", "FIRE", "STARFIELD", "FIREFLIES" };

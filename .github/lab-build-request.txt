@@ -1,15 +1,13 @@
-FONT209-NVS-ONLY-POST216-R1
-# Isolated #209 source-level recovery on merged #216 current master.
-# SIX step keys and SIX face keys are loaded and clamped at boot.
-# Serial trace: [fonts-bisect-a] NVS keys=12 checksum=...
-# No UI/font rendering/menu/pet/bubble/display changes in this stage.
-# Previous font black screen was confirmed due to obsolete OTA app slot
-# overflow; the accepted #211/#212 fix plus #213 BlackBox partition reserve
-# and exact firmware.bin >=8192B headroom checks remain in this baseline.
-# Do NOT apply original stale #209 diagnostic partition/workflow code.
-# Flash via LAB site with matching USB partition table, never OTA-only
-# when upgrading from an older partition map; preserve NVS.
-# Hardware gate: 2.8 ST7789 + 3.2 ST7798 cold boot, rotate, SD/GPS,
-# HUNT R3, wifi USE, SquachMesh, 12/24 + CROWD NONE; serial checksum.
-# Next font UI (#180) stays isolated pending NVS stage approval.
-# No merge, master push, tags, or production release.
+FONT180-STAGEB-CONTROLS-ON209-R1
+# Stacked LAB over PR #219 FONT209-NVS-ONLY-POST216-R1.
+# Adds APPEARANCE > FONTS screen with six independent categories:
+# MENUS/TEXT/BUTTONS/BUBBLES/PETS/XP TILES.
+# Tap left label to cycle DEFAULT/PIXEL/SMOOTH preview face.
+# Tap 0..4 slider or -/+ to set persistent size step in NVS.
+# Preview updates ONLY inside Fonts page; NEVER applies sizes/faces
+# to global menus, pet text, notifications, log, WATCH or HUNT yet.
+# All of HUNT R3, SD/GPS, WIFI USE, v1.41, OTA/BlackBox are retained.
+# Staged due earlier old-slot overflow black screens in #206/#208.
+# Must pass independent Build and release LAB + hardware 2.8 & 3.2.
+# Validate Stage A PR #219 first on both boards. Do not conflate.
+# No merge/release/tag or deleting original font branches.

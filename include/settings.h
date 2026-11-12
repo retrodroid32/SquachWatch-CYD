@@ -83,6 +83,13 @@ namespace Settings {
     // The desk clock defaults to the historical 12-hour display.
     bool        clock24Hour();
     void        toggleClock24Hour();
+    // Stage-B Fonts settings. Stored/previewed locally only; normal draw
+    // pipeline still uses existing font sizes until separately validated.
+    enum class FontKind : uint8_t { MENUS = 0, TEXT, BUTTONS, BUBBLES, XP_TILES, PETS, COUNT };
+    uint8_t fontStep(FontKind kind);
+    uint8_t fontFace(FontKind kind);
+    void setFontStep(FontKind kind, uint8_t step); // 0..4
+    void setFontFace(FontKind kind, uint8_t face); // 0 default, 1 pixel, 2 smooth
     void       cyclePrevBackground(); // same, but backward
 
     // Disables the two CLEAR-screen gestures that cycle background

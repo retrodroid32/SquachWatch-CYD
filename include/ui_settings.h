@@ -76,6 +76,8 @@ enum class SettingsRow : uint8_t {
     SHOW_WIFI_ICON,     // top-bar Wi-Fi status indicator only
     SHOW_SD_ICON,       // top-bar SD mount indicator only
     SHOW_GPS_ICON,      // GNSS boards: top-bar satellite/fix indicator
+    FONTS,              // appearance: open isolated font controls
+    FONT_MENUS, FONT_TEXT, FONT_BUTTONS, FONT_BUBBLES, FONT_PETS, FONT_XP,
     BACK,
     COUNT,
     NONE = 255
@@ -95,9 +97,12 @@ void uiSettingsScroll(int delta);     // positive = scroll down
 // Each page keeps its OWN scroll position, so leaving a page and coming back
 // puts you where you were instead of at the top -- the list is long enough
 // that losing your place was the most-felt annoyance on this screen.
-enum class SettingsPage : uint8_t { MAIN = 0, APPEARANCE = 1, SYSTEM = 2, DESK = 3, WATCH = 4, SNOOZES = 5 };
+enum class SettingsPage : uint8_t { MAIN = 0, APPEARANCE = 1, SYSTEM = 2, DESK = 3, WATCH = 4, SNOOZES = 5, FONTS = 6 };
 void         uiSettingsOpenPage(SettingsPage p);
 SettingsPage uiSettingsCurrentPage();
+SettingsPage uiSettingsParentPage(); // FONTS -> APPEARANCE; others -> MAIN
+// Only changes font preferences/preview on the FONTS page (no global renderer).
+void uiSettingsFontTap(TFT_eSPI& t, int x, int y, int screenW, int screenH);
 
 // Kept so existing callers read the same. APPEARANCE only.
 void uiSettingsOpenAppearance(bool open);

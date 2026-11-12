@@ -16,11 +16,16 @@ for token in ("s_prefs.getUChar(FONT_KEYS[i], FONT_DEFAULT[i])",
               "s_fontStep[i] > 4", "s_fontFace[i] > 2",
               "[fonts-bisect-a]", "UI/render unchanged"):
     assert token in s, f"missing NVS isolation guard: {token}"
-assert "FontKind" not in h and "SettingsPage::FONTS" not in ui
-assert "uiSettingsFontTap" not in main and "fontDelta(" not in theme
+# Stage A alone has no UI. In the stacked Stage B branch a tightly scoped
+# preview page is permitted, but global theme rendering must still be stable.
+if "SettingsPage::FONTS" not in ui:
+    assert "FontKind" not in h and "uiSettingsFontTap" not in main
+else:
+    assert "FontKind" in h and "uiSettingsFontTap" in main
+assert "fontDelta(" not in theme
 # Do not regress the hard-won OTA partition and BIN size safety mechanisms.
 part = (root / "partitions_ota.csv").read_text(encoding="utf-8")
 ci = (root / ".github/workflows/build.yml").read_text(encoding="utf-8")
 assert "0x1F0000" in part and "0x1E4000" in part
 assert "tools/check_app_image_sizes.py" in ci
-print("PASS #209 NVS-only font isolation on current OTA-safe baseline")
+print("PASS #209 NVS storage guard; rendering remains isolated")
