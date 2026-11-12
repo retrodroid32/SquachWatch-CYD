@@ -1,4 +1,4 @@
-FONT-ALLBUTTONS-FIVE-SIZES-UNIFIED-R6
+FONT-ALLBUTTONS-FIVE-SIZES-UNIFIED-R7
 # R5 firmware compilation passed; full release blocked by 8192-byte OTA
 # reserve gate on cyd-ili9341. Preserve that gate and partition table.
 # R6 reduces glyph lookup code and shares real 5-step font functions across
@@ -12,3 +12,4 @@ FONT-ALLBUTTONS-FIVE-SIZES-UNIFIED-R6
 # LAB only. Verify CYD 2.8 ST7789 and CYD 3.2 ST7798 both rotations, then
 # wifi USE, GPS UBX 115200, SD/Events, WATCH/HUNT, privacy, SquachMesh.
 # No merge, tag, production release, or branch deletion.
+# R7 fixes a stale Stage-D guard that expected legacy fontDelta in Settings.

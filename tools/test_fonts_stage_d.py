@@ -20,7 +20,7 @@ assert "(6 * size)" in diag
 assert "if (pending) return" not in ui and "PREVIEW ONLY" not in ui
 assert "kind == Settings::FontKind::XP_TILES) return;" not in ui
 assert "selectCategoryFont(t, Settings::FontKind::TEXT" in theme
-assert 'fontDelta(Settings::FontKind::BUTTONS)' in ui
+assert 'drawButtonLabel(t,x,y,w,h,lbl' in ui
 assert 'ButtonFont::barHeight(Settings::fontStep(Settings::FontKind::BUTTONS))' in theme
 assert 'delta == -1' in theme and 'delta == 1' in theme
 assert "tools/check_app_image_sizes.py" in read(".github/workflows/build.yml")
