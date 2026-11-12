@@ -208,11 +208,8 @@ void paintKey(TFT_eSPI& t, uint8_t i, int xOffset = 0, int yOffset = 0) {
     Theme::drawSteelKey(t, x, y, k.w, k.h, lit);
     char one[2];
     const char* lab = label(k.ch, one);
-    Theme::selectCategoryFont(t, Settings::FontKind::BUTTONS, lab, k.w - 6, k.h - 4, 2);
-    t.setTextColor(lit ? Theme::VAPOR_YELLOW : Theme::WHITE);
-    t.setCursor(x + (k.w - t.textWidth(lab)) / 2, y + (k.h - t.fontHeight()) / 2);
-    t.print(lab);
-    t.setTextSize(1);
+    Theme::drawButtonLabel(t,x,y,k.w,k.h,lab,
+                           lit ? Theme::VAPOR_YELLOW : Theme::WHITE,Theme::BLACK);
 }
 
 void drawKey(TFT_eSPI& t, uint8_t i) {

@@ -693,20 +693,9 @@ void uiAlertTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng,
         moreInfoBtnRect(w, h, bx, by, bw, bh);
         t.fillRect(bx, by, bw, bh, Theme::BG);
         t.drawRect(bx, by, bw, bh, Theme::PURPLE);
-        const int lineGap = 3;
-        Theme::selectCategoryFont(t, Settings::FontKind::BUTTONS,
-                                  "MORE", bw - 6, (bh - lineGap) / 2, 2);
-        t.setTextColor(Theme::CYAN, Theme::BG);
-        t.setTextWrap(false);
-        int lineH = t.fontHeight();
-        int ty = by + (bh - (lineH * 2 + lineGap)) / 2;
-        int mw = t.textWidth("MORE");
-        t.setCursor(bx + (bw - mw) / 2, ty);
-        t.print("MORE");
-        int iw = t.textWidth("INFO");
-        t.setCursor(bx + (bw - iw) / 2, ty + lineH + lineGap);
-        t.print("INFO");
-        t.setTextFont(1); t.setTextSize(1);
+        const int half=(bh-3)/2;
+        Theme::drawButtonLabel(t,bx,by,bw,half,"MORE",Theme::CYAN,Theme::BG);
+        Theme::drawButtonLabel(t,bx,by+half+3,bw,half,"INFO",Theme::CYAN,Theme::BG);
     }
 
     // HUNT -- starts tracking this exact device straight from the alert,
@@ -722,14 +711,7 @@ void uiAlertTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng,
         huntBtnRect(w, h, bx, by, bw, bh);
         t.fillRect(bx, by, bw, bh, Theme::BG);
         t.drawRect(bx, by, bw, bh, Theme::PURPLE);
-        Theme::selectCategoryFont(t, Settings::FontKind::BUTTONS,
-                                  "HUNT", bw - 6, bh - 3, 2);
-        t.setTextColor(Theme::AMBER, Theme::BG);
-        t.setTextWrap(false);
-        int hw = t.textWidth("HUNT");
-        t.setCursor(bx + (bw - hw) / 2, by + (bh - t.fontHeight()) / 2);
-        t.print("HUNT");
-        t.setTextFont(1); t.setTextSize(1);
+        Theme::drawButtonLabel(t,bx,by,bw,bh,"HUNT",Theme::AMBER,Theme::BG);
     }
     // While cycling a snooze duration, WATCH becomes the two-line
     // hint used by the previously tested on-card interaction.
@@ -740,15 +722,9 @@ void uiAlertTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng,
             Theme::drawButton(t, bx, by, bw, bh, "", false);
             const char* a = "TAP AGAIN";
             const char* b = "TO CHANGE";
-            Theme::selectCategoryFont(t, Settings::FontKind::BUTTONS,
-                                      a, bw - 6, (bh - 2) / 2, 1);
-            t.setTextWrap(false);
-            t.setTextColor(Theme::CYAN, Theme::BG);
-            const int lineH = t.fontHeight();
-            const int y0 = by + (bh - lineH * 2 - 2) / 2;
-            t.setCursor(bx + (bw - t.textWidth(a)) / 2, y0); t.print(a);
-            t.setCursor(bx + (bw - t.textWidth(b)) / 2, y0 + lineH + 2); t.print(b);
-            t.setTextFont(1); t.setTextSize(1);
+            const int half=(bh-2)/2;
+            Theme::drawButtonLabel(t,bx,by,bw,half,a,Theme::CYAN,Theme::BG);
+            Theme::drawButtonLabel(t,bx,by+half+2,bw,half,b,Theme::CYAN,Theme::BG);
         } else {
             const bool watched = eng.isWatched(s_last.mac, s_last.channel == 0);
             Theme::drawButton(t, bx, by, bw, bh,

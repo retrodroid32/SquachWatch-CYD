@@ -507,19 +507,7 @@ void drawPinnedBack(TFT_eSPI& t, const char* label) {
     // setWindow(), which does not apply the viewport datum, so on the 3.5"'s
     // second band it lands outside the buffer and draws nothing at all. A
     // strip with no label on it. Shared helpers say what they want.
-    t.setTextFont(1);
-    // Pinned navigation is a BUTTON, not a MENU row. Keep font 1 for the
-    // ST7798 split-band viewport; FONT2 can draw outside its sprite band.
-    int sz = 2 + fontDelta(Settings::FontKind::BUTTONS);
-    if (sz > 4) sz = 4;
-    if (sz < 1) sz = 1;
-    t.setTextSize((uint8_t)sz);
-    while (sz > 1 && (t.fontHeight() > h - 4 || t.textWidth(label) > w - 8))
-        t.setTextSize((uint8_t)--sz);
-    t.setTextColor(CYAN, BG);
-    t.setCursor((w - t.textWidth(label)) / 2, y + (h - t.fontHeight()) / 2);
-    t.print(label);
-    t.setTextFont(1); t.setTextSize(1);
+    drawButtonLabel(t,0,y,w,h,label,CYAN,BG);
 }
 
 bool pinnedBackHit(int x, int y, int screenW, int screenH) {

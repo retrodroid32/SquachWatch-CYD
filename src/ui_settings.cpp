@@ -658,34 +658,19 @@ static void drawPinnedBack(TFT_eSPI& t, int screenW, int screenH) {
     pinnedBackRect(screenW, screenH, x, y, w, h);
     t.fillRect(x, y, w, h, Theme::BG);
     t.drawFastHLine(x, y, w, Theme::PURPLE);
-    t.setTextFont(1);
-    // Navigation strips stay pixel-font-only on split-band ST7798; their
-    // BUTTONS size still follows the preference with an actual fit bound.
-    int size = 2 + Theme::fontDelta(Settings::FontKind::BUTTONS);
-    if (size < 1) size = 1;
-    if (size > 4) size = 4;
-    t.setTextSize((uint8_t)size);
-    const int navMaxW = s_page == SettingsPage::DESK ? w / 2 - 8 : w - 8;
-    while (size > 1 && (t.fontHeight() > h - 4 || t.textWidth("[ BACK ]") > navMaxW))
-        t.setTextSize((uint8_t)--size);
-    t.setTextColor(Theme::CYAN, Theme::BG);
+    // Pixel-raster navigation works on the ST7798 split-band frame buffer.
     // The DESK MODE page splits the strip: OK on the left goes straight out
     // to wherever Settings was opened from, the desk or the main screen; UP
     // on the right is the usual one level up.
     if (s_page == SettingsPage::DESK) {
         const int half = w / 2;
         t.drawFastVLine(x + half, y + 4, h - 8, Theme::PURPLE);
-        t.setCursor(x + (half - t.textWidth("[ OK ]")) / 2, y + (h - t.fontHeight()) / 2);
-        t.print("[ OK ]");
-        t.setCursor(x + half + (half - t.textWidth("[ UP ]")) / 2, y + (h - t.fontHeight()) / 2);
-        t.print("[ UP ]");
-        t.setTextFont(1); t.setTextSize(1);
+        Theme::drawButtonLabel(t,x,y,half,h,"[ OK ]",Theme::CYAN,Theme::BG);
+        Theme::drawButtonLabel(t,x+half,y,half,h,"[ UP ]",Theme::CYAN,Theme::BG);
         return;
     }
     const char* lbl = (s_page == SettingsPage::MAIN) ? "[ BACK ]" : "[ UP ]";
-    t.setCursor(x + (w - t.textWidth(lbl)) / 2, y + (h - t.fontHeight()) / 2);
-    t.print(lbl);
-    t.setTextFont(1); t.setTextSize(1);
+    Theme::drawButtonLabel(t,x,y,w,h,lbl,Theme::CYAN,Theme::BG);
 }
 
 bool uiSettingsTapPinnedOk(int x, int y, int screenW, int screenH) {

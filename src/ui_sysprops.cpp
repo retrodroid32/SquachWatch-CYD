@@ -138,10 +138,8 @@ const uint16_t LABEL_RED = 0x9800;
 // here, centred the same way drawWin95Button centres its own.
 void boldButton(TFT_eSPI& t, int x, int y, int w, int h, const char* label) {
     Theme::drawWin95Button(t, x, y, w, h, "", false);
-    Theme::selectCategoryFont(t, Settings::FontKind::BUTTONS, label, w - 10, h - 6, 1, 2);
-    const int tw = boldWidth(t, label);
-    bold(t, x + 2 + (w - 4 - tw) / 2, y + 2 + (h - 4 - t.fontHeight()) / 2, label);
-    t.setTextFont(1); t.setTextSize(1);
+    Theme::drawButtonLabel(t,x+2,y+2,w-4,h-4,label,
+                           Theme::W95_DKSHADOW,Theme::W95_FACE);
 }
 
 // `src`, cut to what fits in `maxW` pixels of the current font. Proportional
@@ -349,10 +347,9 @@ void uiSysPropsTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool 
         const int tx = g.x + 4 + i * g.tabW;
         const bool on = (i == s_tab);
         raised(t, tx, on ? g.tabY - 2 : g.tabY, g.tabW, on ? TAB_H + 4 : TAB_H);
-        Theme::selectCategoryFont(t, Settings::FontKind::BUTTONS, TAB_NAME[i],
-                                  g.tabW - 8, TAB_H - 5, 1, 2);
-        bold(t, tx + (g.tabW - boldWidth(t, TAB_NAME[i])) / 2, g.tabY + (on ? 1 : 3),
-             TAB_NAME[i], on ? NAVY : Theme::W95_DKSHADOW);
+        Theme::drawButtonLabel(t,tx,g.tabY+(on?0:2),g.tabW,TAB_H,
+                               TAB_NAME[i],on?NAVY:Theme::W95_DKSHADOW,
+                               Theme::W95_FACE);
         t.setTextFont(2); t.setTextSize(1);
     }
 
