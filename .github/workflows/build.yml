@@ -113,6 +113,7 @@ jobs:
           python3 tools/test_fonts_stage_d.py
           python3 tools/test_fonts_five_steps.py
           python3 tools/test_fonts_button_coverage.py
+          python3 tools/test_v141_emulator_bench.py
       - name: Reject oversized OTA images and mismatched LAB manifests
         run: |
           python3 tools/test_check_app_image_sizes.py
@@ -135,3 +136,23 @@ jobs:
         run: make -C sim -j"$(nproc)"
       - name: Run UI screenshot regression suite
         run: make -C sim regression
+      # Reviewer-only preview: does not deploy Pages or alter firmware release.
+      # Bundled classic CYD WASM is checked-in and may lag current firmware.
+      - name: Assemble isolated browser workbench preview
+        if: github.event_name == 'pull_request'
+        run: |
+          set -euo pipefail
+          mkdir -p browser-preview/emulator
+          cp web-flasher/emulator/index.html web-flasher/emulator/squachsim.js web-flasher/emulator/squachsim.wasm browser-preview/emulator/
+          printf '%s\n' 'SquachWatch v1.41 CYD emulator workbench preview' 'The included WebAssembly is an older checked-in classic CYD bundle, not updated 1.41 firmware.' 'Run: python3 -m http.server 8000 --directory browser-preview' 'Open: http://localhost:8000/emulator/' 'No real radio TX, no production Pages deployment.' > browser-preview/README.txt
+          test -s browser-preview/emulator/index.html
+          test -s browser-preview/emulator/squachsim.js
+          test -s browser-preview/emulator/squachsim.wasm
+      - name: Upload browser workbench preview (LAB)
+        if: github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v7
+        with:
+          name: lab-pr-${{ github.event.pull_request.number }}-v141-browser-workbench
+          path: browser-preview/
+          if-no-files-found: error
+          retention-days: 14
