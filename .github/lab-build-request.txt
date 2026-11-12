@@ -1,4 +1,4 @@
-HUNT-HISTORY-PEAK-LASTSEEN-GRAPH-R1
+HUNT-HISTORY-PEAK-LASTSEEN-GRAPH-R2
 # 1.41 feature: HUNT GRAPH/GAUGE toggle with ~40s bounded RSSI chart.
 # PEAK measured since entry, LAST seconds since latest observation, WIFI CH.
 # No change to gauge freshness, CAUGHT, BLE/WIFI drivers, channel focus or
@@ -6,3 +6,5 @@ HUNT-HISTORY-PEAK-LASTSEEN-GRAPH-R1
 # Board physical gate: CYD 2.8 ST7789 and CYD 3.2 ST7798 both orientations,
 # loss/regain signals and font sizes, then normal SD/GPS/USE/Mesh smoke test.
 # LAB only: do not merge, tag or release production without explicit approval.
+
+# R2: use valid Theme::VAPOR_PURPLE for graph grid (R1 compile failed).

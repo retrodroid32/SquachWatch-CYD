@@ -319,7 +319,7 @@ static void drawHuntHistory(TFT_eSPI& t, const HuntHistory::Tracker& hist,
     t.drawRect(left, top, width, height, Theme::PURPLE);
     for (int j = 1; j <= 2; j++) {
         const int y = top + j * (height - 1) / 3;
-        t.drawFastHLine(left + 1, y, width - 2, Theme::STEEL);
+        t.drawFastHLine(left + 1, y, width - 2, Theme::VAPOR_PURPLE);
     }
     t.setTextSize(1);
     t.setTextColor(Theme::VAPOR_PURPLE, Theme::BG);
