@@ -4,15 +4,20 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>SquachWatch — try it in your browser</title>
-<meta name="description" content="The real SquachWatch-CYD firmware, compiled to WebAssembly. Same code that runs on the device, running in your browser.">
+<meta name="description" content="An interactive SquachWatch-CYD browser simulator on a realistic board workbench, using the bundled classic CYD WebAssembly build.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<!-- This file is hand-written, except the board drawings between BOARDS:BEGIN
+     and BOARDS:END near the bottom: those are sim/web/boards/*.svg, put in by
+     sim/web/boards/embed.py. Edit the .svg and run that, not the copy here. -->
 <style>
   :root {
     --ground:#0a0410; --panel:#150a20; --rule:#3b1d55;
     --ink:#d9cfe8; --ink-loud:#f4ecff; --mute:#8f7aa8;
     --cyan:#00fff5; --pink:#ff71ce; --purple:#b400ff; --amber:#ffd166;
+    /* The bench the board sits on: a green self-healing cutting mat. */
+    --mat:#17302a; --mat-line:#24493f; --mat-ink:#7fb5a5;
     --mono:"IBM Plex Mono",ui-monospace,Consolas,monospace;
     --display:"Archivo","Helvetica Neue",Arial,sans-serif;
   }
@@ -22,11 +27,9 @@
     font-family:var(--mono);font-size:14px;line-height:1.6;
     background-image:repeating-linear-gradient(180deg,rgba(255,255,255,.022) 0 1px,transparent 1px 3px);
   }
-  /* Grows with the zoom level. At 3x and 4x the canvas alone is wider
-     than a two-column layout can hold, so the page widens and main stacks
-     -- see .stacked below. */
-  .wrap{max-width:var(--page-max,1040px);margin:0 auto;padding:40px 22px 80px}
-  header{border-bottom:1px solid var(--rule);padding-bottom:22px;margin-bottom:28px}
+  .wrap{max-width:1120px;margin:0 auto;padding:40px 16px 80px}
+  @media (min-width:600px){.wrap{padding-left:22px;padding-right:22px}}
+  header{border-bottom:1px solid var(--rule);padding-bottom:22px;margin-bottom:24px}
   .kicker{color:var(--cyan);letter-spacing:.22em;text-transform:uppercase;font-size:11px;margin:0 0 10px}
   .kicker a{color:inherit;text-decoration:none;border-bottom:1px solid transparent}
   .kicker a:hover{border-bottom-color:currentColor}
@@ -36,74 +39,97 @@
     line-height:1.02;letter-spacing:-.02em;color:var(--ink-loud);margin:0;
     text-shadow:2px 2px 0 var(--purple);text-wrap:balance;
   }
-  .sub{max-width:60ch;margin:14px 0 0;color:var(--ink)}
-  main{display:grid;grid-template-columns:minmax(0,auto) minmax(260px,1fr);gap:26px;align-items:start}
-  @media (max-width:820px){main{grid-template-columns:1fr}}
-  main.stacked{grid-template-columns:1fr}
+  .sub{max-width:62ch;margin:14px 0 0;color:var(--ink)}
 
-  .device{
-    /* Sizes to whatever the canvas is, so an explicit zoom just works and
-       "fit" still collapses to the column. */
-    width:max-content;max-width:100%;
-    background:var(--panel);border:1px solid var(--rule);border-radius:10px;
-    padding:16px;display:flex;flex-direction:column;gap:12px;align-items:center;
+  /* ---- the bench: shelf of boards, the mat, the caption, the board's card ---- */
+  .bench{
+    background:var(--panel);border:1px solid var(--rule);border-radius:12px;overflow:hidden;
     box-shadow:0 0 0 1px rgba(0,255,245,.06),0 18px 50px rgba(0,0,0,.6);
+    display:flex;flex-direction:column;margin-bottom:26px;
   }
-  /* The canvas is a 320x240 buffer stretched to fill its column, so on a
-     desktop it is a 2-3x upscale. With nearest-neighbour that turns every
-     single-pixel feature into a hard 2-3px block -- a 1px outline tracing
-     a rounded corner becomes an obvious staircase. On the real 2.4" panel
-     those pixels are tiny and bleed slightly into their neighbours, so the
-     same art reads as a soft edge.
-     LCD mode approximates the panel: interpolated upscale, a whisker of
-     blur for the bleed, and a faint pixel grid. Toggled at runtime rather
-     than baked in, so the raw buffer is always one click away. */
-  .screen-wrap{position:relative;display:block;line-height:0;width:100%}
-  canvas{
-    /* Width is set from the zoom control. Integer multiples keep every
-       device pixel exactly N CSS px wide -- at a fractional scale
-       nearest-neighbour makes some pixels wider than others, which on pixel
-       art reads as a wobble in the grid. "Fit" accepts that trade so the
-       thing still works on a phone. */
-    width:100%;height:auto;
-    image-rendering:pixelated;display:block;background:#000;
-    border:1px solid #2a1440;border-radius:3px;cursor:crosshair;touch-action:none;
+  .shelfbar{display:flex;align-items:center;gap:12px;padding:10px 12px;border-bottom:1px solid var(--rule);flex-wrap:wrap}
+  /* Room to add separately compiled, board-specific WASM profiles later. */
+  .shelf{display:flex;gap:6px;overflow-x:auto;flex:1 1 440px;min-width:0;padding-bottom:2px}
+  .shelf button{
+    all:unset;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;
+    gap:4px;padding:6px 10px 4px;border-radius:8px;min-width:78px;border:1px solid transparent;flex:none;
   }
-  /* Keep the crisp nearest-neighbour upscale and put only a whisker of
-     blur on top. Switching to image-rendering:auto hands the browser a
-     bilinear stretch, which is already soft BEFORE any blur is applied --
-     the two together were far more than "slightly softened". */
-  .lcd canvas{
-    filter:blur(var(--lcd-blur,.18px)) saturate(1.03) contrast(.98);
+  .shelf .thumb{height:46px;display:flex;align-items:flex-end}
+  .shelf .thumb svg{display:block}
+  .shelf .cap{font-size:11px;color:var(--mute);white-space:nowrap}
+  .shelf button[aria-selected="true"]{background:#0d0616;border-color:var(--rule)}
+  .shelf button[aria-selected="true"] .cap{color:var(--amber)}
+  .shelf button:focus-visible{outline:2px solid var(--amber);outline-offset:1px}
+  .sizes{display:flex;border:1px solid var(--rule);border-radius:999px;overflow:hidden;flex:none}
+  .sizes button{
+    all:unset;cursor:pointer;font-size:11px;padding:6px 11px;color:var(--mute);white-space:nowrap;
+    letter-spacing:.04em;
   }
-  /* Grid spacing is one DEVICE pixel, measured from the canvas's rendered
-     width, so the lines land on pixel boundaries instead of moiring against
-     them. It fades out entirely below ~2.5x, where a 1px line would cover
-     half of every cell. */
-  /* Horizontal scanlines only. A full pixel grid adds vertical rules too,
-     which on a 320px-wide buffer is 320 of them -- that reads as mesh, not
-     as a panel. One line per device pixel row is the CRT/LCD cue. */
-  /* Periods are ONE DEVICE PIXEL wide, measured from how far the canvas is
-     actually being stretched -- so the lines trace real pixel boundaries
-     instead of an arbitrary screen rhythm. The line itself is a third of a
-     cell, which keeps the apparent density the same whether the emulator is
-     at 1.5x on a phone or 2.5x on a desktop.
+  .sizes button+button{border-left:1px solid var(--rule)}
+  .sizes button[aria-pressed="true"]{background:var(--amber);color:#1a1300}
+  .sizes button:focus-visible{outline:2px solid var(--amber);outline-offset:-2px}
 
-     SCANLINES: horizontal only. PIXEL GRID: both axes, and weaker, because
-     every pixel there is touched by two lines rather than one. */
-  /* The overlay itself. Without this the div is an empty zero-height
-     block sitting after the canvas, so the gradients below have no area to
-     paint and nothing shows -- which is exactly what happened when an
-     earlier edit sliced from a comment to the next selector and took this
-     rule with it. */
-  .lcd-grid{
-    position:absolute;inset:0;pointer-events:none;border-radius:3px;
-    opacity:0;transition:opacity .18s ease;
+  .stage{
+    position:relative;overflow:hidden;min-height:300px;
+    display:flex;align-items:safe center;justify-content:safe center;
+    background:
+      linear-gradient(var(--mat-line) 1px,transparent 1px) var(--grid-x,0) 0/var(--cm,40px) var(--cm,40px),
+      linear-gradient(90deg,var(--mat-line) 1px,transparent 1px) var(--grid-x,0) 0/var(--cm,40px) var(--cm,40px),
+      var(--mat);
   }
+  .stage.actual{overflow:auto;display:block}
+  .stage.actual .scene{margin:40px}
+  .scene{position:relative;flex:none}
+  .scene.enter{transform:translateX(36px);opacity:0}
+  .scene.ready{transition:transform .35s cubic-bezier(.2,.8,.2,1),opacity .35s}
+  .rotor{position:absolute;left:0;top:0;transform-origin:0 0}
+  .rotor svg{display:block;overflow:visible}
+  .rotor .key{transition:transform .06s,filter .06s}
+  .rotor .key.hit{cursor:pointer}
+  .rotor .key.down{transform:translate(0,.35px);filter:brightness(1.6)}
+  .plug{position:absolute;background:linear-gradient(#5b6067,#2f3237);border-radius:3px}
+  .cable{
+    position:absolute;background:linear-gradient(#2a2d31,#3a3e44 50%,#2a2d31);border-radius:6px;
+    -webkit-mask:linear-gradient(to var(--fade,right),#000 40%,transparent);
+            mask:linear-gradient(to var(--fade,right),#000 40%,transparent);
+  }
+  .vcable{background:linear-gradient(90deg,#2a2d31,#3a3e44 50%,#2a2d31)}
+  .boottag{
+    all:unset;position:absolute;cursor:pointer;white-space:nowrap;
+    font-size:11px;font-weight:500;letter-spacing:.06em;color:#1a1300;background:var(--amber);
+    padding:2px 8px;border-radius:999px;transform:translate(-50%,0);box-shadow:0 2px 8px rgba(0,0,0,.4);
+  }
+  .boottag:active{filter:brightness(.85)}
+  .boottag:focus-visible{outline:2px solid var(--cyan);outline-offset:2px}
+  .ruler{position:absolute;left:0;right:0;bottom:0;height:22px;font-size:10px;color:var(--mat-ink);pointer-events:none}
+  .ruler span{position:absolute;bottom:4px;transform:translateX(-50%);white-space:nowrap}
+  .ruler span.zero{transform:none}
+
+  /* The live screen. It sits upright over the drawn screen at all times;
+     when the firmware turns its picture sideways, the board turns under it
+     instead (see place()), so a tap never has to be un-rotated. */
+  .screen-wrap{
+    position:absolute;line-height:0;filter:brightness(var(--bl,1));
+    transition:filter .25s ease;
+  }
+  canvas{
+    width:100%;height:100%;display:block;background:#000;
+    image-rendering:pixelated;cursor:crosshair;touch-action:none;
+  }
+  .soft canvas{image-rendering:auto}
+  .glare{
+    position:absolute;inset:0;pointer-events:none;
+    background:linear-gradient(135deg,rgba(255,255,255,.12) 0%,rgba(255,255,255,.035) 34%,transparent 35%);
+  }
+  /* LCD panel simulation: a whisker of blur for the pixel bleed and one
+     scanline (or a grid) per DEVICE pixel, measured from how far the canvas
+     is actually stretched. It fades out below ~1.4x, where a line would eat
+     half of every cell. */
+  .lcd canvas{filter:blur(var(--lcd-blur,.18px)) saturate(1.03) contrast(.98)}
+  .lcd-grid{position:absolute;inset:0;pointer-events:none;opacity:0;transition:opacity .18s ease}
   .lcd[data-lcd="scan"] .lcd-grid{
-    background-image:
-      repeating-linear-gradient(to bottom,
-        rgba(0,0,0,.42) 0 var(--lcd-line,1px), transparent var(--lcd-line,1px) var(--lcd-px,2px));
+    background-image:repeating-linear-gradient(to bottom,
+      rgba(0,0,0,.42) 0 var(--lcd-line,1px), transparent var(--lcd-line,1px) var(--lcd-px,2px));
   }
   .lcd[data-lcd="grid"] .lcd-grid{
     background-image:
@@ -113,21 +139,37 @@
         rgba(0,0,0,.24) 0 var(--lcd-line,1px), transparent var(--lcd-line,1px) var(--lcd-px,2px));
   }
   .lcd .lcd-grid{opacity:var(--lcd-grid-alpha,0)}
-  @media (prefers-reduced-motion:reduce){ .lcd-grid{transition:none} }
-  /* Both controls on one row, centred under the screen. They wrap only if
-     the device column is genuinely too narrow for them. */
-  .lcd-controls{
-    display:flex;gap:14px;align-items:center;justify-content:center;
-    flex-wrap:wrap;font-size:12px;color:var(--mute)
-  }
-  .lcd-controls label{display:flex;gap:6px;align-items:center;user-select:none}
-  .lcd-controls select{width:auto;padding:4px 7px;font-size:12px}
-  .readout{display:flex;gap:16px;align-items:baseline;font-size:12px;color:var(--mute)}
-  .readout b{color:var(--cyan);font-weight:500}
-  .boot{color:var(--mute);font-size:12px;min-height:1.2em}
 
-  .panel{display:flex;flex-direction:column;gap:18px}
-  .card{background:var(--panel);border:1px solid var(--rule);border-radius:10px;padding:16px 18px}
+  .caption{
+    display:flex;justify-content:space-between;align-items:center;gap:8px 18px;flex-wrap:wrap;
+    padding:10px 14px;border-top:1px solid var(--rule);font-size:12px;color:var(--mute);
+  }
+  .readout{display:flex;gap:16px;align-items:baseline}
+  .readout b{color:var(--cyan);font-weight:500}
+  .boot{color:var(--amber)}
+  .hint{flex:1;min-width:0}
+  .caption label{display:flex;gap:6px;align-items:center;user-select:none;font-size:12px;
+    letter-spacing:0;text-transform:none;margin:0;flex-direction:row}
+  .caption select{width:auto;padding:4px 7px;font-size:12px}
+
+  .info{
+    display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 20px;align-items:center;
+    padding:14px 16px;border-top:1px solid var(--rule);background:#0d0616;
+  }
+  .info h2{margin:0;font-family:var(--display);font-weight:700;font-size:20px;color:var(--ink-loud);letter-spacing:-.01em}
+  .info .spec{font-size:12px;color:var(--cyan)}
+  .info p{margin:0;font-size:13px;max-width:70ch}
+  .info p.later{color:var(--mute);font-size:12px}
+  .info a.flash{
+    grid-row:1/span 4;grid-column:2;text-decoration:none;white-space:nowrap;color:#fff;
+    background:linear-gradient(90deg,var(--purple),var(--pink));padding:10px 16px;border-radius:8px;letter-spacing:.04em;
+  }
+  .info a.flash:focus-visible{outline:2px solid var(--amber);outline-offset:2px}
+  @media (max-width:600px){.info{grid-template-columns:1fr}.info a.flash{grid-row:auto;grid-column:1;justify-self:start;margin-top:6px}}
+
+  /* ---- the cards under the bench ---- */
+  .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,320px),1fr));gap:18px;align-items:start}
+  .card{background:var(--panel);border:1px solid var(--rule);border-radius:10px;padding:16px 18px;min-width:0}
   .card h2{
     font-family:var(--display);font-weight:600;font-size:13px;letter-spacing:.1em;
     text-transform:uppercase;color:var(--pink);margin:0 0 10px
@@ -147,12 +189,12 @@
   .mesh-status{margin:14px 0 10px;font-size:13px;color:var(--cyan);min-height:2.8em;line-height:1.45}
   .card p.fine{font-size:12px;color:var(--mute)}
   button:disabled{opacity:.4;cursor:default}
-  button{
+  .card button{
     background:linear-gradient(90deg,var(--purple),var(--pink));color:#fff;border:0;
     padding:8px 14px;cursor:pointer;letter-spacing:.05em;
   }
-  button.ghost{background:transparent;border:1px solid rgba(0,255,245,.4);color:var(--cyan)}
-  button:focus-visible{outline:2px solid var(--amber);outline-offset:2px}
+  .card button.ghost{background:transparent;border:1px solid rgba(0,255,245,.4);color:var(--cyan)}
+  .card button:focus-visible{outline:2px solid var(--amber);outline-offset:2px}
   kbd{background:#0d0616;border:1px solid var(--rule);border-radius:4px;padding:1px 5px;font-size:12px}
   ul{margin:0;padding-left:18px;font-size:13px}
   li{margin-bottom:6px}
@@ -169,129 +211,311 @@
   <p class="kicker"><a href="../" title="Back to the SquachWatch flasher">SquachWatch-CYD</a></p>
   <h1>Try it in your browser</h1>
   <p class="sub">
-    This is the device's <strong>actual firmware</strong> — the same C++ that ships to the
-    ESP32 — compiled to WebAssembly. Every screen, gesture, debounce and long-press is the
-    real thing. Click the screen to touch it.
+    Explore the classic 2.8-inch CYD firmware simulator on a board-sized workbench.
+    The screen runs the WebAssembly bundled beside this page. For the fresh
+    PR preview, BUILD-INFO identifies the exact source SHA; the public site
+    can use a different release. Click the
+    display to interact with it, then use Fit, Same scale or Actual size.
   </p>
 </header>
 
-<main>
-  <div class="device">
-    <div class="screen-wrap" id="screenWrap">
-      <canvas id="screen" width="320" height="240"></canvas>
-      <div class="lcd-grid" id="lcdGrid"></div>
+<section class="bench" aria-label="The emulator">
+  <div class="shelfbar">
+    <div class="shelf" id="shelf" role="tablist" aria-label="Board"></div>
+    <div class="sizes" id="sizes" role="group" aria-label="Size">
+      <button data-size="fit" title="As big as the bench allows">Fit</button>
+      <button data-size="same" title="Use a consistent board scale for future supported board builds">Same scale</button>
+      <button data-size="actual" title="Roughly the board's real size on a typical monitor">Actual size</button>
     </div>
+  </div>
+  <div class="stage" id="stage">
+    <div class="scene" id="scene">
+      <div class="screen-wrap" id="screenWrap">
+        <canvas id="screen" width="320" height="240"></canvas>
+        <div class="lcd-grid" id="lcdGrid"></div>
+        <div class="glare"></div>
+      </div>
+    </div>
+  </div>
+  <div class="caption">
     <div class="readout">
       <span>state <b id="state">booting</b></span>
       <span>fps <b id="fps">—</b></span>
+      <span class="boot" id="boot">loading firmware…</span>
     </div>
-    <div class="boot" id="boot">loading firmware…</div>
-    <div class="lcd-controls">
-      <label>zoom
-        <select id="lcdZoom">
-          <option value="fit">fit</option>
-          <option value="1">1&times;</option>
-          <option value="2" selected>2&times;</option>
-          <option value="3">3&times;</option>
-          <option value="4">4&times;</option>
-        </select>
-      </label>
-      <label>panel
-        <select id="lcdMode">
-          <option value="off">off</option>
-          <option value="scan" selected>scanlines</option>
-          <option value="grid">pixel grid</option>
-        </select>
-      </label>
+    <span class="hint" id="hint"></span>
+    <label>panel
+      <select id="lcdMode">
+        <option value="off">off</option>
+        <option value="scan" selected>scanlines</option>
+        <option value="grid">pixel grid</option>
+      </select>
+    </label>
+  </div>
+  <div class="info" id="info" aria-live="polite"></div>
+</section>
+
+<main class="cards">
+  <div class="card">
+    <h2>Simulate a detection</h2>
+    <p>There are no radios in a browser, so nothing will ever be found on its own. Send it something:</p>
+    <label>Device type
+      <select id="type"></select>
+    </label>
+    <div class="btns">
+      <button id="trigger">Trigger</button>
+      <button id="reboot" class="ghost">Reboot</button>
+      <button id="wipe" class="ghost">Factory reset</button>
     </div>
+    <p style="margin:10px 0 0;font-size:12px;color:var(--mute)">
+      Settings persist in this browser. Factory reset clears them and
+      replays first boot &mdash; the colour check and Squachy's walkthrough.
+    </p>
   </div>
 
-  <div class="panel">
-    <div class="card">
-      <h2>Simulate a detection</h2>
-      <p>There are no radios in a browser, so nothing will ever be found on its own. Send it something:</p>
-      <label>Device type
-        <select id="type"></select>
-      </label>
-      <div class="btns">
-        <button id="trigger">Trigger</button>
-        <button id="reboot" class="ghost">Reboot</button>
-        <button id="wipe" class="ghost">Factory reset</button>
-      </div>
-      <p style="margin:10px 0 0;font-size:12px;color:var(--mute)">
-        Settings persist in this browser. Factory reset clears them and
-        replays first boot &mdash; the colour check and Squachy's walkthrough.
-      </p>
+  <div class="card">
+    <h2>A SquachWatch nearby</h2>
+    <p>A second SquachWatch that only exists in this page. It sends real SquachMesh adverts into the real firmware, so it turns up exactly when a board nearby would &mdash; and it answers what you send it.</p>
+    <div class="btns" style="margin-bottom:14px">
+      <button id="meshHere">Bring it nearby</button>
+      <button id="meshSetup" class="ghost">Set up SquachMesh</button>
     </div>
+    <div class="pair">
+      <label>Outfit <select id="meshOutfit"></select></label>
+      <label>Shades <select id="meshShade"></select></label>
+      <label>Nickname <select id="meshNick"></select></label>
+      <label>Custom name <input type="text" id="meshName" maxlength="12" placeholder="none"></label>
+    </div>
+    <label>Message <select id="meshLine"></select></label>
+    <label>Or have it type one <input type="text" id="meshText" maxlength="48" placeholder="A-Z 0-9 .,?!'- up to 48"></label>
+    <div class="btns" style="align-items:center">
+      <button id="meshSay" class="ghost">Make it say</button>
+      <button id="meshType" class="ghost">Make it type</button>
+      <label class="tick"><input type="checkbox" id="meshShares" checked> Same phrase as you</label>
+      <label class="tick"><input type="checkbox" id="meshReply" checked> Answers back</label>
+    </div>
+    <div class="mesh-status" id="meshStatus" aria-live="polite"></div>
+    <p class="fine">
+      On a real board SquachMesh starts behind a warning you have to accept, then a phrase you
+      pick. Set up skips both &mdash; you can still walk through them yourself under Settings.
+      Its look is copied once, when it arrives, just as a board does: to see a new outfit or name,
+      send it away, let it leave, and bring it back.
+    </p>
+  </div>
 
-    <div class="card">
-      <h2>A SquachWatch nearby</h2>
-      <p>A second SquachWatch that only exists in this page. It sends real SquachMesh adverts into the real firmware, so it turns up exactly when a board nearby would &mdash; and it answers what you send it.</p>
-      <div class="btns" style="margin-bottom:14px">
-        <button id="meshHere">Bring it nearby</button>
-        <button id="meshSetup" class="ghost">Set up SquachMesh</button>
-      </div>
-      <div class="pair">
-        <label>Outfit <select id="meshOutfit"></select></label>
-        <label>Shades <select id="meshShade"></select></label>
-        <label>Nickname <select id="meshNick"></select></label>
-        <label>Custom name <input type="text" id="meshName" maxlength="12" placeholder="none"></label>
-      </div>
-      <label>Message <select id="meshLine"></select></label>
-      <label>Or have it type one <input type="text" id="meshText" maxlength="48" placeholder="A-Z 0-9 .,?!'- up to 48"></label>
-      <div class="btns" style="align-items:center">
-        <button id="meshSay" class="ghost">Make it say</button>
-        <button id="meshType" class="ghost">Make it type</button>
-        <label class="tick"><input type="checkbox" id="meshShares" checked> Same phrase as you</label>
-        <label class="tick"><input type="checkbox" id="meshReply" checked> Answers back</label>
-      </div>
-      <div class="mesh-status" id="meshStatus" aria-live="polite"></div>
-      <p class="fine">
-        On a real board SquachMesh starts behind a warning you have to accept, then a phrase you
-        pick. Set up skips both &mdash; you can still walk through them yourself under Settings.
-        Its look is copied once, when it arrives, just as a board does: to see a new outfit or name,
-        send it away, let it leave, and bring it back.
-      </p>
-    </div>
+  <div class="card">
+    <h2>Getting around</h2>
+    <ul>
+      <li>First boot runs a colour check and Squachy's walkthrough — tap through them.</li>
+      <li><kbd>SCAN</kbd> <kbd>LOG</kbd> <kbd>CLR</kbd> along the bottom.</li>
+      <li>The gear in the top-left opens Settings; the icon top-right rotates the screen, and the board turns with it.</li>
+      <li>Tap Squachy to pet him. Hold <kbd>CLR</kbd> for four seconds to unlock every outfit.</li>
+      <li>On physical classic CYDs, BOOT toggles POCKET MODE. A BOOT control only appears here if the bundled WebAssembly build supports that input.</li>
+      <li>The board art, ruler and USB cable illustrate its size and layout. They are not measurements of the attached physical hardware.</li>
+      <li>Other upstream v1.41 boards require separately compiled, board-specific browser firmware and are not shown as active in this fork.</li>
+      <li>Use Fit for the available space, Same scale for repeatable comparisons, or Actual size for approximately physical monitor scale.</li>
+    </ul>
+  </div>
 
-    <div class="card">
-      <h2>Getting around</h2>
-      <ul>
-        <li>First boot runs a colour check and Squachy's walkthrough — tap through them.</li>
-        <li><kbd>SCAN</kbd> <kbd>LOG</kbd> <kbd>CLR</kbd> along the bottom.</li>
-        <li>The gear in the top-left opens Settings; the icon top-right rotates the screen.</li>
-        <li>Tap Squachy to pet him. Hold <kbd>CLR</kbd> for four seconds to unlock every outfit.</li>
-      </ul>
-    </div>
-
-    <div class="card">
-      <h2>What's real and what isn't</h2>
-      <p>
-        Real: the state machine, touch mapping, settings, persistence, and all the rendering.
-        Colours are quantised to the panel's actual 8-bit RGB332, so this looks like the
-        hardware rather than better than it.
-      </p>
-      <p>
-        Not real: the radios. Detections come from the Trigger button, the nearby SquachWatch
-        is simulated, messages use a stand-in cipher rather than the device's AES, and the
-        shape layer isn't pixel-exact against the display library.
-      </p>
-      <p>
-        The frame rate is capped to 33fps to match what the hardware actually manages once
-        the SPI push to the panel is counted, so animations run at device speed rather than
-        at your monitor's refresh.
-      </p>
-    </div>
+  <div class="card">
+    <h2>What's real and what isn't</h2>
+    <p>
+      Real in this bundle: the C++ state machine, screen rendering, touch mapping,
+      settings and persistence from the bundled classic-CYD WebAssembly build.
+      Panel brightness and BOOT handling only appear if that build exports them.
+      The browser's canvas is derived from RGB565 framebuffer pixels.
+    </p>
+    <p>
+      Not real: the radios. Detections come from the Trigger button, the nearby SquachWatch
+      is simulated, messages use a stand-in cipher rather than the device's AES, and the
+      shape layer isn't pixel-exact against the display library.
+    </p>
+    <p>
+      This checkpoint ships only the classic CYD simulator. It does not download
+      upstream's T-Deck, watch or Cardputer code, substitute CYD firmware into
+      unsupported board drawings, or alter either physical CYD firmware target.
+    </p>
+    <p>
+      The 3.2-inch ST7798 will need its own verified browser display profile.
+      This page does not present a 2.8-inch simulator as a tested 3.2-inch build.
+    </p>
+    <p>
+      The frame rate is capped to 33fps to match what the hardware actually manages once
+      the SPI push to the panel is counted, so animations run at device speed rather than
+      at your monitor's refresh.
+    </p>
   </div>
 </main>
 
 <footer>
-  <span>Real firmware, compiled to WebAssembly</span>
-  <span>320×240 · 8bpp RGB332</span>
-  <span><a href="./">Flash it to a real device →</a></span>
+  <span>Classic CYD firmware simulation, compiled to WebAssembly</span>
+  <span id="footSize">320×240 · RGB565 framebuffer</span>
+  <span><a href="../">Flash it to a real device →</a></span>
+  <span>Boards drawn from their makers' photos and dimension drawings</span>
 </footer>
 
 </div>
+
+<!-- BOARDS:BEGIN -->
+<template id="board-cyd28">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 86.8 50" data-w-mm="86.8" data-h-mm="50">
+<defs>
+<linearGradient id="cyd28-pcb" x1="0" y1="0" x2="0.3" y2="1">
+<stop offset="0" stop-color="#fbc210"/>
+<stop offset="0.55" stop-color="#f6b800"/>
+<stop offset="1" stop-color="#eba900"/>
+</linearGradient>
+<radialGradient id="cyd28-pcbSheen" cx="0.22" cy="0.08" r="0.95">
+<stop offset="0" stop-color="#fff7cf" stop-opacity="0.38"/>
+<stop offset="0.45" stop-color="#fff7cf" stop-opacity="0.08"/>
+<stop offset="1" stop-color="#fff7cf" stop-opacity="0"/>
+</radialGradient>
+<linearGradient id="cyd28-frame" x1="0" y1="0" x2="0" y2="1">
+<stop offset="0" stop-color="#fbfaf1"/>
+<stop offset="0.5" stop-color="#e2dcc8"/>
+<stop offset="1" stop-color="#cbc3a8"/>
+</linearGradient>
+<linearGradient id="cyd28-frameV" x1="0" y1="0" x2="1" y2="0">
+<stop offset="0" stop-color="#f3efe0"/>
+<stop offset="0.6" stop-color="#d3cbb1"/>
+<stop offset="1" stop-color="#b7af94"/>
+</linearGradient>
+<linearGradient id="cyd28-glass" x1="0" y1="0" x2="1" y2="1">
+<stop offset="0" stop-color="#1d1e19"/>
+<stop offset="0.45" stop-color="#0d0e0b"/>
+<stop offset="1" stop-color="#060606"/>
+</linearGradient>
+<linearGradient id="cyd28-glassSheen" x1="0" y1="0" x2="0.8" y2="1">
+<stop offset="0" stop-color="#ffffff" stop-opacity="0.13"/>
+<stop offset="0.3" stop-color="#ffffff" stop-opacity="0.03"/>
+<stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+</linearGradient>
+<radialGradient id="cyd28-ring" cx="0.4" cy="0.35" r="0.7">
+<stop offset="0" stop-color="#f6f0d8"/>
+<stop offset="0.6" stop-color="#ddd2aa"/>
+<stop offset="1" stop-color="#b8a774"/>
+</radialGradient>
+<linearGradient id="cyd28-flap" x1="0" y1="0" x2="1" y2="0">
+<stop offset="0" stop-color="#0c0d0a"/>
+<stop offset="0.5" stop-color="#1d1e18"/>
+<stop offset="1" stop-color="#101109"/>
+</linearGradient>
+<linearGradient id="cyd28-usb" x1="0" y1="0" x2="0" y2="1">
+<stop offset="0" stop-color="#f2f2f0"/>
+<stop offset="0.5" stop-color="#bdbdba"/>
+<stop offset="1" stop-color="#8b8b88"/>
+</linearGradient>
+<linearGradient id="cyd28-tail" x1="0" y1="0" x2="1" y2="0">
+<stop offset="0" stop-color="#c9b78c"/>
+<stop offset="0.5" stop-color="#f2e9d1"/>
+<stop offset="1" stop-color="#d6c59c"/>
+</linearGradient>
+<linearGradient id="cyd28-ldr" x1="0" y1="0" x2="1" y2="0">
+<stop offset="0" stop-color="#e7dfc0"/>
+<stop offset="0.5" stop-color="#fbf8ea"/>
+<stop offset="1" stop-color="#e0d6b4"/>
+</linearGradient>
+</defs>
+<rect x="0" y="11.6" width="3" height="7.6" rx="0.45" fill="url(#cyd28-usb)" stroke="#6e6e6c" stroke-width="0.12"/>
+<rect x="0.05" y="12.35" width="0.3" height="6.1" rx="0.1" fill="#3a3a38"/>
+<path d="M0.12 11.82H0.9" stroke="#ffffff" stroke-opacity="0.75" stroke-width="0.12"/>
+<path fill="#b4aa06" fill-rule="evenodd" d="M3.4 0H84.2A2.6 2.6 0 0 1 86.8 2.6V47.4A2.6 2.6 0 0 1 84.2 50H3.4A2.6 2.6 0 0 1 0.8 47.4V2.6A2.6 2.6 0 0 1 3.4 0Z M4.8 2.4a1.6 1.6 0 1 0 0.001 0Z M82.8 2.4a1.6 1.6 0 1 0 0.001 0Z M4.8 44.4a1.6 1.6 0 1 0 0.001 0Z M82.8 44.4a1.6 1.6 0 1 0 0.001 0Z"/>
+<path fill="url(#cyd28-pcb)" fill-rule="evenodd" d="M3.4 0.42H84.2A2.18 2.18 0 0 1 86.38 2.6V47.4A2.18 2.18 0 0 1 84.2 49.58H3.4A2.18 2.18 0 0 1 1.22 47.4V2.6A2.18 2.18 0 0 1 3.4 0.42Z M4.8 1.2a2.8 2.8 0 1 0 0.001 0Z M82.8 1.2a2.8 2.8 0 1 0 0.001 0Z M4.8 43.2a2.8 2.8 0 1 0 0.001 0Z M82.8 43.2a2.8 2.8 0 1 0 0.001 0Z"/>
+<path fill="url(#cyd28-pcbSheen)" fill-rule="evenodd" d="M3.4 0.42H84.2A2.18 2.18 0 0 1 86.38 2.6V47.4A2.18 2.18 0 0 1 84.2 49.58H3.4A2.18 2.18 0 0 1 1.22 47.4V2.6A2.18 2.18 0 0 1 3.4 0.42Z M4.8 1.2a2.8 2.8 0 1 0 0.001 0Z M82.8 1.2a2.8 2.8 0 1 0 0.001 0Z M4.8 43.2a2.8 2.8 0 1 0 0.001 0Z M82.8 43.2a2.8 2.8 0 1 0 0.001 0Z"/>
+<path d="M1.48 46.5V2.7A1.95 1.95 0 0 1 3.43 0.68H84.2" fill="none" stroke="#fff3b0" stroke-opacity="0.5" stroke-width="0.18"/>
+<path d="M86.12 3V47.3A1.95 1.95 0 0 1 84.17 49.32H3.8" fill="none" stroke="#7a6400" stroke-opacity="0.35" stroke-width="0.18"/>
+<g fill="none" stroke="#ffd24a" stroke-opacity="0.5" stroke-width="0.22" stroke-linecap="round" stroke-linejoin="round">
+<path d="M81.55 9.3H80.4V15.2"/>
+<path d="M81.55 12.5H80.9L79.9 13.5V44.4L80.9 45.4"/>
+<path d="M85.7 10.4V14.4"/>
+<path d="M85.4 35.2V41.1L84.6 41.9"/>
+<path d="M5.8 12.5V9.4L7 8.2"/>
+<path d="M5.8 17.5V21.3L7.2 22.7V35.8"/>
+<path d="M3.8 24V39.8"/>
+</g>
+<g fill="none" stroke="#b98c00" stroke-opacity="0.3" stroke-width="0.2" stroke-linecap="round" stroke-linejoin="round" transform="translate(0.14 0.14)">
+<path d="M81.55 9.3H80.4V15.2"/>
+<path d="M81.55 12.5H80.9L79.9 13.5V44.4L80.9 45.4"/>
+<path d="M5.8 17.5V21.3L7.2 22.7V35.8"/>
+</g>
+<path fill="#cdbb14" fill-opacity="0.85" fill-rule="evenodd" d="M4.8 1.2a2.8 2.8 0 1 0 0.001 0Z M4.8 2.4a1.6 1.6 0 1 0 0.001 0Z M82.8 1.2a2.8 2.8 0 1 0 0.001 0Z M82.8 2.4a1.6 1.6 0 1 0 0.001 0Z M4.8 43.2a2.8 2.8 0 1 0 0.001 0Z M4.8 44.4a1.6 1.6 0 1 0 0.001 0Z M82.8 43.2a2.8 2.8 0 1 0 0.001 0Z M82.8 44.4a1.6 1.6 0 1 0 0.001 0Z"/>
+<path fill="url(#cyd28-ring)" fill-rule="evenodd" d="M4.8 1.58a2.42 2.42 0 1 0 0.001 0Z M4.8 2.4a1.6 1.6 0 1 0 0.001 0Z M82.8 1.58a2.42 2.42 0 1 0 0.001 0Z M82.8 2.4a1.6 1.6 0 1 0 0.001 0Z M4.8 43.58a2.42 2.42 0 1 0 0.001 0Z M4.8 44.4a1.6 1.6 0 1 0 0.001 0Z M82.8 43.58a2.42 2.42 0 1 0 0.001 0Z M82.8 44.4a1.6 1.6 0 1 0 0.001 0Z"/>
+<circle cx="4.8" cy="4" r="1.66" fill="none" stroke="#7a6733" stroke-width="0.18"/>
+<path d="M2.95 3.15A2.4 2.4 0 0 1 5.6 1.7" fill="none" stroke="#ffffff" stroke-opacity="0.55" stroke-width="0.12"/>
+<path d="M6.65 4.85A2.4 2.4 0 0 1 4 6.3" fill="none" stroke="#5e5228" stroke-opacity="0.35" stroke-width="0.12"/>
+<circle cx="82.8" cy="4" r="1.66" fill="none" stroke="#7a6733" stroke-width="0.18"/>
+<path d="M80.95 3.15A2.4 2.4 0 0 1 83.6 1.7" fill="none" stroke="#ffffff" stroke-opacity="0.55" stroke-width="0.12"/>
+<path d="M84.65 4.85A2.4 2.4 0 0 1 82 6.3" fill="none" stroke="#5e5228" stroke-opacity="0.35" stroke-width="0.12"/>
+<circle cx="4.8" cy="46" r="1.66" fill="none" stroke="#7a6733" stroke-width="0.18"/>
+<path d="M2.95 45.15A2.4 2.4 0 0 1 5.6 43.7" fill="none" stroke="#ffffff" stroke-opacity="0.55" stroke-width="0.12"/>
+<path d="M6.65 46.85A2.4 2.4 0 0 1 4 48.3" fill="none" stroke="#5e5228" stroke-opacity="0.35" stroke-width="0.12"/>
+<circle cx="82.8" cy="46" r="1.66" fill="none" stroke="#7a6733" stroke-width="0.18"/>
+<path d="M80.95 45.15A2.4 2.4 0 0 1 83.6 43.7" fill="none" stroke="#ffffff" stroke-opacity="0.55" stroke-width="0.12"/>
+<path d="M84.65 46.85A2.4 2.4 0 0 1 82 48.3" fill="none" stroke="#5e5228" stroke-opacity="0.35" stroke-width="0.12"/>
+<rect x="1.95" y="10.85" width="2.3" height="1.3" rx="0.65" fill="#b08a00" fill-opacity="0.8"/>
+<rect x="2.1" y="11" width="2" height="1" rx="0.5" fill="url(#cyd28-ring)"/>
+<rect x="2.5" y="11.25" width="1.2" height="0.5" rx="0.25" fill="#4b4115"/>
+<rect x="1.95" y="18.1" width="2.3" height="1.3" rx="0.65" fill="#b08a00" fill-opacity="0.8"/>
+<rect x="2.1" y="18.25" width="2" height="1" rx="0.5" fill="url(#cyd28-ring)"/>
+<rect x="2.5" y="18.5" width="1.2" height="0.5" rx="0.25" fill="#4b4115"/>
+<circle cx="5.8" cy="12.5" r="0.72" fill="#b08a00" fill-opacity="0.8"/>
+<circle cx="5.8" cy="12.5" r="0.55" fill="url(#cyd28-ring)"/>
+<circle cx="5.8" cy="12.5" r="0.24" fill="#3b3312"/>
+<circle cx="5.8" cy="17.5" r="0.72" fill="#b08a00" fill-opacity="0.8"/>
+<circle cx="5.8" cy="17.5" r="0.55" fill="url(#cyd28-ring)"/>
+<circle cx="5.8" cy="17.5" r="0.24" fill="#3b3312"/>
+<g fill="#dca400" stroke="#bd8c00" stroke-width="0.08">
+<circle cx="7.9" cy="1.3" r="0.22"/><circle cx="7" cy="8.2" r="0.22"/><circle cx="7.2" cy="35.8" r="0.22"/><circle cx="3.8" cy="24" r="0.22"/><circle cx="3.8" cy="39.8" r="0.22"/><circle cx="80.4" cy="15.2" r="0.22"/><circle cx="85.7" cy="14.4" r="0.22"/><circle cx="84.6" cy="41.9" r="0.22"/><circle cx="80.9" cy="45.4" r="0.22"/>
+</g>
+<rect x="81.35" y="7.75" width="3.5" height="6.05" rx="0.15" fill="none" stroke="#fbf6e2" stroke-width="0.14" stroke-opacity="0.9"/>
+<rect x="81.85" y="8.0" width="2.5" height="0.28" rx="0.1" fill="#c7bd96"/>
+<rect x="81.75" y="8.25" width="2.7" height="1.65" rx="0.12" fill="#fffef6" stroke="#d6cea8" stroke-width="0.08"/>
+<rect x="81.75" y="9.9" width="2.7" height="1.55" fill="url(#cyd28-ldr)"/>
+<path d="M82.05 10.1V11.25H82.4V10.1H82.75V11.25H83.1V10.1H83.45V11.25H83.8V10.1H84.15" fill="none" stroke="#b46c1c" stroke-width="0.2" stroke-linejoin="round"/>
+<rect x="81.75" y="11.45" width="2.7" height="1.45" rx="0.12" fill="#fbfaf1" stroke="#d6cea8" stroke-width="0.08"/>
+<rect x="81.85" y="12.9" width="2.5" height="0.45" rx="0.12" fill="#8c8257"/>
+<rect x="80.1" y="15.6" width="6" height="18.9" rx="0.3" fill="url(#cyd28-flap)"/>
+<path d="M80.25 15.75H85.95" stroke="#5c5d54" stroke-width="0.12" stroke-opacity="0.8"/>
+<path d="M80.2 15.9V34.3" stroke="#3a3b33" stroke-width="0.1"/>
+<path d="M80.7 24.2L81.95 21.9L83.2 24.2Z" fill="#efefe6"/>
+<path d="M81.6 23.95C81.7 23.3 82 22.95 82.4 22.8" fill="none" stroke="#141510" stroke-width="0.2" stroke-linecap="round"/>
+<g fill="none" stroke="#efefe6" stroke-width="0.16">
+<circle cx="81.95" cy="27.2" r="1.15"/>
+<path d="M81.15 28L82.75 26.4"/>
+</g>
+<rect x="9.2" y="0" width="69.2" height="50" fill="url(#cyd28-frame)"/>
+<rect x="9.4" y="0.75" width="1.6" height="48.5" fill="#22231d"/>
+<rect x="11" y="0.75" width="0.9" height="48.5" fill="url(#cyd28-frameV)"/>
+<rect x="11.9" y="1.2" width="65.1" height="47.6" fill="#191a15"/>
+<rect x="12.25" y="1.9" width="64.75" height="46.2" rx="0.12" fill="url(#cyd28-glass)"/>
+<rect x="16.1" y="2.6" width="60.9" height="44.8" fill="#0a0a08" stroke="#272821" stroke-width="0.1"/>
+<rect x="12.25" y="1.9" width="64.75" height="46.2" rx="0.12" fill="url(#cyd28-glassSheen)"/>
+<rect x="12.25" y="1.9" width="64.75" height="46.2" rx="0.12" fill="none" stroke="#3b3c34" stroke-width="0.1"/>
+<rect x="9.2" y="0" width="69.2" height="50" fill="none" stroke="#857e66" stroke-width="0.14"/>
+<path d="M9.35 0.2H78.25" stroke="#ffffff" stroke-opacity="0.9" stroke-width="0.2"/>
+<path d="M11.9 1.2H77 M11.9 48.8H77" stroke="#9a9378" stroke-width="0.1"/>
+<path d="M9.35 49.8H78.25" stroke="#6d6752" stroke-opacity="0.6" stroke-width="0.14"/>
+<path d="M9.3 0.3V49.7" stroke="#ffffff" stroke-opacity="0.6" stroke-width="0.12"/>
+<rect x="9.75" y="0.5" width="68.1" height="49" fill="none" stroke="#ffffff" stroke-opacity="0.16" stroke-width="0.1"/>
+<rect id="cyd28-screen" x="17.75" y="3.4" width="57.6" height="43.2" fill="#000"/>
+<rect x="8.65" y="5.4" width="1.1" height="7.4" fill="#5a4a2a" fill-opacity="0.45"/>
+<rect x="8.5" y="4.4" width="3" height="2.45" rx="0.2" fill="url(#cyd28-tail)"/>
+<path d="M8.7 4.55H11.2" stroke="#ffffff" stroke-opacity="0.65" stroke-width="0.12"/>
+<path d="M8.6 6.78H11.3" stroke="#7e6e48" stroke-opacity="0.7" stroke-width="0.12"/>
+<rect x="8.25" y="7.15" width="3.25" height="2.45" rx="0.2" fill="url(#cyd28-tail)"/>
+<path d="M8.7 7.3H11.45" stroke="#ffffff" stroke-opacity="0.65" stroke-width="0.12"/>
+<path d="M8.6 9.53H11.55" stroke="#7e6e48" stroke-opacity="0.7" stroke-width="0.12"/>
+<rect x="8.5" y="9.9" width="3" height="2.45" rx="0.2" fill="url(#cyd28-tail)"/>
+<path d="M8.7 10.05H11.2" stroke="#ffffff" stroke-opacity="0.65" stroke-width="0.12"/>
+<path d="M8.6 12.28H11.3" stroke="#7e6e48" stroke-opacity="0.7" stroke-width="0.12"/>
+<rect x="11.25" y="4.6" width="0.45" height="9.9" fill="#ece3c8"/>
+<rect id="cyd28-btn-boot" data-side="back" x="72.6" y="48.4" width="3.55" height="1.6" fill="#000" fill-opacity="0"/>
+<rect id="cyd28-btn-rst" data-side="back" x="76.8" y="48.4" width="3.6" height="1.6" fill="#000" fill-opacity="0"/>
+<circle id="cyd28-led" data-side="back" cx="56.2" cy="11.8" r="2.4" fill="#000" fill-opacity="0"/>
+<rect id="cyd28-usb" data-dir="left" x="0" y="11.6" width="0.8" height="7.6" fill="#000" fill-opacity="0"/>
+</svg>
+</template>
+<!-- BOARDS:END -->
 
 <!-- squachsim.js is Emscripten's MODULARIZE output WITHOUT -sEXPORT_ES6,
      so it is a classic script that assigns a global (var SquachSim =
@@ -308,59 +532,436 @@
      goes back to being an import -- the two have to agree. -->
 <script src="./squachsim.js"></script>
 <script type="module">
-
 const STATES = ['BOOT','CLEAR','ALERT','LOG','SETTINGS','DIARY','OUTFIT','RAWSCAN',
-                'WATCH ALERT','DIAGNOSTICS','HUNT','COLOUR CHECK','TYPE FILTER'];
+                'WATCH ALERT','DIAGNOSTICS','HUNT','COLOUR CHECK','TYPE FILTER','OUTFIT UNLOCK',
+                'IGNORE LIST','POWER SAVER','PHONE','MESH MENU','MESH WARN','MESH PHRASE',
+                'MESH COMPOSE','BEACON WARN','SECURITY','LOCKED','PIN ENTRY','SQUAD','UPDATE',
+                'WIFI PASS','STATUS LIGHT','NUDGE','SQUAD UPDATE','INVITE','DESK','WIFI NETS',
+                'WIFI ADD','SYS PROPS','BINGO','DEX','LORA CHATS','LORA','LORA SETTINGS'];
 
 const $ = id => document.getElementById(id);
 const cv = $('screen'), ctx = cv.getContext('2d', { alpha:false });
 
-const M = await SquachSim();
-const setup  = () => M.ccall('sw_setup', null, [], []);
-const step   = M.cwrap('sw_step','null',['number']);
-const frame  = M.cwrap('sw_frame','number',[]);
-const touch  = M.cwrap('sw_touch','null',['number','number','number']);
-const detect = M.cwrap('sw_detect','number',['number','number']);
-// One entry per device the firmware can name, straight from its own table
-// (sim/sim_detections.h), grouped by detection type. A list kept by hand here
-// went stale and hid the Flipper Zero and iBeacons.
-{
-  const groups = {};
-  for (const [i, type, label] of JSON.parse(M.ccall('sw_det_catalog', 'string', [], []))) {
-    if (!groups[type]) {
-      groups[type] = document.createElement('optgroup');
-      groups[type].label = type;
-      $('type').add(groups[type]);
-    }
-    groups[type].appendChild(new Option(label, i));
-    if (label === 'Apple AirTag') $('type').value = i;   // the one people recognise
-  }
+// ---- the boards ------------------------------------------------------------
+// panel: the screen the firmware draws on, landscape, in pixels. The drawing
+// (a <template> above, from sim/web/boards/) is in millimetres, and its
+// #screen rect is the panel's active area, so pixels and millimetres meet
+// there. pocket: which of the board's controls is the BOOT button. build:
+// which firmware runs in it -- each board's own where it has one (the
+// T-Deck's keyboard, LORA page, chats and DMs; the watch's screens and crown;
+// the Cardputer's keyboard cursor), the CYD build at the board's size where it
+// does not.
+const BOARDS = [
+  {id:'cyd28', name:'2.8" CYD', full:'Classic 2.8-inch CYD (ESP32-2432S028)', panel:[320,240], pocket:'boot',
+   spec:'2.8 in · 320×240 · resistive touch · ST7789 variant supported',
+   adds:'Real classic-CYD emulator at its native panel size. The bench illustration approximates the original yellow board; the ST7789 and ILI9341 hardware variants have different display drivers.',
+   later:'The original 1.41 T-Deck, T-Watch and Cardputer board emulators require separate matching WASM firmware builds. They are deliberately not advertised as running the CYD build here.'},
+];
+const byId = id => BOARDS.find(b => b.id === id);
+
+// The drawing's size in mm, from its viewBox.
+function dims(id) {
+  const svg = $('board-' + id).content.querySelector('svg');
+  const v = svg.getAttribute('viewBox').trim().split(/[\s,]+/).map(Number);
+  return { w: v[2], h: v[3] };
 }
-const stateOf= M.cwrap('sw_state','number',[]);
-const wOf    = M.cwrap('sw_width','number',[]);
-const hOf    = M.cwrap('sw_height','number',[]);
+// A fresh copy of a board's drawing, and a lookup for its named parts. The ids
+// carry the board's name as a prefix (embed.py adds it), so two drawings on
+// the page -- the bench's and the shelf's -- never answer for each other. A
+// gradient may share a part's name, so only drawn shapes count.
+function cloneBoard(id) {
+  const svg = $('board-' + id).content.querySelector('svg').cloneNode(true);
+  const part = n => [...svg.querySelectorAll(`[id="${id}-${n}"]`)]
+    .find(e => !/gradient|pattern|clippath|mask|filter|symbol|stop/i.test(e.tagName));
+  return { svg, part };
+}
+const num = (e, a) => +e.getAttribute(a);
 
-setup();
-$('boot').textContent = '';
+// ---- settings for this page (not the firmware's) ---------------------------
+const pref = (k, d) => { try { return localStorage.getItem('squachsim.' + k) || d; } catch (e) { return d; } };
+const keep = (k, v) => { try { localStorage.setItem('squachsim.' + k, v); } catch (e) {} };
+let board = byId(location.hash.slice(1)) || byId(pref('board', '')) || BOARDS[0];
+let size = pref('size', 'fit');
+if (!/^(fit|same|actual)$/.test(size)) size = 'fit';
 
-let img = null, lastW = 0, lastH = 0;
-function blit() {
-  const w = wOf(), h = hOf();
-  if (w !== lastW || h !== lastH) {          // the rotate button changes geometry
-    cv.width = w; cv.height = h;
-    // The rotate button swaps w and h, so an explicit zoom has to be
-    // recomputed against the new buffer width rather than left at the old
-    // pixel value.
-    cv.style.height = '';
-    if (window.__squachZoom) window.__squachZoom();
-    img = ctx.createImageData(w, h);
-    lastW = w; lastH = h;
+// ---- the firmware ------------------------------------------------------------
+// The CYD's build (squachsim.js, loaded by the page) and each board's own
+// (squachsim-tdeck.js and so on), fetched the first time that board is picked.
+// Each keeps its state once started, with its own settings (localStorage
+// squachsim.nvs.*, squachsim.tdeck.nvs.*, ...), so switching back finds it
+// where it was. A site without a board's file (an older release) runs the CYD
+// build at that board's size instead.
+const BUILDS = {}; // only classic CYD WASM is presently bundled by this fork
+const engines = {};
+function loadScript(src) {
+  return new Promise((ok, no) => {
+    const s = document.createElement('script');
+    s.src = src; s.onload = ok; s.onerror = no;
+    document.head.appendChild(s);
+  });
+}
+async function engine(kind) {
+  if (engines[kind]) return engines[kind];
+  let M;
+  if (BUILDS[kind]) {
+    const [src, global] = BUILDS[kind];
+    try {
+      if (!window[global]) await loadScript(src);
+      M = await window[global]();
+    } catch (e) {
+      return engine('cyd');
+    }
+  } else {
+    M = await SquachSim();
   }
-  const p = frame();
-  img.data.set(M.HEAPU8.subarray(p, p + w * h * 4));
+  const E = {
+    kind, M,
+    nvs:    BUILDS[kind] ? `squachsim.${kind}.nvs.` : 'squachsim.nvs.',
+    setup:  () => M.ccall('sw_setup', null, [], []),
+    step:   M.cwrap('sw_step','null',['number']),
+    frame:  M.cwrap('sw_frame','number',[]),
+    touch:  M.cwrap('sw_touch','null',['number','number','number']),
+    detect: M.cwrap('sw_detect','number',['number','number']),
+    state:  M.cwrap('sw_state','number',[]),
+    rot:    M.cwrap('sw_rotation','number',[]),
+    w:      M.cwrap('sw_width','number',[]),
+    h:      M.cwrap('sw_height','number',[]),
+    // Older builds have no resize (every board then shows the CYD's 320x240),
+    // no BOOT button, no backlight and no keyboard; the page still runs.
+    resize: M._sw_resize ? M.cwrap('sw_resize','null',['number','number']) : () => {},
+    boot:   M._sw_boot ? M.cwrap('sw_boot','null',[]) : null,
+    bl:     M._sw_backlight ? M.cwrap('sw_backlight','number',[]) : () => -1,
+    key:    M._sw_key ? M.cwrap('sw_key','null',['number']) : null,
+    cardKey: M._sw_cardkey ? M.cwrap('sw_cardkey','null',['number','number']) : null,
+    meshCmd:     M.cwrap('sw_mesh','number',['string']),
+    meshStatus:  M.cwrap('sw_mesh_status','string',[]),
+    meshCatalog: M.cwrap('sw_mesh_catalog','string',[]),
+    panel: null,
+  };
+  E.setup();
+  engines[E.kind] = E;
+  return E;
+}
+let E = null;
+
+// Put the running build on this board's panel, after a boot or a switch:
+// setup() keeps whatever panel it is handed, and sw_resize puts it at the
+// board's landscape. Only on a change, so coming back to a board does not
+// undo a rotation made there.
+function fit(force) {
+  const key = board.panel.join('x');
+  if (force || E.panel !== key) { E.resize(board.panel[0], board.panel[1]); E.panel = key; }
+  lastW = 0;
+}
+function boot() { E.setup(); fit(true); }
+
+let img = null, lastW = 0, lastH = 0, lastRot = -1;
+function blit() {
+  const w = E.w(), h = E.h(), r = E.rot();
+  if (w !== lastW || h !== lastH || r !== lastRot) {   // a rotation or a new board
+    cv.width = w; cv.height = h;
+    img = ctx.createImageData(w, h);
+    lastW = w; lastH = h; lastRot = r;
+    place();
+  }
+  const p = E.frame();
+  img.data.set(E.M.HEAPU8.subarray(p, p + w * h * 4));
   ctx.putImageData(img, 0, 0);
 }
 
+// The detection picker, from the firmware's own table (sim/sim_detections.h),
+// grouped by detection type. A list kept by hand here went stale and hid the
+// Flipper Zero and iBeacons. Both builds share the table.
+function fillCatalog() {
+  const sel = $('type'), was = sel.value; sel.innerHTML = '';
+  const groups = {};
+  for (const [i, type, label] of JSON.parse(E.M.ccall('sw_det_catalog', 'string', [], []))) {
+    if (!groups[type]) {
+      groups[type] = document.createElement('optgroup');
+      groups[type].label = type;
+      sel.add(groups[type]);
+    }
+    groups[type].appendChild(new Option(label, i));
+    if (label === 'Apple AirTag' && !was) sel.value = i;   // the one people recognise
+  }
+  if (was) sel.value = was;
+}
+function fillMeshCatalog() {
+  const cat = JSON.parse(E.meshCatalog());
+  for (const [id, list] of [['meshOutfit', cat.outfits], ['meshShade', cat.shades],
+                            ['meshNick', cat.nicks], ['meshLine', cat.lines]]) {
+    $(id).innerHTML = '';
+    list.forEach((n, i) => $(id).add(new Option(n, i)));
+  }
+}
+
+// ---- the bench -----------------------------------------------------------------
+const stage = $('stage'), scene = $('scene'), wrap = $('screenWrap');
+let rotor = null, part = null;
+// Whether the board's own build is the one running (not the CYD stand-in).
+const own = () => !!(E && board.build && E.kind === board.build);
+const typing = () => own() && !!E.key;        // the T-Deck: characters
+const cursor = () => own() && !!E.cardKey;    // the Cardputer: a cursor
+
+function hint() {
+  if (board.pocket === 'boot') return E && E.boot
+    ? 'Tap to touch · BOOT ↑ toggles POCKET MODE on this browser build'
+    : 'Tap to touch · physical BOOT is not emulated by this WebAssembly bundle';
+  if (board.pocket === 'crown') return 'Tap the screen to touch it · press the crown for POCKET MODE';
+  if (typing()) return 'Tap the screen, or type on your keyboard (or its keys) · Enter on the home screen opens LORA';
+  if (cursor()) return 'No touch screen: arrows or Tab move the cursor, Enter or Space presses, Esc goes home';
+  return 'Tap the screen to touch it · the keys move as you type, but don\'t type yet';
+}
+
+function drawInfo() {
+  const b = board;
+  $('info').innerHTML = '';
+  const add = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; e.textContent = text; $('info').appendChild(e); return e; };
+  add('h2', null, b.full);
+  add('span', 'spec', b.spec);
+  add('p', null, b.adds);
+  if (b.later && (!b.build || own())) add('p', 'later', b.later);
+  if (b.build && !own()) add('p', 'later', 'Here it runs the CYD screens at its size; its own build is not on this site yet.');
+  const a = add('a', 'flash', 'Flash this board →'); a.href = '../';
+  $('hint').textContent = hint();
+  $('footSize').textContent = `${b.panel[0]}×${b.panel[1]} · RGB565 framebuffer`;
+}
+
+function drawShelf() {
+  const shelf = $('shelf'); shelf.innerHTML = '';
+  BOARDS.forEach((b, i) => {
+    const btn = document.createElement('button');
+    btn.setAttribute('role', 'tab');
+    btn.setAttribute('aria-selected', b === board);
+    btn.title = b.full;
+    const t = document.createElement('span'); t.className = 'thumb';
+    const { svg } = cloneBoard(b.id), d = dims(b.id), s = Math.min(.46, 44 / d.h, 84 / d.w);
+    svg.setAttribute('width', d.w * s); svg.setAttribute('height', d.h * s);
+    svg.setAttribute('aria-hidden', 'true');
+    t.appendChild(svg);
+    const cap = document.createElement('span'); cap.className = 'cap'; cap.textContent = `${i + 1} · ${b.name}`;
+    btn.append(t, cap);
+    btn.onclick = () => choose(b);
+    shelf.appendChild(btn);
+  });
+  // On a phone the shelf scrolls: keep the chosen board in view, without
+  // scrolling the page.
+  const on = shelf.children[BOARDS.indexOf(board)];
+  requestAnimationFrame(() => {
+    if (on.offsetLeft < shelf.scrollLeft || on.offsetLeft + on.offsetWidth > shelf.scrollLeft + shelf.clientWidth)
+      shelf.scrollLeft = on.offsetLeft - (shelf.clientWidth - on.offsetWidth) / 2;
+  });
+  document.querySelectorAll('#sizes button').forEach(x => x.setAttribute('aria-pressed', x.dataset.size === size));
+}
+
+let switching = 0;
+async function choose(b) {
+  if (b === board) return;
+  board = b; keep('board', b.id);
+  history.replaceState(null, '', '#' + b.id);
+  queue.length = 0; held = false;
+  const ticket = ++switching;
+  const want = b.build || 'cyd';
+  if (!E || E.kind !== want) {
+    if (want === 'tdeck' && !engines.tdeck) $('boot').textContent = 'loading the T-Deck firmware…';
+    const next = await engine(want);
+    if (ticket !== switching) return;          // picked another board meanwhile
+    $('boot').textContent = '';
+    if (next !== E) { E = next; fillCatalog(); fillMeshCatalog(); lastBl = null; }
+  }
+  fit(false);
+  build(true);
+}
+
+// The board's drawing, its USB cable and (for a CYD) the BOOT tag, inside
+// `rotor`, which place() turns and scales. Built once per board.
+function build(animate) {
+  if (rotor) rotor.remove();
+  rotor = document.createElement('div'); rotor.className = 'rotor';
+  const c = cloneBoard(board.id); part = c.part;
+  rotor.appendChild(c.svg);
+  scene.insertBefore(rotor, wrap);
+  // BOOT, or the crown: the real POCKET MODE (sw_boot).
+  const press = () => { if (E.boot) E.boot(); };
+  if (board.pocket === 'crown') {
+    const cr = part('crown');
+    if (cr) { cr.style.cursor = 'pointer'; cr.addEventListener('click', press); }
+  }
+  if (board.pocket === 'boot' && E.boot) {
+    const t = document.createElement('button'); t.className = 'boottag'; t.id = 'bootTag';
+    t.title = 'BOOT is on the back of the board: POCKET MODE, screen off and on';
+    t.onclick = press; rotor.appendChild(t);
+  }
+  rotor.querySelectorAll('.key').forEach(k => k.classList.add('hit'));
+  drawShelf(); drawInfo();
+  place();
+  if (animate) {
+    scene.classList.remove('ready'); scene.classList.add('enter');
+    requestAnimationFrame(() => requestAnimationFrame(() => { scene.classList.add('ready'); scene.classList.remove('enter'); }));
+  }
+}
+
+// Scale and turn. The canvas stays upright; the board turns under it so that
+// its screen lies the way the firmware's picture does. Rotation 1 is these
+// boards' landscape, so 0, 2 and 3 are a quarter turn, the other quarter and
+// a half turn of the whole board.
+function place() {
+  if (!rotor) return;
+  const D = dims(board.id), scr = part('screen');
+  const sx = num(scr, 'x'), sy = num(scr, 'y'), sw = num(scr, 'width'), sh = num(scr, 'height');
+  const turn = ({0: 90, 2: 270, 3: 180})[E.rot()] || 0;
+  const side = turn % 180 !== 0;
+  const bw = side ? D.h : D.w, bh = side ? D.w : D.h;   // the turned board, mm
+
+  // px per mm
+  const W = stage.clientWidth;
+  const tallest = Math.min(innerHeight * 0.78, 780);
+  let s;
+  if (size === 'actual') s = 96 / 25.4;
+  else if (size === 'same') {
+    const mw = Math.max(...BOARDS.map(b => Math.max(dims(b.id).w, dims(b.id).h)));
+    s = Math.min(W * 0.8 / mw, tallest * 0.84 / mw);
+  } else {
+    s = Math.min(W * 0.84 / bw, tallest * 0.84 / bh);
+    // Crisp when it can be: a whole number of screen pixels per panel pixel
+    // once there are two or more, so no pixel is drawn wider than another.
+    const k = s * sw / board.panel[0];
+    if (k >= 2) s = Math.floor(k) * board.panel[0] / sw;
+  }
+
+  const svg = rotor.querySelector('svg');
+  svg.setAttribute('width', D.w * s); svg.setAttribute('height', D.h * s);
+  rotor.style.width = D.w * s + 'px'; rotor.style.height = D.h * s + 'px';
+  const T = {0: '', 90: `translate(${D.h * s}px,0) rotate(90deg)`,
+             180: `translate(${D.w * s}px,${D.h * s}px) rotate(180deg)`,
+             270: `translate(0,${D.w * s}px) rotate(270deg)`}[turn];
+  rotor.style.transform = T;
+  // Where a point of the drawing lands once turned, in px.
+  const at = (x, y) => turn === 90 ? [(D.h - y) * s, x * s] : turn === 180 ? [(D.w - x) * s, (D.h - y) * s]
+                     : turn === 270 ? [y * s, (D.w - x) * s] : [x * s, y * s];
+
+  scene.style.width = bw * s + 'px'; scene.style.height = bh * s + 'px';
+  // The screen: the drawn screen's corners, turned.
+  const [ax, ay] = at(sx, sy), [bx, by] = at(sx + sw, sy + sh);
+  Object.assign(wrap.style, { left: Math.min(ax, bx) + 'px', top: Math.min(ay, by) + 'px',
+                              width: Math.abs(bx - ax) + 'px', height: Math.abs(by - ay) + 'px' });
+  wrap.classList.toggle('soft', Math.abs(bx - ax) / cv.width < 1.5);
+
+  cable(s);
+  const tag = $('bootTag'), bt = part('btn-boot');
+  if (tag && bt) {
+    // Just past the edge the button sits on, pointing at it, whichever way
+    // the board is turned. Drawn in the rotor's own frame, so it is placed
+    // there and counter-turned to stay readable.
+    const cx = num(bt, 'x') + num(bt, 'width') / 2;
+    tag.textContent = 'BOOT ' + ({0: '↑', 90: '→', 180: '↓', 270: '←'})[turn];
+    tag.style.left = cx * s + 'px'; tag.style.top = (D.h * s + 8) + 'px';
+    tag.style.transform = `translate(-50%,0) rotate(${-turn}deg)`;
+    tag.style.transformOrigin = '50% 0';
+  }
+
+  // The mat: centimetre squares from the board's left edge, so the ruler
+  // measures the board.
+  stage.classList.toggle('actual', size === 'actual');
+  stage.style.height = size === 'actual' ? Math.min(tallest, bh * s + 120) + 'px'
+                     : Math.max(300, (size === 'same' ? tallest * 0.84 : bh * s) / 0.84 + 30) + 'px';
+  requestAnimationFrame(() => ruler(s));
+  if (window.__squachLcd) window.__squachLcd();
+}
+
+function cable(s) {
+  rotor.querySelectorAll('.plug,.cable').forEach(e => e.remove());
+  const u = part('usb'); if (!u) return;
+  const x = num(u, 'x'), y = num(u, 'y'), uw = num(u, 'width'), uh = num(u, 'height');
+  const dir = u.getAttribute('data-dir') || 'right', cx = x + uw / 2, cy = y + uh / 2;
+  const P = (l, t, w, h, cls, fade) => {
+    const e = document.createElement('div'); e.className = cls;
+    Object.assign(e.style, { left: l * s + 'px', top: t * s + 'px', width: w * s + 'px', height: h * s + 'px' });
+    if (fade) e.style.setProperty('--fade', fade);
+    rotor.insertBefore(e, rotor.firstChild);
+  };
+  if (dir === 'right')     { P(x + uw - .5, cy - 3, 7, 6, 'plug'); P(x + uw + 6.5, cy - 1.6, 22, 3.2, 'cable'); }
+  else if (dir === 'left') { P(x - 6.5, cy - 3, 7, 6, 'plug'); P(x - 28.5, cy - 1.6, 22, 3.2, 'cable', 'left'); }
+  else if (dir === 'down') { P(cx - 4, y + uh - .5, 8, 6, 'plug'); P(cx - 1.6, y + uh + 5.5, 3.2, 14, 'cable vcable', 'bottom'); }
+  else                     { P(cx - 4, y - 5.5, 8, 6, 'plug'); P(cx - 1.6, y - 19.5, 3.2, 14, 'cable vcable', 'top'); }
+}
+
+function ruler(s) {
+  stage.querySelectorAll('.ruler').forEach(e => e.remove());
+  const cm = s * 10, left = scene.getBoundingClientRect().left - stage.getBoundingClientRect().left + stage.scrollLeft;
+  stage.style.setProperty('--cm', cm + 'px');
+  stage.style.setProperty('--grid-x', left + 'px');
+  const r = document.createElement('div'); r.className = 'ruler';
+  const every = cm < 26 ? 2 : 1, W = Math.max(stage.scrollWidth, stage.clientWidth);
+  for (let i = 0; left + i * cm < W - 20; i += every) {
+    const e = document.createElement('span');
+    if (i === 0) e.className = 'zero';
+    e.style.left = (left + i * cm) + 'px';
+    e.textContent = i === 0 ? '0' : i === every ? i + ' cm' : String(i);
+    r.appendChild(e);
+  }
+  stage.appendChild(r);
+}
+
+document.querySelectorAll('#sizes button').forEach(b => b.onclick = () => {
+  size = b.dataset.size; keep('size', size); drawShelf(); place();
+});
+let rt;
+new ResizeObserver(() => { clearTimeout(rt); rt = setTimeout(place, 60); }).observe(stage);
+addEventListener('hashchange', () => { const b = byId(location.hash.slice(1)); if (b) choose(b); });
+
+// ---- keys ---------------------------------------------------------------------
+// On the T-Deck, typed keys go to the firmware as its keyboard's helper chip
+// would hand them over (sw_key): the character, a newline for Enter, a
+// backspace for Backspace. The drawn key moves either way. On a board that
+// takes no typing, 1-5 switch boards.
+const KEYCODE = { enter: 10, backspace: 8, ' ': 32 };
+// The Cardputer's cursor keys, as its firmware reads the keyboard: ENTER and
+// the space bar press, the arrow keys (; , . / on the Cardputer) and TAB step,
+// ESC (`) and DEL go home.
+const CARD = { enter: 0, ' ': 0, arrowdown: 1, arrowright: 1, tab: 1, '.': 1, '/': 1,
+               arrowup: 2, arrowleft: 2, ';': 2, ',': 2, escape: 3, '`': 3, backspace: 3 };
+function press(el) { el.classList.add('down'); setTimeout(() => el.classList.remove('down'), 120); }
+function send(k) {
+  if (cursor()) {
+    const w = CARD[k.toLowerCase()];
+    if (w === undefined) return false;
+    queue.push({ card: w, down: 1 });
+    return true;
+  }
+  if (!typing()) return false;
+  const code = KEYCODE[k] ?? (k.length === 1 ? k.charCodeAt(0) : 0);
+  if (!code || code > 126) return false;
+  queue.push({ key: code });
+  return true;
+}
+document.addEventListener('keydown', e => {
+  if (e.ctrlKey || e.metaKey || e.altKey) return;
+  if (e.target.closest && e.target.closest('input,select,textarea,[contenteditable]')) return;
+  const k = e.key.length === 1 ? e.key : e.key.toLowerCase();
+  const key = rotor && [...rotor.querySelectorAll('.key')].find(x => String(x.dataset.key).toLowerCase() === k.toLowerCase());
+  if (key) press(key);
+  if (send(k)) { e.preventDefault(); return; }
+  if (key) { if (e.key === ' ' || e.key === 'Backspace') e.preventDefault(); return; }
+  // Only one supported board is available; do not open missing profiles.
+});
+// ENTER on the Cardputer is held for as long as the key is: a long press is
+// still a long press.
+document.addEventListener('keyup', e => {
+  if (!cursor() || CARD[(e.key.length === 1 ? e.key : e.key.toLowerCase())] !== 0) return;
+  queue.push({ card: 0, down: 0 });
+});
+scene.addEventListener('pointerdown', e => {
+  const k = e.target.closest && e.target.closest('.key.hit'); if (!k) return;
+  press(k);
+  const name = String(k.dataset.key);
+  if (send(name) && cursor() && CARD[name] === 0) {
+    const up = () => { queue.push({ card: 0, down: 0 }); removeEventListener('pointerup', up); };
+    addEventListener('pointerup', up);
+  }
+});
+
+// ---- touch ------------------------------------------------------------------
 // Touch events queue up and are drained one per stepped frame, so a press
 // and its release are never collapsed into a single loop() iteration --
 // the firmware distinguishes touch-just-down from touch-just-up, and a
@@ -390,20 +991,20 @@ cv.addEventListener('pointermove', e => {
 window.addEventListener('pointerup', () => { if (held) { held = false; queue.push({d:0,x:0,y:0}); } });
 
 $('trigger').onclick = () => queue.push({det:+$('type').value});
-$('reboot').onclick  = () => { queue.length = 0; held = false; setup(); lastW = 0; };
+$('reboot').onclick  = () => { queue.length = 0; held = false; boot(); };
 
 // Settings live in localStorage under one key per NVS namespace (see
-// Preferences.h in the emulator repo). Clearing them and re-running
-// setup() puts the device back to first boot -- the equivalent of
-// deleting the .nvs directory the native emulator uses. Done from JS
-// rather than a new wasm export so it stays a page concern.
+// Preferences.h). Clearing the running build's and re-running setup() puts it
+// back to first boot -- the equivalent of deleting the .nvs directory the
+// native emulator uses. Done from JS rather than a new wasm export so it stays
+// a page concern.
 $('wipe').onclick = () => {
   try {
     Object.keys(localStorage)
-      .filter(k => k.startsWith('squachsim.nvs.'))
+      .filter(k => k.startsWith(E.nvs))
       .forEach(k => localStorage.removeItem(k));
   } catch (e) { /* private mode: nothing was persisted to begin with */ }
-  queue.length = 0; held = false; setup(); lastW = 0;
+  queue.length = 0; held = false; boot();
 };
 
 // Which switch decides what happens, in the order a person would hit them.
@@ -432,20 +1033,12 @@ function meshLines(el, lines) {
 }
 
 // ---- SquachMesh: a second SquachWatch that lives in this page ------------------
-// sim/meshsim.cpp. Commands go straight in between frames -- one thread, so
-// nothing lands halfway through a loop().
-const meshCmd     = M.cwrap('sw_mesh','number',['string']);
-const meshStatus  = M.cwrap('sw_mesh_status','string',[]);
-const meshCatalog = M.cwrap('sw_mesh_catalog','string',[]);
-{
-  const cat = JSON.parse(meshCatalog());
-  for (const [id, list] of [['meshOutfit', cat.outfits], ['meshShade', cat.shades],
-                            ['meshNick', cat.nicks], ['meshLine', cat.lines]])
-    list.forEach((n, i) => $(id).add(new Option(n, i)));
-}
+// sim/meshsim.cpp, in whichever build is running. Commands go straight in
+// between frames -- one thread, so nothing lands halfway through a loop().
 let mesh = {};
 function meshShow() {
-  try { mesh = JSON.parse(meshStatus()); } catch (e) { return; }
+  if (!E) return;
+  try { mesh = JSON.parse(E.meshStatus()); } catch (e) { return; }
   $('meshHere').textContent = mesh.present ? 'Send it away' : 'Bring it nearby';
   $('meshSay').disabled = !mesh.present;
   $('meshType').disabled = !mesh.present;
@@ -456,7 +1049,7 @@ function meshShow() {
   $('meshReply').checked = !!mesh.reply;
   meshLines($('meshStatus'), meshHint(mesh));
 }
-const meshDo = c => { meshCmd(c); meshShow(); };
+const meshDo = c => { E.meshCmd(c); meshShow(); };
 $('meshSetup').onclick = () => meshDo('setup');
 $('meshHere').onclick  = () => meshDo(mesh.present ? 'off' : 'on');
 $('meshSay').onclick   = () => meshDo('say ' + $('meshLine').value);
@@ -468,7 +1061,6 @@ $('meshName').onchange   = e => meshDo('name ' + e.target.value);
 $('meshShares').onchange = e => meshDo('phrase ' + (e.target.checked ? 'same' : 'other'));
 $('meshReply').onchange  = e => meshDo('reply ' + (e.target.checked ? 'on' : 'off'));
 setInterval(meshShow, 400);
-meshShow();
 
 // The device is the reference, not the host. On the CYD the whole
 // loop -- render plus the SPI push to the panel -- lands at ~33fps, so
@@ -480,7 +1072,7 @@ const DEVICE_FPS = 33;
 const FRAME_MS = 1000 / DEVICE_FPS;
 
 let frames = 0, mark = performance.now();
-let lastFrame = performance.now();
+let lastFrame = performance.now(), lastBl = null;
 
 function tick(now) {
   requestAnimationFrame(tick);
@@ -496,13 +1088,19 @@ function tick(now) {
 
   const ev = queue.shift();
   if (ev) {
-    if (ev.det !== undefined) detect(ev.det, 0);
-    else { touch(ev.d ? 1 : 0, ev.x, ev.y); step(1); }
+    if (ev.det !== undefined) E.detect(ev.det, 0);
+    else if (ev.key !== undefined) { if (E.key) E.key(ev.key); }
+    else if (ev.card !== undefined) { if (E.cardKey) E.cardKey(ev.card, ev.down); }
+    else { E.touch(ev.d ? 1 : 0, ev.x, ev.y); E.step(1); }
   }
-  step(1);
+  E.step(1);
   blit();
 
-  const s = stateOf();
+  // The backlight: POCKET MODE's dark, the power saver's dim, BRIGHT.
+  const bl = E.bl();
+  if (bl !== lastBl) { lastBl = bl; wrap.style.setProperty('--bl', bl < 0 ? 1 : (bl / 255).toFixed(3)); }
+
+  const s = E.state();
   $('state').textContent = STATES[s] || '?';
   if (++frames >= 30) {
     const t = performance.now();
@@ -510,6 +1108,12 @@ function tick(now) {
     frames = 0; mark = t;
   }
 }
+
+E = await engine(board.build || 'cyd');
+fit(true);
+fillCatalog(); fillMeshCatalog(); meshShow();
+$('boot').textContent = '';
+build(false);
 requestAnimationFrame(tick);
 </script>
 <script>
@@ -521,30 +1125,7 @@ requestAnimationFrame(tick);
   var wrap = document.getElementById('screenWrap');
   var cv   = document.getElementById('screen');
   var sel  = document.getElementById('lcdMode');
-  var zoom = document.getElementById('lcdZoom');
-  var main = document.querySelector('main');
-  if (!wrap || !cv || !sel || !zoom) return;
-
-  function applyZoom() {
-    var v = zoom.value;
-    var bw = cv.width || 320;
-    if (v === 'fit') {
-      cv.style.width = '100%';
-      if (main) main.classList.remove('stacked');
-      document.documentElement.style.setProperty('--page-max', '1040px');
-    } else {
-      var n = parseInt(v, 10) || 2;
-      cv.style.width = (bw * n) + 'px';
-      // Past 2x the canvas is wider than a two-column layout can hold, so
-      // the panel drops underneath and the page widens to suit.
-      var wide = (bw * n) > 700;
-      if (main) main.classList.toggle('stacked', wide);
-      document.documentElement.style.setProperty(
-        '--page-max', wide ? ((bw * n) + 76) + 'px' : '1040px');
-    }
-    sync();
-  }
-  window.__squachZoom = applyZoom;
+  if (!wrap || !cv || !sel) return;
 
   function sync() {
     // How many CSS pixels one device pixel occupies right now.
@@ -568,6 +1149,7 @@ requestAnimationFrame(tick);
     wrap.style.setProperty('--lcd-grid-alpha',
       (mode === 'grid' ? 0.62 * ramp : mode === 'scan' ? 0.55 * ramp : 0).toFixed(3));
   }
+  window.__squachLcd = sync;
 
   function apply() {
     var mode = sel.value;
@@ -582,18 +1164,11 @@ requestAnimationFrame(tick);
     if (saved === '1') saved = 'scan';
     if (saved === '0') saved = 'off';
     if (saved === 'off' || saved === 'scan' || saved === 'grid') sel.value = saved;
-    var z = localStorage.getItem('squachsim.zoom');
-    if (z && /^(fit|1|2|3|4)$/.test(z)) zoom.value = z;
   } catch (e) {}
 
   sel.addEventListener('change', apply);
-  zoom.addEventListener('change', function () {
-    try { localStorage.setItem('squachsim.zoom', zoom.value); } catch (e) {}
-    applyZoom();
-  });
   addEventListener('resize', sync);
   if (window.ResizeObserver) new ResizeObserver(sync).observe(cv);
-  applyZoom();
   apply();
 })();
 </script>
