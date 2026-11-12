@@ -24,8 +24,8 @@ for screen_w in (240,320,480):
             pixel_w=len(label)*advances[step]-1
             assert pixel_w<=button_w-6,(screen_w,step,label,pixel_w,button_w)
             assert heights[step]<=bar_height-4
-assert "drawFiveStepButtonText(t,x,y,w,h,label,fg,fill,request)" in src
-assert "drawFiveStepButtonText(t,x+2+ox,y+2+ox,w-4-ox,h-4-ox" in src
+assert "drawButtonLabel(t,x,y,w,h,label,fg,fill)" in src
+assert "drawButtonLabel(t,x+2+ox,y+2+ox,w-4-ox,h-4-ox" in src
 assert "g.h = ButtonFont::barHeight(Settings::fontStep(Settings::FontKind::BUTTONS))" in src
 assert "const bool compact=ButtonFont::width" in src
 assert 'Theme::drawButton(t,w-88,y+5,76,29,"TEST",false)' in ui

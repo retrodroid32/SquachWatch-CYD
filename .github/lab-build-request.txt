@@ -1,13 +1,14 @@
-FONT-ALL5-REAL-SIZES-UNIFIED-BUTTON-BAR-R5
-# PR 222 follow-up: SCAN LOG and DESK share five distinct physical font heights.
-# Footer grows with BUTTONS 1..5; text is 8/11/14/18/22 px.
-# At large steps in 240px portrait, strip decorative brackets as a group.
-# Preserve every action word and compute both draw and hit geometry from
-# identical dynamic ButtonBarGeom; no overlap or hidden button label.
-# Shared drawButton and Win95 labels use the same real five-step glyph
-# raster when the text fits; mixed-case/unknown labels have safe fallback.
-# In Fonts menu BUTTONS preview uses actual TEST button, shows SIZE 1..5.
-# Zero heap/sprite allocations added; preserve partition and NVS layout.
-# Verify 2.8-inch ST7789 then 3.2-inch ST7798 both orientations, all five.
-# Smoke-check touch, frame/heap, WiFi USE, SD, GPS, WATCH/HUNT, SquachMesh.
-# Draft LAB only. No merge/tag/production release without owner approval.
+FONT-ALLBUTTONS-FIVE-SIZES-UNIFIED-R6
+# R5 firmware compilation passed; full release blocked by 8192-byte OTA
+# reserve gate on cyd-ili9341. Preserve that gate and partition table.
+# R6 reduces glyph lookup code and shares real 5-step font functions across
+# all standard/Win95 buttons, WiFi/phone keyboards, alert controls,
+# System Properties tabs, WATCH/HUNT pills, Settings BACK/UP and scan footer.
+# No per-frame sprite/heap allocations and no touch-area mismatch.
+# Five heights: 8 / 11 / 14 / 18 / 22 px, with bounded shrink for tiny boxes.
+# Docs: docs/FONTS_MENU.md; do not equate requested and effective size in
+# physically constrained labels.
+# Validate firmware image size +8KiB on ALL board builds including ILI9341.
+# LAB only. Verify CYD 2.8 ST7789 and CYD 3.2 ST7798 both rotations, then
+# wifi USE, GPS UBX 115200, SD/Events, WATCH/HUNT, privacy, SquachMesh.
+# No merge, tag, production release, or branch deletion.

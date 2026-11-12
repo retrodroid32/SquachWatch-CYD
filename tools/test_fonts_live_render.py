@@ -8,7 +8,7 @@ pet=(root/"src/pet.cpp").read_text()
 sq=(root/"src/squachy.cpp").read_text()
 head=(root/"include/theme.h").read_text()
 for marker in ('Settings::fontStep(Settings::FontKind::BUBBLES)', 's_bubbleHeight = t.fontHeight()',
-               'fontDelta(Settings::FontKind::MENUS)', 'selectCategoryFont(t, Settings::FontKind::BUTTONS',
+               'fontDelta(Settings::FontKind::MENUS)', 'drawButtonLabel(t,x,y,w,h,label,fg,fill)',
                't.textWidth(label) <= maxW', 't.fontHeight() <= maxH',
                'void petFontOn(', 'void petFontOff('):
     assert marker in theme, marker
