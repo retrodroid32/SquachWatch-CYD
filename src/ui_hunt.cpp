@@ -337,11 +337,14 @@ static void drawHuntHistory(TFT_eSPI& t, const HuntHistory::Tracker& hist,
         prevX = x; prevY = y; prevValid = true;
     }
 
-    t.setTextSize(1);
+    // Text size is already 1 from the chart-axis labels above.
     t.setTextColor(Theme::CYAN, Theme::BG);
     t.setCursor(7, statY);
-    if (hist.peakValid) t.printf("PEAK %d dBm", (int)hist.peakDbm);
-    else t.print("PEAK --");
+    if (hist.peakValid) {
+        t.print("PEAK ");
+        t.print((int)hist.peakDbm);
+        t.print(" dBm");
+    } else t.print("PEAK --");
     char age[22];
     if (!hist.seen) snprintf(age, sizeof age, "LAST --");
     else snprintf(age, sizeof age, "LAST %lus",
@@ -356,8 +359,10 @@ static void drawHuntHistory(TFT_eSPI& t, const HuntHistory::Tracker& hist,
     else t.print(live ? "LIVE " : "NO SIGNAL ");
     t.setTextColor(Theme::VAPOR_PURPLE, Theme::BG);
     if (wifi) {
-        if (channel >= 1 && channel <= 13) t.printf("WIFI CH %u", (unsigned)channel);
-        else t.print("WIFI CH ?");
+        if (channel >= 1 && channel <= 13) {
+            t.print("WIFI CH ");
+            t.print((unsigned)channel);
+        } else t.print("WIFI CH ?");
     } else t.print("BLE");
 }
 
