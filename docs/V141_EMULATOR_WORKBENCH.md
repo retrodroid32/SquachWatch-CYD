@@ -13,8 +13,8 @@ PRs #219–#222. It is not a new WebAssembly firmware build.
   unavailable until board-specific compatible WASM binaries exist.
 - **BOOT / Pocket Mode** control is capability-gated by exported WASM
   functions; a control being drawn is not evidence of latest firmware support.
-- R5 builds **fresh current-source WebAssembly** using the release-matched
-  Emscripten 6.0.9 in a PR-only workflow. The R5 preview **does not** use
+- R6 builds **fresh current-source WebAssembly** using the release-matched
+  Emscripten 6.0.9 in a PR-only workflow. The R6 preview **does not** use
   the old checked-in WASM. The public Pages emulator remains untouched;
   this does not claim real RF, physical LCD/touch or 3.2 ST7798 emulation.
 - The fork's main firmware source, partition table, production LAB manifests
@@ -33,7 +33,7 @@ Static and Node syntax checks run in CI. This preview does not transmit
 real signals or update the production Pages site.
 
 ## Next 1.41 parity steps
-1. Verify the newly built R5 WASM in a real browser (Fonts menu, touch,
+1. Verify the newly built R6 WASM in a real browser (Fonts menu, touch,
    persistence, screen rotation, virtual mesh and synthetic detections).
 2. Build a correctly sized separate 3.2 ST7798 emulator/profile.
 3. Recheck 3.2 panel orientation and touch smoke tests, privacy, scan,
