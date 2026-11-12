@@ -61,6 +61,18 @@ static uint8_t     s_clockFont     = 0;   // 0 segments, 1 Bangers
 static uint8_t     s_clockSize     = 1;   // 0 small, 1 medium, 2 large
 static uint8_t     s_clockBackdrop = 0;
 static bool        s_clock24Hour = false;   // 0 plain, 1 rain, 2 snow, 3 toasters, 4 fire, 5 stars, 6 fireflies
+// #209 fresh bisect: load only the upstream font preferences, never use
+// these values in rendering or navigation at this stage. The earlier
+// 'black screen' was traced to the obsolete OTA partition image-size limit;
+// current CI inspects the final BIN against both app slots with 8 KiB margin.
+static const uint8_t FONT_COUNT = 6;
+static const uint8_t FONT_DEFAULT[FONT_COUNT] = {2, 2, 2, 2, 2, 2};
+static uint8_t s_fontStep[FONT_COUNT] = {2, 2, 2, 2, 2, 2};
+static uint8_t s_fontFace[FONT_COUNT] = {0, 0, 0, 0, 0, 0};
+static const char* const FONT_KEYS[FONT_COUNT] =
+    {"fntMenu", "fntText", "fntBtn", "fntBub", "fntXp", "fntPet"};
+static const char* const FACE_KEYS[FONT_COUNT] =
+    {"fcMenu", "fcText", "fcBtn", "fcBub", "fcXp", "fcPet"};
 static const uint8_t CLOCK_BG_N  = 7;
 // Bit N = DetectionType N enabled. UNKNOWN (0) is never included -- see
 // Types that arrive switched OFF, on a fresh install and on upgrade alike.
@@ -436,6 +448,19 @@ void load() {
     s_clockSize     = s_prefs.getUChar("clksize", 1);
     s_clockBackdrop = s_prefs.getUChar("clkbg", 0);
     s_clock24Hour = s_prefs.getBool("clk24", false);
+    // NVS-only stage A (PR #209 replacement). No FONTS page, font API,
+    // draw-pipeline changes, SPI changes or reboot-affecting writes.
+    for (uint8_t i = 0; i < FONT_COUNT; ++i) {
+        s_fontStep[i] = s_prefs.getUChar(FONT_KEYS[i], FONT_DEFAULT[i]);
+        if (s_fontStep[i] > 4) s_fontStep[i] = FONT_DEFAULT[i];
+        s_fontFace[i] = s_prefs.getUChar(FACE_KEYS[i], 0);
+        if (s_fontFace[i] > 2) s_fontFace[i] = 0;
+    }
+    uint16_t fontCheck = 0;
+    for (uint8_t i = 0; i < FONT_COUNT; ++i)
+        fontCheck = (uint16_t)(fontCheck * 17u + s_fontStep[i] * 3u + s_fontFace[i]);
+    Serial.printf("[fonts-bisect-a] NVS keys=%u checksum=%u; UI/render unchanged\n",
+                  (unsigned)(FONT_COUNT * 2), (unsigned)fontCheck);
     if (s_clockFont > 1)     s_clockFont = 0;
     if (s_clockSize > 2)     s_clockSize = 1;
     if (s_clockBackdrop >= CLOCK_BG_N) s_clockBackdrop = 0;
