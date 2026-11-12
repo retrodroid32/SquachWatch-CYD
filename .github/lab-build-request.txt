@@ -1,13 +1,14 @@
-FONT180-STAGEB-CONTROLS-ON209-R1
-# Stacked LAB over PR #219 FONT209-NVS-ONLY-POST216-R1.
-# Adds APPEARANCE > FONTS screen with six independent categories:
-# MENUS/TEXT/BUTTONS/BUBBLES/PETS/XP TILES.
-# Tap left label to cycle DEFAULT/PIXEL/SMOOTH preview face.
-# Tap 0..4 slider or -/+ to set persistent size step in NVS.
-# Preview updates ONLY inside Fonts page; NEVER applies sizes/faces
-# to global menus, pet text, notifications, log, WATCH or HUNT yet.
-# All of HUNT R3, SD/GPS, WIFI USE, v1.41, OTA/BlackBox are retained.
-# Staged due earlier old-slot overflow black screens in #206/#208.
-# Must pass independent Build and release LAB + hardware 2.8 & 3.2.
-# Validate Stage A PR #219 first on both boards. Do not conflate.
-# No merge/release/tag or deleting original font branches.
+FONT-LIVE-RENDER-4CATEGORIES-R2
+# Stage C stacked on PR #220, which stacks on safe PR #219.
+# MENUS: visible menu row sizes/faces with measured value/label fit.
+# BUTTONS: real standard + Win95 buttons obey size/face within each box.
+# BUBBLES: Squachy's live speech obeys face/size; geometry measures same font.
+# PETS: Shaggy/Yeti speech uses selected face and measured width fallback.
+# TEXT and XP TILES remain preview-only, not falsely advertised as live.
+# R2: explicitly preserve old TEXT rendering on wide screens too.
+# Prior OTA-safe 0x1E4000 smallest slot layout retained, 8KiB image guard.
+# Lab USB installer must deliver matching current partitions (no stale-table OTA).
+# CYD 2.8 ST7789 FIRST, then CYD 3.2 ST7798; both rotate/touch/watch/hunt.
+# Validate persistent NVS, all four live categories, SD, UBX GPS, WIFI USE,
+# LOG Events, privacy, SquachMesh 2-way; serial heap/frame; no flicker.
+# This is a LAB checkpoint, not production. Do not merge/tag/release.

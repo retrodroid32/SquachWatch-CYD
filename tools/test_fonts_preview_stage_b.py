@@ -24,7 +24,10 @@ assert "s_prefs.getUChar(FACE_KEYS[i], 0)" in s
 assert "case SettingsRow::FONT_MENUS:" in m
 assert "uiSettingsOpenPage(uiSettingsParentPage())" in m
 # The actual UI, bubble, pet and global Theme renderers must not react yet.
-assert "FontKind" not in t and "fontDelta(" not in t
-assert "FontKind" not in p and "fontStep(" not in p
+if (root/"tools/test_fonts_live_render.py").exists():
+    assert "fontDelta(" in t and "Theme::petFontOn(t);" in p
+else:
+    assert "FontKind" not in t and "fontDelta(" not in t
+    assert "FontKind" not in p and "fontStep(" not in p
 assert "Settings::fontStep(" in u and "Settings::fontFace(" in u
 print("PASS #180 stage B: interactive preview and persisted controls, global fonts unaffected")
