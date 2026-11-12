@@ -20,6 +20,9 @@ bool uiHuntHitBack(int x, int y, int screenW, int screenH);
 // target set. main.cpp owns navigation and returns either exit to the screen
 // that launched HUNT when that context is known.
 bool uiHuntHitStop(int x, int y, int screenW, int screenH);
+// Toggle an alternate session history chart, without changing the target.
+bool uiHuntHitGraph(int x, int y, int screenW, int screenH);
+void uiHuntToggleGraph();
 
 // When no single target is active, HUNT MODE becomes the ranked selected-
 // targets list. The hit returns the DetectionEngine storage index to activate.

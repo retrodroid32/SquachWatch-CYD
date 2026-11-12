@@ -1,6 +1,7 @@
 // SquachWatch-CYD — HUNT MODE screen implementation
 #include "ui_hunt.h"
 #include "hunt_signal.h"
+#include "hunt_history.h"
 #include "theme.h"
 #include "privacy.h"
 #include "squachy.h"
@@ -56,6 +57,19 @@ static bool     s_caughtFired = false;
 static bool     s_gaugeStarted = false;
 static bool     s_prevSignalLive = false;  // transition-only serial diagnostic
 
+// Alternate HUNT history view. No dynamic allocations, NVS settings or
+// radio callbacks: all observations come from the coherent snapshot below.
+static HuntHistory::Tracker s_history;
+static bool s_graphMode = false;
+
+bool uiHuntHitGraph(int x, int y, int screenW, int screenH) {
+    (void)screenW; (void)screenH;
+    return x >= 8 && x <= 72 && y >= 21 && y <= 45;
+}
+
+void uiHuntToggleGraph() { s_graphMode = !s_graphMode; }
+
+
 // HUNT list view. The stored target array keeps selection order; this index
 // array is rebuilt by RSSI every frame so the actual records never move while
 // a radio callback may be updating them.
@@ -75,6 +89,8 @@ void uiHuntInit(TFT_eSPI& t) {
     s_caughtFired     = false;
     s_gaugeStarted    = false;
     s_prevSignalLive = false;
+    s_history.reset();
+    s_graphMode       = false;
     s_listScroll      = 0;
 }
 
@@ -288,6 +304,67 @@ void uiHuntListTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng) {
     drawHuntList(t, now, eng);
 }
 
+// A second view of the SAME active HUNT target, not a replacement for
+// the live gauge. Old points remain visible as history when the radio goes
+// quiet, but a missing signal is drawn as a GAP, never an invented 0 dBm.
+static void drawHuntHistory(TFT_eSPI& t, const HuntHistory::Tracker& hist,
+                            int w, int labelY, int bodyBottom,
+                            bool live, bool wifi, uint8_t channel,
+                            uint32_t now, bool caught) {
+    const int statY = bodyBottom - 38;
+    const int left = 38, top = labelY + 23;
+    const int width = w - left - 12, height = statY - top - 8;
+    if (width < 35 || height < 20) return;
+
+    t.drawRect(left, top, width, height, Theme::PURPLE);
+    for (int j = 1; j <= 2; j++) {
+        const int y = top + j * (height - 1) / 3;
+        t.drawFastHLine(left + 1, y, width - 2, Theme::STEEL);
+    }
+    t.setTextSize(1);
+    t.setTextColor(Theme::VAPOR_PURPLE, Theme::BG);
+    t.setCursor(4, top + 1); t.print("-30");
+    t.setCursor(1, top + height - 10); t.print("-100");
+
+    bool prevValid = false;
+    int prevX = 0, prevY = 0;
+    for (uint8_t i = 0; i < hist.count; i++) {
+        const int8_t r = hist.at(i);
+        if (r == HuntHistory::NO_SIGNAL) { prevValid = false; continue; }
+        const int dbm = r < RSSI_LO ? RSSI_LO : r > RSSI_HI ? RSSI_HI : r;
+        const int x = left + 2 + (int)(HuntHistory::CAP - hist.count + i) *
+                      (width - 5) / (HuntHistory::CAP - 1);
+        const int y = top + 2 + (RSSI_HI - dbm) * (height - 5) /
+                      (RSSI_HI - RSSI_LO);
+        if (prevValid) t.drawLine(prevX, prevY, x, y, Theme::CYAN);
+        else t.fillCircle(x, y, 1, Theme::CYAN);
+        prevX = x; prevY = y; prevValid = true;
+    }
+
+    t.setTextSize(1);
+    t.setTextColor(Theme::CYAN, Theme::BG);
+    t.setCursor(7, statY);
+    if (hist.peakValid) t.printf("PEAK %d dBm", (int)hist.peakDbm);
+    else t.print("PEAK --");
+    char age[22];
+    if (!hist.seen) snprintf(age, sizeof age, "LAST --");
+    else snprintf(age, sizeof age, "LAST %lus",
+                  (unsigned long)((uint32_t)HuntSignal::ageMs(hist.lastSeenMs, now) / 1000u));
+    t.setTextColor(hist.seen ? Theme::WHITE : Theme::AMBER, Theme::BG);
+    t.setCursor(w - t.textWidth(age) - 8, statY);
+    t.print(age);
+
+    t.setCursor(8, statY + 14);
+    t.setTextColor(live ? Theme::GREEN : Theme::AMBER, Theme::BG);
+    if (caught) t.print("CAUGHT! ");
+    else t.print(live ? "LIVE " : "NO SIGNAL ");
+    t.setTextColor(Theme::VAPOR_PURPLE, Theme::BG);
+    if (wifi) {
+        if (channel >= 1 && channel <= 13) t.printf("WIFI CH %u", (unsigned)channel);
+        else t.print("WIFI CH ?");
+    } else t.print("BLE");
+}
+
 void uiHuntTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool advance) {
     int w = t.width(), h = t.height();
 
@@ -308,6 +385,14 @@ void uiHuntTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool adva
     // his little "ping" animation to the hunting theme.
     const int sqH = 44;
     Squachy::tick(t, w / 2, bodyTop, sqH, now, advance, 0.6f, true);
+
+    // Tap the upper-left tab to swap gauge <-> ~40s RSSI history. This
+    // never changes the BACK/STOP geometry, active target or scanning.
+    t.drawRect(8, 21, 64, 24, Theme::CYAN);
+    t.setTextSize(1);
+    t.setTextColor(Theme::CYAN, Theme::BG);
+    t.setCursor(14, 29);
+    t.print(s_graphMode ? "GAUGE" : "GRAPH");
 
     t.setTextSize(1);
     t.setTextWrap(false);
@@ -332,6 +417,9 @@ void uiHuntTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool adva
                           signal.kind == DetectionEngine::WatchKind::WIFI);
     const uint8_t storedRssiN = haveTarget ? signal.samples : 0;
     const uint8_t rssiN = live ? storedRssiN : 0;
+    if (advance) s_history.tick(huntNow, haveTarget && storedRssiN > 0,
+                               live, rssiN ? signal.rssi[rssiN - 1] : -127,
+                               haveTarget ? signal.lastSeenMs : 0);
     if (live != s_prevSignalLive) {
         Serial.printf("[hunt-rssi] radio=%s live=%u samples=%u age=%ld ms channel=%u\n",
                       signal.kind == DetectionEngine::WatchKind::WIFI ? "WIFI" : "BLE",
@@ -385,7 +473,7 @@ void uiHuntTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool adva
     uint16_t needleColor = (frac < 0.5f)
         ? Theme::blend(Theme::RED, Theme::AMBER, (uint16_t)(frac * 2.0f * 256))
         : Theme::blend(Theme::AMBER, Theme::GREEN, (uint16_t)((frac - 0.5f) * 2.0f * 256));
-    drawGauge(t, cx, cy, r, frac, needleColor);
+    if (!s_graphMode) drawGauge(t, cx, cy, r, frac, needleColor);
 
     // Fires once per visit to "basically on top of it" territory, not
     // every tick it stays there -- re-arms if the signal drops back out
@@ -420,7 +508,7 @@ void uiHuntTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool adva
     int rw = t.textWidth(rbuf);
     t.setTextColor(Theme::WHITE, Theme::BG);
     t.setCursor((w - rw) / 2, cy + 8);
-    if (!caught) t.print(rbuf);
+    if (!caught && !s_graphMode) t.print(rbuf);
     // fontHeight() no-arg reads back the size-2 metrics just set above
     // -- fontHeight(int) takes a FONT INDEX, not a size multiplier, and
     // would silently query the wrong thing here.
@@ -459,18 +547,26 @@ void uiHuntTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool adva
         t.setTextSize(2);
         const int cw2 = t.textWidth("CAUGHT!") + 16, ch2 = t.fontHeight() + 4;
         const int cx2 = (w - cw2) / 2, cy2 = cy + 6;
-        t.fillRect(cx2, cy2, cw2, ch2, Theme::GREEN);
-        t.setTextColor(Theme::BLACK, Theme::GREEN);
-        t.setCursor(cx2 + 8, cy2 + 2);
-        t.print("CAUGHT!");
+        if (!s_graphMode) {
+            t.fillRect(cx2, cy2, cw2, ch2, Theme::GREEN);
+            t.setTextColor(Theme::BLACK, Theme::GREEN);
+            t.setCursor(cx2 + 8, cy2 + 2);
+            t.print("CAUGHT!");
+        }
         trend = rbuf;
         trendColor = Theme::GREEN;
     }
-    t.setTextSize(1);
-    int tw = t.textWidth(trend);
-    t.setTextColor(trendColor, Theme::BG);
-    t.setCursor((w - tw) / 2, cy + 8 + readoutH + 2);
-    t.print(trend);
+    if (s_graphMode) {
+        drawHuntHistory(t, s_history, w, labelY, bodyBottom, live,
+                        haveTarget && signal.kind == DetectionEngine::WatchKind::WIFI,
+                        haveTarget ? signal.channel : 0, huntNow, caught);
+    } else {
+        t.setTextSize(1);
+        int tw = t.textWidth(trend);
+        t.setTextColor(trendColor, Theme::BG);
+        t.setCursor((w - tw) / 2, cy + 8 + readoutH + 2);
+        t.print(trend);
+    }
 
     int bx, by, bw, bh;
     backButtonRect(w, h, bx, by, bw, bh);

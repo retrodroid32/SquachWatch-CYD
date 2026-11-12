@@ -7285,7 +7285,11 @@ void loop() {
                 Theme::drawToast(t, now);
             });
 
-            if (tp.valid && (now - lastTouch) > TOUCH_DEBOUNCE_MS) {
+            if (touchJustDown && (now - lastTouch) > TOUCH_DEBOUNCE_MS &&
+                uiHuntHitGraph(tp.x, tp.y, tft.width(), tft.height())) {
+                lastTouch = now;
+                uiHuntToggleGraph();   // one toggle per physical press
+            } else if (tp.valid && (now - lastTouch) > TOUCH_DEBOUNCE_MS) {
                 if (uiHuntHitStop(tp.x, tp.y, tft.width(), tft.height())) {
                     lastTouch = now;
                     engine.clearHunt();

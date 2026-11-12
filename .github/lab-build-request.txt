@@ -1,15 +1,8 @@
-FONT-ALLBUTTONS-FIVE-SIZES-UNIFIED-R7
-# R5 firmware compilation passed; full release blocked by 8192-byte OTA
-# reserve gate on cyd-ili9341. Preserve that gate and partition table.
-# R6 reduces glyph lookup code and shares real 5-step font functions across
-# all standard/Win95 buttons, WiFi/phone keyboards, alert controls,
-# System Properties tabs, WATCH/HUNT pills, Settings BACK/UP and scan footer.
-# No per-frame sprite/heap allocations and no touch-area mismatch.
-# Five heights: 8 / 11 / 14 / 18 / 22 px, with bounded shrink for tiny boxes.
-# Docs: docs/FONTS_MENU.md; do not equate requested and effective size in
-# physically constrained labels.
-# Validate firmware image size +8KiB on ALL board builds including ILI9341.
-# LAB only. Verify CYD 2.8 ST7789 and CYD 3.2 ST7798 both rotations, then
-# wifi USE, GPS UBX 115200, SD/Events, WATCH/HUNT, privacy, SquachMesh.
-# No merge, tag, production release, or branch deletion.
-# R7 fixes a stale Stage-D guard that expected legacy fontDelta in Settings.
+HUNT-HISTORY-PEAK-LASTSEEN-GRAPH-R1
+# 1.41 feature: HUNT GRAPH/GAUGE toggle with ~40s bounded RSSI chart.
+# PEAK measured since entry, LAST seconds since latest observation, WIFI CH.
+# No change to gauge freshness, CAUGHT, BLE/WIFI drivers, channel focus or
+# HUNT BACK/STOP behavior. Static ring only, no allocations, NVS or SD writes.
+# Board physical gate: CYD 2.8 ST7789 and CYD 3.2 ST7798 both orientations,
+# loss/regain signals and font sizes, then normal SD/GPS/USE/Mesh smoke test.
+# LAB only: do not merge, tag or release production without explicit approval.
