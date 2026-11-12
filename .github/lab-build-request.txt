@@ -1,5 +1,5 @@
-HUNT-HISTORY-THREE-FOOTER-BUTTONS-R4
-# HUNT Signal History R4: move GRAPH/GAUGE to middle footer, between BACK and STOP.
+HUNT-HISTORY-THREE-FOOTER-BUTTONS-R5
+# HUNT Signal History R5: move GRAPH/GAUGE to middle footer, between BACK and STOP.
 # All three labels rendered by Theme::drawButton with native 5-step font size.
 # Shared Theme::computeButtonBar geometry for drawing and hit tests.
 # Remove top-left tab overlapping Squachy's speech bubble.
@@ -8,3 +8,7 @@ HUNT-HISTORY-THREE-FOOTER-BUTTONS-R4
 # all button font sizes, BLE and Wi-Fi HUNT; LAB-only, no merge/tag.
 # R4 trims duplicate text-state and dynamic chart label formatting to
 # preserve the hard 8192-byte final OTA image reserve on every release board.
+
+# R5: branch push no longer starts release firmware. The complete PR Build
+# must pass first; a same-SHA dispatch starts release-flasher thereafter.
+# Correct emulator numeric label output; preserve hard OTA reserve check.
