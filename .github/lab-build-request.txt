@@ -1,10 +1,8 @@
-HUNT-HISTORY-PEAK-LASTSEEN-GRAPH-R2
-# 1.41 feature: HUNT GRAPH/GAUGE toggle with ~40s bounded RSSI chart.
-# PEAK measured since entry, LAST seconds since latest observation, WIFI CH.
-# No change to gauge freshness, CAUGHT, BLE/WIFI drivers, channel focus or
-# HUNT BACK/STOP behavior. Static ring only, no allocations, NVS or SD writes.
-# Board physical gate: CYD 2.8 ST7789 and CYD 3.2 ST7798 both orientations,
-# loss/regain signals and font sizes, then normal SD/GPS/USE/Mesh smoke test.
-# LAB only: do not merge, tag or release production without explicit approval.
-
-# R2: use valid Theme::VAPOR_PURPLE for graph grid (R1 compile failed).
+HUNT-HISTORY-THREE-FOOTER-BUTTONS-R3
+# HUNT Signal History R3: move GRAPH/GAUGE to middle footer, between BACK and STOP.
+# All three labels rendered by Theme::drawButton with native 5-step font size.
+# Shared Theme::computeButtonBar geometry for drawing and hit tests.
+# Remove top-left tab overlapping Squachy's speech bubble.
+# Preserve RSSI history, trend, signal loss, caught, target list, BACK/STOP behavior.
+# Both CYD 2.8 ST7789 and CYD 3.2 ST7798, portrait/landscape,
+# all button font sizes, BLE and Wi-Fi HUNT; LAB-only, no merge/tag.

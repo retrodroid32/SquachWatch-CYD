@@ -113,6 +113,7 @@ jobs:
           python3 tools/test_fonts_stage_d.py
           python3 tools/test_fonts_five_steps.py
           python3 tools/test_fonts_button_coverage.py
+          python3 tools/test_hunt_footer_buttons.py
       - name: Reject oversized OTA images and mismatched LAB manifests
         run: |
           python3 tools/test_check_app_image_sizes.py

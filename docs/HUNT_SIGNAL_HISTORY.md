@@ -5,7 +5,8 @@ A passive **display-only** HUNT mode enhancement for the fork's supported
 
 ## How to use
 1. Add a BLE or Wi-Fi target to HUNT, then open its gauge.
-2. Tap **GRAPH** on the upper-left of the HUNT screen. Tap **GAUGE** to return.
+2. Tap **GRAPH** in the **middle bottom button** (between BACK and STOP).
+   It changes to **GAUGE** in the graph view; tap GAUGE to return.
 3. The chart shows ~40 seconds of one-per-second RSSI snapshots, newest on
    the right, scaled from **-100 to -30 dBm**. Lines break on radio loss.
 4. **PEAK** is the strongest signal observed since this visit to the
@@ -22,8 +23,11 @@ A passive **display-only** HUNT mode enhancement for the fork's supported
 - A 40-sample static ring (<100 bytes plus counters) is advanced only on
   the first render pass and at most once per second; no dynamic allocations,
   NVS, SD writes, background worker, or radio reconfiguration.
-- Tap region is confined to (8..72,21..45), above the gauge body; BACK and
-  STOP retain their original geometry and behavior.
+- Three equal footer buttons use `Theme::computeButtonBar()` for both
+  rendering and hit tests: BACK left, GRAPH/GAUGE center, STOP right.
+  Their native five-step button fonts fit in portrait and landscape.
+  The old top-left toggle is removed so Squachy's bubble cannot cover it.
+  BACK returns to the HUNT roster and STOP removes the active target.
 - HUNT targets and radio channel-focus logic remain unchanged.
 - New history resets when entering the HUNT gauge for a fresh visit. Exiting
   and returning creates a new history, without removing the target.
@@ -32,8 +36,10 @@ A passive **display-only** HUNT mode enhancement for the fork's supported
 
 ## Hardware validation gate
 2.8 ST7789, then 3.2 ST7798; each portrait and landscape:
-1. Open a BLE HUNT from LOG or RAWSCAN. Tap GRAPH, check smooth graph and
-   latest point/PEAK; tap GAUGE, verify same live needle.
+1. Open a BLE HUNT from LOG or RAWSCAN. Verify the footer is
+   **BACK | GRAPH | STOP**, not overlapped by Squachy's speech bubble.
+   Tap center GRAPH, check graph/PEAK; tap center GAUGE, check live needle.
+   Check all 3 hit targets in both orientations, including boundary taps.
 2. Move source closer/farther; PEAK must retain strongest seen value and
    never replace the live numeric reading. Stop transmission: **NO SIGNAL**
    and a graph gap must appear after the existing freshness timeout, with

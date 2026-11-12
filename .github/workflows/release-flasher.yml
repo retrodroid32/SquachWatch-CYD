@@ -123,6 +123,7 @@ jobs:
             tools/test_fonts_stage_d.py \
             tools/test_fonts_five_steps.py \
             tools/test_fonts_button_coverage.py \
+            tools/test_hunt_footer_buttons.py \
             tools/test_check_app_image_sizes.py \
             tools/test_verify_lab_site_partitions.py \
             tools/test_blackbox_ota_layout.py; do

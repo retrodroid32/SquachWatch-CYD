@@ -13,22 +13,23 @@
 // so a reading means the same thing on both screens.
 static const int RSSI_LO = -100, RSSI_HI = -30;
 
-// Two buttons now, not one: BACK leaves the screen with the hunt still
-// running (which is the point -- you can go look at something else and come
-// back), and STOP ends it. Until STOP existed, clearHunt() had no caller in
-// any screen and a hunt could only be replaced or rebooted away.
-static void backButtonRect(int screenW, int screenH, int& x, int& y, int& w, int& h) {
-    Theme::ButtonBarGeom g = Theme::computeButtonBar(screenW, screenH);
-    w = 110;
-    h = g.h;
-    // The pair sits centred as a unit: BACK left of centre, STOP right.
-    x = screenW / 2 - w - 5;
+// The HUNT footer uses the same *three-slot* layout and five-step button
+// font geometry as the global SCAN/LOG/DESK bar. One shared rect definition
+// drives BOTH draw and hit tests, including after screen rotation.
+enum HuntFooterSlot : uint8_t { HUNT_BACK = 0, HUNT_GRAPH = 1, HUNT_STOP = 2 };
+static void huntFooterRect(HuntFooterSlot slot, int screenW, int screenH,
+                           int& x, int& y, int& w, int& h) {
+    const Theme::ButtonBarGeom g = Theme::computeButtonBar(screenW, screenH);
+    x = g.x[slot];
     y = g.y;
+    w = g.w[slot];
+    h = g.h;
 }
-
-static void stopButtonRect(int screenW, int screenH, int& x, int& y, int& w, int& h) {
-    backButtonRect(screenW, screenH, x, y, w, h);
-    x = screenW / 2 + 5;
+static bool hitHuntFooter(HuntFooterSlot slot, int x, int y,
+                          int screenW, int screenH) {
+    int bx, by, bw, bh;
+    huntFooterRect(slot, screenW, screenH, bx, by, bw, bh);
+    return x >= bx && x < bx + bw && y >= by && y < by + bh;
 }
 
 // Tracks quip-worthy transitions across ticks -- see the trend block
@@ -63,8 +64,7 @@ static HuntHistory::Tracker s_history;
 static bool s_graphMode = false;
 
 bool uiHuntHitGraph(int x, int y, int screenW, int screenH) {
-    (void)screenW; (void)screenH;
-    return x >= 8 && x <= 72 && y >= 21 && y <= 45;
+    return hitHuntFooter(HUNT_GRAPH, x, y, screenW, screenH);
 }
 
 void uiHuntToggleGraph() { s_graphMode = !s_graphMode; }
@@ -95,17 +95,13 @@ void uiHuntInit(TFT_eSPI& t) {
 }
 
 bool uiHuntHitBack(int x, int y, int screenW, int screenH) {
-    int bx, by, bw, bh;
-    backButtonRect(screenW, screenH, bx, by, bw, bh);
-    return x >= bx && x <= bx + bw && y >= by && y <= by + bh;
+    return hitHuntFooter(HUNT_BACK, x, y, screenW, screenH);
 }
 
 bool uiHuntCaught() { return (int32_t)(s_caughtUntil - millis()) > 0; }
 
 bool uiHuntHitStop(int x, int y, int screenW, int screenH) {
-    int bx, by, bw, bh;
-    stopButtonRect(screenW, screenH, bx, by, bw, bh);
-    return x >= bx && x <= bx + bw && y >= by && y <= by + bh;
+    return hitHuntFooter(HUNT_STOP, x, y, screenW, screenH);
 }
 
 // Semicircle strength gauge -- sweeps left (weak) to right (strong)
@@ -386,14 +382,6 @@ void uiHuntTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool adva
     const int sqH = 44;
     Squachy::tick(t, w / 2, bodyTop, sqH, now, advance, 0.6f, true);
 
-    // Tap the upper-left tab to swap gauge <-> ~40s RSSI history. This
-    // never changes the BACK/STOP geometry, active target or scanning.
-    t.drawRect(8, 21, 64, 24, Theme::CYAN);
-    t.setTextSize(1);
-    t.setTextColor(Theme::CYAN, Theme::BG);
-    t.setCursor(14, 29);
-    t.print(s_graphMode ? "GAUGE" : "GRAPH");
-
     t.setTextSize(1);
     t.setTextWrap(false);
     t.setTextColor(Theme::CYAN, Theme::BG);
@@ -568,9 +556,13 @@ void uiHuntTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool adva
         t.print(trend);
     }
 
+    // Button style, size and hit geometry all match the firmware's standard
+    // footer. Short unbracketed labels fit even 240px portrait at size 5/5.
     int bx, by, bw, bh;
-    backButtonRect(w, h, bx, by, bw, bh);
-    Theme::drawButton(t, bx, by, bw, bh, "[ BACK ]", false);
-    stopButtonRect(w, h, bx, by, bw, bh);
-    Theme::drawButton(t, bx, by, bw, bh, "[ STOP ]", false);
+    huntFooterRect(HUNT_BACK, w, h, bx, by, bw, bh);
+    Theme::drawButton(t, bx, by, bw, bh, "BACK", false);
+    huntFooterRect(HUNT_GRAPH, w, h, bx, by, bw, bh);
+    Theme::drawButton(t, bx, by, bw, bh, s_graphMode ? "GAUGE" : "GRAPH", false);
+    huntFooterRect(HUNT_STOP, w, h, bx, by, bw, bh);
+    Theme::drawButton(t, bx, by, bw, bh, "STOP", false);
 }
