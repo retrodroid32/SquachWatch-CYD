@@ -136,23 +136,47 @@ jobs:
         run: make -C sim -j"$(nproc)"
       - name: Run UI screenshot regression suite
         run: make -C sim regression
-      # Reviewer-only preview: does not deploy Pages or alter firmware release.
-      # Bundled classic CYD WASM is checked-in and may lag current firmware.
-      - name: Assemble isolated browser workbench preview
-        if: github.event_name == 'pull_request'
+  
+  wasm-preview:
+    # This job never releases firmware or deploys Pages. It compiles
+    # current PR sources, rather than packaging old committed WASM.
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install release-matched Emscripten
+        uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: 6.0.9
+          actions-cache-folder: emsdk-cache
+      - name: Compile current-source 2.8 CYD WebAssembly
+        run: |
+          set -euo pipefail
+          em++ --version | head -1
+          make -C sim wasm WASM_VERSION="LAB-PR${{ github.event.pull_request.number }}-${GITHUB_SHA::8}"
+          test -s sim/web/squachsim.js
+          test -s sim/web/squachsim.wasm
+          test "$(stat -c%s sim/web/squachsim.wasm)" -gt 200000
+      - name: Validate live WASM exports and classic browser glue
+        run: |
+          set -euo pipefail
+          node --check sim/web/squachsim.js
+          node tools/test_v141_wasm_exports.cjs sim/web/squachsim.wasm sim/web/squachsim.js
+      - name: Assemble isolated R3 current-source browser preview
         run: |
           set -euo pipefail
           mkdir -p browser-preview/emulator
-          cp web-flasher/emulator/index.html web-flasher/emulator/squachsim.js web-flasher/emulator/squachsim.wasm browser-preview/emulator/
-          printf '%s\n' 'SquachWatch v1.41 CYD emulator workbench preview' 'The included WebAssembly is an older checked-in classic CYD bundle, not updated 1.41 firmware.' 'Run: python3 -m http.server 8000 --directory browser-preview' 'Open: http://localhost:8000/emulator/' 'No real radio TX, no production Pages deployment.' > browser-preview/README.txt
-          test -s browser-preview/emulator/index.html
-          test -s browser-preview/emulator/squachsim.js
-          test -s browser-preview/emulator/squachsim.wasm
-      - name: Upload browser workbench preview (LAB)
-        if: github.event_name == 'pull_request'
+          cp web-flasher/emulator/index.html browser-preview/emulator/index.html
+          cp sim/web/squachsim.js sim/web/squachsim.wasm browser-preview/emulator/
+          printf 'SquachWatch-CYD v1.41 WEB WORKBENCH R3 (2.8 classic CYD)\nSource PR: %s\nSource SHA: %s\nToolchain: Emscripten 6.0.9\nWASM identity: LAB-PR%s-%s\nNot a 3.2 ST7798 hardware emulator; no radio TX\n' \
+            "${{ github.event.pull_request.number }}" "$GITHUB_SHA" \
+            "${{ github.event.pull_request.number }}" "${GITHUB_SHA::8}" > browser-preview/BUILD-INFO.txt
+          printf '%s\n' 'This archive contains FRESH WebAssembly compiled from the matching PR sources.' 'To run: python3 -m http.server 8000 --directory browser-preview' 'Then open: http://localhost:8000/emulator/' 'Do not use file:// for WASM; it needs a local HTTP origin.' 'No production GitHub Pages publishing, physical firmware flashing or real RF TX.' > browser-preview/README.txt
+          test -s browser-preview/BUILD-INFO.txt
+      - name: Upload verified current-firmware workbench
         uses: actions/upload-artifact@v7
         with:
-          name: lab-pr-${{ github.event.pull_request.number }}-v141-browser-workbench
+          name: lab-pr-${{ github.event.pull_request.number }}-v141-fresh-wasm-workbench
           path: browser-preview/
           if-no-files-found: error
           retention-days: 14

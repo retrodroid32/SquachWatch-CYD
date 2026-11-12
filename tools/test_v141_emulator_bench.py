@@ -44,6 +44,12 @@ assert all(float(panel.attrib[v]) >= 0 for v in ('x','y','width','height'))
 
 module = re.search(r'<script type="module">\s*(.*?)\s*</script>', HTML, re.S)
 assert module
+assert (ROOT / 'tools/test_v141_wasm_exports.cjs').is_file()
+ci = (ROOT / '.github/workflows/build.yml').read_text()
+assert 'mymindstorm/setup-emsdk@v14' in ci
+assert 'version: 6.0.9' in ci
+assert 'lab-pr-${{ github.event.pull_request.number }}-v141-fresh-wasm-workbench' in ci
+assert 'node tools/test_v141_wasm_exports.cjs' in ci
 if shutil.which('node'):
     result = subprocess.run(['node','--check','--input-type=module'],
                             input=module.group(1), text=True,

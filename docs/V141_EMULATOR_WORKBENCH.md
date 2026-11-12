@@ -13,15 +13,15 @@ PRs #219–#222. It is not a new WebAssembly firmware build.
   unavailable until board-specific compatible WASM binaries exist.
 - **BOOT / Pocket Mode** control is capability-gated by exported WASM
   functions; a control being drawn is not evidence of latest firmware support.
-- The browser preview artifact uses the **previous checked-in**
-  `squachsim.js` and `squachsim.wasm`. New Fonts settings, privacy fixes
-  and other newly merged changes are **not** claimed to be present inside
-  that old WASM binary.
+- R3 builds **fresh current-source WebAssembly** using the release-matched
+  Emscripten 6.0.9 in a PR-only workflow. The R3 preview **does not** use
+  the old checked-in WASM. The public Pages emulator remains untouched;
+  this does not claim real RF, physical LCD/touch or 3.2 ST7798 emulation.
 - The fork's main firmware source, partition table, production LAB manifests
   and real CYD flasher pages are unchanged.
 
 ## Review
-Download the *lab-pr-N-v141-browser-workbench* artifact from the PR's
+Download the *lab-pr-N-v141-fresh-wasm-workbench* artifact from the PR's
 successful GitHub Build run. Extract it and, from its parent directory,
 run `python3 -m http.server 8000 --directory browser-preview`, then open
 `http://localhost:8000/emulator/`.
@@ -33,8 +33,8 @@ Static and Node syntax checks run in CI. This preview does not transmit
 real signals or update the production Pages site.
 
 ## Next 1.41 parity steps
-1. Rebuild classic CYD WASM from current master; validate exported API and
-   font UI to make browser firmware parity a real claim.
+1. Verify the newly built R3 WASM in a real browser (Fonts menu, touch,
+   persistence, screen rotation, virtual mesh and synthetic detections).
 2. Build a correctly sized separate 3.2 ST7798 emulator/profile.
 3. Recheck 3.2 panel orientation and touch smoke tests, privacy, scan,
    GPS UBX, Wi-Fi USE, SD, WATCH/HUNT, SquachMesh before any firmware merge.
