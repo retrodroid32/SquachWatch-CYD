@@ -151,6 +151,8 @@ jobs:
         with:
           version: 6.0.9
           actions-cache-folder: emsdk-cache
+      - name: Syntax-check the WASM ABI verifier before compiling
+        run: node --check tools/test_v141_wasm_exports.cjs
       - name: Compile current-source 2.8 CYD WebAssembly
         env:
           SOURCE_SHA: ${{ github.event.pull_request.head.sha }}
@@ -166,6 +168,7 @@ jobs:
         run: |
           set -euo pipefail
           node --check sim/web/squachsim.js
+          node --check tools/test_v141_wasm_exports.cjs
           node tools/test_v141_wasm_exports.cjs sim/web/squachsim.wasm sim/web/squachsim.js
       - name: Assemble isolated R4 current-source browser preview
         env:

@@ -8,14 +8,14 @@ if (!wasmPath || !jsPath)
 const bytes = fs.readFileSync(wasmPath);
 if (bytes.length < 200000) throw new Error('unexpectedly small WebAssembly');
 const wasmModule = new WebAssembly.Module(bytes);
-const exports = new Set(WebAssembly.Module.exports(wasmModule).map(e => e.name));
+const wasmExportNames = new Set(WebAssembly.Module.exports(wasmModule).map(e => e.name));
 const needed = [
   'sw_setup', 'sw_step', 'sw_width', 'sw_height', 'sw_frame',
   'sw_touch', 'sw_detect', 'sw_det_catalog', 'sw_mesh',
   'sw_mesh_status', 'sw_mesh_catalog', 'sw_state', 'sw_rotation'
 ];
 for (const name of needed) {
- if (!exports.has(name) && !exports.has('_'+name))
+ if (!wasmExportNames.has(name) && !wasmExportNames.has('_'+name))
   throw new Error('Missing current browser ABI '+name);
 }
 const glue = fs.readFileSync(jsPath,'utf8');
