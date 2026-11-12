@@ -264,6 +264,10 @@ namespace Theme {
     // Caller restores setTextFont(1)/setTextSize(1) after drawing.
     void selectCategoryFont(TFT_eSPI& t, Settings::FontKind kind, const char* label,
                             int maxW, int maxH, uint8_t baseSize = 1, uint8_t baseFont = 1);
+    // Shared five-step text-only renderer for custom-drawn button faces.
+    int buttonLabelWidth(TFT_eSPI& t, const char* label, int w, int h);
+    void drawButtonLabel(TFT_eSPI& t, int x, int y, int w, int h,
+                         const char* label, uint16_t ink, uint16_t background);
     void xpTileFontOn(TFT_eSPI& t);
     void xpTileFontOff(TFT_eSPI& t);
     int xpTileTextH();

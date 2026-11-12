@@ -870,10 +870,8 @@ static void drawFontRow(TFT_eSPI& t, int w, int y, int h,
     t.drawRect(w-82, y+4, 33, h-9, Theme::CYAN);
     t.drawRect(w-42, y+4, 33, h-9, Theme::CYAN);
     t.setTextColor(Theme::WHITE, Theme::BG);
-    Theme::selectCategoryFont(t, Settings::FontKind::BUTTONS, "+", 20, h - 10, 1);
-    t.setCursor(w-68,y+10); t.print("-");
-    t.setCursor(w-28,y+10); t.print("+");
-    t.setTextFont(1); t.setTextSize(1);
+    Theme::drawButtonLabel(t,w-81,y+4,32,h-9,"-",Theme::WHITE,Theme::BG);
+    Theme::drawButtonLabel(t,w-41,y+4,32,h-9,"+",Theme::WHITE,Theme::BG);
 }
 static void drawFontPreview(TFT_eSPI& t, int w, int y) {
     const int height = 39;

@@ -723,36 +723,32 @@ static const uint8_t kButtonDigits[10][5] = {
 };
 static bool buttonGlyph(char c, uint8_t out[5]) {
     const uint8_t* glyph = nullptr;
-    if (c >= 'A' && c <= 'Z') glyph = kButtonCaps[c - 'A'];
-    else if (c >= '0' && c <= '9') glyph = kButtonDigits[c - '0'];
-    static const uint8_t space[5] = {0,0,0,0,0};
-    static const uint8_t lb[5] = {0,0x7f,0x41,0x41,0};
-    static const uint8_t rb[5] = {0,0x41,0x41,0x7f,0};
-    static const uint8_t lt[5] = {0x08,0x14,0x22,0x41,0};
-    static const uint8_t gt[5] = {0,0x41,0x22,0x14,0x08};
-    static const uint8_t dash[5] = {0x08,0x08,0x08,0x08,0x08};
-    static const uint8_t plus[5] = {0x08,0x08,0x3e,0x08,0x08};
-    static const uint8_t slash[5] = {0x20,0x10,0x08,0x04,0x02};
-    static const uint8_t colon[5] = {0,0x36,0x36,0,0};
-    static const uint8_t dot[5] = {0,0x60,0x60,0,0};
-    static const uint8_t bang[5] = {0,0,0x5f,0,0};
-    static const uint8_t question[5] = {0x02,0x01,0x51,0x09,0x06};
-    static const uint8_t star[5] = {0x14,0x08,0x3e,0x08,0x14};
-    static const uint8_t under[5] = {0x40,0x40,0x40,0x40,0x40};
-    static const uint8_t pipe[5] = {0,0,0x7f,0,0};
-    static const uint8_t equals[5] = {0x14,0x14,0x14,0x14,0x14};
-    if (!glyph) switch(c) {
-        case ' ': glyph=space; break; case '[': glyph=lb; break;
-        case ']': glyph=rb; break; case '<': glyph=lt; break;
-        case '>': glyph=gt; break; case '-': glyph=dash; break;
-        case '+': glyph=plus; break; case '/': glyph=slash; break;
-        case ':': glyph=colon; break; case '.': glyph=dot; break;
-        case '!': glyph=bang; break; case '?': glyph=question; break;
-        case '*': glyph=star; break; case '_': glyph=under; break;
-        case '|': glyph=pipe; break; case '=': glyph=equals; break;
-        default: return false;
+    if (c >= 'a' && c <= 'z') c = (char)(c - 'a' + 'A');
+    if (c >= 'A' && c <= 'Z') glyph = kButtonCaps[c-'A'];
+    else if (c >= '0' && c <= '9') glyph = kButtonDigits[c-'0'];
+    else {
+        static const char symbols[] = " []<>-+/:.!?*_|=";
+        static const uint8_t symbolGlyphs[][5] = {
+            {0,0,0,0,0}, {0,0x7f,0x41,0x41,0}, {0,0x41,0x41,0x7f,0},
+            {0x08,0x14,0x22,0x41,0}, {0,0x41,0x22,0x14,0x08},
+            {0x08,0x08,0x08,0x08,0x08}, {0x08,0x08,0x3e,0x08,0x08},
+            {0x20,0x10,0x08,0x04,0x02}, {0,0x36,0x36,0,0},
+            {0,0x60,0x60,0,0}, {0,0,0x5f,0,0},
+            {0x02,0x01,0x51,0x09,0x06}, {0x14,0x08,0x3e,0x08,0x14},
+            {0x40,0x40,0x40,0x40,0x40}, {0,0,0x7f,0,0},
+            {0x14,0x14,0x14,0x14,0x14}
+        };
+        for (uint8_t i=0; i<sizeof(symbols)-1; ++i)
+            if (symbols[i]==c) { glyph=symbolGlyphs[i]; break; }
     }
+    if (!glyph) return false;
     for (int i=0; i<5; ++i) out[i]=glyph[i];
+    return true;
+}
+static bool buttonGlyphsSupported(const char* label) {
+    uint8_t glyph[5];
+    for (const char* p=label; p && *p; ++p)
+        if (!buttonGlyph(*p,glyph)) return false;
     return true;
 }
 
@@ -764,11 +760,7 @@ static bool drawFiveStepButtonText(TFT_eSPI& t, int x, int y, int w, int h,
                                    const char* label, uint16_t ink,
                                    uint16_t background, uint8_t requested) {
     if (!label || !*label) return true;
-    uint8_t probe[5];
-    for (const char* p=label; *p; ++p) {
-        // Keep mixed-case System Properties words in their original face.
-        if ((*p >= 'a' && *p <= 'z') || !buttonGlyph(*p, probe)) return false;
-    }
+    if (!buttonGlyphsSupported(label)) return false;
     const int fit=ButtonFont::bestStep(label, w-6, h-4, requested);
     if (fit < 0) return false;
     const int glyphH=ButtonFont::height((uint8_t)fit);
@@ -799,6 +791,37 @@ static bool drawFiveStepButtonText(TFT_eSPI& t, int x, int y, int w, int h,
     return true;
 }
 
+// One real five-step renderer for both standard buttons and custom-drawn
+// labels, including keyboard keys, notification controls and WATCH pills.
+// The same measured bounds govern drawing, so no caller has a private
+// two-size clamp. Tiny fixed boxes may safely fall back when necessary.
+int buttonLabelWidth(TFT_eSPI& t, const char* label, int w, int h) {
+    if (!label || !*label) return 0;
+    if (buttonGlyphsSupported(label)) {
+        const int fit=ButtonFont::bestStep(label,w-6,h-4,
+                                Settings::fontStep(Settings::FontKind::BUTTONS));
+        if (fit>=0) return ButtonFont::width(label,(uint8_t)fit);
+    }
+    selectCategoryFont(t,Settings::FontKind::BUTTONS,label,w-6,h-4,1);
+    const int tw=t.textWidth(label);
+    t.setTextFont(1); t.setTextSize(1);
+    return tw;
+}
+void drawButtonLabel(TFT_eSPI& t, int x, int y, int w, int h,
+                     const char* label, uint16_t ink, uint16_t background) {
+    if (!label || !*label) return;
+    if (!drawFiveStepButtonText(t,x,y,w,h,label,ink,background,
+                               Settings::fontStep(Settings::FontKind::BUTTONS))) {
+        selectCategoryFont(t,Settings::FontKind::BUTTONS,label,w-6,h-4,1);
+        t.setTextColor(ink,background);
+        t.setTextWrap(false);
+        const int tw=t.textWidth(label), th=t.fontHeight();
+        t.setCursor(x+(w-tw)/2,y+(h-th)/2);
+        t.print(label);
+    }
+    t.setTextFont(1); t.setTextSize(1);
+}
+
 void drawButton(TFT_eSPI& t, int x, int y, int w, int h,
                 const char* label, bool pressed, uint8_t textSize) {
     uint16_t fill = pressed ? PURPLE : BG;
@@ -814,17 +837,9 @@ void drawButton(TFT_eSPI& t, int x, int y, int w, int h,
     // every button on every screen instead of a list of exceptions.
     // A button stays in the BUTTONS family even when body TEXT is enlarged.
     const uint8_t selected=Settings::fontStep(Settings::FontKind::BUTTONS);
-    const uint8_t request=(uint8_t)(textSize > 1 && selected < 4 ? selected+1 : selected);
-    if (!drawFiveStepButtonText(t,x,y,w,h,label,fg,fill,request)) {
-        // Mixed-case and uncommon glyphs retain the legacy safe fallback.
-        const uint8_t ts = (textSize == 1 && t.width() >= 400) ? 2 : textSize;
-        selectCategoryFont(t, Settings::FontKind::BUTTONS, label, w-6, h-2, ts);
-        t.setTextColor(fg, fill);
-        const int tw=t.textWidth(label), th=t.fontHeight();
-        t.setCursor(x+(w-tw)/2,y+(h-th)/2);
-        t.print(label);
-    }
-    t.setTextFont(1); t.setTextSize(1);
+    (void)selected;
+    (void)textSize;
+    drawButtonLabel(t,x,y,w,h,label,fg,fill);
 }
 
 void drawWin95Button(TFT_eSPI& t, int x, int y, int w, int h,
@@ -864,15 +879,7 @@ void drawWin95Button(TFT_eSPI& t, int x, int y, int w, int h,
     t.setTextWrap(false);
     t.setTextColor(BLACK, W95_FACE);
     const int ox=sunken?1:0;
-    if (!drawFiveStepButtonText(t,x+2+ox,y+2+ox,w-4-ox,h-4-ox,
-                                label,BLACK,W95_FACE,
-                                Settings::fontStep(Settings::FontKind::BUTTONS))) {
-        selectCategoryFont(t, Settings::FontKind::BUTTONS, label, w-8, h-4, 1);
-        const int tw=t.textWidth(label), th=t.fontHeight();
-        t.setCursor(x+2+(w-4-tw)/2+ox,y+2+(h-4-th)/2+ox);
-        t.print(label);
-    }
-    t.setTextFont(1); t.setTextSize(1);
+    drawButtonLabel(t,x+2+ox,y+2+ox,w-4-ox,h-4-ox,label,BLACK,W95_FACE);
 }
 
 ButtonBarGeom computeButtonBar(int screenW, int screenH) {
