@@ -342,11 +342,11 @@ static void drawHuntHistory(TFT_eSPI& t, const HuntHistory::Tracker& hist,
     t.setCursor(7, statY);
     if (hist.peakValid) {
         t.print("PEAK ");
-        t.print((int)hist.peakDbm);
+        t.printf("%d", (int)hist.peakDbm);
         t.print(" dBm");
     } else t.print("PEAK --");
     char age[22];
-    if (!hist.seen) snprintf(age, sizeof age, "LAST --");
+    if (!hist.seen) memcpy(age, "LAST --", sizeof("LAST --"));
     else snprintf(age, sizeof age, "LAST %lus",
                   (unsigned long)((uint32_t)HuntSignal::ageMs(hist.lastSeenMs, now) / 1000u));
     t.setTextColor(hist.seen ? Theme::WHITE : Theme::AMBER, Theme::BG);
@@ -361,7 +361,12 @@ static void drawHuntHistory(TFT_eSPI& t, const HuntHistory::Tracker& hist,
     if (wifi) {
         if (channel >= 1 && channel <= 13) {
             t.print("WIFI CH ");
-            t.print((unsigned)channel);
+            // Avoid printf's numeric formatting path for a 1..13 channel.
+            // The emulator TFT shim intentionally only supports print(strings).
+            if (channel >= 10) {
+                t.write((uint8_t)'1');
+                t.write((uint8_t)('0' + channel - 10));
+            } else t.write((uint8_t)('0' + channel));
         } else t.print("WIFI CH ?");
     } else t.print("BLE");
 }
