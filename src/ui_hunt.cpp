@@ -7,6 +7,7 @@
 #include "squachy.h"
 #include "ui_fit.h"
 #include <Arduino.h>
+#include <string.h>
 
 // -100..-30 dBm covers "barely there" to "right next to it" for both
 // BLE and WiFi -- same clamp range ui_watchalert.cpp's sparkline uses,
