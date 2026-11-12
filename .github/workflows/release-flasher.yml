@@ -31,14 +31,8 @@ on:
       # Pages deployment is owned by publish-pages.yml, so this build workflow
       # does not need a github-pages environment policy for lab tags.
       - "lab-*"
-    branches:
-      # Only the dedicated request file starts a LAB build from a branch.
-      - 'feature/**'
-      - 'fix/**'
-      - 'lab/**'
-      - 'integrate/**'
-    paths:
-      - '.github/lab-build-request.txt'
+  # Branch LAB runs are dispatched only after the entire PR Build succeeds.
+  # A branch push alone must never start firmware packaging or publication.
   workflow_dispatch:
     inputs:
       lab:
@@ -142,10 +136,11 @@ jobs:
         run: |
           make -C sim -j"$(nproc)"
           make -C sim regression
-      # The independent PR Build contains the complete CI firmware matrix.
-      # Never publish a branch LAB while that exact commit is still building.
+      # Defense in depth: the upstream PR Build success job dispatched this LAB
+      # only after ALL Build jobs passed. Also validate its exact commit SHA
+      # here, failing closed on a changed branch, failed run, or stale Build.
       - name: Wait for matching PR Build success before LAB publication
-        if: github.event_name == 'push' && github.ref_type == 'branch'
+        if: ${{ (github.event_name == 'push' && github.ref_type == 'branch') || (github.event_name == 'workflow_dispatch' && inputs.lab == true && github.ref_type == 'branch' && github.ref_name != 'master') }}
         timeout-minutes: 25
         env:
           GH_TOKEN: ${{ github.token }}
