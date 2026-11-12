@@ -1,8 +1,10 @@
-HUNT-HISTORY-THREE-FOOTER-BUTTONS-R3
-# HUNT Signal History R3: move GRAPH/GAUGE to middle footer, between BACK and STOP.
+HUNT-HISTORY-THREE-FOOTER-BUTTONS-R4
+# HUNT Signal History R4: move GRAPH/GAUGE to middle footer, between BACK and STOP.
 # All three labels rendered by Theme::drawButton with native 5-step font size.
 # Shared Theme::computeButtonBar geometry for drawing and hit tests.
 # Remove top-left tab overlapping Squachy's speech bubble.
 # Preserve RSSI history, trend, signal loss, caught, target list, BACK/STOP behavior.
 # Both CYD 2.8 ST7789 and CYD 3.2 ST7798, portrait/landscape,
 # all button font sizes, BLE and Wi-Fi HUNT; LAB-only, no merge/tag.
+# R4 trims duplicate text-state and dynamic chart label formatting to
+# preserve the hard 8192-byte final OTA image reserve on every release board.
