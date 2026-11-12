@@ -7,8 +7,8 @@ if (!wasmPath || !jsPath)
  throw new Error('usage: node test_v141_wasm_exports.cjs <wasm> <js>');
 const bytes = fs.readFileSync(wasmPath);
 if (bytes.length < 200000) throw new Error('unexpectedly small WebAssembly');
-const module = new WebAssembly.Module(bytes);
-const exports = new Set(WebAssembly.Module.exports(module).map(e => e.name));
+const wasmModule = new WebAssembly.Module(bytes);
+const exports = new Set(WebAssembly.Module.exports(wasmModule).map(e => e.name));
 const needed = [
   'sw_setup', 'sw_step', 'sw_width', 'sw_height', 'sw_frame',
   'sw_touch', 'sw_detect', 'sw_det_catalog', 'sw_mesh',
