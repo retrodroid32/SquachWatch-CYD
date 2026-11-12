@@ -658,24 +658,19 @@ static void drawPinnedBack(TFT_eSPI& t, int screenW, int screenH) {
     pinnedBackRect(screenW, screenH, x, y, w, h);
     t.fillRect(x, y, w, h, Theme::BG);
     t.drawFastHLine(x, y, w, Theme::PURPLE);
-    t.setTextFont(1);
-    t.setTextSize(Theme::uiMenuTextSize(t));
-    t.setTextColor(Theme::CYAN, Theme::BG);
+    // Pixel-raster navigation works on the ST7798 split-band frame buffer.
     // The DESK MODE page splits the strip: OK on the left goes straight out
     // to wherever Settings was opened from, the desk or the main screen; UP
     // on the right is the usual one level up.
     if (s_page == SettingsPage::DESK) {
         const int half = w / 2;
         t.drawFastVLine(x + half, y + 4, h - 8, Theme::PURPLE);
-        t.setCursor(x + (half - t.textWidth("[ OK ]")) / 2, y + (h - t.fontHeight()) / 2);
-        t.print("[ OK ]");
-        t.setCursor(x + half + (half - t.textWidth("[ UP ]")) / 2, y + (h - t.fontHeight()) / 2);
-        t.print("[ UP ]");
+        Theme::drawButtonLabel(t,x,y,half,h,"[ OK ]",Theme::CYAN,Theme::BG);
+        Theme::drawButtonLabel(t,x+half,y,half,h,"[ UP ]",Theme::CYAN,Theme::BG);
         return;
     }
     const char* lbl = (s_page == SettingsPage::MAIN) ? "[ BACK ]" : "[ UP ]";
-    t.setCursor(x + (w - t.textWidth(lbl)) / 2, y + (h - t.fontHeight()) / 2);
-    t.print(lbl);
+    Theme::drawButtonLabel(t,x,y,w,h,lbl,Theme::CYAN,Theme::BG);
 }
 
 bool uiSettingsTapPinnedOk(int x, int y, int screenW, int screenH) {
@@ -823,8 +818,8 @@ static void drawRow(TFT_eSPI& t, int w, int y, int hgt, const char* label,
     t.setTextFont(1); t.setTextSize(1);
 }
 
-// Stage C: MENUS/BUTTONS/BUBBLES/PETS affect actual rendering. TEXT and XP
-// stay clearly marked as preview-only until layout-specific work is safe.
+// Stage D: all six categories have live targets. TEXT uses measured info/
+// diagnostics content; XP TILES styles the Desk SquachMesh message window.
 static Settings::FontKind fontKindForRow(SettingsRow row) {
     switch (row) {
         case SettingsRow::FONT_TEXT: return Settings::FontKind::TEXT;
@@ -848,9 +843,7 @@ static void drawFontRow(TFT_eSPI& t, int w, int y, int h,
     t.setCursor(8, y + 4); t.print(label);
     t.setTextColor(Theme::W95_SHADOW, Theme::BG);
     t.setCursor(8, y + 19);
-    const bool pending = kind == Settings::FontKind::TEXT || kind == Settings::FontKind::XP_TILES;
-    t.print(pending ? "PREVIEW ONLY" : (face == 2 ? "SMOOTH" : (face == 1 ? "PIXEL" : "DEFAULT")));
-    if (pending) return; // no fake controls for unsupported categories
+    t.print(face == 2 ? "SMOOTH" : (face == 1 ? "PIXEL" : "DEFAULT"));
     const int left = 77, right = w - 88, mid = y + h / 2;
     t.drawFastHLine(left, mid, right - left + 1, Theme::PURPLE);
     for (int n = 0; n < 5; n++) {
@@ -862,8 +855,8 @@ static void drawFontRow(TFT_eSPI& t, int w, int y, int h,
     t.drawRect(w-82, y+4, 33, h-9, Theme::CYAN);
     t.drawRect(w-42, y+4, 33, h-9, Theme::CYAN);
     t.setTextColor(Theme::WHITE, Theme::BG);
-    t.setCursor(w-68,y+10); t.print("-");
-    t.setCursor(w-28,y+10); t.print("+");
+    Theme::drawButtonLabel(t,w-81,y+4,32,h-9,"-",Theme::WHITE,Theme::BG);
+    Theme::drawButtonLabel(t,w-41,y+4,32,h-9,"+",Theme::WHITE,Theme::BG);
 }
 static void drawFontPreview(TFT_eSPI& t, int w, int y) {
     const int height = 39;
@@ -879,13 +872,24 @@ static void drawFontPreview(TFT_eSPI& t, int w, int y) {
     t.setCursor(9,y+4); t.print("FONT PREVIEW");
     t.setTextColor(Theme::WHITE, Theme::BG);
     t.setCursor(9,y+20); t.print(names[id]);
-    // In-page sample is intentional: never change global renderer at Stage B.
-    t.setTextFont(face == 2 ? 2 : 1);
-    t.setTextSize((face == 2 || step < 3) ? 1 : 2);
-    const char* sample = "Aa 12:34";
-    const int x = w - 10 - t.textWidth(sample);
-    if (x > 108 && t.fontHeight() < height - 8) {
-        t.setCursor(x,y+15); t.print(sample);
+    // Show the selected numeric rung even if another category has a
+    // constrained real-world rectangle. BUTTONS uses its actual renderer
+    // for all five preview heights, not the old two-level fake sample.
+    char rung[20];
+    snprintf(rung,sizeof rung,"SIZE %d/5",step+1);
+    t.setTextFont(1); t.setTextSize(1);
+    t.setTextColor(Theme::CYAN,Theme::BG);
+    t.setCursor(9,y+29); t.print(rung);
+    if (s_fontPreview == Settings::FontKind::BUTTONS) {
+        Theme::drawButton(t,w-88,y+5,76,29,"TEST",false);
+    } else {
+        t.setTextFont(face == 2 ? 2 : 1);
+        t.setTextSize((face == 2 || step < 3) ? 1 : 2);
+        const char* sample="Aa 12:34";
+        const int x=w-10-t.textWidth(sample);
+        if (x>108 && t.fontHeight()<height-8) {
+            t.setCursor(x,y+15); t.print(sample);
+        }
     }
     t.setTextFont(1); t.setTextSize(1);
 }
@@ -896,7 +900,6 @@ void uiSettingsFontTap(TFT_eSPI& t, int x, int y, int screenW, int screenH) {
     if (row < SettingsRow::FONT_MENUS || row > SettingsRow::FONT_XP) return;
     const auto kind = fontKindForRow(row);
     s_fontPreview = kind;
-    if (kind == Settings::FontKind::TEXT || kind == Settings::FontKind::XP_TILES) return;
     if (x < 70) {
         Settings::setFontFace(kind, (uint8_t)((Settings::fontFace(kind)+1)%3));
         return;

@@ -1,6 +1,7 @@
 // SquachWatch-CYD — the WiFi password keyboard. See include/ui_wifipass.h.
 #include "ui_wifipass.h"
 #include "theme.h"
+#include "settings.h"
 #include "privacy.h"
 #include "wifi_use_policy.h"
 #include <Arduino.h>
@@ -207,12 +208,8 @@ void paintKey(TFT_eSPI& t, uint8_t i, int xOffset = 0, int yOffset = 0) {
     Theme::drawSteelKey(t, x, y, k.w, k.h, lit);
     char one[2];
     const char* lab = label(k.ch, one);
-    t.setTextSize(2);
-    if (t.textWidth(lab) > k.w - 6) t.setTextSize(1);
-    t.setTextColor(lit ? Theme::VAPOR_YELLOW : Theme::WHITE);
-    t.setCursor(x + (k.w - t.textWidth(lab)) / 2, y + (k.h - t.fontHeight()) / 2);
-    t.print(lab);
-    t.setTextSize(1);
+    Theme::drawButtonLabel(t,x,y,k.w,k.h,lab,
+                           lit ? Theme::VAPOR_YELLOW : Theme::WHITE,Theme::BLACK);
 }
 
 void drawKey(TFT_eSPI& t, uint8_t i) {

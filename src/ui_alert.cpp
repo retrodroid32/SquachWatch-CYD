@@ -1,6 +1,7 @@
 // SquachWatch-CYD — ALERT screen implementation
 #include "ui_alert.h"
 #include "theme.h"
+#include "settings.h"
 #include "privacy.h"
 #include "signatures.h"
 #include "detection.h"
@@ -692,18 +693,9 @@ void uiAlertTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng,
         moreInfoBtnRect(w, h, bx, by, bw, bh);
         t.fillRect(bx, by, bw, bh, Theme::BG);
         t.drawRect(bx, by, bw, bh, Theme::PURPLE);
-        t.setTextSize(2);
-        t.setTextColor(Theme::CYAN, Theme::BG);
-        t.setTextWrap(false);
-        int lineH = t.fontHeight();
-        const int lineGap = 3;
-        int ty = by + (bh - (lineH * 2 + lineGap)) / 2;
-        int mw = t.textWidth("MORE");
-        t.setCursor(bx + (bw - mw) / 2, ty);
-        t.print("MORE");
-        int iw = t.textWidth("INFO");
-        t.setCursor(bx + (bw - iw) / 2, ty + lineH + lineGap);
-        t.print("INFO");
+        const int half=(bh-3)/2;
+        Theme::drawButtonLabel(t,bx,by,bw,half,"MORE",Theme::CYAN,Theme::BG);
+        Theme::drawButtonLabel(t,bx,by+half+3,bw,half,"INFO",Theme::CYAN,Theme::BG);
     }
 
     // HUNT -- starts tracking this exact device straight from the alert,
@@ -719,12 +711,7 @@ void uiAlertTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng,
         huntBtnRect(w, h, bx, by, bw, bh);
         t.fillRect(bx, by, bw, bh, Theme::BG);
         t.drawRect(bx, by, bw, bh, Theme::PURPLE);
-        t.setTextSize(2);
-        t.setTextColor(Theme::AMBER, Theme::BG);
-        t.setTextWrap(false);
-        int hw = t.textWidth("HUNT");
-        t.setCursor(bx + (bw - hw) / 2, by + (bh - t.fontHeight()) / 2);
-        t.print("HUNT");
+        Theme::drawButtonLabel(t,bx,by,bw,bh,"HUNT",Theme::AMBER,Theme::BG);
     }
     // While cycling a snooze duration, WATCH becomes the two-line
     // hint used by the previously tested on-card interaction.
@@ -733,15 +720,11 @@ void uiAlertTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng,
         watchBtnRect(w, h, bx, by, bw, bh);
         if (s_snoozePrompt) {
             Theme::drawButton(t, bx, by, bw, bh, "", false);
-            t.setTextFont(1);
-            t.setTextSize(1);
-            t.setTextWrap(false);
-            t.setTextColor(Theme::CYAN, Theme::BG);
             const char* a = "TAP AGAIN";
             const char* b = "TO CHANGE";
-            const int y0 = by + (bh - 17) / 2;
-            t.setCursor(bx + (bw - t.textWidth(a)) / 2, y0); t.print(a);
-            t.setCursor(bx + (bw - t.textWidth(b)) / 2, y0 + 9); t.print(b);
+            const int half=(bh-2)/2;
+            Theme::drawButtonLabel(t,bx,by,bw,half,a,Theme::CYAN,Theme::BG);
+            Theme::drawButtonLabel(t,bx,by+half+2,bw,half,b,Theme::CYAN,Theme::BG);
         } else {
             const bool watched = eng.isWatched(s_last.mac, s_last.channel == 0);
             Theme::drawButton(t, bx, by, bw, bh,

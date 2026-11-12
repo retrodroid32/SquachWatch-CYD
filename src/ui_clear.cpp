@@ -6,6 +6,7 @@
 // Needed this early: the message helpers sit up with the visit machine,
 // above where the rest of this file pulls these in.
 #include "theme.h"
+#include "button_font_metrics.h"
 #include "settings.h"
 #include "meshtalk.h"
 #if SQUACH_MESH
@@ -1736,20 +1737,18 @@ static int16_t s_wpX = 0, s_wpY = 0, s_wpW = 0, s_wpH = 0;
 static int16_t s_hpX = 0, s_hpY = 0, s_hpW = 0, s_hpH = 0;
 
 static void drawTargetPill(TFT_eSPI& t, int x, int y, const char* txt, uint16_t accent,
-                           bool hunting,
+                           bool hunting, int maxLabelW, int bh,
                            int16_t& hitX, int16_t& hitY, int16_t& hitW, int16_t& hitH,
                            bool& hitOn) {
-    const int bh = 16;
-    const int bw = 16 + t.textWidth(txt) + 7;
+    const int textW=Theme::buttonLabelWidth(t,txt,maxLabelW+6,bh);
+    const int bw=16+textW+7;
     t.fillRoundRect(x, y, bw, bh, 4, Theme::BG);
     t.drawRoundRect(x, y, bw, bh, 4, accent);
     // Open eye for WATCH; struck-through eye for the more active HUNT state.
     t.drawCircle(x + 9, y + bh / 2, 4, accent);
     t.fillCircle(x + 9, y + bh / 2, 1, accent);
     if (hunting) t.drawFastHLine(x + 3, y + bh / 2, 12, accent);
-    t.setTextColor(accent, Theme::BG);
-    t.setCursor(x + 16, y + (bh - 8) / 2);
-    t.print(txt);
+    Theme::drawButtonLabel(t,x+16,y,textW+6,bh,txt,accent,Theme::BG);
 
     // Give a resistive-screen finger a little forgiveness without extending
     // into the counter row below. Horizontal growth stays small so the pills
@@ -1774,18 +1773,23 @@ static void drawTargetPills(TFT_eSPI& t, int screenW, int counterTextTop,
     snprintf(huntText, sizeof huntText, "HUNT %u", (unsigned)huntCount);
 
     const int edge = 6;
-    const int bh = 16;
+    const int bh=ButtonFont::barHeight(Settings::fontStep(Settings::FontKind::BUTTONS));
+    // Both pills may be visible in 240px portrait; measure each against
+    // a half-screen quota with the same font used for drawing and hit tests.
+    const int maxLabelW = watching && hunting
+        ? (screenW - edge * 2 - 6) / 2 - 23
+        : screenW - edge * 2 - 23;
     // Four clear pixels between the pill and the first counter text row.
     const int y = counterTextTop - bh - 4;
 
     if (watching) {
-        drawTargetPill(t, edge, y, watchText, Theme::CYAN, false,
+        drawTargetPill(t, edge, y, watchText, Theme::CYAN, false, maxLabelW, bh,
                        s_wpX, s_wpY, s_wpW, s_wpH, s_watchPillOn);
     }
     if (hunting) {
-        const int huntW = 16 + t.textWidth(huntText) + 7;
+        const int huntW=16+Theme::buttonLabelWidth(t,huntText,maxLabelW+6,bh)+7;
         const int x = screenW - edge - huntW;
-        drawTargetPill(t, x, y, huntText, Theme::AMBER, true,
+        drawTargetPill(t, x, y, huntText, Theme::AMBER, true, maxLabelW, bh,
                        s_hpX, s_hpY, s_hpW, s_hpH, s_huntPillOn);
     }
 }

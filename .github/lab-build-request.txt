@@ -1,14 +1,15 @@
-FONT-LIVE-RENDER-4CATEGORIES-R2
-# Stage C stacked on PR #220, which stacks on safe PR #219.
-# MENUS: visible menu row sizes/faces with measured value/label fit.
-# BUTTONS: real standard + Win95 buttons obey size/face within each box.
-# BUBBLES: Squachy's live speech obeys face/size; geometry measures same font.
-# PETS: Shaggy/Yeti speech uses selected face and measured width fallback.
-# TEXT and XP TILES remain preview-only, not falsely advertised as live.
-# R2: explicitly preserve old TEXT rendering on wide screens too.
-# Prior OTA-safe 0x1E4000 smallest slot layout retained, 8KiB image guard.
-# Lab USB installer must deliver matching current partitions (no stale-table OTA).
-# CYD 2.8 ST7789 FIRST, then CYD 3.2 ST7798; both rotate/touch/watch/hunt.
-# Validate persistent NVS, all four live categories, SD, UBX GPS, WIFI USE,
-# LOG Events, privacy, SquachMesh 2-way; serial heap/frame; no flicker.
-# This is a LAB checkpoint, not production. Do not merge/tag/release.
+FONT-ALLBUTTONS-FIVE-SIZES-UNIFIED-R7
+# R5 firmware compilation passed; full release blocked by 8192-byte OTA
+# reserve gate on cyd-ili9341. Preserve that gate and partition table.
+# R6 reduces glyph lookup code and shares real 5-step font functions across
+# all standard/Win95 buttons, WiFi/phone keyboards, alert controls,
+# System Properties tabs, WATCH/HUNT pills, Settings BACK/UP and scan footer.
+# No per-frame sprite/heap allocations and no touch-area mismatch.
+# Five heights: 8 / 11 / 14 / 18 / 22 px, with bounded shrink for tiny boxes.
+# Docs: docs/FONTS_MENU.md; do not equate requested and effective size in
+# physically constrained labels.
+# Validate firmware image size +8KiB on ALL board builds including ILI9341.
+# LAB only. Verify CYD 2.8 ST7789 and CYD 3.2 ST7798 both rotations, then
+# wifi USE, GPS UBX 115200, SD/Events, WATCH/HUNT, privacy, SquachMesh.
+# No merge, tag, production release, or branch deletion.
+# R7 fixes a stale Stage-D guard that expected legacy fontDelta in Settings.
