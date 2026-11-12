@@ -1,5 +1,6 @@
 // SquachWatch-CYD — theme implementation
 #include "theme.h"
+#include "button_font_metrics.h"
 #include "draw_band.h"
 #include "frame_prof.h"
 #include "caustic_tile.h"
@@ -696,6 +697,108 @@ void xpTileFontOff(TFT_eSPI& t) { t.setTextFont(1); t.setTextSize(1); }
 int xpTileTextH() { return s_xpTextH; }
 int xpTileAscent() { return 0; }
 
+// A compact 5x7 bitmap for uppercase action text. No dynamic sprites or
+// heap allocations: both CYDs render into their existing frame buffers.
+static const uint8_t kButtonCaps[26][5] = {
+    {0x7e,0x11,0x11,0x11,0x7e}, {0x7f,0x49,0x49,0x49,0x36},
+    {0x3e,0x41,0x41,0x41,0x22}, {0x7f,0x41,0x41,0x22,0x1c},
+    {0x7f,0x49,0x49,0x49,0x41}, {0x7f,0x09,0x09,0x09,0x01},
+    {0x3e,0x41,0x49,0x49,0x7a}, {0x7f,0x08,0x08,0x08,0x7f},
+    {0x00,0x41,0x7f,0x41,0x00}, {0x20,0x40,0x41,0x3f,0x01},
+    {0x7f,0x08,0x14,0x22,0x41}, {0x7f,0x40,0x40,0x40,0x40},
+    {0x7f,0x02,0x0c,0x02,0x7f}, {0x7f,0x04,0x08,0x10,0x7f},
+    {0x3e,0x41,0x41,0x41,0x3e}, {0x7f,0x09,0x09,0x09,0x06},
+    {0x3e,0x41,0x51,0x21,0x5e}, {0x7f,0x09,0x19,0x29,0x46},
+    {0x46,0x49,0x49,0x49,0x31}, {0x01,0x01,0x7f,0x01,0x01},
+    {0x3f,0x40,0x40,0x40,0x3f}, {0x1f,0x20,0x40,0x20,0x1f},
+    {0x3f,0x40,0x38,0x40,0x3f}, {0x63,0x14,0x08,0x14,0x63},
+    {0x07,0x08,0x70,0x08,0x07}, {0x61,0x51,0x49,0x45,0x43}
+};
+static const uint8_t kButtonDigits[10][5] = {
+    {0x3e,0x51,0x49,0x45,0x3e}, {0x00,0x42,0x7f,0x40,0x00},
+    {0x42,0x61,0x51,0x49,0x46}, {0x21,0x41,0x45,0x4b,0x31},
+    {0x18,0x14,0x12,0x7f,0x10}, {0x27,0x45,0x45,0x45,0x39},
+    {0x3c,0x4a,0x49,0x49,0x30}, {0x01,0x71,0x09,0x05,0x03},
+    {0x36,0x49,0x49,0x49,0x36}, {0x06,0x49,0x49,0x29,0x1e}
+};
+static bool buttonGlyph(char c, uint8_t out[5]) {
+    const uint8_t* glyph = nullptr;
+    if (c >= 'A' && c <= 'Z') glyph = kButtonCaps[c - 'A'];
+    else if (c >= '0' && c <= '9') glyph = kButtonDigits[c - '0'];
+    static const uint8_t space[5] = {0,0,0,0,0};
+    static const uint8_t lb[5] = {0,0x7f,0x41,0x41,0};
+    static const uint8_t rb[5] = {0,0x41,0x41,0x7f,0};
+    static const uint8_t lt[5] = {0x08,0x14,0x22,0x41,0};
+    static const uint8_t gt[5] = {0,0x41,0x22,0x14,0x08};
+    static const uint8_t dash[5] = {0x08,0x08,0x08,0x08,0x08};
+    static const uint8_t plus[5] = {0x08,0x08,0x3e,0x08,0x08};
+    static const uint8_t slash[5] = {0x20,0x10,0x08,0x04,0x02};
+    static const uint8_t colon[5] = {0,0x36,0x36,0,0};
+    static const uint8_t dot[5] = {0,0x60,0x60,0,0};
+    static const uint8_t bang[5] = {0,0,0x5f,0,0};
+    static const uint8_t question[5] = {0x02,0x01,0x51,0x09,0x06};
+    static const uint8_t star[5] = {0x14,0x08,0x3e,0x08,0x14};
+    static const uint8_t under[5] = {0x40,0x40,0x40,0x40,0x40};
+    static const uint8_t pipe[5] = {0,0,0x7f,0,0};
+    static const uint8_t equals[5] = {0x14,0x14,0x14,0x14,0x14};
+    if (!glyph) switch(c) {
+        case ' ': glyph=space; break; case '[': glyph=lb; break;
+        case ']': glyph=rb; break; case '<': glyph=lt; break;
+        case '>': glyph=gt; break; case '-': glyph=dash; break;
+        case '+': glyph=plus; break; case '/': glyph=slash; break;
+        case ':': glyph=colon; break; case '.': glyph=dot; break;
+        case '!': glyph=bang; break; case '?': glyph=question; break;
+        case '*': glyph=star; break; case '_': glyph=under; break;
+        case '|': glyph=pipe; break; case '=': glyph=equals; break;
+        default: return false;
+    }
+    for (int i=0; i<5; ++i) out[i]=glyph[i];
+    return true;
+}
+
+// Supports the five physical heights 8,11,14,18,22px and all font faces.
+// Short words are not resized according to their neighbours' length.
+// The compact bar grows as the step increases; fixed legacy buttons may
+// still clamp when the actual rectangle cannot hold the chosen height.
+static bool drawFiveStepButtonText(TFT_eSPI& t, int x, int y, int w, int h,
+                                   const char* label, uint16_t ink,
+                                   uint16_t background, uint8_t requested) {
+    if (!label || !*label) return true;
+    uint8_t probe[5];
+    for (const char* p=label; *p; ++p) {
+        // Keep mixed-case System Properties words in their original face.
+        if ((*p >= 'a' && *p <= 'z') || !buttonGlyph(*p, probe)) return false;
+    }
+    const int fit=ButtonFont::bestStep(label, w-6, h-4, requested);
+    if (fit < 0) return false;
+    const int glyphH=ButtonFont::height((uint8_t)fit);
+    const int adv=ButtonFont::advance((uint8_t)fit), glyphW=adv-1;
+    const int startX=x+(w-ButtonFont::width(label,(uint8_t)fit))/2;
+    const int startY=y+(h-glyphH)/2;
+    const bool soft=Settings::fontFace(Settings::FontKind::BUTTONS)==2;
+    const uint16_t fringe=soft?blend(ink,background,150):ink;
+    int cursorX=startX;
+    for (const char* p=label; *p; ++p,cursorX+=adv) {
+        uint8_t cols[5]; buttonGlyph(*p, cols);
+        for (int sy=0; sy<7; ++sy) {
+            const int py0=startY+sy*glyphH/7;
+            const int py1=startY+(sy+1)*glyphH/7;
+            if (py1<=py0) continue;
+            for (int sx=0; sx<5;) {
+                if (!(cols[sx] & (1u<<sy))) { ++sx; continue; }
+                const int first=sx;
+                while(sx<5 && (cols[sx] & (1u<<sy))) ++sx;
+                const int px0=cursorX+first*glyphW/5;
+                const int px1=cursorX+sx*glyphW/5;
+                if (px1<=px0) continue;
+                if(soft) t.fillRect(px0+1,py0+1,px1-px0,py1-py0,fringe);
+                t.fillRect(px0,py0,px1-px0,py1-py0,ink);
+            }
+        }
+    }
+    return true;
+}
+
 void drawButton(TFT_eSPI& t, int x, int y, int w, int h,
                 const char* label, bool pressed, uint8_t textSize) {
     uint16_t fill = pressed ? PURPLE : BG;
@@ -710,13 +813,17 @@ void drawButton(TFT_eSPI& t, int x, int y, int w, int h,
     // the smaller size if it does not fit. That makes this self-limiting for
     // every button on every screen instead of a list of exceptions.
     // A button stays in the BUTTONS family even when body TEXT is enlarged.
-    uint8_t ts = (textSize == 1 && t.width() >= 400) ? 2 : textSize;
-    selectCategoryFont(t, Settings::FontKind::BUTTONS, label, w - 6, h - 2, ts);
-    t.setTextColor(fg, fill);
-    const int tw = t.textWidth(label);
-    const int th = t.fontHeight();
-    t.setCursor(x + (w - tw) / 2, y + (h - th) / 2);
-    t.print(label);
+    const uint8_t selected=Settings::fontStep(Settings::FontKind::BUTTONS);
+    const uint8_t request=(uint8_t)(textSize > 1 && selected < 4 ? selected+1 : selected);
+    if (!drawFiveStepButtonText(t,x,y,w,h,label,fg,fill,request)) {
+        // Mixed-case and uncommon glyphs retain the legacy safe fallback.
+        const uint8_t ts = (textSize == 1 && t.width() >= 400) ? 2 : textSize;
+        selectCategoryFont(t, Settings::FontKind::BUTTONS, label, w-6, h-2, ts);
+        t.setTextColor(fg, fill);
+        const int tw=t.textWidth(label), th=t.fontHeight();
+        t.setCursor(x+(w-tw)/2,y+(h-th)/2);
+        t.print(label);
+    }
     t.setTextFont(1); t.setTextSize(1);
 }
 
@@ -756,24 +863,24 @@ void drawWin95Button(TFT_eSPI& t, int x, int y, int w, int h,
     t.setTextSize(1);
     t.setTextWrap(false);
     t.setTextColor(BLACK, W95_FACE);
-    // Same bounded font choice as the keyboard, alert and standard buttons.
-    selectCategoryFont(t, Settings::FontKind::BUTTONS, label, w - 8, h - 4, 1);
-    const int tw = t.textWidth(label);
-    const int th = t.fontHeight();
-    const int ox = sunken ? 1 : 0;
-    t.setCursor(x + 2 + (w - 4 - tw) / 2 + ox,
-                y + 2 + (h - 4 - th) / 2 + ox);
-    t.print(label);
+    const int ox=sunken?1:0;
+    if (!drawFiveStepButtonText(t,x+2+ox,y+2+ox,w-4-ox,h-4-ox,
+                                label,BLACK,W95_FACE,
+                                Settings::fontStep(Settings::FontKind::BUTTONS))) {
+        selectCategoryFont(t, Settings::FontKind::BUTTONS, label, w-8, h-4, 1);
+        const int tw=t.textWidth(label), th=t.fontHeight();
+        t.setCursor(x+2+(w-4-tw)/2+ox,y+2+(h-4-th)/2+ox);
+        t.print(label);
+    }
     t.setTextFont(1); t.setTextSize(1);
 }
 
 ButtonBarGeom computeButtonBar(int screenW, int screenH) {
     ButtonBarGeom g;
-    // Half of the original 40px (which was sized to comfortably clear
-    // ~9mm finger-touch-target guidance) — explicitly requested smaller
-    // to free up more room above for content. Still tappable, just a
-    // tighter target than the original guidance-driven size.
-    g.h = 20;
+    // The footer height and hit-test boundaries grow together with BUTTONS.
+    // Five physical glyph heights, instead of size 3-5 silently reverting
+    // to font 1x because a 20px-high box cannot hold their glyphs.
+    g.h = ButtonFont::barHeight(Settings::fontStep(Settings::FontKind::BUTTONS));
     const int margin = 8, gap = 8;
     g.y = screenH - g.h - 6;
     int bw = (screenW - 2 * margin - 2 * gap) / 3;
@@ -786,16 +893,22 @@ ButtonBarGeom computeButtonBar(int screenW, int screenH) {
 
 void drawButtonBar(TFT_eSPI& t, ButtonId highlighted, ButtonBarMode mode) {
     ButtonBarGeom g = computeButtonBar(t.width(), t.height());
+    const uint8_t step=Settings::fontStep(Settings::FontKind::BUTTONS);
+    // 240px portrait has 69px-wide slots. At the large font steps the
+    // decorative brackets alone caused SCAN/DESK to fall back while LOG
+    // grew. Switch the THREE labels as a unit, preserving full words.
+    const bool compact=ButtonFont::width("[ SCAN ]",step)>g.w[0]-6;
     if (mode == ButtonBarMode::SCAN_PICKER) {
-        drawButton(t, g.x[0], g.y, g.w[0], g.h, "[ BLE ]",  highlighted == ButtonId::SCAN);
-        drawButton(t, g.x[1], g.y, g.w[1], g.h, "[ WIFI ]", highlighted == ButtonId::LOG);
-        drawButton(t, g.x[2], g.y, g.w[2], g.h, "[ BACK ]", highlighted == ButtonId::CLR);
+        drawButton(t,g.x[0],g.y,g.w[0],g.h,compact?"BLE":"[ BLE ]",highlighted==ButtonId::SCAN);
+        drawButton(t,g.x[1],g.y,g.w[1],g.h,compact?"WIFI":"[ WIFI ]",highlighted==ButtonId::LOG);
+        drawButton(t,g.x[2],g.y,g.w[2],g.h,compact?"BACK":"[ BACK ]",highlighted==ButtonId::CLR);
         return;
     }
-    drawButton(t, g.x[0], g.y, g.w[0], g.h, "[ SCAN ]", highlighted == ButtonId::SCAN);
-    drawButton(t, g.x[1], g.y, g.w[1], g.h, "[ LOG ]",  highlighted == ButtonId::LOG);
-    drawButton(t, g.x[2], g.y, g.w[2], g.h, mode == ButtonBarMode::LOG ? "[ CLR ]" : "[ DESK ]",
-               highlighted == ButtonId::CLR);
+    drawButton(t,g.x[0],g.y,g.w[0],g.h,compact?"SCAN":"[ SCAN ]",highlighted==ButtonId::SCAN);
+    drawButton(t,g.x[1],g.y,g.w[1],g.h,compact?"LOG":"[ LOG ]",highlighted==ButtonId::LOG);
+    drawButton(t,g.x[2],g.y,g.w[2],g.h,
+               mode==ButtonBarMode::LOG?(compact?"CLR":"[ CLR ]")
+                                       :(compact?"DESK":"[ DESK ]"),highlighted==ButtonId::CLR);
 }
 
 ButtonId hitTestButtonBar(int x, int y, int screenW, int screenH) {

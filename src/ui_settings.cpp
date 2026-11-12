@@ -889,13 +889,24 @@ static void drawFontPreview(TFT_eSPI& t, int w, int y) {
     t.setCursor(9,y+4); t.print("FONT PREVIEW");
     t.setTextColor(Theme::WHITE, Theme::BG);
     t.setCursor(9,y+20); t.print(names[id]);
-    // In-page sample is intentional: never change global renderer at Stage B.
-    t.setTextFont(face == 2 ? 2 : 1);
-    t.setTextSize((face == 2 || step < 3) ? 1 : 2);
-    const char* sample = "Aa 12:34";
-    const int x = w - 10 - t.textWidth(sample);
-    if (x > 108 && t.fontHeight() < height - 8) {
-        t.setCursor(x,y+15); t.print(sample);
+    // Show the selected numeric rung even if another category has a
+    // constrained real-world rectangle. BUTTONS uses its actual renderer
+    // for all five preview heights, not the old two-level fake sample.
+    char rung[20];
+    snprintf(rung,sizeof rung,"SIZE %d/5",step+1);
+    t.setTextFont(1); t.setTextSize(1);
+    t.setTextColor(Theme::CYAN,Theme::BG);
+    t.setCursor(9,y+29); t.print(rung);
+    if (s_fontPreview == Settings::FontKind::BUTTONS) {
+        Theme::drawButton(t,w-88,y+5,76,29,"TEST",false);
+    } else {
+        t.setTextFont(face == 2 ? 2 : 1);
+        t.setTextSize((face == 2 || step < 3) ? 1 : 2);
+        const char* sample="Aa 12:34";
+        const int x=w-10-t.textWidth(sample);
+        if (x>108 && t.fontHeight()<height-8) {
+            t.setCursor(x,y+15); t.print(sample);
+        }
     }
     t.setTextFont(1); t.setTextSize(1);
 }

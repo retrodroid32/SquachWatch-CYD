@@ -1,22 +1,13 @@
-FONT-ALL6-LIVE-CUSTOM-BUTTONS-R4
-# Successor to PR #221, stacked on the OTA-safe post-#216 master ancestry.
-# MENUS/BUTTONS/BUBBLES/PETS retained, with all six real category controls.
-# TEXT sizes measured INFO modal body and DIAGNOSTICS report rows.
-# XP TILES sizes Desk SquachMesh XP-style MESSAGE card body independently.
-# Custom BUTTONS: WiFi password/QWERTY/PIN keys, payphone, alert MORE/HUNT,
-# snooze hint, and System Properties bold buttons/tabs use bounded text fit.
-# Small/long buttons still clamp to their physical rectangles rather than clip.
-# No touch geometry, framebuffer, WiFi/mesh, NVS key or partition changes.
-# Full firmware.bin <= smallest OTA slot minus 8KiB, matching LAB partitions.
-# Real CYD 2.8 ST7789 first, then 3.2 ST7798 in both rotations.
-# Serial, SD, GPS UBX 115200, WiFi USE, LOG Events and SquachMesh regressions.
-# LAB only. Do not merge, tag, ship production, or delete prior branches.
-
-# R2: bound BUTTONS independently of TEXT, fix alert source include,
-# adapt regression guard to consolidated fit helper.
-
-# R3: pinned BACK/UP strips now obey BUTTONS where safe, pixel-only for
-# ST7798 split bands; XP default 0-4 yields distinct message-card sizes.
-
-# R4: WATCH/HUNT custom target pills on CLEAR now use bounded BUTTONS font;
-# 240px portrait dual-pill quota retains nonoverlap and correct hit rectangles.
+FONT-ALL5-REAL-SIZES-UNIFIED-BUTTON-BAR-R5
+# PR 222 follow-up: SCAN LOG and DESK share five distinct physical font heights.
+# Footer grows with BUTTONS 1..5; text is 8/11/14/18/22 px.
+# At large steps in 240px portrait, strip decorative brackets as a group.
+# Preserve every action word and compute both draw and hit geometry from
+# identical dynamic ButtonBarGeom; no overlap or hidden button label.
+# Shared drawButton and Win95 labels use the same real five-step glyph
+# raster when the text fits; mixed-case/unknown labels have safe fallback.
+# In Fonts menu BUTTONS preview uses actual TEST button, shows SIZE 1..5.
+# Zero heap/sprite allocations added; preserve partition and NVS layout.
+# Verify 2.8-inch ST7789 then 3.2-inch ST7798 both orientations, all five.
+# Smoke-check touch, frame/heap, WiFi USE, SD, GPS, WATCH/HUNT, SquachMesh.
+# Draft LAB only. No merge/tag/production release without owner approval.

@@ -302,11 +302,9 @@ namespace Theme {
     void drawWin95Button(TFT_eSPI& t, int x, int y, int w, int h,
                          const char* label, bool sunken);
 
-    // Bottom [SCAN][LOG][DESK] button bar, laid out from the current
-    // screen width/height so it adapts to any rotation (landscape or
-    // portrait). Button height is a fixed finger-sized touch target,
-    // independent of screen size. Settings lives in the title bar (see
-    // settingsButtonHit above), not this bar.
+    // Bottom [SCAN][LOG][DESK] bar. Both rendering and hit tests use
+    // five-step, font-dependent height. 240px portrait can hide decorative
+    // brackets at large font steps without losing any action label.
     struct ButtonBarGeom {
         int y, h;
         int x[3], w[3];
