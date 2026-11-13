@@ -5779,10 +5779,7 @@ static void prisonStripes(TFT_eSPI& t, int cx2, int hy, float scale, uint16_t fu
     }
 }
 
-// Preserve one real Squachy drawing implementation; the GCC 8.4 IPA
-// constprop clone duplicates substantial drawing code in the final ELF.
-// This affects code generation only: poses, costumes and draw order stay exact.
-static void __attribute__((noinline, noclone)) drawBody(TFT_eSPI& t, int cx, int hy, int headTopY, uint32_t now, Mood m, float scale,
+static void drawBody(TFT_eSPI& t, int cx, int hy, int headTopY, uint32_t now, Mood m, float scale,
                      bool forceTalking = false, bool ownsBubble = true) {
     auto S = [scale](int v) { return (int)(v * scale); };
     int cx2 = cx;

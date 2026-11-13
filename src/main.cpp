@@ -3,6 +3,7 @@
 // and the DetectionEngine.
 
 #include <Arduino.h>
+#include <type_traits>
 #include "serial_flush.h"
 #include <SPI.h>
 #include <Wire.h>
@@ -3733,18 +3734,24 @@ static inline void pushFrame(int x, int y) {
 //
 // Everywhere else this is one call on the full-screen sprite, which is what
 // those boards already did, and loop()'s own push at the end still ships it.
-template <typename F>
-static inline void drawTwoBand(F&& draw) {
+// One renderer body is shared by every screen. The old F&& template
+// instantiated full CYD multi-band viewport, push timing and diagnostic
+// machinery for each capture lambda; this flash-duplicates the renderer
+// dozens of times as screens are added. Keep only the small draw thunk
+// templated. Calls are synchronous: the captured frame state remains live.
+using DrawTwoBandCallback = void (*)(void*, TFT_eSPI&, bool);
+static __attribute__((noinline, noclone)) void drawTwoBandCore(
+    DrawTwoBandCallback invoke, void* context) {
 #if defined(CYD35)
     if (frameBufferOk) {
         const int halfH = tft.height() / 2;
         DrawBand::set(0, halfH);
         frame.setViewport(0, 0, tft.width(), tft.height(), true);
-        draw((TFT_eSPI&)frame, true);
+        invoke(context, (TFT_eSPI&)frame, true);
         pushFrame(0, 0);
         DrawBand::set(halfH, tft.height());
         frame.setViewport(0, -halfH, tft.width(), tft.height(), true);
-        draw((TFT_eSPI&)frame, false);
+        invoke(context, (TFT_eSPI&)frame, false);
         pushFrame(0, halfH);
         DrawBand::all();
         frame.resetViewport();
@@ -3766,7 +3773,7 @@ static inline void drawTwoBand(F&& draw) {
             DrawBand::set(y, y + bandH);
             frame.setViewport(0, -y, tft.width(), tft.height(), true);
             const uint32_t drawStartUs = micros();
-            draw((TFT_eSPI&)frame, b == 0);
+            invoke(context, (TFT_eSPI&)frame, b == 0);
             const uint32_t drawUs = micros() - drawStartUs;
             totalDrawUs += drawUs;
             if (drawUs > slowestDrawUs) {
@@ -3802,7 +3809,19 @@ static inline void drawTwoBand(F&& draw) {
         return;
     }
 #endif
-    draw(*canvas, true);
+    invoke(context, *canvas, true);
+}
+
+template <typename F>
+static inline void drawTwoBand(F&& draw) {
+    // The thunk preserves every existing lambda's captured references
+    // without allocating or type-erasing on the heap. No callback survives
+    // this function call (including the 3.2-inch half-height sprite passes).
+    drawTwoBandCore(
+        [](void* context, TFT_eSPI& screen, bool advance) {
+            (*static_cast<typename std::remove_reference<F>::type*>(context))(screen, advance);
+        },
+        &draw);
 }
 
 static inline uint32_t emaUpdate(uint32_t avg, uint32_t sample) {
