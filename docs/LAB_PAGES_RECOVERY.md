@@ -11,14 +11,19 @@ merge feature code, create tags/releases, or rebuild firmware.
 
 ## Recovery after this change is explicitly approved and merged
 
-Open **Actions > Publish web flasher > Run workflow**. Select branch
-`master`, then provide these two fields from the failed release run:
+This PR includes the narrowly scoped
+`.github/lab-pages-recover-request.json` file containing the exact
+failed run ID and SHA. **Merging it into master triggers the recovery
+automatically** through the `push` event, *only when that request file
+changes*. GitHub Pages sees a master-context deployment, not a LAB-branch
+deployment. The recovery downloads the existing verified site artifact and
+never recompiles firmware. No further manual dispatch is required.
 
-- `source_run_id`: `43381302822`
-- `expected_sha`: `f6309859fd70ff5655c84322b54f41d5c29a4851`
-
-Click **Run workflow**. The default-branch recovery job downloads the
-already validated `pages-site` artifact from that precise run and deploys it.
+For future failures, the same publisher retains a manual recovery mode:
+open **Actions > Publish web flasher > Run workflow**, select `master`,
+provide a completed failed release run ID and its exact full SHA, then run.
+Never trigger a recovery until its original Build and release firmware
+artifact has passed all non-Pages jobs.
 
 The run's artifact retention is only three days; recovery must happen
 before GitHub expires the archive. If expired, start a new LAB release

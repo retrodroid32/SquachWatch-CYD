@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Fail-closed host regressions for protected master-context Pages recovery."""
 from copy import deepcopy
+from pathlib import Path
+import json
 from verify_lab_pages_recovery import DEPLOY_JOB, RELEASE_WORKFLOW, verify
 
 REPO = "retrodroid32/SquachWatch-CYD"
@@ -54,4 +56,14 @@ rejected(deepcopy(RUN), jobs)
 jobs = deepcopy(JOBS)
 jobs["total_count"] = 5
 rejected(deepcopy(RUN), jobs)
-print("PASS: protected LAB Pages recovery gate, no firmware rebuild, strict SHA")
+# The one-time merge request must pin precisely the failed, validated HUNT
+# source. A later change to this request must go through review again.
+root = Path(__file__).resolve().parents[1]
+request = json.loads((root / ".github/lab-pages-recover-request.json").read_text(encoding="utf-8"))
+assert request == {"source_run_id": 43381302822, "expected_sha": SHA}
+workflow = (root / ".github/workflows/publish-pages.yml").read_text(encoding="utf-8")
+assert "paths:" in workflow and "'.github/lab-pages-recover-request.json'" in workflow
+assert "github.ref == 'refs/heads/master'" in workflow
+assert "VERIFIED_LAB_SOURCE_RUN_ID" in workflow
+assert "workflow_dispatch:" in workflow and "workflow_run:" in workflow
+print("PASS: protected LAB Pages recovery gate, strict SHA, one-shot master push")
