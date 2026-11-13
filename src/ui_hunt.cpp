@@ -212,8 +212,10 @@ static void drawHuntTrend(TFT_eSPI& t, int x, int y,
         t.drawFastHLine(x, y + 4, 8, Theme::CYAN);
 }
 
-static void drawHuntList(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng) {
-    const int w = t.width(), h = t.height();
+static void drawHuntList(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng,
+                         int screenW, int screenH) {
+    const int w = screenW > 0 ? screenW : t.width();
+    const int h = screenH > 0 ? screenH : t.height();
 
     // This roster owns the whole screen. drawTitleBar() deliberately does not
     // erase its band because normal screens paint their background first.
@@ -308,8 +310,9 @@ void uiHuntListScroll(int delta) {
     s_listScroll = (uint8_t)n;
 }
 
-void uiHuntListTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng) {
-    drawHuntList(t, now, eng);
+void uiHuntListTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng,
+                    int screenW, int screenH) {
+    drawHuntList(t, now, eng, screenW, screenH);
 }
 
 // A second view of the SAME active HUNT target, not a replacement for
@@ -383,8 +386,12 @@ static void drawHuntHistory(TFT_eSPI& t, const HuntHistory::Tracker& hist,
     } else t.print("BLE");
 }
 
-void uiHuntTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool advance) {
-    int w = t.width(), h = t.height();
+void uiHuntTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng,
+                bool advance, int screenW, int screenH) {
+    // In CYD32 2-band mode t is a half-height sprite, not the panel.
+    // Layout must use full display dimensions to match physical touch.
+    const int w = screenW > 0 ? screenW : t.width();
+    const int h = screenH > 0 ? screenH : t.height();
 
     if (!s_gaugeStarted) {
         s_gaugeStarted = true;
