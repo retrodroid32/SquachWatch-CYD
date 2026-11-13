@@ -24,7 +24,7 @@ assert 'CategoryRoster::fresh(*d, now)' in clear
 assert 'CategoryRoster::countFor(type, activeCounts)' in clear
 assert 'CategoryRoster::countFor(type, bootCounts)' in clear
 assert 'eng.lifetimeTypeCount(' not in clear
-assert 'CategoryRoster::countFor' in headers
+assert 'inline uint32_t countFor(' in headers
 assert "enterCategoryLog(tappedCategory);" in main
 assert "armLogConfirmAt(gestureStartX, gestureStartY);" in main
 assert "if (uiLogCategoryHitBack(gestureStartX, gestureStartY," in main
