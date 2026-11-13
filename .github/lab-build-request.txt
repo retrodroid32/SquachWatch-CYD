@@ -1,5 +1,5 @@
-HUNT-HISTORY-THREE-FOOTER-BUTTONS-R10
-# HUNT Signal History R10: move GRAPH/GAUGE to middle footer, between BACK and STOP.
+HUNT-HISTORY-THREE-FOOTER-BUTTONS-R11
+# HUNT Signal History R11: move GRAPH/GAUGE to middle footer, between BACK and STOP.
 # All three labels rendered by Theme::drawButton with native 5-step font size.
 # Shared Theme::computeButtonBar geometry for drawing and hit tests.
 # Remove top-left tab overlapping Squachy's speech bubble.
@@ -40,3 +40,8 @@ HUNT-HISTORY-THREE-FOOTER-BUTTONS-R10
 # Compile optional HUNT transition serial trace out of 2.8 CYDs and
 # retain original full-frame geometry code, while preserving R9 CYD32 fix.
 # Full Build must PASS before this file dispatches the LAB firmware.
+
+# R11: R10 passed 11 release image-size checks, but ILI9341-fast
+# was 64 bytes short; share footer/hit geometry instead of repeating
+# inline code. Keep all three buttons, panel alignment and OTA reserve.
+# Build FIRST. LAB firmware workflow only after exact PR-head full success.
