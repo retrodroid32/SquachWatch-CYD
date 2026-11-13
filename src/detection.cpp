@@ -178,28 +178,13 @@ struct AdvFieldView {
 
 static bool advFieldAt(const std::vector<uint8_t>& payload, uint8_t type,
                        uint8_t wantedIndex, AdvFieldView& out) {
-    size_t pos = 0;
-    uint8_t seen = 0;
-    while (pos < payload.size()) {
-        const uint8_t fieldLen = payload[pos];
-        if (fieldLen == 0) {
-            pos++;
-            continue;
-        }
-        const size_t next = pos + 1u + fieldLen;
-        if (next > payload.size()) return false;
-        const uint8_t fieldType = payload[pos + 1];
-        if (fieldType == type) {
-            if (seen == wantedIndex) {
-                out.data = &payload[pos + 2];
-                out.len = (uint8_t)(fieldLen - 1);
-                return true;
-            }
-            seen++;
-        }
-        pos = next;
-    }
-    return false;
+    const uint8_t* data = nullptr;
+    size_t len = 0;
+    if (!BleAdv::nthField(payload.data(), payload.size(), type,
+                         wantedIndex, data, len)) return false;
+    out.data = data;
+    out.len = (uint8_t)len;  // AD fieldLen itself is a uint8_t
+    return true;
 }
 
 static void copyAdvName(const std::vector<uint8_t>& payload, char* dst, size_t dstSize) {
@@ -585,10 +570,15 @@ class BleScanCallbacks : public NimBLEScanCallbacks {
         // The matched row's own label, for the types that cover several
         // devices -- see where the vendor is written, below.
         const char* label = nullptr;
-        // Manufacturer data. Read the first raw AD field directly rather
-        // than asking NimBLE to copy it into a temporary std::string.
-        AdvFieldView mfg;
-        if (advFieldAt(payload, BLE_HS_ADV_TYPE_MFG_DATA, 0, mfg) && mfg.len >= 2) {
+        // A peer can advertise one manufacturer AD structure and append a
+        // second in its scan response. NimBLE assembles both into payload.
+        // Examine bounded, already-owned fields: the first VALID signature
+        // wins, preserving precedence without allocating in the callback.
+        for (uint8_t fieldIndex = 0; fieldIndex < 8; ++fieldIndex) {
+            AdvFieldView mfg;
+            if (!advFieldAt(payload, BLE_HS_ADV_TYPE_MFG_DATA,
+                            fieldIndex, mfg)) break;
+            if (mfg.len < 2) continue;
             const uint16_t mfgId = (uint16_t)mfg.data[0] | ((uint16_t)mfg.data[1] << 8);
             det.type = lookupMfgId(mfgId);
             label    = mfgIdName(mfgId);
@@ -634,6 +624,7 @@ class BleScanCallbacks : public NimBLEScanCallbacks {
                     }
                 }
             }
+            if (det.type != DetectionType::UNKNOWN) break;
         }
         // Raw-advert fallback. The block above only runs when NimBLE
         // parsed a manufacturer-data field and put Apple's company ID
