@@ -657,54 +657,6 @@ switch (Settings::background()) {
         // sun used to shine through.
         Theme::drawListRowPanel(t, w, y, rowH);
 
-        if (s_category != DetectionType::UNKNOWN) {
-            // Category view: the device name is the primary tap target.
-            // Keep the exact underlying type on line 2 (TRACKER is not
-            // automatically an AirTag, CAMERA is not automatically Ring).
-            char privateName[40], label[40];
-            const char* own = d->name[0] ? Privacy::name(d->name, privateName,
-                                                        sizeof privateName)
-                                         : vendorText(*d);
-            snprintf(label, sizeof label, "%s", own);
-            t.setTextSize(2);
-            while (label[0] && t.textWidth(label) > w - 92)
-                label[strlen(label) - 1] = 0;
-            t.setTextColor(d->active && !d->restored ? Theme::WHITE : Theme::W95_SHADOW,
-                           Theme::BG);
-            t.setCursor(8, y + 3);
-            t.print(label);
-            t.setTextSize(1);
-            const char* status = d->restored ? "SAVED" : d->active ? "LIVE" : "GONE";
-            const int statusW = t.textWidth(status);
-            t.setTextColor(d->active && !d->restored ? Theme::GREEN : Theme::AMBER,
-                           Theme::BG);
-            t.setCursor(w - statusW - 9, y + 5);
-            t.print(status);
-
-            t.setTextColor(Theme::CYAN, Theme::BG);
-            t.setCursor(8, y + detailY);
-            t.print(detectionTypeName(d->type));
-            // The RAM ring records lastSeen in millis(), including after
-            // expireStale marks it inactive. Saved flash rows have no
-            // monotonic lastSeen; never invent a time for them.
-            char signal[32];
-            if (d->restored) snprintf(signal, sizeof signal, "HISTORY");
-            else if (d->active) snprintf(signal, sizeof signal, "%d dBm", (int)d->rssi);
-            else {
-                const uint32_t sec = (uint32_t)(now - d->lastSeen) / 1000u;
-                if (sec < 60) snprintf(signal, sizeof signal, "LAST %lus",
-                                       (unsigned long)sec);
-                else snprintf(signal, sizeof signal, "LAST %lum",
-                              (unsigned long)(sec / 60u));
-            }
-            t.setTextColor(d->active && !d->restored ? Theme::GREEN : Theme::AMBER,
-                           Theme::BG);
-            t.setCursor(w - t.textWidth(signal) - 9, y + detailY);
-            t.print(signal);
-            y += rowH;
-            continue;
-        }
-
         // A row the black box kept from an earlier boot is drawn faded: it
         // is history, and it sat beside live rows looking exactly like one.
         const bool kept = d->restored;
@@ -745,13 +697,24 @@ switch (Settings::background()) {
         // RSSI — MAC above runs "XX:XX:XX:XX:XX:XX" (17 chars, 102px
         // at this font size) starting from x=8, so this column can't
         // start before ~114 without drawing on top of it.
-        t.setTextColor(kept ? dim : Theme::CYAN, Theme::BG);
+        // LOG uses the historic RSSI, but a CATEGORY page is about the
+        // device's presence RIGHT NOW. Do not call a 60-second-old engine
+        // entry LIVE: BLE freshness is 4s and Wi-Fi 6.5s (HUNT's rule).
+        const bool fresh = !kept && d->active &&
+            (int32_t)(now - d->lastSeen) <= (d->channel ? 6500 : 4000);
+        t.setTextColor(kept ? dim : (s_category != DetectionType::UNKNOWN && !fresh
+                                            ? Theme::AMBER : Theme::CYAN), Theme::BG);
         t.setCursor(116, y + detailY);
-        t.printf("%ddBm", d->rssi);
+        if (s_category != DetectionType::UNKNOWN && !fresh) {
+            const uint32_t age = kept ? 0 : (uint32_t)(now - d->lastSeen) / 1000u;
+            if (kept) t.print("SAVED");
+            else if (age < 60) t.printf("LAST %lus", (unsigned long)age);
+            else t.printf("LAST %lum", (unsigned long)(age / 60u));
+        } else t.printf("%ddBm", d->rssi);
         // Prefer the rolling ~15-second trend. While fewer than three
         // samples exist, retain the old two-point arrow so a fresh row still
         // gives immediate directional feedback.
-        if (!kept && d->active) {
+        if (!kept && d->active && (s_category == DetectionType::UNKNOWN || fresh)) {
             const int ax = 116 + t.textWidth("-100dBm") + 3, ay = y + detailY;
             const RssiTrend trend = detectionRssiTrend(*d);
             if (trend == RssiTrend::APPROACHING) {
@@ -772,10 +735,12 @@ switch (Settings::background()) {
         // evidence tag rather than pretending we know how they matched.
         const unsigned repeats = d->repeats ? (unsigned)d->repeats : (unsigned)d->hits;
         const char* ev = evidenceKindShortName(d->evidence);
-        t.setTextColor(kept ? dim : Theme::VAPOR_PURPLE, Theme::BG);
-        t.setCursor(168, y + detailY);
-        if (ev[0]) t.printf("x%u %s", repeats, ev);
-        else       t.printf("x%u", repeats);
+        if (s_category == DetectionType::UNKNOWN) {
+            t.setTextColor(kept ? dim : Theme::VAPOR_PURPLE, Theme::BG);
+            t.setCursor(168, y + detailY);
+            if (ev[0]) t.printf("x%u %s", repeats, ev);
+            else       t.printf("x%u", repeats);
+        }
 
         // Timestamp (right edge)
         // Wall-clock once somebody has set it, minutes-since-boot until
