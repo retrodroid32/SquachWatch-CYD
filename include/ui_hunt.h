@@ -13,8 +13,13 @@ void uiHuntInit(TFT_eSPI& t);
 // `advance` is false on the second of the 3.5"'s two band passes -- the
 // same frame drawn again -- so anything that steps by the call rather
 // than by the clock must sit still for it. Other boards draw once.
-void uiHuntTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool advance = true);
-void uiHuntListTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng);
+// The renderer can pass a half-height sprite on the CYD32. Always accept
+// the physical screen dimensions separately from t.width()/t.height() so
+// footer drawing and tft-based hit testing use one coordinate system.
+void uiHuntTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng,
+                bool advance = true, int screenW = 0, int screenH = 0);
+void uiHuntListTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng,
+                    int screenW = 0, int screenH = 0);
 bool uiHuntHitBack(int x, int y, int screenW, int screenH);
 // STOP ends the hunt outright (DetectionEngine::clearHunt); BACK leaves the
 // target set. main.cpp owns navigation and returns either exit to the screen
