@@ -398,12 +398,32 @@ int uiLogRowAt(TFT_eSPI& t, int x, int y, int screenW, int screenH) {
     return g_scroll + (y - bodyTop) / rowH;
 }
 
+// A single BACK control, centered in the same physical footer used by
+// all other pages. Full LOG uses its unmodified three-button bar.
+bool uiLogCategoryHitBack(int x, int y, int screenW, int screenH) {
+    if (s_category == DetectionType::UNKNOWN) return false;
+    const Theme::ButtonBarGeom bar = Theme::computeButtonBar(screenW, screenH);
+    return x >= bar.x[1] && x < bar.x[1] + bar.w[1] &&
+           y >= bar.y && y < bar.y + bar.h;
+}
+
+static void drawLogFooter(TFT_eSPI& t, int w, int h) {
+    if (s_category == DetectionType::UNKNOWN) {
+        Theme::drawButtonBar(t, ButtonId::LOG, Theme::ButtonBarMode::LOG);
+    } else {
+        const Theme::ButtonBarGeom bar = Theme::computeButtonBar(w, h);
+        Theme::drawButton(t, bar.x[1], bar.y, bar.w[1], bar.h, "BACK", false);
+    }
+}
+
 void uiLogTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, int scrollOffset,
                bool confirmPending, const char* confirmLabel,
                bool infoPending, const char* infoTypeName, const char* infoText,
-               bool confirmWatched, bool confirmHunted, bool confirmIgnored) {
-    int w = t.width();
-    int h = t.height();
+               bool confirmWatched, bool confirmHunted, bool confirmIgnored,
+               int screenW, int screenH) {
+    const int w = screenW > 0 ? screenW : t.width();
+    const int h = screenH > 0 ? screenH : t.height();
+    (void)scrollOffset;
 
     Theme::ButtonBarGeom bar = Theme::computeButtonBar(w, h);
     const int bodyTop    = 40;
@@ -429,6 +449,11 @@ void uiLogTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, int scroll
     // Only the BACKGROUND moves. Everything else on this screen still
     // begins where it did, so no content shifts.
     const int bgTop = 0;
+if (s_category != DetectionType::UNKNOWN) {
+    // A calm opaque background is faster and avoids a busy redraw behind
+    // live device rows on the 3.2-inch multi-band display.
+    t.fillRect(0, bgTop, w, bodyBottom - bgTop, Theme::BG);
+} else {
 switch (Settings::background()) {
         case Settings::Background::STARFIELD: Theme::drawStarfield(t, now, bgTop, bodyBottom); break;
         case Settings::Background::TOASTERS:   Theme::drawFlyingToasters(t, now, bgTop, bodyBottom); break;
@@ -443,15 +468,28 @@ switch (Settings::background()) {
         case Settings::Background::BLACK:      t.fillRect(0, bgTop, t.width(), bodyBottom - bgTop, Theme::BG); break;
         default:                               Theme::drawDigitalRain(t, now, bgTop, bodyBottom, true); break;
     }
+}
     Theme::restorePalette(saved);
     // Floating corner controls plus the LOG's central view selector.
     const uint16_t count = g_view == LogView::DEVICES
                          ? uiLogRowCount(eng)
                          : BlackBox::detectionsKept();
     char title[32];
-    snprintf(title, sizeof(title), ">> LOG  (%u) <<", (unsigned)count);
+    if (s_category != DetectionType::UNKNOWN)
+        snprintf(title, sizeof(title), ">> %s (%u) <<",
+                 CategoryRoster::label(s_category), (unsigned)count);
+    else
+        snprintf(title, sizeof(title), ">> LOG  (%u) <<", (unsigned)count);
     Theme::drawTitleBar(t, title);
-    drawViewTabs(t);
+    if (s_category == DetectionType::UNKNOWN) {
+        drawViewTabs(t);
+    } else {
+        t.setTextSize(1);
+        t.setTextColor(Theme::CYAN, Theme::BG);
+        const char* hint = "TAP DEVICE FOR WATCH / HUNT";
+        t.setCursor((w - t.textWidth(hint)) / 2, 26);
+        t.print(hint);
+    }
 
     if (count == 0) {
         // Make the empty state impossible to mistake for a broken screen.
@@ -459,20 +497,22 @@ switch (Settings::background()) {
         uint16_t col = Theme::blend(Theme::GREEN, Theme::CYAN, (uint16_t)(pulse * 200.0f));
         t.setTextSize(3);
         t.setTextColor(col, Theme::BG);
-        const char* msg = g_view == LogView::DEVICES ? "LOG EMPTY" : "NO EVENTS";
+        const char* msg = s_category != DetectionType::UNKNOWN ? "NO DEVICES"
+                        : g_view == LogView::DEVICES ? "LOG EMPTY" : "NO EVENTS";
         int mw = t.textWidth(msg);
         t.setCursor((w - mw) / 2, bodyTop + bodyH / 3);
         t.print(msg);
 
         t.setTextSize(1);
         t.setTextColor(Theme::CYAN, Theme::BG);
-        const char* sub = g_view == LogView::DEVICES ? "no detections yet"
+        const char* sub = s_category != DetectionType::UNKNOWN ? "no recent category entries"
+                        : g_view == LogView::DEVICES ? "no detections yet"
                                                        : "first sightings and returns appear here";
         int sw = t.textWidth(sub);
         t.setCursor((w - sw) / 2, bodyTop + bodyH / 3 + 35);
         t.print(sub);
 
-        Theme::drawButtonBar(t, ButtonId::LOG, Theme::ButtonBarMode::LOG);
+        drawLogFooter(t, w, h);
         if (infoPending)        Theme::drawInfoPanel(t, w, h, now, infoTypeName, infoText);
         else if (confirmPending) drawConfirmPanel(t, w, h, confirmLabel, confirmWatched, confirmHunted, confirmIgnored);
         return;
@@ -579,7 +619,7 @@ switch (Settings::background()) {
         }
 
         Theme::drawScrollbar(t, w - 4, bodyTop, bodyH, count, max, g_scroll);
-        Theme::drawButtonBar(t, ButtonId::LOG, Theme::ButtonBarMode::LOG);
+        drawLogFooter(t, w, h);
         if (infoPending) Theme::drawInfoPanel(t, w, h, now, infoTypeName, infoText);
         // EVENTS is intentionally view-only: historical rows do not open the
         // WATCH/HUNT/IGNORE confirm panel.
@@ -755,7 +795,7 @@ switch (Settings::background()) {
     Theme::drawScrollbar(t, w - 4, bodyTop, bodyH, count, max, g_scroll);
 
     // Bottom soft buttons
-    Theme::drawButtonBar(t, ButtonId::LOG, Theme::ButtonBarMode::LOG);
+    drawLogFooter(t, w, h);
 
     if (infoPending)        Theme::drawInfoPanel(t, w, h, now, infoTypeName, infoText);
     else if (confirmPending) drawConfirmPanel(t, w, h, confirmLabel, confirmWatched, confirmHunted, confirmIgnored);
