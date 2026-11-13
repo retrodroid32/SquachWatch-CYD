@@ -277,8 +277,8 @@ static void drawHuntList(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng,
 
         char rbuf[16];
         if (fresh) snprintf(rbuf, sizeof rbuf, "%d dBm", (int)info.rssi);
-        else if (info.seen) snprintf(rbuf, sizeof rbuf, "OUT");
-        else snprintf(rbuf, sizeof rbuf, "WAIT");
+        else if (info.seen) strcpy(rbuf, "OUT");
+        else strcpy(rbuf, "WAIT");
         const int rw = t.textWidth(rbuf);
         t.setTextColor(fresh ? Theme::CYAN : Theme::AMBER, Theme::BG);
         t.setCursor(w - rw - 24, y + 1);
@@ -291,9 +291,9 @@ static void drawHuntList(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng,
         t.print(info.kind == DetectionEngine::WatchKind::BLE ? "BLE" : "WIFI");
         if (info.seen) {
             const uint32_t age = (uint32_t)HuntSignal::ageMs(info.lastSeenMs, now) / 1000;
-            t.printf("   seen %lus ago", (unsigned long)age);
+            t.printf("   %lus ago", (unsigned long)age);
         } else {
-            t.print("   waiting for signal");
+            t.print("   waiting");
         }
     }
 
@@ -543,7 +543,10 @@ void uiHuntTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng,
     // LOG arrows even though the underlying meaning is now identical.
     char rbuf[16];
     if (rssiN > 0) snprintf(rbuf, sizeof(rbuf), "%d dBm", (int)latestRssi);
-    else           snprintf(rbuf, sizeof(rbuf), "%s", HuntSignal::absentReadout(storedRssiN > 0));
+    else {
+        strncpy(rbuf, HuntSignal::absentReadout(storedRssiN > 0), sizeof(rbuf) - 1);
+        rbuf[sizeof(rbuf) - 1] = 0;
+    }
     t.setTextSize(2);
     int rw = t.textWidth(rbuf);
     t.setTextColor(Theme::WHITE, Theme::BG);
@@ -562,13 +565,13 @@ void uiHuntTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng,
         ? classifyRssiTrend((int)signal.rssi[trendStart], (int)latestRssi, trendCount)
         : RssiTrend::UNKNOWN;
     if (cur == RssiTrend::APPROACHING) {
-        trend = "GETTING WARMER";
+        trend = "WARMER";
         trendColor = Theme::GREEN;
     } else if (cur == RssiTrend::MOVING_AWAY) {
-        trend = "GETTING COLDER";
+        trend = "COLDER";
         trendColor = Theme::RED;
     } else if (cur == RssiTrend::STEADY) {
-        trend = "HOLDING STEADY";
+        trend = "STEADY";
         trendColor = Theme::CYAN;
     }
 
