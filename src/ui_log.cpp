@@ -662,7 +662,8 @@ void uiLogTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, int scroll
             const char* who = d->name[0] ? Privacy::name(d->name, pv, sizeof pv)
                                          : vendorText(*d);
             snprintf(name, sizeof name, "%s", who);
-            while (name[0] && t.textWidth(name) > w - 85)
+            // Leave room for the widest UP+uptime marker on narrow CYD screens.
+            while (name[0] && t.textWidth(name) > w - 92)
                 name[strlen(name) - 1] = 0;
             t.print(name);
             labelEnd = 8 + t.textWidth(name);
@@ -756,7 +757,14 @@ void uiLogTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, int scroll
         // A row the black box kept from an earlier boot carries its
         // wall-clock second instead of a millis() stamp.
         if (d->restored) Clock::formatEpochStamp(d->firstSeen, ts, sizeof(ts));
-        else             Clock::formatStamp(d->firstSeen, ts, sizeof(ts));
+        else if (s_category != DetectionType::UNKNOWN && !Clock::trusted()) {
+            // With no trusted time source this is uptime AT the sighting,
+            // not an HH:MM wall clock. Never show an unlabeled 05:10 as 5:10 AM.
+            // UP+ keeps the timestamp useful without inventing local time.
+            const uint32_t sec = d->firstSeen / 1000u;
+            snprintf(ts, sizeof(ts), "UP+%lu:%02lu",
+                     (unsigned long)(sec / 60u), (unsigned long)(sec % 60u));
+        } else Clock::formatStamp(d->firstSeen, ts, sizeof(ts));
         int tw = t.textWidth(ts);
         const int tsX = w - tw - 14;
         t.setTextColor(kept ? dim : Theme::VAPOR_PINK, Theme::BG);

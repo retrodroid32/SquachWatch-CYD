@@ -72,3 +72,9 @@ for w, h in ((240, 320), (320, 240), (320, 480), (480, 320)):
         assert top > h // 3
 
 print("PASS: 2.8/3.2 category pills, rotation, touch, stale RSSI, grouped identity")
+
+# In a category roster, an untrusted clock must display a visibly boot-relative
+# sighting timestamp, never an unlabeled HH:MM that looks like wall time.
+assert 's_category != DetectionType::UNKNOWN && !Clock::trusted()' in log
+assert '"UP+%lu:%02lu"' in log
+assert 'while (name[0] && t.textWidth(name) > w - 92)' in log
