@@ -662,12 +662,26 @@ switch (Settings::background()) {
         const bool kept = d->restored;
         const uint16_t dim = Theme::W95_SHADOW;
 
-        // Type label (colored)
+        // Full LOG leads with evidence type. In a focused category, lead
+        // with the human-readable device name; retain its REAL classifier
+        // type in the detail line. A category never authenticates a name.
         t.setTextSize(2);
         t.setTextColor(kept ? dim : Theme::colorFor(d->type), Theme::BG);
         t.setCursor(8, y + topPad);
-        t.print(detectionTypeName(d->type));
-        int labelEnd = 8 + t.textWidth(detectionTypeName(d->type));
+        int labelEnd;
+        if (s_category != DetectionType::UNKNOWN) {
+            char pv[40], name[24];
+            const char* who = d->name[0] ? Privacy::name(d->name, pv, sizeof pv)
+                                         : vendorText(*d);
+            snprintf(name, sizeof name, "%s", who);
+            while (name[0] && t.textWidth(name) > w - 85)
+                name[strlen(name) - 1] = 0;
+            t.print(name);
+            labelEnd = 8 + t.textWidth(name);
+        } else {
+            t.print(detectionTypeName(d->type));
+            labelEnd = 8 + t.textWidth(detectionTypeName(d->type));
+        }
 
         // IGNORE is persistent but used to be invisible from the device list.
         // Keep the badge compact so even 240px rotations retain the identity
@@ -692,7 +706,8 @@ switch (Settings::background()) {
         char mac[24];
         Privacy::mac(mac, sizeof mac, d->mac);
         t.setCursor(8, y + detailY);
-        t.print(mac);
+        if (s_category != DetectionType::UNKNOWN) t.print(detectionTypeName(d->type));
+        else t.print(mac);
 
         // RSSI — MAC above runs "XX:XX:XX:XX:XX:XX" (17 chars, 102px
         // at this font size) starting from x=8, so this column can't
@@ -775,7 +790,7 @@ switch (Settings::background()) {
             else rightEdge = sparkX - 5;
         }
 
-        if (d->name[0] || reg) {
+        if (s_category == DetectionType::UNKNOWN && (d->name[0] || reg)) {
             const int nameMax = rightEdge - nameX;
             if (nameMax > 0) {
                 char nm[sizeof(d->name) + 16];
