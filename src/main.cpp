@@ -7281,7 +7281,7 @@ void loop() {
         }
         case AppState::HUNT: {
             drawTwoBand([&](TFT_eSPI& t, bool advance) {
-                uiHuntTick(t, now, engine, advance);
+                uiHuntTick(t, now, engine, advance, tft.width(), tft.height());
                 Theme::drawToast(t, now);
             });
 
@@ -7316,7 +7316,7 @@ void loop() {
                 hlEntryAt = transitionStart;
                 hlLastDrawAt = now;
                 drawTwoBand([&](TFT_eSPI& t, bool) {
-                    uiHuntListTick(t, now, engine);
+                    uiHuntListTick(t, now, engine, tft.width(), tft.height());
                 });
             } else {
                 renderedThisLoop = false;
