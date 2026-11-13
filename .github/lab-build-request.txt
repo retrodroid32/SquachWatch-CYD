@@ -1,14 +1,10 @@
-CATEGORY-PILLS-ROSTER-POST224-R2
-# PR #226, rebased as an ancestry-preserving merge onto approved HUNT #224.
-# Clickable CLEAR category counters; bounded 64-entry radio-fresh/stale roster;
-# device name, live dBm versus LAST age; short tap opens WATCH/HUNT actions.
-# Keep approved HUNT Graph/Gauge BACK|GRAPH|STOP; 2.8 ST7789 + 3.2 ST7798.
-# Build FIRST: all 12 board profiles, host tests, emulator; hard OTA reserve
-# >=8192 bytes in real firmware.bin for every released board, no bypass.
-# Only after full green Build may Build and release firmware create LAB images.
-# LAB only; do NOT tag, make production GitHub Release, or merge PR #226.
-# R2: publish the latest shared-render-core #226 LAB once exact-commit Build passes.
-# Prior R1 release #223 blocked correctly on failed older #226 size check.
-# Build #982 d1fbb74 passed all 12 profiles and 10 real-image OTA margins.
-# This request-file-only change triggers fresh exact-SHA CI and LAB release.
-# No production GitHub Release, version tag, master merge, or reserve change.
+CATEGORY-PILLS-CLOCK-DUALCOUNT-R3
+# LAB PR #226 — 2026-11-13; based on validated code commit edc0e5fd.
+# v1.41 clickable category roster, corrected no-trust timestamp UP+,
+# green radio-fresh active / blue unique-detection-records since boot.
+# Grouped TRACKER/CAMERA/HACKER counts match the roster's types.
+# GitHub Build #43485289268 passed all jobs on edc0e5fd.
+# Request-file-only commit triggers exact-commit PR Build then LAB build
+# and release firmware; CI gate MUST verify exact SHA before publishing.
+# Firmware 2.8 ST7789 and 3.2 ST7798; all required OTA slot guards unchanged.
+# LAB only. No production GitHub Release, v-tag, master merge, or PR merge.
