@@ -9,6 +9,13 @@
 #include <Arduino.h>
 #include <string.h>
 
+// The experimental ILI9341 80MHz variant has a particularly tight OTA
+// reserve. Disable only transition SERIAL traces for that variant; this
+// never gates sampling, HUNT state, live RSSI, graph, or on-screen status.
+#ifndef SQW_HUNT_RSSI_DEBUG
+#define SQW_HUNT_RSSI_DEBUG 1
+#endif
+
 // -100..-30 dBm covers "barely there" to "right next to it" for both
 // BLE and WiFi -- same clamp range ui_watchalert.cpp's sparkline uses,
 // so a reading means the same thing on both screens.
@@ -57,7 +64,11 @@ static const uint32_t CAUGHT_HOLD = 5000;
 static uint32_t s_caughtUntil = 0;
 static bool     s_caughtFired = false;
 static bool     s_gaugeStarted = false;
-static bool     s_prevSignalLive = false;  // transition-only serial diagnostic
+#if SQW_HUNT_RSSI_DEBUG
+static bool #if SQW_HUNT_RSSI_DEBUG
+    s_prevSignalLive = false;
+#endif  // transition-only serial diagnostic
+#endif
 
 // Alternate HUNT history view. No dynamic allocations, NVS settings or
 // radio callbacks: all observations come from the coherent snapshot below.
@@ -419,6 +430,7 @@ void uiHuntTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool adva
     if (advance) s_history.tick(huntNow, haveTarget && storedRssiN > 0,
                                live, rssiN ? signal.rssi[rssiN - 1] : -127,
                                haveTarget ? signal.lastSeenMs : 0);
+#if SQW_HUNT_RSSI_DEBUG
     if (live != s_prevSignalLive) {
         Serial.printf("[hunt-rssi] radio=%s live=%u samples=%u age=%ld ms channel=%u\n",
                       signal.kind == DetectionEngine::WatchKind::WIFI ? "WIFI" : "BLE",
@@ -427,6 +439,7 @@ void uiHuntTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool adva
                       (unsigned)signal.channel);
         s_prevSignalLive = live;
     }
+#endif
     // History is kept for the HUNT roster but must NEVER drive a live
     // needle, numeric reading, trend or CAUGHT badge after signal loss.
     if (!live) {
