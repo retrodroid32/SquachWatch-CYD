@@ -178,28 +178,13 @@ struct AdvFieldView {
 
 static bool advFieldAt(const std::vector<uint8_t>& payload, uint8_t type,
                        uint8_t wantedIndex, AdvFieldView& out) {
-    size_t pos = 0;
-    uint8_t seen = 0;
-    while (pos < payload.size()) {
-        const uint8_t fieldLen = payload[pos];
-        if (fieldLen == 0) {
-            pos++;
-            continue;
-        }
-        const size_t next = pos + 1u + fieldLen;
-        if (next > payload.size()) return false;
-        const uint8_t fieldType = payload[pos + 1];
-        if (fieldType == type) {
-            if (seen == wantedIndex) {
-                out.data = &payload[pos + 2];
-                out.len = (uint8_t)(fieldLen - 1);
-                return true;
-            }
-            seen++;
-        }
-        pos = next;
-    }
-    return false;
+    const uint8_t* data = nullptr;
+    size_t len = 0;
+    if (!BleAdv::nthField(payload.data(), payload.size(), type,
+                         wantedIndex, data, len)) return false;
+    out.data = data;
+    out.len = (uint8_t)len;  // AD fieldLen itself is a uint8_t
+    return true;
 }
 
 static void copyAdvName(const std::vector<uint8_t>& payload, char* dst, size_t dstSize) {
