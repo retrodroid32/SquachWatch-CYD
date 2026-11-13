@@ -13,7 +13,7 @@ name: Build
 
 on:
   push:
-    branches: [master]
+    branches: [master, lab/hunt-history-peak-graph-r1-20261111]
     # Documentation and release notes cannot break a build, and the tag
     # workflow covers the release path already.
     paths-ignore:
@@ -23,8 +23,8 @@ on:
   pull_request:
   workflow_dispatch: {}
 
-# A second push to master supersedes the first: there is no point finishing
-# a build for a commit that is already two behind.
+# A second push supersedes the first on the same ref. LAB request pushes
+# need an exact-SHA successful Build before any release packaging.
 concurrency:
   group: build-${{ github.ref }}
   cancel-in-progress: true

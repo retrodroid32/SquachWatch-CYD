@@ -38,8 +38,8 @@ on:
       # Pages deployment is owned by publish-pages.yml, so this build workflow
       # does not need a github-pages environment policy for lab tags.
       - "lab-*"
-  # Branch LAB runs are dispatched only after the entire PR Build succeeds.
-  # A branch push alone must never start firmware packaging or publication.
+  # A branch LAB request push starts a gated workflow. Firmware packaging
+  # is blocked until that same SHA's normal Build passes all jobs.
   workflow_dispatch:
     inputs:
       lab:
@@ -63,7 +63,9 @@ permissions:
 # first had just created. Queued instead of cancelled, so the run that got
 # there first is the one that finishes.
 concurrency:
-  group: release-${{ github.ref }}
+  # Preserve per-tag serialization; LAB request pushes use a per-SHA group
+  # so an older run awaiting a missing PR event cannot block a fixed build.
+  group: release-${{ github.ref }}-${{ github.event_name == 'push' && github.ref_type == 'branch' && github.sha || 'tag' }}
   cancel-in-progress: false
 
 jobs:
@@ -144,9 +146,8 @@ jobs:
         run: |
           make -C sim -j"$(nproc)"
           make -C sim regression
-      # Defense in depth: the upstream PR Build success job dispatched this LAB
-      # only after ALL Build jobs passed. Also validate its exact commit SHA
-      # here, failing closed on a changed branch, failed run, or stale Build.
+      # Fail-closed gate: both the manual LAB dispatch and explicit LAB push
+      # require a successful full Build for this exact commit SHA.
       - name: Wait for matching PR Build success before LAB publication
         if: ${{ (github.event_name == 'push' && github.ref_type == 'branch') || (github.event_name == 'workflow_dispatch' && inputs.lab == true && github.ref_type == 'branch' && github.ref_name != 'master') }}
         timeout-minutes: 25
@@ -159,8 +160,10 @@ jobs:
           set -euo pipefail
           # Fail closed if this branch has no PR Build for THIS commit.
           # Matching the SHA avoids accidentally accepting an older PASS.
+          BUILD_EVENT="pull_request"
+          if [ "$GITHUB_EVENT_NAME" = "push" ]; then BUILD_EVENT="push"; fi
           for attempt in $(seq 1 100); do
-            runs="$(gh api "repos/${TARGET_REPO}/actions/workflows/build.yml/runs?event=pull_request&branch=${TARGET_BRANCH}&per_page=50")"
+            runs="$(gh api "repos/${TARGET_REPO}/actions/workflows/build.yml/runs?event=${BUILD_EVENT}&branch=${TARGET_BRANCH}&per_page=50")"
             match="$(jq -c --arg sha "$TARGET_SHA"               '[.workflow_runs[] | select(.head_sha == $sha)] | sort_by(.run_number) | last // empty' <<<"$runs")"
             if [ -n "$match" ]; then
               status="$(jq -r '.status' <<<"$match")"

@@ -1,4 +1,4 @@
-HUNT-HISTORY-THREE-FOOTER-BUTTONS-R13
+HUNT-HISTORY-THREE-FOOTER-BUTTONS-R14
 # HUNT Signal History R12: move GRAPH/GAUGE to middle footer, between BACK and STOP.
 # All three labels rendered by Theme::drawButton with native 5-step font size.
 # Shared Theme::computeButtonBar geometry for drawing and hit tests.
@@ -58,3 +58,9 @@ HUNT-HISTORY-THREE-FOOTER-BUTTONS-R13
 # This request-file push triggers LAB release only after the exact-SHA PR
 # Build has passed; keep the >=8192-byte OTA safety gate and both CYD boards.
 # LAB only. No production tag, public GitHub Release, or feature merge.
+
+# R14: GitHub did not trigger the PR Build for R13's workflow-only patch.
+# Run normal Build on the explicit HUNT LAB request branch push, then require
+# that exact push Build to succeed before firmware packaging or site assembly.
+# Fix stale queued release concurrency without changing release/tag policy.
+# No HUNT feature/source code changes, no production tag, no GitHub Release.

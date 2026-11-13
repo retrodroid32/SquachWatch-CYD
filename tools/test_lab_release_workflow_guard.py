@@ -13,5 +13,9 @@ assert "deploy-lab-pages:" not in wf
 assert "environment:\n      name: github-pages" not in wf
 assert 'if: steps.ver.outputs.is_lab != \'true\'' in wf
 assert "name: pages-site" in wf
-assert req.splitlines()[0] == "HUNT-HISTORY-THREE-FOOTER-BUTTONS-R13"
+assert req.splitlines()[0] == "HUNT-HISTORY-THREE-FOOTER-BUTTONS-R14"
+build_wf = (root / ".github/workflows/build.yml").read_text(encoding="utf-8")
+assert "branches: [master, lab/hunt-history-peak-graph-r1-20261111]" in build_wf
+assert 'BUILD_EVENT="push"' in wf
+assert 'event=${BUILD_EVENT}' in wf
 print("PASS: LAB release uses Build gate and publishes artifact without a blocked Pages job")
