@@ -34,14 +34,20 @@ struct Tracker {
         started = true;
         lastPlotMs = now;
         values[head] = (live && have) ? rssi : NO_SIGNAL;
-        head = (uint8_t)((head + 1u) % CAP);
+        // CAP is not a power of two. A bounded increment avoids pulling
+        // constant-divisor modulo code into the tightly sized CYD firmware.
+        ++head;
+        if (head == CAP) head = 0;
         if (count < CAP) count++;
     }
 
     // Chronological: at(0) is the oldest point, count-1 is the newest.
     int8_t at(uint8_t i) const {
         if (i >= count) return NO_SIGNAL;
-        return values[(uint8_t)((head + CAP - count + i) % CAP)];
+        // With i < count <= CAP and head < CAP, the index is within
+        // [0, 2*CAP-2]; at most one wrap is required.
+        const uint8_t raw = (uint8_t)(head + CAP - count + i);
+        return values[raw >= CAP ? (uint8_t)(raw - CAP) : raw];
     }
 };
 } // namespace HuntHistory
