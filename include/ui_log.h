@@ -8,6 +8,11 @@ enum class LogView : uint8_t { DEVICES = 0, EVENTS = 1 };
 enum class LogViewTap : uint8_t { NONE = 0, DEVICES, EVENTS };
 
 void uiLogInit(TFT_eSPI& t);
+// The same LOG device actions back a focused category roster. A roster
+// uses the 64-entry live/recent ring; the full LOG still has flash history.
+void uiLogSetCategory(DetectionType group);
+DetectionType uiLogCategory();
+bool uiLogCategoryHitBack(int x, int y, int screenW, int screenH);
 LogView uiLogView();
 void uiLogSetView(LogView view);
 // Central two-tab selector beneath the floating corner controls.
@@ -38,7 +43,8 @@ LogViewTap uiLogHitView(int x, int y, int screenW, int screenH);
 void uiLogTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng,
                int scrollOffset, bool confirmPending, const char* confirmLabel,
                bool infoPending, const char* infoTypeName, const char* infoText,
-               bool confirmWatched, bool confirmHunted, bool confirmIgnored);
+               bool confirmWatched, bool confirmHunted, bool confirmIgnored,
+               int screenW = 0, int screenH = 0);
 void uiLogScroll(int delta);          // positive = scroll down (older)
 
 // One DEVICES row, newest first, and how many device rows there are. The first
