@@ -58,3 +58,10 @@ env.Append(BUILD_FLAGS=['-DFIRMWARE_VERSION=\\"%s\\"' % get_version()])
 # The environment name, as SQW_ENV. A Bluetooth update is signed for exactly
 # one build and the board checks the signature against its own name.
 env.Append(BUILD_FLAGS=['-DSQW_ENV=\\"%s\\"' % env["PIOENV"]])
+
+# Size-only LAB experiment for the densely packed dual-OTA classic CYDs.
+# The pinned Arduino toolchain disables C++ exceptions. These GCC switches
+# suppress optional unwind tables, not code, radio, UI or panic-handler paths.
+# Keep the real firmware.bin 8192-byte reserve check fully enforced; do not
+# port this to master without measured savings and 2.8/3.2 hardware checks.
+env.Append(CCFLAGS=["-fno-unwind-tables", "-fno-asynchronous-unwind-tables"])
