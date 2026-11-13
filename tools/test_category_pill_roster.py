@@ -22,7 +22,10 @@ assert "uiLogTick(t, now, engine, 0," in main
 assert "tft.width(), tft.height());" in main
 assert "CategoryRoster::matches(s_category, d->type)" in log
 assert "const uint32_t sec = (uint32_t)(now - d->lastSeen) / 1000u" in log
-assert 'snprintf(signal, sizeof signal, "%d dBm", (int)d->rssi)' in log
+assert 'else t.printf("%ddBm", d->rssi);' in log
+assert 'if (s_category != DetectionType::UNKNOWN && !fresh)' in log
+assert '(d->channel ? 6500 : 4000)' in log
+assert 't.printf("LAST %lus", (unsigned long)age)' in log
 assert "s_category != DetectionType::UNKNOWN" in log
 assert "if (s_category != DetectionType::UNKNOWN) return categoryReindex(eng);" in log
 assert 'Theme::drawButton(t, bar.x[1], bar.y, bar.w[1], bar.h, "BACK", false)' in log
