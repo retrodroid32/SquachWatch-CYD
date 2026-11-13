@@ -2505,14 +2505,9 @@ static const char* counterLabel(DetectionType t) {
         case DetectionType::RAVEN:       return "RAV";
         case DetectionType::ALPR:        return "ALPR";
         case DetectionType::CAMERA:      return "CAM";
-        case DetectionType::SAMSUNG_TAG: return "STAG";
-        case DetectionType::GOOGLE_TAG:  return "GTAG";
-        case DetectionType::TILE:        return "TILE";
-        case DetectionType::RING:        return "RING";
         // Four letters, like HACK: this row is packed six-across.
         case DetectionType::IBEACON:     return "BCON";
         case DetectionType::DEAUTH:      return "DEAUTH";
-        case DetectionType::EVILTWIN:    return "EVIL";
         // Four letters, not "HACKER": this row is packed six-across in
         // landscape and four-across on a 240px portrait panel. EVILTWIN
         // keeps its own label everywhere else -- it just does not get its
@@ -2560,6 +2555,9 @@ static uint16_t counterCount(const DetectionEngine& eng, DetectionType t) {
     return n;
 }
 
+// Only the 11+1 *visible* grouping labels are needed in counterLabel;
+// standalone Google/Tile/Samsung/Ring/EvilTwin entries are folded below,
+// so removing their unreachable label branches saves classic CYD flash.
 // All types in one place, chunked into rows of at most MAX_PER_ROW at
 // draw time (see uiClearTick()) instead of two hand-split arrays --
 // the old 7-and-6 split ran wide enough on a narrow 240px portrait
