@@ -1,66 +1,15 @@
-HUNT-HISTORY-THREE-FOOTER-BUTTONS-R14
-# HUNT Signal History R12: move GRAPH/GAUGE to middle footer, between BACK and STOP.
-# All three labels rendered by Theme::drawButton with native 5-step font size.
-# Shared Theme::computeButtonBar geometry for drawing and hit tests.
-# Remove top-left tab overlapping Squachy's speech bubble.
-# Preserve RSSI history, trend, signal loss, caught, target list, BACK/STOP behavior.
-# Both CYD 2.8 ST7789 and CYD 3.2 ST7798, portrait/landscape,
-# all button font sizes, BLE and Wi-Fi HUNT; LAB-only, no merge/tag.
-# R4 trims duplicate text-state and dynamic chart label formatting to
-# preserve the hard 8192-byte final OTA image reserve on every release board.
-
-# R5: branch push no longer starts release firmware. The complete PR Build
-# must pass first; a same-SHA dispatch starts release-flasher thereafter.
-# Correct emulator numeric label output; preserve hard OTA reserve check.
-
-# R6: tighten the history ring index wrap with bounded arithmetic instead
-# of integer modulo by 40; same readings/order/loss/peak, smaller flash.
-# Keep required 8192-byte OTA margin. PR Build FIRST; only dispatch
-# Build and release firmware on exact-head complete Build success.
-
-# R7: omit optional [hunt-rssi] transition serial traces ONLY from the
-# size-limited experimental cyd-ili9341-fast build. Preserve radio, HUNT
-# history, gauge, and GRAPH/GAUGE button behavior on every board.
-# Full Build + OTA image-size gate must pass BEFORE release workflow dispatch.
-
-# R8: fix malformed preprocessor guard introduced in R7; keep optional
-# debug suppression strictly scoped to cyd-ili9341-fast. Confirm full
-# emulator + tests + all firmware images pass before LAB publication.
-
-# R9: FIX 3.2 two-band half-height sprite layout mismatch. Pass physical
-# display size into HUNT renderer + list to align BACK/GRAPH/STOP with touch.
-# Test full portrait/landscape panel vs half-height sprite layouts.
-# Publish Pages directly after this LAB Build and release firmware succeeds.
-# Preserve sequence: complete PR Build and OTA guard first, then LAB firmware,
-# then validated Pages deployment. No production tag or merge.
-
-# R10: preserve 8KiB OTA gate on classic 2.8-inch variants. The R9
-# failure was 2.8 ILI9341 (176 bytes), CYD-fast (64 bytes) and
-# ILI9341-fast (112 bytes) below minimum; 12/12 compiled successfully.
-# Compile optional HUNT transition serial trace out of 2.8 CYDs and
-# retain original full-frame geometry code, while preserving R9 CYD32 fix.
-# Full Build must PASS before this file dispatches the LAB firmware.
-
-# R11: R10 passed 11 release image-size checks, but ILI9341-fast
-# was 64 bytes short; share footer/hit geometry instead of repeating
-# inline code. Keep all three buttons, panel alignment and OTA reserve.
-# Build FIRST. LAB firmware workflow only after exact PR-head full success.
-
-# R12: preserve HUNT behavior and 3-footer controls while reducing optional
-# UI strings and redundant readout formatting. R11 built all boards but
-# cyd-ili9341-fast was 64B below the hard 8,192B reserve. Full Build first,
-# only then LAB firmware and web flasher. No tag, merge, production release.
-
-# R13: FIX red Build and release firmware #219 (source firmware, CI, and
-# pages-site all passed; the extra LAB-branch github-pages environment job
-# was rejected before runner allocation). Do NOT deploy Pages from a LAB
-# branch; the separate protected master workflow owns publishing.
-# This request-file push triggers LAB release only after the exact-SHA PR
-# Build has passed; keep the >=8192-byte OTA safety gate and both CYD boards.
-# LAB only. No production tag, public GitHub Release, or feature merge.
-
-# R14: GitHub did not trigger the PR Build for R13's workflow-only patch.
-# Run normal Build on the explicit HUNT LAB request branch push, then require
-# that exact push Build to succeed before firmware packaging or site assembly.
-# Fix stale queued release concurrency without changing release/tag policy.
-# No HUNT feature/source code changes, no production tag, no GitHub Release.
+FONT-ALLBUTTONS-FIVE-SIZES-UNIFIED-R7
+# R5 firmware compilation passed; full release blocked by 8192-byte OTA
+# reserve gate on cyd-ili9341. Preserve that gate and partition table.
+# R6 reduces glyph lookup code and shares real 5-step font functions across
+# all standard/Win95 buttons, WiFi/phone keyboards, alert controls,
+# System Properties tabs, WATCH/HUNT pills, Settings BACK/UP and scan footer.
+# No per-frame sprite/heap allocations and no touch-area mismatch.
+# Five heights: 8 / 11 / 14 / 18 / 22 px, with bounded shrink for tiny boxes.
+# Docs: docs/FONTS_MENU.md; do not equate requested and effective size in
+# physically constrained labels.
+# Validate firmware image size +8KiB on ALL board builds including ILI9341.
+# LAB only. Verify CYD 2.8 ST7789 and CYD 3.2 ST7798 both rotations, then
+# wifi USE, GPS UBX 115200, SD/Events, WATCH/HUNT, privacy, SquachMesh.
+# No merge, tag, production release, or branch deletion.
+# R7 fixes a stale Stage-D guard that expected legacy fontDelta in Settings.

@@ -13,7 +13,7 @@ name: Build
 
 on:
   push:
-    branches: [master, lab/hunt-history-peak-graph-r1-20261111]
+    branches: [master]
     # Documentation and release notes cannot break a build, and the tag
     # workflow covers the release path already.
     paths-ignore:
@@ -23,8 +23,8 @@ on:
   pull_request:
   workflow_dispatch: {}
 
-# A second push supersedes the first on the same ref. LAB request pushes
-# need an exact-SHA successful Build before any release packaging.
+# A second push to master supersedes the first: there is no point finishing
+# a build for a commit that is already two behind.
 concurrency:
   group: build-${{ github.ref }}
   cancel-in-progress: true
@@ -114,6 +114,8 @@ jobs:
           python3 tools/test_fonts_five_steps.py
           python3 tools/test_fonts_button_coverage.py
           python3 tools/test_hunt_footer_buttons.py
+      - name: Verify protected master-context LAB Pages recovery
+        run: python3 tools/test_verify_lab_pages_recovery.py
       - name: Reject oversized OTA images and mismatched LAB manifests
         run: |
           python3 tools/test_check_app_image_sizes.py
@@ -136,51 +138,3 @@ jobs:
         run: make -C sim -j"$(nproc)"
       - name: Run UI screenshot regression suite
         run: make -C sim regression
-
-  # This job runs ONLY after all PR Build jobs have succeeded.
-  # It is the sole trigger for branch LAB publication; PR pushes themselves
-  # cannot start release-flasher.yml. Never dispatch a production tag here.
-  dispatch-lab-after-build:
-    name: Dispatch LAB only after all Build checks pass
-    needs: [firmware, tests, emulator]
-    if: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login == 'retrodroid32' && (startsWith(github.head_ref, 'lab/') || startsWith(github.head_ref, 'feature/') || startsWith(github.head_ref, 'fix/') || startsWith(github.head_ref, 'integrate/')) }}
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      actions: write
-    steps:
-      - name: Check out the passing PR source
-        uses: actions/checkout@v7
-        with:
-          ref: ${{ github.event.pull_request.head.sha }}
-          fetch-depth: 0
-
-      - name: Dispatch same-SHA LAB after successful full Build
-        env:
-          GH_TOKEN: ${{ github.token }}
-          REPO: ${{ github.repository }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          PR_REF: ${{ github.event.pull_request.head.ref }}
-          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
-        run: |
-          set -euo pipefail
-          # A LAB request must be an intentional PR change, not merely an
-          # inherited file on master. Unrelated PRs must never publish LABs.
-          if ! git diff --name-only "$PR_BASE_SHA" "$PR_HEAD_SHA" -- .github/lab-build-request.txt \
-             | grep -Fxq '.github/lab-build-request.txt'; then
-            echo "::notice::No modified LAB request in PR; no publication."
-            exit 0
-          fi
-          test -s .github/lab-build-request.txt
-          label="$(head -n 1 .github/lab-build-request.txt | tr -cd 'A-Za-z0-9-' | tr 'A-Z' 'a-z' | cut -c1-40)"
-          test -n "$label" || { echo "::error::LAB label is empty"; exit 1; }
-          # Do not dispatch if a newer commit was pushed during this Build.
-          latest_sha="$(gh api "repos/$REPO/pulls/$PR_NUMBER" --jq '.head.sha')"
-          if [ "$latest_sha" != "$PR_HEAD_SHA" ]; then
-            echo "::notice::PR head changed during Build; newer run owns LAB dispatch."
-            exit 0
-          fi
-          echo "::notice::Full Build passed for $PR_HEAD_SHA. Dispatching LAB $label."
-          gh workflow run release-flasher.yml -R "$REPO" --ref "$PR_REF" \
-            -f lab=true -f label="$label"
