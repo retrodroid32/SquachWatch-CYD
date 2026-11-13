@@ -33,7 +33,7 @@ assert 'if (s_category != DetectionType::UNKNOWN && !fresh)' in log
 assert '(d.channel ? 6500 : 4000)' in headers
 assert 't.printf("LAST %lu%c", (unsigned long)(seconds ? age : age / 60u),' in log
 assert "s_category != DetectionType::UNKNOWN" in log
-assert "if (s_category != DetectionType::UNKNOWN) return categoryReindex(eng);" in log
+assert "return categoryReindex(eng, now ? now : millis());" in log
 assert 'Theme::drawButton(t, bar.x[1], bar.y, bar.w[1], bar.h, "BACK", false)' in log
 assert "actual == DetectionType::RING" in headers
 assert "actual == DetectionType::EVILTWIN" in headers
