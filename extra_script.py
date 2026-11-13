@@ -58,3 +58,15 @@ env.Append(BUILD_FLAGS=['-DFIRMWARE_VERSION=\\"%s\\"' % get_version()])
 # The environment name, as SQW_ENV. A Bluetooth update is signed for exactly
 # one build and the board checks the signature against its own name.
 env.Append(BUILD_FLAGS=['-DSQW_ENV=\\"%s\\"' % env["PIOENV"]])
+
+# Link-time size optimization benchmark (DRAFT LAB, not yet hardware validated).
+#
+# Arduino ESP32 already uses -Os; OTA images on classic CYD have less than
+# 8.2 KiB remaining. LTO can remove otherwise unobservable cross-translation-
+# unit duplication without reducing features, app partitions, or OTA reserve.
+# This experiment must pass the complete CI image-size matrix and physical
+# 2.8/3.2 BLE, Wi-Fi, GPS, SD, UI, SquachMesh and OTA smoke tests before any
+# adoption in release firmware. Keep the LTO choice centralized so every
+# supported profile is measured under precisely the same toolchain flags.
+env.Append(CCFLAGS=["-flto"], LINKFLAGS=["-flto"])
+
