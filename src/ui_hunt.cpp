@@ -13,7 +13,15 @@
 // reserve. Disable only transition SERIAL traces for that variant; this
 // never gates sampling, HUNT state, live RSSI, graph, or on-screen status.
 #ifndef SQW_HUNT_RSSI_DEBUG
+// The classic 2.8 CYD variants have less than 1 KiB of free OTA margin.
+// This optional transition trace is not part of classification, LOG,
+// watch/hunt state, or the live on-screen RSSI readout. It can be enabled
+// in a dedicated diagnostic LAB build without risking OTA publication.
+#if defined(CYD) && !defined(CYD32)
+#define SQW_HUNT_RSSI_DEBUG 0
+#else
 #define SQW_HUNT_RSSI_DEBUG 1
+#endif
 #endif
 
 // -100..-30 dBm covers "barely there" to "right next to it" for both
@@ -214,8 +222,13 @@ static void drawHuntTrend(TFT_eSPI& t, int x, int y,
 
 static void drawHuntList(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng,
                          int screenW, int screenH) {
+#if defined(CYD) && !defined(CYD32)
+    const int w = t.width(), h = t.height();
+    (void)screenW; (void)screenH;
+#else
     const int w = screenW > 0 ? screenW : t.width();
     const int h = screenH > 0 ? screenH : t.height();
+#endif
 
     // This roster owns the whole screen. drawTitleBar() deliberately does not
     // erase its band because normal screens paint their background first.
@@ -388,10 +401,16 @@ static void drawHuntHistory(TFT_eSPI& t, const HuntHistory::Tracker& hist,
 
 void uiHuntTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng,
                 bool advance, int screenW, int screenH) {
-    // In CYD32 2-band mode t is a half-height sprite, not the panel.
-    // Layout must use full display dimensions to match physical touch.
+    // Only CYD32 and banded renderers need the explicitly supplied
+    // logical panel coordinates. Classic CYD uses full-frame sprites and
+    // retains its smaller original coordinate path.
+#if defined(CYD) && !defined(CYD32)
+    const int w = t.width(), h = t.height();
+    (void)screenW; (void)screenH;
+#else
     const int w = screenW > 0 ? screenW : t.width();
     const int h = screenH > 0 ? screenH : t.height();
+#endif
 
     if (!s_gaugeStarted) {
         s_gaugeStarted = true;
