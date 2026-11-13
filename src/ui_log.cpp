@@ -7,6 +7,7 @@
 #include "settings.h"
 #include "blackbox.h"
 #include "detection.h"
+#include "category_roster.h"
 #include "log_index.h"
 #include "regulars.h"
 #include "ignore_list.h"
@@ -16,6 +17,35 @@
 
 static int g_scroll = 0;
 static LogView g_view = LogView::DEVICES;
+// Category rosters are a filtered view of the bounded 64-entry RAM log.
+// Keep the existing separate full LOG/BlackBox path unchanged.
+static DetectionType s_category = DetectionType::UNKNOWN;
+static uint8_t s_categorySlots[64] = {};
+static uint8_t s_categoryCount = 0;
+
+void uiLogSetCategory(DetectionType group) {
+    s_category = group;
+    g_view = LogView::DEVICES;
+    g_scroll = 0;
+}
+DetectionType uiLogCategory() { return s_category; }
+
+// Radio-fresh rows first, then recently seen rows, newest-first in each group.
+// A 30-second-old row must not outrank a signal actually being received.
+static uint8_t categoryReindex(const DetectionEngine& eng, uint32_t now) {
+    s_categoryCount = 0;
+    for (uint8_t pass = 0; pass < 2; ++pass) {
+        for (uint8_t i = 0; i < eng.logCount() && s_categoryCount < 64; ++i) {
+            const Detection* d = eng.logAt(i);
+            if (d && CategoryRoster::matches(s_category, d->type) &&
+                (CategoryRoster::fresh(*d, now) == (pass == 0))) {
+                s_categorySlots[s_categoryCount++] = i;
+            }
+        }
+    }
+    return s_categoryCount;
+}
+
 
 // The one flash page buffer is shared by both views. DEVICES fills it through
 // LogIndex/readDetectionsAt() (one row per device); EVENTS fills it directly
@@ -84,13 +114,17 @@ static void ensureIndex(const DetectionEngine& eng) {
     invalidatePage();
 }
 
-uint16_t uiLogRowCount(const DetectionEngine& eng) {
+uint16_t uiLogRowCount(const DetectionEngine& eng, uint32_t now) {
+    if (s_category != DetectionType::UNKNOWN)
+        return categoryReindex(eng, now ? now : millis());
     ensureIndex(eng);
     return (uint16_t)(eng.logCount() + LogIndex::count());
 }
 
 const Detection* uiLogRow(const DetectionEngine& eng, int idx) {
     if (idx < 0) return nullptr;
+    if (s_category != DetectionType::UNKNOWN)
+        return idx < (int)s_categoryCount ? eng.logAt(s_categorySlots[idx]) : nullptr;
     if (idx < (int)eng.logCount()) return eng.logAt((uint8_t)idx);
 
     const uint16_t want = (uint16_t)(idx - eng.logCount());
@@ -162,7 +196,7 @@ static const BlackBox::DetRecord* eventAt(uint16_t want) {
 LogView uiLogView() { return g_view; }
 
 void uiLogSetView(LogView view) {
-    if (view == g_view) return;
+    if (s_category != DetectionType::UNKNOWN || view == g_view) return;
     g_view = view;
     g_scroll = 0;
     invalidatePage();
@@ -186,6 +220,7 @@ static void viewTabGeom(int screenW, int& y, int& h,
 
 LogViewTap uiLogHitView(int x, int y, int screenW, int screenH) {
     (void)screenH;
+    if (s_category != DetectionType::UNKNOWN) return LogViewTap::NONE;
     int ty, th, dx, ex, bw;
     viewTabGeom(screenW, ty, th, dx, ex, bw);
     if (y < ty || y >= ty + th) return LogViewTap::NONE;
@@ -203,6 +238,8 @@ static void drawViewTabs(TFT_eSPI& t) {
 
 void uiLogInit(TFT_eSPI& t) {
     g_scroll = 0;
+    s_category = DetectionType::UNKNOWN;
+    s_categoryCount = 0;
     g_view = LogView::DEVICES;
     s_eventSig = BlackBox::detectionsKept();
     invalidatePage();
@@ -362,13 +399,32 @@ int uiLogRowAt(TFT_eSPI& t, int x, int y, int screenW, int screenH) {
     return g_scroll + (y - bodyTop) / rowH;
 }
 
+// A single BACK control, centered in the same physical footer used by
+// all other pages. Full LOG uses its unmodified three-button bar.
+bool uiLogCategoryHitBack(int x, int y, int screenW, int screenH) {
+    if (s_category == DetectionType::UNKNOWN) return false;
+    const Theme::ButtonBarGeom bar = Theme::computeButtonBar(screenW, screenH);
+    return x >= bar.x[1] && x < bar.x[1] + bar.w[1] &&
+           y >= bar.y && y < bar.y + bar.h;
+}
+
+static void drawLogFooter(TFT_eSPI& t, int w, int h) {
+    if (s_category == DetectionType::UNKNOWN) {
+        Theme::drawButtonBar(t, ButtonId::LOG, Theme::ButtonBarMode::LOG);
+    } else {
+        const Theme::ButtonBarGeom bar = Theme::computeButtonBar(w, h);
+        Theme::drawButton(t, bar.x[1], bar.y, bar.w[1], bar.h, "BACK", false);
+    }
+}
+
 void uiLogTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, int scrollOffset,
                bool confirmPending, const char* confirmLabel,
                bool infoPending, const char* infoTypeName, const char* infoText,
                bool confirmWatched, bool confirmHunted, bool confirmIgnored,
-               bool advance) {
-    int w = t.width();
-    int h = t.height();
+               int screenW, int screenH, bool advance) {
+    const int w = screenW > 0 ? screenW : t.width();
+    const int h = screenH > 0 ? screenH : t.height();
+    (void)scrollOffset;
 
     Theme::ButtonBarGeom bar = Theme::computeButtonBar(w, h);
     const int bodyTop    = 40;
@@ -394,19 +450,34 @@ void uiLogTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, int scroll
     // Only the BACKGROUND moves. Everything else on this screen still
     // begins where it did, so no content shifts.
     const int bgTop = 0;
-    // CLEAR owns the background dispatcher already. Reusing it avoids a
-    // duplicate switch in flash and advances animation only once per
-    // logical frame (the CYD32 renderer draws more than one sprite band).
-    Theme::drawActiveBackground(t, now, bgTop, bodyBottom, eng, advance);
+    if (s_category != DetectionType::UNKNOWN) {
+        // Bounded category roster gets a calm, opaque background.
+        t.fillRect(0, bgTop, w, bodyBottom - bgTop, Theme::BG);
+    } else {
+        // Reuse CLEAR's complete background dispatcher instead of keeping
+        // a duplicate switch that wastes OTA flash. Advance animation only
+        // on the logical frame's first pass on banded displays.
+        Theme::drawActiveBackground(t, now, bgTop, bodyBottom, eng, advance);
+    }
     Theme::restorePalette(saved);
     // Floating corner controls plus the LOG's central view selector.
     const uint16_t count = g_view == LogView::DEVICES
-                         ? uiLogRowCount(eng)
+                         ? uiLogRowCount(eng, now)
                          : BlackBox::detectionsKept();
     char title[32];
-    snprintf(title, sizeof(title), ">> LOG  (%u) <<", (unsigned)count);
+    const char* titleName = s_category == DetectionType::UNKNOWN
+        ? "LOG " : CategoryRoster::label(s_category);
+    snprintf(title, sizeof title, ">> %s (%u) <<", titleName, (unsigned)count);
     Theme::drawTitleBar(t, title);
-    drawViewTabs(t);
+    if (s_category == DetectionType::UNKNOWN) {
+        drawViewTabs(t);
+    } else {
+        t.setTextSize(1);
+        t.setTextColor(Theme::CYAN, Theme::BG);
+        const char* hint = "TAP DEVICE FOR WATCH / HUNT";
+        t.setCursor((w - t.textWidth(hint)) / 2, 26);
+        t.print(hint);
+    }
 
     if (count == 0) {
         // Make the empty state impossible to mistake for a broken screen.
@@ -414,20 +485,22 @@ void uiLogTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, int scroll
         uint16_t col = Theme::blend(Theme::GREEN, Theme::CYAN, (uint16_t)(pulse * 200.0f));
         t.setTextSize(3);
         t.setTextColor(col, Theme::BG);
-        const char* msg = g_view == LogView::DEVICES ? "LOG EMPTY" : "NO EVENTS";
+        const char* msg = s_category != DetectionType::UNKNOWN ? "NO DEVICES"
+                        : g_view == LogView::DEVICES ? "LOG EMPTY" : "NO EVENTS";
         int mw = t.textWidth(msg);
         t.setCursor((w - mw) / 2, bodyTop + bodyH / 3);
         t.print(msg);
 
         t.setTextSize(1);
         t.setTextColor(Theme::CYAN, Theme::BG);
-        const char* sub = g_view == LogView::DEVICES ? "no detections yet"
+        const char* sub = s_category != DetectionType::UNKNOWN ? "no recent category entries"
+                        : g_view == LogView::DEVICES ? "no detections yet"
                                                        : "first sightings and returns appear here";
         int sw = t.textWidth(sub);
         t.setCursor((w - sw) / 2, bodyTop + bodyH / 3 + 35);
         t.print(sub);
 
-        Theme::drawButtonBar(t, ButtonId::LOG, Theme::ButtonBarMode::LOG);
+        drawLogFooter(t, w, h);
         if (infoPending)        Theme::drawInfoPanel(t, w, h, now, infoTypeName, infoText);
         else if (confirmPending) drawConfirmPanel(t, w, h, confirmLabel, confirmWatched, confirmHunted, confirmIgnored);
         return;
@@ -534,7 +607,7 @@ void uiLogTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, int scroll
         }
 
         Theme::drawScrollbar(t, w - 4, bodyTop, bodyH, count, max, g_scroll);
-        Theme::drawButtonBar(t, ButtonId::LOG, Theme::ButtonBarMode::LOG);
+        drawLogFooter(t, w, h);
         if (infoPending) Theme::drawInfoPanel(t, w, h, now, infoTypeName, infoText);
         // EVENTS is intentionally view-only: historical rows do not open the
         // WATCH/HUNT/IGNORE confirm panel.
@@ -577,12 +650,27 @@ void uiLogTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, int scroll
         const bool kept = d->restored;
         const uint16_t dim = Theme::W95_SHADOW;
 
-        // Type label (colored)
+        // Full LOG leads with evidence type. In a focused category, lead
+        // with the human-readable device name; retain its REAL classifier
+        // type in the detail line. A category never authenticates a name.
         t.setTextSize(2);
         t.setTextColor(kept ? dim : Theme::colorFor(d->type), Theme::BG);
         t.setCursor(8, y + topPad);
-        t.print(detectionTypeName(d->type));
-        int labelEnd = 8 + t.textWidth(detectionTypeName(d->type));
+        int labelEnd;
+        if (s_category != DetectionType::UNKNOWN) {
+            char pv[40], name[24];
+            const char* who = d->name[0] ? Privacy::name(d->name, pv, sizeof pv)
+                                         : vendorText(*d);
+            snprintf(name, sizeof name, "%s", who);
+            // Leave room for the widest UP+uptime marker on narrow CYD screens.
+            while (name[0] && t.textWidth(name) > w - 92)
+                name[strlen(name) - 1] = 0;
+            t.print(name);
+            labelEnd = 8 + t.textWidth(name);
+        } else {
+            t.print(detectionTypeName(d->type));
+            labelEnd = 8 + t.textWidth(detectionTypeName(d->type));
+        }
 
         // IGNORE is persistent but used to be invisible from the device list.
         // Keep the badge compact so even 240px rotations retain the identity
@@ -607,18 +695,32 @@ void uiLogTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, int scroll
         char mac[24];
         Privacy::mac(mac, sizeof mac, d->mac);
         t.setCursor(8, y + detailY);
-        t.print(mac);
+        if (s_category != DetectionType::UNKNOWN) t.print(detectionTypeName(d->type));
+        else t.print(mac);
 
         // RSSI — MAC above runs "XX:XX:XX:XX:XX:XX" (17 chars, 102px
         // at this font size) starting from x=8, so this column can't
         // start before ~114 without drawing on top of it.
-        t.setTextColor(kept ? dim : Theme::CYAN, Theme::BG);
+        // LOG uses the historic RSSI, but a CATEGORY page is about the
+        // device's presence RIGHT NOW. Do not call a 60-second-old engine
+        // entry LIVE: BLE freshness is 4s and Wi-Fi 6.5s (HUNT's rule).
+        const bool fresh = CategoryRoster::fresh(*d, now);
+        t.setTextColor(kept ? dim : (s_category != DetectionType::UNKNOWN && !fresh
+                                            ? Theme::AMBER : Theme::CYAN), Theme::BG);
         t.setCursor(116, y + detailY);
-        t.printf("%ddBm", d->rssi);
+        if (s_category != DetectionType::UNKNOWN && !fresh) {
+            const uint32_t age = kept ? 0 : (uint32_t)(now - d->lastSeen) / 1000u;
+            if (kept) t.print("SAVED");
+            else {
+                const bool seconds = age < 60u;
+                t.printf("LAST %lu%c", (unsigned long)(seconds ? age : age / 60u),
+                         seconds ? 's' : 'm');
+            }
+        } else t.printf("%ddBm", d->rssi);
         // Prefer the rolling ~15-second trend. While fewer than three
         // samples exist, retain the old two-point arrow so a fresh row still
         // gives immediate directional feedback.
-        if (!kept && d->active) {
+        if (!kept && d->active && (s_category == DetectionType::UNKNOWN || fresh)) {
             const int ax = 116 + t.textWidth("-100dBm") + 3, ay = y + detailY;
             const RssiTrend trend = detectionRssiTrend(*d);
             if (trend == RssiTrend::APPROACHING) {
@@ -639,10 +741,12 @@ void uiLogTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, int scroll
         // evidence tag rather than pretending we know how they matched.
         const unsigned repeats = d->repeats ? (unsigned)d->repeats : (unsigned)d->hits;
         const char* ev = evidenceKindShortName(d->evidence);
-        t.setTextColor(kept ? dim : Theme::VAPOR_PURPLE, Theme::BG);
-        t.setCursor(168, y + detailY);
-        if (ev[0]) t.printf("x%u %s", repeats, ev);
-        else       t.printf("x%u", repeats);
+        if (s_category == DetectionType::UNKNOWN) {
+            t.setTextColor(kept ? dim : Theme::VAPOR_PURPLE, Theme::BG);
+            t.setCursor(168, y + detailY);
+            if (ev[0]) t.printf("x%u %s", repeats, ev);
+            else       t.printf("x%u", repeats);
+        }
 
         // Timestamp (right edge)
         // Wall-clock once somebody has set it, minutes-since-boot until
@@ -653,7 +757,14 @@ void uiLogTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, int scroll
         // A row the black box kept from an earlier boot carries its
         // wall-clock second instead of a millis() stamp.
         if (d->restored) Clock::formatEpochStamp(d->firstSeen, ts, sizeof(ts));
-        else             Clock::formatStamp(d->firstSeen, ts, sizeof(ts));
+        else if (s_category != DetectionType::UNKNOWN && !Clock::trusted()) {
+            // With no trusted time source this is uptime AT the sighting,
+            // not an HH:MM wall clock. Never show an unlabeled 05:10 as 5:10 AM.
+            // UP+ keeps the timestamp useful without inventing local time.
+            const uint32_t sec = d->firstSeen / 1000u;
+            snprintf(ts, sizeof(ts), "UP+%lu:%02lu",
+                     (unsigned long)(sec / 60u), (unsigned long)(sec % 60u));
+        } else Clock::formatStamp(d->firstSeen, ts, sizeof(ts));
         int tw = t.textWidth(ts);
         const int tsX = w - tw - 14;
         t.setTextColor(kept ? dim : Theme::VAPOR_PINK, Theme::BG);
@@ -667,7 +778,8 @@ void uiLogTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, int scroll
         const char* reg = Regulars::nameFor(d->mac);
         const int nameX = labelEnd + 8;
         int rightEdge = tsX - 6;
-        bool drawSpark = !kept && d->active && d->rssiHistCount >= 3;
+        bool drawSpark = !kept && d->active && d->rssiHistCount >= 3 &&
+                         (s_category == DetectionType::UNKNOWN || fresh);
         int sparkX = 0;
         const int sparkW = 30;
         const int sparkH = 9;
@@ -677,7 +789,7 @@ void uiLogTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, int scroll
             else rightEdge = sparkX - 5;
         }
 
-        if (d->name[0] || reg) {
+        if (s_category == DetectionType::UNKNOWN && (d->name[0] || reg)) {
             const int nameMax = rightEdge - nameX;
             if (nameMax > 0) {
                 char nm[sizeof(d->name) + 16];
@@ -710,7 +822,7 @@ void uiLogTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, int scroll
     Theme::drawScrollbar(t, w - 4, bodyTop, bodyH, count, max, g_scroll);
 
     // Bottom soft buttons
-    Theme::drawButtonBar(t, ButtonId::LOG, Theme::ButtonBarMode::LOG);
+    drawLogFooter(t, w, h);
 
     if (infoPending)        Theme::drawInfoPanel(t, w, h, now, infoTypeName, infoText);
     else if (confirmPending) drawConfirmPanel(t, w, h, confirmLabel, confirmWatched, confirmHunted, confirmIgnored);

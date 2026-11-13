@@ -3,6 +3,7 @@
 // and the DetectionEngine.
 
 #include <Arduino.h>
+#include <type_traits>
 #include "serial_flush.h"
 #include <SPI.h>
 #include <Wire.h>
@@ -1487,6 +1488,34 @@ static void enterLog() {
     s_confirmPending = false;
     s_infoPending    = false;
     uiLogInit(*canvas);
+}
+
+// Category pages reuse LOG's device actions, not a second Watch/Hunt UI.
+static void enterCategoryLog(DetectionType category) {
+    enterLog();
+    uiLogSetCategory(category);
+}
+
+// Capture a real device snapshot BEFORE presenting a WATCH/HUNT/IGNORE
+// action. The live ring can change while a menu is open; the menu never
+// holds a pointer into a slot that may be overwritten.
+static bool armLogConfirmAt(int x, int y) {
+    const int row = uiLogRowAt(tft, x, y, tft.width(), tft.height());
+    const Detection* d = row >= 0 ? uiLogRow(engine, row) : nullptr;
+    if (!d) return false;
+    memcpy(s_confirmMac, d->mac, 6);
+    s_confirmIsBle = (d->channel == 0);
+    s_confirmType = d->type;
+    s_confirmDetection = *d;
+    snprintf(s_confirmVendor, sizeof s_confirmVendor, "%s", vendorText(*d));
+    memcpy(s_confirmName, d->name, sizeof s_confirmName);
+    s_confirmLabelIsName = d->name[0] != 0;
+    const char* lbl = s_confirmLabelIsName ? d->name : vendorText(*d);
+    strncpy(s_confirmLabel, lbl, sizeof(s_confirmLabel) - 1);
+    s_confirmLabel[sizeof(s_confirmLabel) - 1] = 0;
+    s_confirmPending = true;
+    s_confirmArmed = false;
+    return true;
 }
 
 static bool    s_rawScanIsBle = true;
@@ -3705,18 +3734,24 @@ static inline void pushFrame(int x, int y) {
 //
 // Everywhere else this is one call on the full-screen sprite, which is what
 // those boards already did, and loop()'s own push at the end still ships it.
-template <typename F>
-static inline void drawTwoBand(F&& draw) {
+// One renderer body is shared by every screen. The old F&& template
+// instantiated full CYD multi-band viewport, push timing and diagnostic
+// machinery for each capture lambda; this flash-duplicates the renderer
+// dozens of times as screens are added. Keep only the small draw thunk
+// templated. Calls are synchronous: the captured frame state remains live.
+using DrawTwoBandCallback = void (*)(void*, TFT_eSPI&, bool);
+static __attribute__((noinline, noclone)) void drawTwoBandCore(
+    DrawTwoBandCallback invoke, void* context) {
 #if defined(CYD35)
     if (frameBufferOk) {
         const int halfH = tft.height() / 2;
         DrawBand::set(0, halfH);
         frame.setViewport(0, 0, tft.width(), tft.height(), true);
-        draw((TFT_eSPI&)frame, true);
+        invoke(context, (TFT_eSPI&)frame, true);
         pushFrame(0, 0);
         DrawBand::set(halfH, tft.height());
         frame.setViewport(0, -halfH, tft.width(), tft.height(), true);
-        draw((TFT_eSPI&)frame, false);
+        invoke(context, (TFT_eSPI&)frame, false);
         pushFrame(0, halfH);
         DrawBand::all();
         frame.resetViewport();
@@ -3738,7 +3773,7 @@ static inline void drawTwoBand(F&& draw) {
             DrawBand::set(y, y + bandH);
             frame.setViewport(0, -y, tft.width(), tft.height(), true);
             const uint32_t drawStartUs = micros();
-            draw((TFT_eSPI&)frame, b == 0);
+            invoke(context, (TFT_eSPI&)frame, b == 0);
             const uint32_t drawUs = micros() - drawStartUs;
             totalDrawUs += drawUs;
             if (drawUs > slowestDrawUs) {
@@ -3774,7 +3809,19 @@ static inline void drawTwoBand(F&& draw) {
         return;
     }
 #endif
-    draw(*canvas, true);
+    invoke(context, *canvas, true);
+}
+
+template <typename F>
+static inline void drawTwoBand(F&& draw) {
+    // The thunk preserves every existing lambda's captured references
+    // without allocating or type-erasing on the heap. No callback survives
+    // this function call (including the 3.2-inch half-height sprite passes).
+    drawTwoBandCore(
+        [](void* context, TFT_eSPI& screen, bool advance) {
+            (*static_cast<typename std::remove_reference<F>::type*>(context))(screen, advance);
+        },
+        &draw);
 }
 
 static inline uint32_t emaUpdate(uint32_t avg, uint32_t sample) {
@@ -4475,20 +4522,20 @@ void loop() {
                     uint32_t tBand = micros();
                     DrawBand::set(0, halfH);
                     frame.setViewport(0, 0, tft.width(), tft.height(), true);
-                    uiClearTick(frame, now, engine, true, s_scanPickerOpen);
+                    uiClearTick(frame, now, engine, true, s_scanPickerOpen, tft.width(), tft.height());
                     s_bandUs[0] = micros() - tBand;
                     pushFrame(0, 0);
 
                     tBand = micros();
                     DrawBand::set(halfH, tft.height());
                     frame.setViewport(0, -halfH, tft.width(), tft.height(), true);
-                    uiClearTick(frame, now, engine, false, s_scanPickerOpen);
+                    uiClearTick(frame, now, engine, false, s_scanPickerOpen, tft.width(), tft.height());
                     s_bandUs[1] = micros() - tBand;
                     pushFrame(0, halfH);
                     DrawBand::all();
                     frame.resetViewport();
                 } else {
-                    uiClearTick(tft, now, engine, true, s_scanPickerOpen);
+                    uiClearTick(tft, now, engine, true, s_scanPickerOpen, tft.width(), tft.height());
                 }
 #else
                 if (s_recoveryBands > 1) {
@@ -4496,7 +4543,7 @@ void loop() {
                     // is pushed; drawing them later via canvas=&tft would
                     // resurrect the direct-to-panel flicker.
                     drawTwoBand([&](TFT_eSPI& t, bool advance) {
-                        uiClearTick(t, now, engine, advance, s_scanPickerOpen);
+                        uiClearTick(t, now, engine, advance, s_scanPickerOpen, tft.width(), tft.height());
                         if (uiZoneCardWanted()) uiZoneCardDraw(t, now);
                         Theme::drawToast(t, now);
 #if CROWD_BENCH
@@ -4504,7 +4551,7 @@ void loop() {
 #endif
                     });
                 } else {
-                    uiClearTick(*canvas, now, engine, true, s_scanPickerOpen);
+                    uiClearTick(*canvas, now, engine, true, s_scanPickerOpen, tft.width(), tft.height());
                 }
 #endif
                 FrameProf::lap(FrameProf::CHROME);
@@ -4615,6 +4662,7 @@ void loop() {
     if (Theme::consumePetUnlock())      Squachy::unlockPet();
 
             bool boring = Settings::boringMode();
+            DetectionType tappedCategory = DetectionType::UNKNOWN;
             ButtonId barBtn = tp.valid ? Theme::hitTestButtonBar(tp.x, tp.y, tft.width(), tft.height()) : ButtonId::NONE;
 
             // Left/right 10% slivers of the screen (excluding the button
@@ -4778,6 +4826,13 @@ void loop() {
                 sqActive  = false;
                 s_huntReturn = HuntReturn::HOME;
                 enterHuntList();
+            } else if (touchJustDown && !s_scanPickerOpen &&
+                       (now - lastTouch) > TOUCH_DEBOUNCE_MS &&
+                       (tappedCategory = uiClearCategoryHit(
+                           tp.x, tp.y, tft.width(), tft.height())) != DetectionType::UNKNOWN) {
+                lastTouch = now;
+                sqActive = false;
+                enterCategoryLog(tappedCategory);
             } else if (touchJustDown && (now - lastTouch) > TOUCH_DEBOUNCE_MS &&
                        uiClearSquadHit(tp.x, tp.y)) {
                 // The squad badge, ahead of the scene gestures for the same
@@ -5318,14 +5373,15 @@ void loop() {
                 s_infoPage == InfoPage::PRIMER ? nullptr
               : s_infoPage == InfoPage::EVIDENCE ? "EVIDENCE"
               : DetectionInfo::titleFor(s_confirmType, s_confirmVendor, privName(s_confirmName));
-            // Pass the banded renderer's advance flag to the shared
-            // background dispatcher so animations step once per frame.
+            // The shared background renderer advances only on the first
+            // logical frame pass; this also fixes double-stepping on CYD32.
             drawTwoBand([&](TFT_eSPI& t, bool advance) {
                 uiLogTick(t, now, engine, 0, s_confirmPending, confirmLabelOnScreen(),
                           s_infoPending, infoTypeName, infoText,
                           engine.isWatched(s_confirmMac, s_confirmIsBle),
                           engine.isHunted(s_confirmMac, s_confirmIsBle),
-                          IgnoreList::contains(s_confirmMac), advance);
+                          IgnoreList::contains(s_confirmMac),
+                          tft.width(), tft.height(), advance);
                 Theme::drawToast(t, now);
             });
 
@@ -5448,10 +5504,27 @@ void loop() {
                     uiLogScroll(dy > 0 ? -1 : 1);
                     lastY = tp.y;
                 }
+                // Protect tap-to-select against horizontal/slight diagonal
+                // swipes that do not pass the vertical scroll threshold.
+                if (uiLogCategory() != DetectionType::UNKNOWN &&
+                    (abs(tp.x - gestureStartX) > 16 ||
+                     abs(tp.y - gestureStartY) > 12))
+                    gestureMoved = true;
             }
             if (touchJustUp && gestureActive) {
                 if (!gestureMoved && now - gestureDownMs <= TAP_MAX_MS) {
                     lastTouch = now;
+                    if (uiLogCategory() != DetectionType::UNKNOWN) {
+                        // On the focused category page a short tap opens the
+                        // same menu previously reachable only by long press.
+                        // The BACK button is the only footer action: a stray
+                        // swipe can NEVER erase the whole detection log.
+                        if (uiLogCategoryHitBack(gestureStartX, gestureStartY,
+                                                 tft.width(), tft.height()))
+                            enterClear();
+                        else
+                            armLogConfirmAt(gestureStartX, gestureStartY);
+                    } else {
                     const LogViewTap viewTap =
                         uiLogHitView(gestureStartX, gestureStartY, tft.width(), tft.height());
                     if (viewTap == LogViewTap::DEVICES) {
@@ -5484,6 +5557,7 @@ void loop() {
                         }
                         if (b == ButtonId::LOG)  { clrArmed = false; enterClear(); }   // toggle off
                     }
+                    } // ordinary (unfiltered) LOG navigation
                 }
                 gestureActive = false;
             }
@@ -5511,26 +5585,10 @@ void loop() {
             if (uiLogView() == LogView::DEVICES && tp.valid && !rowHoldFired) {
                 int32_t hdx = tp.x - rowHoldX, hdy = tp.y - rowHoldY;
                 if ((hdx * hdx + hdy * hdy) <= ROW_MOVE_PX_SQ && (now - rowHoldStart) >= ROW_HOLD_MS) {
-                    int row = uiLogRowAt(*canvas, tp.x, tp.y, tft.width(), tft.height());
-                    // Through the LOG screen's own accessor: past the rows
-                    // held in RAM it is reading the black box, and a long
-                    // press on one of those has to reach the same device.
-                    const Detection* d = (row >= 0) ? uiLogRow(engine, row) : nullptr;
-                    if (d) {
+                    // Full LOG preserves long press; the category page also
+                    // supports a short tap. Both share one safe snapshot.
+                    if (armLogConfirmAt(tp.x, tp.y))
                         rowHoldFired = true;
-                        memcpy(s_confirmMac, d->mac, 6);
-                        s_confirmIsBle = (d->channel == 0);
-                        s_confirmType  = d->type;
-                        s_confirmDetection = *d;
-                        snprintf(s_confirmVendor, sizeof s_confirmVendor, "%s", vendorText(*d));
-                        memcpy(s_confirmName,   d->name,   sizeof s_confirmName);
-                        s_confirmLabelIsName = d->name[0] != 0;
-                        const char* lbl = s_confirmLabelIsName ? d->name : vendorText(*d);
-                        strncpy(s_confirmLabel, lbl, sizeof(s_confirmLabel) - 1);
-                        s_confirmLabel[sizeof(s_confirmLabel) - 1] = 0;
-                        s_confirmPending = true;
-                        s_confirmArmed   = false;
-                    }
                 }
             }
             break;
