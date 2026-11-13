@@ -1,5 +1,5 @@
-HUNT-HISTORY-THREE-FOOTER-BUTTONS-R8
-# HUNT Signal History R8: move GRAPH/GAUGE to middle footer, between BACK and STOP.
+HUNT-HISTORY-THREE-FOOTER-BUTTONS-R9
+# HUNT Signal History R9: move GRAPH/GAUGE to middle footer, between BACK and STOP.
 # All three labels rendered by Theme::drawButton with native 5-step font size.
 # Shared Theme::computeButtonBar geometry for drawing and hit tests.
 # Remove top-left tab overlapping Squachy's speech bubble.
@@ -26,3 +26,10 @@ HUNT-HISTORY-THREE-FOOTER-BUTTONS-R8
 # R8: fix malformed preprocessor guard introduced in R7; keep optional
 # debug suppression strictly scoped to cyd-ili9341-fast. Confirm full
 # emulator + tests + all firmware images pass before LAB publication.
+
+# R9: FIX 3.2 two-band half-height sprite layout mismatch. Pass physical
+# display size into HUNT renderer + list to align BACK/GRAPH/STOP with touch.
+# Test full portrait/landscape panel vs half-height sprite layouts.
+# Publish Pages directly after this LAB Build and release firmware succeeds.
+# Preserve sequence: complete PR Build and OTA guard first, then LAB firmware,
+# then validated Pages deployment. No production tag or merge.
