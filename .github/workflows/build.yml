@@ -66,6 +66,23 @@ jobs:
         run: |
           set -euo pipefail
           pio run $(python tools/board_matrix.py pio-args ci)
+          # LAB #226 temporary diagnostics: collect the largest linked code
+          # symbols BEFORE the unchanged mandatory real-image OTA size gate.
+          # Debug symbol reports do not alter firmware or soften failures.
+          NM="$HOME/.platformio/packages/toolchain-xtensa-esp32/bin/xtensa-esp32-elf-nm"
+          ELF=".pio/build/cyd-ili9341-fast/firmware.elf"
+          if test -x "$NM" && test -s "$ELF"; then
+            echo "::group::Largest 50 firmware symbols (linked ELF)"
+            "$NM" -S --size-sort --demangle "$ELF" | tail -n 50
+            echo "::endgroup::"
+            echo "::group::Largest 100 UI/HUNT/LOG/CLEAR symbols"
+            "$NM" -S --size-sort --demangle "$ELF" \
+              | grep -E 'uiLog|uiClear|category|Category|hunt|Hunt|Theme::|Squachy::|drawTwoBand|armLog' \
+              | tail -n 100 || true
+            echo "::endgroup::"
+          else
+            echo "::warning::Size audit nm or firmware ELF not found; OTA gate remains authoritative"
+          fi
           python3 tools/check_app_image_sizes.py $(python tools/board_matrix.py list release)
 
       # LAB firmware only: explicitly avoid production releases and tags.

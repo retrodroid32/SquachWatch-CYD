@@ -39,3 +39,18 @@
 9. Compare redraw/frame p95, max frame jitter, heap low-water, queue depth/drops and button responsiveness against the current validated master.
 
 **Merge gate:** all automated tests and both physical board checks pass; user expressly authorizes merge. Branches, tags, and production releases remain unchanged.
+
+## 2026-11-13 #226 combined HUNT #224 OTA-size audit
+
+PR #224 is merged into master. #226 merges that exact master with the bounded
+category pill/roster implementation, and now passes all native tests and
+emulator regression; all 12 firmware targets compile. [Full Build #43464731478](https://github.com/retrodroid32/SquachWatch-CYD/actions/runs/43464731478)
+**correctly failed** the immutable 8192-byte final OTA-image reserve check:
+classic cyd 6720 bytes free, ILI9341 6544, cyd-fast 6640, ILI9341-fast
+6464 (worst deficit: 1728 bytes). 3.2 ST7798 has 11888 bytes free.
+The isolated no-unwind-table experiment did not recover a single byte
+([Build #43466581574](https://github.com/retrodroid32/SquachWatch-CYD/actions/runs/43466581574)); it has been reverted.
+
+The CI size-symbol report before the size gate identifies the largest
+linked code symbols for source-level optimization. No partition changes,
+release/OTA reserve relaxation, hidden feature removal, LTO, merge, or tag.
