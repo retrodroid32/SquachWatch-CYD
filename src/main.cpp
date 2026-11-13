@@ -5485,10 +5485,27 @@ void loop() {
                     uiLogScroll(dy > 0 ? -1 : 1);
                     lastY = tp.y;
                 }
+                // Protect tap-to-select against horizontal/slight diagonal
+                // swipes that do not pass the vertical scroll threshold.
+                if (uiLogCategory() != DetectionType::UNKNOWN &&
+                    (abs(tp.x - gestureStartX) > 16 ||
+                     abs(tp.y - gestureStartY) > 12))
+                    gestureMoved = true;
             }
             if (touchJustUp && gestureActive) {
                 if (!gestureMoved && now - gestureDownMs <= TAP_MAX_MS) {
                     lastTouch = now;
+                    if (uiLogCategory() != DetectionType::UNKNOWN) {
+                        // On the focused category page a short tap opens the
+                        // same menu previously reachable only by long press.
+                        // The BACK button is the only footer action: a stray
+                        // swipe can NEVER erase the whole detection log.
+                        if (uiLogCategoryHitBack(gestureStartX, gestureStartY,
+                                                 tft.width(), tft.height()))
+                            enterClear();
+                        else
+                            armLogConfirmAt(gestureStartX, gestureStartY);
+                    } else {
                     const LogViewTap viewTap =
                         uiLogHitView(gestureStartX, gestureStartY, tft.width(), tft.height());
                     if (viewTap == LogViewTap::DEVICES) {
@@ -5521,6 +5538,7 @@ void loop() {
                         }
                         if (b == ButtonId::LOG)  { clrArmed = false; enterClear(); }   // toggle off
                     }
+                    } // ordinary (unfiltered) LOG navigation
                 }
                 gestureActive = false;
             }
@@ -5548,26 +5566,10 @@ void loop() {
             if (uiLogView() == LogView::DEVICES && tp.valid && !rowHoldFired) {
                 int32_t hdx = tp.x - rowHoldX, hdy = tp.y - rowHoldY;
                 if ((hdx * hdx + hdy * hdy) <= ROW_MOVE_PX_SQ && (now - rowHoldStart) >= ROW_HOLD_MS) {
-                    int row = uiLogRowAt(*canvas, tp.x, tp.y, tft.width(), tft.height());
-                    // Through the LOG screen's own accessor: past the rows
-                    // held in RAM it is reading the black box, and a long
-                    // press on one of those has to reach the same device.
-                    const Detection* d = (row >= 0) ? uiLogRow(engine, row) : nullptr;
-                    if (d) {
+                    // Full LOG preserves long press; the category page also
+                    // supports a short tap. Both share one safe snapshot.
+                    if (armLogConfirmAt(tp.x, tp.y))
                         rowHoldFired = true;
-                        memcpy(s_confirmMac, d->mac, 6);
-                        s_confirmIsBle = (d->channel == 0);
-                        s_confirmType  = d->type;
-                        s_confirmDetection = *d;
-                        snprintf(s_confirmVendor, sizeof s_confirmVendor, "%s", vendorText(*d));
-                        memcpy(s_confirmName,   d->name,   sizeof s_confirmName);
-                        s_confirmLabelIsName = d->name[0] != 0;
-                        const char* lbl = s_confirmLabelIsName ? d->name : vendorText(*d);
-                        strncpy(s_confirmLabel, lbl, sizeof(s_confirmLabel) - 1);
-                        s_confirmLabel[sizeof(s_confirmLabel) - 1] = 0;
-                        s_confirmPending = true;
-                        s_confirmArmed   = false;
-                    }
                 }
             }
             break;
