@@ -3369,7 +3369,11 @@ void DetectionEngine::pushLog(const Detection& d) {
         _newBleThisMinute[typeIx]++;
     }
     _lifetimeTotal++;
-    if (typeIx < (uint8_t)DetectionType::COUNT) _lifetimeByType[typeIx]++;
+    if (typeIx < (uint8_t)DetectionType::COUNT) {
+        _lifetimeByType[typeIx]++;
+        // Repeat adverts update the existing row; only pushLog counts.
+        if (_bootByType[typeIx] != 0xffffffffu) ++_bootByType[typeIx];
+    }
     // Counted here, on the Bluetooth host task, and written to flash from
     // loop() (see saveLifetime). A flash write stalls both cores for a
     // millisecond and every so often for a sector erase, and two of them

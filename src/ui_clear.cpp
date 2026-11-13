@@ -2,6 +2,7 @@
 #include "ui_clear.h"
 #include "clock.h"      // the watch's corner clock
 #include "draw_band.h"
+#include "category_roster.h"
 #include "frame_prof.h"
 // Needed this early: the message helpers sit up with the visit machine,
 // above where the rest of this file pulls these in.
@@ -2529,31 +2530,7 @@ static const char* counterLabel(DetectionType t) {
 // whereas a rogue AP is a different kind of problem and had nowhere to
 // go. It has somewhere to go now -- HACKER, below. Row stays at 12
 // columns either way, so the layout has never moved.
-static uint16_t counterCount(const DetectionEngine& eng, DetectionType t) {
-    uint16_t n = eng.countByType(t);
-    if (t == DetectionType::AIRTAG) {
-        n += eng.countByType(DetectionType::GOOGLE_TAG)
-           + eng.countByType(DetectionType::TILE)
-           + eng.countByType(DetectionType::SAMSUNG_TAG);
-    }
-    // A Ring doorbell is a camera, and on a row this tight that is the
-    // level the column needs to work at. It keeps its own type, colour,
-    // icon and name everywhere else -- the LOG still says RING -- and the
-    // column it gives up is what makes room for beacons below.
-    if (t == DetectionType::CAMERA) {
-        n += eng.countByType(DetectionType::RING);
-    }
-    // EVILTWIN folds into HACKER the same way, and for a better reason than
-    // saving a column: a rogue AP is not a category of hardware, it is a
-    // thing pentest hardware DOES. A Pineapple running PineAP karma is an
-    // evil twin -- the same box, seen by its behaviour instead of by its
-    // signature. Counting them apart would split one device across two
-    // columns and read as two problems.
-    if (t == DetectionType::HACKER) {
-        n += eng.countByType(DetectionType::EVILTWIN);
-    }
-    return n;
-}
+// All category totals share CategoryRoster::countFor().
 
 // Only the 11+1 *visible* grouping labels are needed in counterLabel;
 // standalone Google/Tile/Samsung/Ring/EvilTwin entries are folded below,
@@ -3213,6 +3190,19 @@ void uiClearTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng,
     t.setTextColor(Theme::CYAN, Theme::BG);
     t.setTextWrap(false);
 
+    // One scan of the recent RAM ring per render. A "current" device has
+    // advertised within the roster's BLE/Wi-Fi freshness window.
+    uint32_t activeCounts[(uint8_t)DetectionType::COUNT] = {};
+    uint32_t bootCounts[(uint8_t)DetectionType::COUNT] = {};
+    for (uint8_t ty = 1; ty < (uint8_t)DetectionType::COUNT; ++ty)
+        bootCounts[ty] = eng.bootTypeCount((DetectionType)ty);
+    for (uint8_t i = 0; i < eng.logCount(); ++i) {
+        const Detection* d = eng.logAt(i);
+        if (d && CategoryRoster::fresh(*d, now) &&
+            (uint8_t)d->type < (uint8_t)DetectionType::COUNT)
+            ++activeCounts[(uint8_t)d->type];
+    }
+
     // Draw distinct tappable category pills on an opaque backing. Each
     // pill's rectangle is also the touch rectangle; keep stable across
     // redraws, screen rotations and text-count changes.
@@ -3224,20 +3214,41 @@ void uiClearTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng,
             const DetectionType type = layout.types[layout.rowStart[row] + col];
             int px, py, pw, ph;
             categoryPillRect(layout, row, col, px, py, pw, ph);
-            const uint16_t count = counterCount(eng, type);
-            const uint16_t outline = count ? Theme::CYAN : Theme::PURPLE;
+            const uint32_t active = CategoryRoster::countFor(type, activeCounts);
+            const uint32_t detected = CategoryRoster::countFor(type, bootCounts);
+            const uint16_t outline = active ? Theme::GREEN :
+                                     detected ? Theme::VAPOR_BLUE : Theme::PURPLE;
             t.fillRoundRect(px, py, pw, ph, 3, Theme::BG);
             t.drawRoundRect(px, py, pw, ph, 3, outline);
             const char* label = counterLabel(type);
             t.setTextSize(1);
-            t.setTextColor(count ? Theme::WHITE : Theme::W95_SHADOW, Theme::BG);
+            t.setTextColor((active || detected) ? Theme::WHITE : Theme::W95_SHADOW, Theme::BG);
             t.setCursor(px + (pw - t.textWidth(label)) / 2, py + 2);
             t.print(label);
-            char num[8];
-            snprintf(num, sizeof num, "%u", (unsigned)count);
-            t.setTextColor(count ? Theme::GREEN : Theme::VAPOR_PURPLE, Theme::BG);
-            t.setCursor(px + (pw - t.textWidth(num)) / 2, py + 11);
-            t.print(num);
+            // Keep the compact 2.8-inch landscape pill readable as totals grow.
+            char liveText[8], totalText[8];
+            snprintf(liveText, sizeof liveText, "%lu", (unsigned long)active);
+            if (detected >= 1000000000u)
+                snprintf(totalText, sizeof totalText, "%luG", (unsigned long)(detected / 1000000000u));
+            else if (detected >= 1000000u)
+                snprintf(totalText, sizeof totalText, "%luM", (unsigned long)(detected / 1000000u));
+            else if (detected >= 10000u)
+                snprintf(totalText, sizeof totalText, "%luk", (unsigned long)(detected / 1000u));
+            else
+                snprintf(totalText, sizeof totalText, "%lu", (unsigned long)detected);
+            const int liveW = t.textWidth(liveText), slashW = t.textWidth("/");
+            int nx = px + (pw - liveW - slashW - t.textWidth(totalText)) / 2;
+            t.setTextColor(Theme::GREEN, Theme::BG);
+            t.setCursor(nx, py + 11);
+            t.print(liveText);
+            nx += liveW;
+            t.setTextColor(Theme::W95_HILITE, Theme::BG);
+            t.setCursor(nx, py + 11);
+            t.print("/");
+            nx += slashW;
+            t.setTextColor(Theme::VAPOR_BLUE, Theme::BG);
+            t.setCursor(nx, py + 11);
+            t.print(totalText);
         }
     }
 

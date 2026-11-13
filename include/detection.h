@@ -191,6 +191,11 @@ public:
     // identity and acknowledgement bookkeeping.
     const Detection* findDetection(const uint8_t* mac, DetectionType type) const;
     uint16_t countByType(DetectionType t) const { return _typeCounts[(uint8_t)t]; }
+    // New detection rows this boot, independent of lifetime NVS totals.
+    uint32_t bootTypeCount(DetectionType t) const {
+        return (uint8_t)t < (uint8_t)DetectionType::COUNT
+             ? _bootByType[(uint8_t)t] : 0u;
+    }
 
     // Lifetime total across reboots (persisted to NVS), unlike the
     // live _typeCounts above which decay when a detection goes stale.
@@ -756,6 +761,8 @@ private:
 
     // Live counters (one per DetectionType)
     uint16_t _typeCounts[(uint8_t)DetectionType::COUNT] = {0};
+    // Session-only cumulative records, not limited to the 64-row RAM ring.
+    uint32_t _bootByType[(uint8_t)DetectionType::COUNT] = {0};
 
     SdLog       _sd;
     Preferences _prefs;

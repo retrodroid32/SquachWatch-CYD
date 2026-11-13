@@ -23,6 +23,14 @@ inline bool matches(DetectionType group, DetectionType actual) {
     return group != DetectionType::UNKNOWN && group == actual;
 }
 
+// Consistent folds for active-now and detected-since-boot.
+inline uint32_t countFor(DetectionType group, const uint32_t* counts) {
+    uint32_t sum = 0;
+    for (uint8_t i = 1; i < (uint8_t)DetectionType::COUNT; ++i)
+        if (matches(group, (DetectionType)i)) sum += counts[i];
+    return sum;
+}
+
 // Do not confuse the engine's 60-second active counter with a fresh
 // observation. This same wrap-safe predicate drives roster order and labels.
 inline bool fresh(const Detection& d, uint32_t now) {

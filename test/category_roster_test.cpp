@@ -31,6 +31,23 @@ int main() {
             if (CategoryRoster::matches(c, (DetectionType)ty)) matches++;
         ck("every actual detection maps to exactly one category", matches == 1);
     }
+    suite("Green active / blue since-boot category totals");
+    uint32_t activeCounts[(uint8_t)DetectionType::COUNT] = {};
+    uint32_t bootCounts[(uint8_t)DetectionType::COUNT] = {};
+    activeCounts[(uint8_t)DetectionType::AIRTAG] = 1;
+    bootCounts[(uint8_t)DetectionType::AIRTAG] = 5;
+    bootCounts[(uint8_t)DetectionType::TILE] = 7;
+    bootCounts[(uint8_t)DetectionType::SAMSUNG_TAG] = 3;
+    ck("tracker active only live", CategoryRoster::countFor(DetectionType::AIRTAG, activeCounts) == 1);
+    ck("tracker since boot includes stale", CategoryRoster::countFor(DetectionType::AIRTAG, bootCounts) == 15);
+    ck("unrelated bucket zero", CategoryRoster::countFor(DetectionType::HACKER, bootCounts) == 0);
+    bootCounts[(uint8_t)DetectionType::RING] = 4;
+    bootCounts[(uint8_t)DetectionType::CAMERA] = 2;
+    ck("camera fold includes Ring", CategoryRoster::countFor(DetectionType::CAMERA, bootCounts) == 6);
+    bootCounts[(uint8_t)DetectionType::EVILTWIN] = 3;
+    ck("hacker includes EvilTwin", CategoryRoster::countFor(DetectionType::HACKER, bootCounts) == 3);
+    ck("unknown remains zero", CategoryRoster::countFor(DetectionType::UNKNOWN, bootCounts) == 0);
+
     suite("Radio-fresh roster order and presentation at timing edges");
     Detection d = {};
     d.active = true; d.restored = 0; d.channel = 0;

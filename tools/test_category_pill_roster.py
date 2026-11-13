@@ -14,7 +14,17 @@ assert "categoryPillRect(l, row, col, px, py, pw, ph);" in clear
 assert "screenH > 0 ? screenH : t.height()" in clear
 assert "s_clearLayout.bar.h == Theme::computeButtonBar(w, h).h" in clear
 assert 't.drawRoundRect(px, py, pw, ph, 3, outline);' in clear
-assert 't.print(num);' in clear
+assert 't.print(liveText);' in clear
+assert 't.print("/");' in clear
+assert 't.print(totalText);' in clear
+assert 'Theme::GREEN, Theme::BG' in clear
+assert 'Theme::VAPOR_BLUE, Theme::BG' in clear
+assert 'eng.bootTypeCount((DetectionType)ty)' in clear
+assert 'CategoryRoster::fresh(*d, now)' in clear
+assert 'CategoryRoster::countFor(type, activeCounts)' in clear
+assert 'CategoryRoster::countFor(type, bootCounts)' in clear
+assert 'eng.lifetimeTypeCount(' not in clear
+assert 'CategoryRoster::countFor' in headers
 assert "enterCategoryLog(tappedCategory);" in main
 assert "armLogConfirmAt(gestureStartX, gestureStartY);" in main
 assert "if (uiLogCategoryHitBack(gestureStartX, gestureStartY," in main
