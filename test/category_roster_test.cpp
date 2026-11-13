@@ -1,6 +1,7 @@
 // Category pills are presentation groups, not new detection identities.
 #include "category_roster.h"
 #include "test_util.h"
+#include <cstring>
 
 int main() {
     suite("Category roster: every underlying device retains its real type");
