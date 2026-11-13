@@ -58,4 +58,9 @@ for screenW,screenH in [(240,320),(320,240),(240,320),(320,240),(480,320),(320,4
       hits=[j for j,(a,b,c,d) in enumerate(rects)
             if a<=mx<a+c and b<=my<b+d]
       assert hits==[i],(screenW,step,i,hits)
+log=(r/"src/ui_log.cpp").read_text()
+assert "Theme::drawActiveBackground(t, now, bgTop, bodyBottom, eng, advance)" in log
+assert "switch (Settings::background())" not in log
+assert "IgnoreList::contains(s_confirmMac), advance);" in main
 print("PASS HUNT footer: shared 3-slot geometry, font 1-5 fit, no overlap at both orientations")
+print("PASS LOG background: shared dispatcher and one advance per logical frame")

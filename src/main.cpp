@@ -5318,14 +5318,14 @@ void loop() {
                 s_infoPage == InfoPage::PRIMER ? nullptr
               : s_infoPage == InfoPage::EVIDENCE ? "EVIDENCE"
               : DetectionInfo::titleFor(s_confirmType, s_confirmVendor, privName(s_confirmName));
-            // Nothing on LOG moves by the call -- the note about
-            // drawActiveBackground in ui_log.cpp is a comment, not a call.
-            drawTwoBand([&](TFT_eSPI& t, bool) {
+            // Pass the banded renderer's advance flag to the shared
+            // background dispatcher so animations step once per frame.
+            drawTwoBand([&](TFT_eSPI& t, bool advance) {
                 uiLogTick(t, now, engine, 0, s_confirmPending, confirmLabelOnScreen(),
                           s_infoPending, infoTypeName, infoText,
                           engine.isWatched(s_confirmMac, s_confirmIsBle),
                           engine.isHunted(s_confirmMac, s_confirmIsBle),
-                          IgnoreList::contains(s_confirmMac));
+                          IgnoreList::contains(s_confirmMac), advance);
                 Theme::drawToast(t, now);
             });
 
