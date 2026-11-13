@@ -7,6 +7,7 @@
 #include "settings.h"
 #include "blackbox.h"
 #include "detection.h"
+#include "category_roster.h"
 #include "log_index.h"
 #include "regulars.h"
 #include "ignore_list.h"
@@ -16,6 +17,35 @@
 
 static int g_scroll = 0;
 static LogView g_view = LogView::DEVICES;
+// Category rosters are a filtered view of the bounded 64-entry RAM log.
+// Keep the existing separate full LOG/BlackBox path unchanged.
+static DetectionType s_category = DetectionType::UNKNOWN;
+static uint8_t s_categorySlots[64] = {};
+static uint8_t s_categoryCount = 0;
+
+void uiLogSetCategory(DetectionType group) {
+    s_category = group;
+    g_view = LogView::DEVICES;
+    g_scroll = 0;
+}
+DetectionType uiLogCategory() { return s_category; }
+
+// Active rows are shown first; stale rows still appear below in newest-first
+// order. No allocations, duplicate MACs, or log mutation.
+static uint8_t categoryReindex(const DetectionEngine& eng) {
+    s_categoryCount = 0;
+    for (uint8_t pass = 0; pass < 2; ++pass) {
+        for (uint8_t i = 0; i < eng.logCount() && s_categoryCount < 64; ++i) {
+            const Detection* d = eng.logAt(i);
+            if (d && CategoryRoster::matches(s_category, d->type) &&
+                ((d->active && !d->restored) == (pass == 0))) {
+                s_categorySlots[s_categoryCount++] = i;
+            }
+        }
+    }
+    return s_categoryCount;
+}
+
 
 // The one flash page buffer is shared by both views. DEVICES fills it through
 // LogIndex/readDetectionsAt() (one row per device); EVENTS fills it directly
@@ -85,12 +115,15 @@ static void ensureIndex(const DetectionEngine& eng) {
 }
 
 uint16_t uiLogRowCount(const DetectionEngine& eng) {
+    if (s_category != DetectionType::UNKNOWN) return categoryReindex(eng);
     ensureIndex(eng);
     return (uint16_t)(eng.logCount() + LogIndex::count());
 }
 
 const Detection* uiLogRow(const DetectionEngine& eng, int idx) {
     if (idx < 0) return nullptr;
+    if (s_category != DetectionType::UNKNOWN)
+        return idx < (int)s_categoryCount ? eng.logAt(s_categorySlots[idx]) : nullptr;
     if (idx < (int)eng.logCount()) return eng.logAt((uint8_t)idx);
 
     const uint16_t want = (uint16_t)(idx - eng.logCount());
@@ -162,7 +195,7 @@ static const BlackBox::DetRecord* eventAt(uint16_t want) {
 LogView uiLogView() { return g_view; }
 
 void uiLogSetView(LogView view) {
-    if (view == g_view) return;
+    if (s_category != DetectionType::UNKNOWN || view == g_view) return;
     g_view = view;
     g_scroll = 0;
     invalidatePage();
@@ -186,6 +219,7 @@ static void viewTabGeom(int screenW, int& y, int& h,
 
 LogViewTap uiLogHitView(int x, int y, int screenW, int screenH) {
     (void)screenH;
+    if (s_category != DetectionType::UNKNOWN) return LogViewTap::NONE;
     int ty, th, dx, ex, bw;
     viewTabGeom(screenW, ty, th, dx, ex, bw);
     if (y < ty || y >= ty + th) return LogViewTap::NONE;
@@ -203,6 +237,8 @@ static void drawViewTabs(TFT_eSPI& t) {
 
 void uiLogInit(TFT_eSPI& t) {
     g_scroll = 0;
+    s_category = DetectionType::UNKNOWN;
+    s_categoryCount = 0;
     g_view = LogView::DEVICES;
     s_eventSig = BlackBox::detectionsKept();
     invalidatePage();
