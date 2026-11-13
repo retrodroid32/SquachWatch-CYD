@@ -21,6 +21,13 @@ name: Build and release firmware
 # tab). index.html's board picker swaps which manifest the install button targets.
 on:
   push:
+    # Only an explicit LAB request-file change on this test branch starts a
+    # firmware LAB run. The in-workflow CI gate blocks packaging until the
+    # exact-SHA pull_request Build is green; normal branch pushes do nothing.
+    branches:
+      - lab/hunt-history-peak-graph-r1-20261111
+    paths:
+      - .github/lab-build-request.txt
     tags:
       # v*.*.* is a real release: notes required, GitHub Release created.
       - "v*.*.*"
@@ -104,6 +111,7 @@ jobs:
           python3 tools/test_check_app_image_sizes.py
           python3 tools/test_verify_lab_site_partitions.py
           python3 tools/test_blackbox_ota_layout.py
+          python3 tools/test_lab_release_workflow_guard.py
           python3 tools/board_matrix.py validate
           python3 -m py_compile tools/mirror_pages.py
           for guard in \
@@ -821,46 +829,3 @@ jobs:
             $(find . -maxdepth 1 -name '*-firmware.sig' -printf '%f ' 2>/dev/null)
           gh release edit "${{ steps.ver.outputs.tag }}" --draft=false
 
-
-  # A LAB released through workflow_dispatch may not produce a downstream
-  # workflow_run Pages trigger (as observed for R8, where pages-site was
-  # built but Publish web flasher never ran). Deploy the exact validated
-  # artifact in this same workflow AFTER build-and-release succeeds.
-  # Production tags and releases keep the existing publish-pages.yml route.
-  deploy-lab-pages:
-    name: Publish passed LAB firmware to web flasher
-    needs: [preflight, ci-gate, build-and-release]
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.lab == true && github.ref_type == 'branch' && github.ref_name != 'master' }}
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      actions: read
-      pages: write
-      id-token: write
-    concurrency:
-      group: github-pages
-      cancel-in-progress: false
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - name: Download this successful build's exact site
-        uses: actions/download-artifact@v7
-        with:
-          name: pages-site
-          path: _site
-      - name: Verify site content before deployment
-        run: |
-          set -euo pipefail
-          test -s _site/index.html
-          test -s _site/boards.json
-          test -s _site/versions.json
-          test -s _site/update/index.html
-          test -s _site/emulator/index.html
-      - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@v5
-        with:
-          path: _site
-      - name: Deploy LAB site
-        id: deployment
-        uses: actions/deploy-pages@v5

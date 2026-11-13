@@ -1,4 +1,4 @@
-HUNT-HISTORY-THREE-FOOTER-BUTTONS-R12
+HUNT-HISTORY-THREE-FOOTER-BUTTONS-R13
 # HUNT Signal History R12: move GRAPH/GAUGE to middle footer, between BACK and STOP.
 # All three labels rendered by Theme::drawButton with native 5-step font size.
 # Shared Theme::computeButtonBar geometry for drawing and hit tests.
@@ -50,3 +50,11 @@ HUNT-HISTORY-THREE-FOOTER-BUTTONS-R12
 # UI strings and redundant readout formatting. R11 built all boards but
 # cyd-ili9341-fast was 64B below the hard 8,192B reserve. Full Build first,
 # only then LAB firmware and web flasher. No tag, merge, production release.
+
+# R13: FIX red Build and release firmware #219 (source firmware, CI, and
+# pages-site all passed; the extra LAB-branch github-pages environment job
+# was rejected before runner allocation). Do NOT deploy Pages from a LAB
+# branch; the separate protected master workflow owns publishing.
+# This request-file push triggers LAB release only after the exact-SHA PR
+# Build has passed; keep the >=8192-byte OTA safety gate and both CYD boards.
+# LAB only. No production tag, public GitHub Release, or feature merge.
