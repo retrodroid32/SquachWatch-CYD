@@ -32,7 +32,12 @@ void     uiMascotStepSet(uint32_t ms);
 uint32_t uiMascotStepMs();
 
 void uiClearTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng,
-                  bool advance = true, bool scanMenu = false);
+                  bool advance = true, bool scanMenu = false,
+                  int screenW = 0, int screenH = 0);
+
+// Every CLEAR category count is its own accessible pill. UNKNOWN means no
+// hit. A zero-count pill still opens recent history for that category.
+DetectionType uiClearCategoryHit(int x, int y, int screenW, int screenH);
 
 #if SQUACH_MESH
 // SPIKE: the peer currently visiting, or nullptr. Owned by whatever discovers
