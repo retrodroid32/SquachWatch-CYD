@@ -1,5 +1,5 @@
-HUNT-HISTORY-THREE-FOOTER-BUTTONS-R6
-# HUNT Signal History R6: move GRAPH/GAUGE to middle footer, between BACK and STOP.
+HUNT-HISTORY-THREE-FOOTER-BUTTONS-R7
+# HUNT Signal History R7: move GRAPH/GAUGE to middle footer, between BACK and STOP.
 # All three labels rendered by Theme::drawButton with native 5-step font size.
 # Shared Theme::computeButtonBar geometry for drawing and hit tests.
 # Remove top-left tab overlapping Squachy's speech bubble.
@@ -17,3 +17,8 @@ HUNT-HISTORY-THREE-FOOTER-BUTTONS-R6
 # of integer modulo by 40; same readings/order/loss/peak, smaller flash.
 # Keep required 8192-byte OTA margin. PR Build FIRST; only dispatch
 # Build and release firmware on exact-head complete Build success.
+
+# R7: omit optional [hunt-rssi] transition serial traces ONLY from the
+# size-limited experimental cyd-ili9341-fast build. Preserve radio, HUNT
+# history, gauge, and GRAPH/GAUGE button behavior on every board.
+# Full Build + OTA image-size gate must pass BEFORE release workflow dispatch.
