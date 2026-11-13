@@ -4475,20 +4475,20 @@ void loop() {
                     uint32_t tBand = micros();
                     DrawBand::set(0, halfH);
                     frame.setViewport(0, 0, tft.width(), tft.height(), true);
-                    uiClearTick(frame, now, engine, true, s_scanPickerOpen);
+                    uiClearTick(frame, now, engine, true, s_scanPickerOpen, tft.width(), tft.height());
                     s_bandUs[0] = micros() - tBand;
                     pushFrame(0, 0);
 
                     tBand = micros();
                     DrawBand::set(halfH, tft.height());
                     frame.setViewport(0, -halfH, tft.width(), tft.height(), true);
-                    uiClearTick(frame, now, engine, false, s_scanPickerOpen);
+                    uiClearTick(frame, now, engine, false, s_scanPickerOpen, tft.width(), tft.height());
                     s_bandUs[1] = micros() - tBand;
                     pushFrame(0, halfH);
                     DrawBand::all();
                     frame.resetViewport();
                 } else {
-                    uiClearTick(tft, now, engine, true, s_scanPickerOpen);
+                    uiClearTick(tft, now, engine, true, s_scanPickerOpen, tft.width(), tft.height());
                 }
 #else
                 if (s_recoveryBands > 1) {
@@ -4496,7 +4496,7 @@ void loop() {
                     // is pushed; drawing them later via canvas=&tft would
                     // resurrect the direct-to-panel flicker.
                     drawTwoBand([&](TFT_eSPI& t, bool advance) {
-                        uiClearTick(t, now, engine, advance, s_scanPickerOpen);
+                        uiClearTick(t, now, engine, advance, s_scanPickerOpen, tft.width(), tft.height());
                         if (uiZoneCardWanted()) uiZoneCardDraw(t, now);
                         Theme::drawToast(t, now);
 #if CROWD_BENCH
@@ -4504,7 +4504,7 @@ void loop() {
 #endif
                     });
                 } else {
-                    uiClearTick(*canvas, now, engine, true, s_scanPickerOpen);
+                    uiClearTick(*canvas, now, engine, true, s_scanPickerOpen, tft.width(), tft.height());
                 }
 #endif
                 FrameProf::lap(FrameProf::CHROME);
@@ -5325,7 +5325,8 @@ void loop() {
                           s_infoPending, infoTypeName, infoText,
                           engine.isWatched(s_confirmMac, s_confirmIsBle),
                           engine.isHunted(s_confirmMac, s_confirmIsBle),
-                          IgnoreList::contains(s_confirmMac));
+                          IgnoreList::contains(s_confirmMac),
+                          tft.width(), tft.height());
                 Theme::drawToast(t, now);
             });
 
