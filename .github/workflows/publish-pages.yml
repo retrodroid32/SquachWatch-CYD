@@ -5,9 +5,28 @@ name: Publish web flasher
 # Lab runs are safe because release-flasher.yml restores the current released
 # root and adds lab assets beside it before producing pages-site.
 on:
+  # An exact, reviewed request file merged into master triggers a one-shot
+  # recovery of the already-validated LAB artifact. No firmware rebuild.
+  push:
+    branches: [master]
+    paths:
+      - '.github/lab-pages-recover-request.json'
   workflow_run:
     workflows: ["Build and release firmware"]
     types: [completed]
+  # Run on the default branch, which is allowed by the protected
+  # github-pages environment. Recover a previously validated LAB site
+  # without rebuilding firmware or relaxing deployment-branch rules.
+  workflow_dispatch:
+    inputs:
+      source_run_id:
+        description: "Failed LAB release workflow run ID (validated artifact source)"
+        type: string
+        required: true
+      expected_sha:
+        description: "Exact 40-character firmware commit SHA"
+        type: string
+        required: true
 
 permissions:
   contents: read
@@ -17,26 +36,71 @@ permissions:
 
 concurrency:
   group: github-pages
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   publish:
-    if: github.event.workflow_run.conclusion == 'success'
+    if: >-
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') ||
+      ((github.event_name == 'workflow_dispatch' || github.event_name == 'push') && github.ref == 'refs/heads/master')
     runs-on: ubuntu-latest
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
 
     steps:
+      - name: Checkout trusted master recovery validator
+        if: github.event_name == 'workflow_dispatch' || github.event_name == 'push'
+        uses: actions/checkout@v7
+
+      - name: Verify LAB Build, source SHA and isolated Pages-only failure
+        if: github.event_name == 'workflow_dispatch' || github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_RUN_ID: ${{ inputs.source_run_id }}
+          EXPECTED_SHA: ${{ inputs.expected_sha }}
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_EVENT_NAME" == "push" ]]; then
+            # This file must be changed by the approved merge that caused
+            # this one-time master push. Never trust a branch LAB deploy job.
+            python3 - <<'PY' > /tmp/lab-recovery-inputs
+          import json
+          from pathlib import Path
+          p = Path(".github/lab-pages-recover-request.json")
+          req = json.loads(p.read_text(encoding="utf-8"))
+          if set(req) != {"source_run_id", "expected_sha"}:
+              raise SystemExit("Unexpected LAB recovery request fields")
+          print(req["source_run_id"])
+          print(req["expected_sha"])
+          PY
+            mapfile -t recovery < /tmp/lab-recovery-inputs
+            [[ "${#recovery[@]}" == "2" ]] || exit 1
+            SOURCE_RUN_ID="${recovery[0]}"
+            EXPECTED_SHA="${recovery[1]}"
+          fi
+          [[ "$SOURCE_RUN_ID" =~ ^[0-9]+$ ]] || { echo "::error::Invalid source run ID"; exit 1; }
+          [[ "$EXPECTED_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::Expected a full SHA-1"; exit 1; }
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$SOURCE_RUN_ID" > _lab_source_run.json
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$SOURCE_RUN_ID/jobs?per_page=100" > _lab_source_jobs.json
+          python3 tools/verify_lab_pages_recovery.py \
+            --run _lab_source_run.json --jobs _lab_source_jobs.json \
+            --sha "$EXPECTED_SHA" --repo "$GITHUB_REPOSITORY"
+          echo "VERIFIED_LAB_SOURCE_RUN_ID=$SOURCE_RUN_ID" >> "$GITHUB_ENV"
+
       - name: Download exact validated site artifact
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+          # Recovery mode passes a verified run ID through GITHUB_ENV.
+          # Production workflow_run keeps the exact source workflow ID.
+          SOURCE_RUN_ID="${VERIFIED_LAB_SOURCE_RUN_ID:-${{ github.event.workflow_run.id }}}"
+          [[ "$SOURCE_RUN_ID" =~ ^[0-9]+$ ]] || exit 1
           rm -rf _site
           mkdir -p _site
-          gh run download "${{ github.event.workflow_run.id }}" \
-            -R "${{ github.repository }}" -n pages-site -D _site
+          gh run download "$SOURCE_RUN_ID" \
+            -R "$GITHUB_REPOSITORY" -n pages-site -D _site
           test -s _site/index.html
           test -s _site/boards.json
           test -s _site/versions.json
