@@ -7320,11 +7320,15 @@ void loop() {
         }
         case AppState::HUNT: {
             drawTwoBand([&](TFT_eSPI& t, bool advance) {
-                uiHuntTick(t, now, engine, advance);
+                uiHuntTick(t, now, engine, advance, tft.width(), tft.height());
                 Theme::drawToast(t, now);
             });
 
-            if (tp.valid && (now - lastTouch) > TOUCH_DEBOUNCE_MS) {
+            if (touchJustDown && (now - lastTouch) > TOUCH_DEBOUNCE_MS &&
+                uiHuntHitGraph(tp.x, tp.y, tft.width(), tft.height())) {
+                lastTouch = now;
+                uiHuntToggleGraph();   // one toggle per physical press
+            } else if (tp.valid && (now - lastTouch) > TOUCH_DEBOUNCE_MS) {
                 if (uiHuntHitStop(tp.x, tp.y, tft.width(), tft.height())) {
                     lastTouch = now;
                     engine.clearHunt();
@@ -7351,7 +7355,7 @@ void loop() {
                 hlEntryAt = transitionStart;
                 hlLastDrawAt = now;
                 drawTwoBand([&](TFT_eSPI& t, bool) {
-                    uiHuntListTick(t, now, engine);
+                    uiHuntListTick(t, now, engine, tft.width(), tft.height());
                 });
             } else {
                 renderedThisLoop = false;

@@ -1,33 +1,53 @@
 // SquachWatch-CYD — HUNT MODE screen implementation
 #include "ui_hunt.h"
 #include "hunt_signal.h"
+#include "hunt_history.h"
 #include "theme.h"
 #include "privacy.h"
 #include "squachy.h"
 #include "ui_fit.h"
 #include <Arduino.h>
+#include <string.h>
+
+// The experimental ILI9341 80MHz variant has a particularly tight OTA
+// reserve. Disable only transition SERIAL traces for that variant; this
+// never gates sampling, HUNT state, live RSSI, graph, or on-screen status.
+#ifndef SQW_HUNT_RSSI_DEBUG
+// The classic 2.8 CYD variants have less than 1 KiB of free OTA margin.
+// This optional transition trace is not part of classification, LOG,
+// watch/hunt state, or the live on-screen RSSI readout. It can be enabled
+// in a dedicated diagnostic LAB build without risking OTA publication.
+#if defined(CYD) && !defined(CYD32)
+#define SQW_HUNT_RSSI_DEBUG 0
+#else
+#define SQW_HUNT_RSSI_DEBUG 1
+#endif
+#endif
 
 // -100..-30 dBm covers "barely there" to "right next to it" for both
 // BLE and WiFi -- same clamp range ui_watchalert.cpp's sparkline uses,
 // so a reading means the same thing on both screens.
 static const int RSSI_LO = -100, RSSI_HI = -30;
 
-// Two buttons now, not one: BACK leaves the screen with the hunt still
-// running (which is the point -- you can go look at something else and come
-// back), and STOP ends it. Until STOP existed, clearHunt() had no caller in
-// any screen and a hunt could only be replaced or rebooted away.
-static void backButtonRect(int screenW, int screenH, int& x, int& y, int& w, int& h) {
-    Theme::ButtonBarGeom g = Theme::computeButtonBar(screenW, screenH);
-    w = 110;
-    h = g.h;
-    // The pair sits centred as a unit: BACK left of centre, STOP right.
-    x = screenW / 2 - w - 5;
+// The HUNT footer uses the same *three-slot* layout and five-step button
+// font geometry as the global SCAN/LOG/DESK bar. One shared rect definition
+// drives BOTH draw and hit tests, including after screen rotation.
+enum HuntFooterSlot : uint8_t { HUNT_BACK = 0, HUNT_GRAPH = 1, HUNT_STOP = 2 };
+static __attribute__((noinline)) void huntFooterRect(HuntFooterSlot slot, int screenW, int screenH,
+                           int& x, int& y, int& w, int& h) {
+    const Theme::ButtonBarGeom g = Theme::computeButtonBar(screenW, screenH);
+    x = g.x[slot];
     y = g.y;
+    w = g.w[slot];
+    h = g.h;
 }
-
-static void stopButtonRect(int screenW, int screenH, int& x, int& y, int& w, int& h) {
-    backButtonRect(screenW, screenH, x, y, w, h);
-    x = screenW / 2 + 5;
+// Shared (rather than inlined three times): cuts duplicate 2.8 firmware
+// geometry code while keeping exactly the same physical hit rectangle.
+static __attribute__((noinline)) bool hitHuntFooter(HuntFooterSlot slot, int x, int y,
+                          int screenW, int screenH) {
+    int bx, by, bw, bh;
+    huntFooterRect(slot, screenW, screenH, bx, by, bw, bh);
+    return x >= bx && x < bx + bw && y >= by && y < by + bh;
 }
 
 // Tracks quip-worthy transitions across ticks -- see the trend block
@@ -54,7 +74,21 @@ static const uint32_t CAUGHT_HOLD = 5000;
 static uint32_t s_caughtUntil = 0;
 static bool     s_caughtFired = false;
 static bool     s_gaugeStarted = false;
-static bool     s_prevSignalLive = false;  // transition-only serial diagnostic
+#if SQW_HUNT_RSSI_DEBUG
+static bool s_prevSignalLive = false;  // transition-only serial diagnostic
+#endif
+
+// Alternate HUNT history view. No dynamic allocations, NVS settings or
+// radio callbacks: all observations come from the coherent snapshot below.
+static HuntHistory::Tracker s_history;
+static bool s_graphMode = false;
+
+bool uiHuntHitGraph(int x, int y, int screenW, int screenH) {
+    return hitHuntFooter(HUNT_GRAPH, x, y, screenW, screenH);
+}
+
+void uiHuntToggleGraph() { s_graphMode = !s_graphMode; }
+
 
 // HUNT list view. The stored target array keeps selection order; this index
 // array is rebuilt by RSSI every frame so the actual records never move while
@@ -74,22 +108,22 @@ void uiHuntInit(TFT_eSPI& t) {
     s_caughtUntil     = 0;
     s_caughtFired     = false;
     s_gaugeStarted    = false;
+#if SQW_HUNT_RSSI_DEBUG
     s_prevSignalLive = false;
+#endif
+    s_history.reset();
+    s_graphMode       = false;
     s_listScroll      = 0;
 }
 
 bool uiHuntHitBack(int x, int y, int screenW, int screenH) {
-    int bx, by, bw, bh;
-    backButtonRect(screenW, screenH, bx, by, bw, bh);
-    return x >= bx && x <= bx + bw && y >= by && y <= by + bh;
+    return hitHuntFooter(HUNT_BACK, x, y, screenW, screenH);
 }
 
 bool uiHuntCaught() { return (int32_t)(s_caughtUntil - millis()) > 0; }
 
 bool uiHuntHitStop(int x, int y, int screenW, int screenH) {
-    int bx, by, bw, bh;
-    stopButtonRect(screenW, screenH, bx, by, bw, bh);
-    return x >= bx && x <= bx + bw && y >= by && y <= by + bh;
+    return hitHuntFooter(HUNT_STOP, x, y, screenW, screenH);
 }
 
 // Semicircle strength gauge -- sweeps left (weak) to right (strong)
@@ -188,8 +222,15 @@ static void drawHuntTrend(TFT_eSPI& t, int x, int y,
         t.drawFastHLine(x, y + 4, 8, Theme::CYAN);
 }
 
-static void drawHuntList(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng) {
+static void drawHuntList(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng,
+                         int screenW, int screenH) {
+#if defined(CYD) && !defined(CYD32)
     const int w = t.width(), h = t.height();
+    (void)screenW; (void)screenH;
+#else
+    const int w = screenW > 0 ? screenW : t.width();
+    const int h = screenH > 0 ? screenH : t.height();
+#endif
 
     // This roster owns the whole screen. drawTitleBar() deliberately does not
     // erase its band because normal screens paint their background first.
@@ -236,8 +277,8 @@ static void drawHuntList(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng) 
 
         char rbuf[16];
         if (fresh) snprintf(rbuf, sizeof rbuf, "%d dBm", (int)info.rssi);
-        else if (info.seen) snprintf(rbuf, sizeof rbuf, "OUT");
-        else snprintf(rbuf, sizeof rbuf, "WAIT");
+        else if (info.seen) strcpy(rbuf, "OUT");
+        else strcpy(rbuf, "WAIT");
         const int rw = t.textWidth(rbuf);
         t.setTextColor(fresh ? Theme::CYAN : Theme::AMBER, Theme::BG);
         t.setCursor(w - rw - 24, y + 1);
@@ -250,9 +291,9 @@ static void drawHuntList(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng) 
         t.print(info.kind == DetectionEngine::WatchKind::BLE ? "BLE" : "WIFI");
         if (info.seen) {
             const uint32_t age = (uint32_t)HuntSignal::ageMs(info.lastSeenMs, now) / 1000;
-            t.printf("   seen %lus ago", (unsigned long)age);
+            t.printf("   %lus ago", (unsigned long)age);
         } else {
-            t.print("   waiting for signal");
+            t.print("   waiting");
         }
     }
 
@@ -284,12 +325,94 @@ void uiHuntListScroll(int delta) {
     s_listScroll = (uint8_t)n;
 }
 
-void uiHuntListTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng) {
-    drawHuntList(t, now, eng);
+void uiHuntListTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng,
+                    int screenW, int screenH) {
+    drawHuntList(t, now, eng, screenW, screenH);
 }
 
-void uiHuntTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool advance) {
-    int w = t.width(), h = t.height();
+// A second view of the SAME active HUNT target, not a replacement for
+// the live gauge. Old points remain visible as history when the radio goes
+// quiet, but a missing signal is drawn as a GAP, never an invented 0 dBm.
+static void drawHuntHistory(TFT_eSPI& t, const HuntHistory::Tracker& hist,
+                            int w, int labelY, int bodyBottom,
+                            bool live, bool wifi, uint8_t channel,
+                            uint32_t now, bool caught) {
+    const int statY = bodyBottom - 38;
+    const int left = 38, top = labelY + 23;
+    const int width = w - left - 12, height = statY - top - 8;
+    if (width < 35 || height < 20) return;
+
+    t.drawRect(left, top, width, height, Theme::PURPLE);
+    for (int j = 1; j <= 2; j++) {
+        const int y = top + j * (height - 1) / 3;
+        t.drawFastHLine(left + 1, y, width - 2, Theme::VAPOR_PURPLE);
+    }
+    t.setTextSize(1);
+    t.setTextColor(Theme::VAPOR_PURPLE, Theme::BG);
+    t.setCursor(4, top + 1); t.print("-30");
+    t.setCursor(1, top + height - 10); t.print("-100");
+
+    bool prevValid = false;
+    int prevX = 0, prevY = 0;
+    for (uint8_t i = 0; i < hist.count; i++) {
+        const int8_t r = hist.at(i);
+        if (r == HuntHistory::NO_SIGNAL) { prevValid = false; continue; }
+        const int dbm = r < RSSI_LO ? RSSI_LO : r > RSSI_HI ? RSSI_HI : r;
+        const int x = left + 2 + (int)(HuntHistory::CAP - hist.count + i) *
+                      (width - 5) / (HuntHistory::CAP - 1);
+        const int y = top + 2 + (RSSI_HI - dbm) * (height - 5) /
+                      (RSSI_HI - RSSI_LO);
+        if (prevValid) t.drawLine(prevX, prevY, x, y, Theme::CYAN);
+        else t.fillCircle(x, y, 1, Theme::CYAN);
+        prevX = x; prevY = y; prevValid = true;
+    }
+
+    // Text size is already 1 from the chart-axis labels above.
+    t.setTextColor(Theme::CYAN, Theme::BG);
+    t.setCursor(7, statY);
+    if (hist.peakValid) {
+        t.print("PEAK ");
+        t.printf("%d", (int)hist.peakDbm);
+        t.print(" dBm");
+    } else t.print("PEAK --");
+    char age[22];
+    if (!hist.seen) memcpy(age, "LAST --", sizeof("LAST --"));
+    else snprintf(age, sizeof age, "LAST %lus",
+                  (unsigned long)((uint32_t)HuntSignal::ageMs(hist.lastSeenMs, now) / 1000u));
+    t.setTextColor(hist.seen ? Theme::WHITE : Theme::AMBER, Theme::BG);
+    t.setCursor(w - t.textWidth(age) - 8, statY);
+    t.print(age);
+
+    t.setCursor(8, statY + 14);
+    t.setTextColor(live ? Theme::GREEN : Theme::AMBER, Theme::BG);
+    if (caught) t.print("CAUGHT! ");
+    else t.print(live ? "LIVE " : "NO SIGNAL ");
+    t.setTextColor(Theme::VAPOR_PURPLE, Theme::BG);
+    if (wifi) {
+        if (channel >= 1 && channel <= 13) {
+            t.print("WIFI CH ");
+            // Avoid printf's numeric formatting path for a 1..13 channel.
+            // The emulator TFT shim intentionally only supports print(strings).
+            if (channel >= 10) {
+                t.write((uint8_t)'1');
+                t.write((uint8_t)('0' + channel - 10));
+            } else t.write((uint8_t)('0' + channel));
+        } else t.print("WIFI CH ?");
+    } else t.print("BLE");
+}
+
+void uiHuntTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng,
+                bool advance, int screenW, int screenH) {
+    // Only CYD32 and banded renderers need the explicitly supplied
+    // logical panel coordinates. Classic CYD uses full-frame sprites and
+    // retains its smaller original coordinate path.
+#if defined(CYD) && !defined(CYD32)
+    const int w = t.width(), h = t.height();
+    (void)screenW; (void)screenH;
+#else
+    const int w = screenW > 0 ? screenW : t.width();
+    const int h = screenH > 0 ? screenH : t.height();
+#endif
 
     if (!s_gaugeStarted) {
         s_gaugeStarted = true;
@@ -332,6 +455,10 @@ void uiHuntTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool adva
                           signal.kind == DetectionEngine::WatchKind::WIFI);
     const uint8_t storedRssiN = haveTarget ? signal.samples : 0;
     const uint8_t rssiN = live ? storedRssiN : 0;
+    if (advance) s_history.tick(huntNow, haveTarget && storedRssiN > 0,
+                               live, rssiN ? signal.rssi[rssiN - 1] : -127,
+                               haveTarget ? signal.lastSeenMs : 0);
+#if SQW_HUNT_RSSI_DEBUG
     if (live != s_prevSignalLive) {
         Serial.printf("[hunt-rssi] radio=%s live=%u samples=%u age=%ld ms channel=%u\n",
                       signal.kind == DetectionEngine::WatchKind::WIFI ? "WIFI" : "BLE",
@@ -340,6 +467,7 @@ void uiHuntTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool adva
                       (unsigned)signal.channel);
         s_prevSignalLive = live;
     }
+#endif
     // History is kept for the HUNT roster but must NEVER drive a live
     // needle, numeric reading, trend or CAUGHT badge after signal loss.
     if (!live) {
@@ -385,7 +513,7 @@ void uiHuntTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool adva
     uint16_t needleColor = (frac < 0.5f)
         ? Theme::blend(Theme::RED, Theme::AMBER, (uint16_t)(frac * 2.0f * 256))
         : Theme::blend(Theme::AMBER, Theme::GREEN, (uint16_t)((frac - 0.5f) * 2.0f * 256));
-    drawGauge(t, cx, cy, r, frac, needleColor);
+    if (!s_graphMode) drawGauge(t, cx, cy, r, frac, needleColor);
 
     // Fires once per visit to "basically on top of it" territory, not
     // every tick it stays there -- re-arms if the signal drops back out
@@ -415,12 +543,15 @@ void uiHuntTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool adva
     // LOG arrows even though the underlying meaning is now identical.
     char rbuf[16];
     if (rssiN > 0) snprintf(rbuf, sizeof(rbuf), "%d dBm", (int)latestRssi);
-    else           snprintf(rbuf, sizeof(rbuf), "%s", HuntSignal::absentReadout(storedRssiN > 0));
+    else {
+        strncpy(rbuf, HuntSignal::absentReadout(storedRssiN > 0), sizeof(rbuf) - 1);
+        rbuf[sizeof(rbuf) - 1] = 0;
+    }
     t.setTextSize(2);
     int rw = t.textWidth(rbuf);
     t.setTextColor(Theme::WHITE, Theme::BG);
     t.setCursor((w - rw) / 2, cy + 8);
-    if (!caught) t.print(rbuf);
+    if (!caught && !s_graphMode) t.print(rbuf);
     // fontHeight() no-arg reads back the size-2 metrics just set above
     // -- fontHeight(int) takes a FONT INDEX, not a size multiplier, and
     // would silently query the wrong thing here.
@@ -434,13 +565,13 @@ void uiHuntTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool adva
         ? classifyRssiTrend((int)signal.rssi[trendStart], (int)latestRssi, trendCount)
         : RssiTrend::UNKNOWN;
     if (cur == RssiTrend::APPROACHING) {
-        trend = "GETTING WARMER";
+        trend = "WARMER";
         trendColor = Theme::GREEN;
     } else if (cur == RssiTrend::MOVING_AWAY) {
-        trend = "GETTING COLDER";
+        trend = "COLDER";
         trendColor = Theme::RED;
     } else if (cur == RssiTrend::STEADY) {
-        trend = "HOLDING STEADY";
+        trend = "STEADY";
         trendColor = Theme::CYAN;
     }
 
@@ -459,22 +590,34 @@ void uiHuntTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool adva
         t.setTextSize(2);
         const int cw2 = t.textWidth("CAUGHT!") + 16, ch2 = t.fontHeight() + 4;
         const int cx2 = (w - cw2) / 2, cy2 = cy + 6;
-        t.fillRect(cx2, cy2, cw2, ch2, Theme::GREEN);
-        t.setTextColor(Theme::BLACK, Theme::GREEN);
-        t.setCursor(cx2 + 8, cy2 + 2);
-        t.print("CAUGHT!");
+        if (!s_graphMode) {
+            t.fillRect(cx2, cy2, cw2, ch2, Theme::GREEN);
+            t.setTextColor(Theme::BLACK, Theme::GREEN);
+            t.setCursor(cx2 + 8, cy2 + 2);
+            t.print("CAUGHT!");
+        }
         trend = rbuf;
         trendColor = Theme::GREEN;
     }
-    t.setTextSize(1);
-    int tw = t.textWidth(trend);
-    t.setTextColor(trendColor, Theme::BG);
-    t.setCursor((w - tw) / 2, cy + 8 + readoutH + 2);
-    t.print(trend);
+    if (s_graphMode) {
+        drawHuntHistory(t, s_history, w, labelY, bodyBottom, live,
+                        haveTarget && signal.kind == DetectionEngine::WatchKind::WIFI,
+                        haveTarget ? signal.channel : 0, huntNow, caught);
+    } else {
+        t.setTextSize(1);
+        int tw = t.textWidth(trend);
+        t.setTextColor(trendColor, Theme::BG);
+        t.setCursor((w - tw) / 2, cy + 8 + readoutH + 2);
+        t.print(trend);
+    }
 
+    // Button style, size and hit geometry all match the firmware's standard
+    // footer. Short unbracketed labels fit even 240px portrait at size 5/5.
     int bx, by, bw, bh;
-    backButtonRect(w, h, bx, by, bw, bh);
-    Theme::drawButton(t, bx, by, bw, bh, "[ BACK ]", false);
-    stopButtonRect(w, h, bx, by, bw, bh);
-    Theme::drawButton(t, bx, by, bw, bh, "[ STOP ]", false);
+    huntFooterRect(HUNT_BACK, w, h, bx, by, bw, bh);
+    Theme::drawButton(t, bx, by, bw, bh, "BACK", false);
+    huntFooterRect(HUNT_GRAPH, w, h, bx, by, bw, bh);
+    Theme::drawButton(t, bx, by, bw, bh, s_graphMode ? "GAUGE" : "GRAPH", false);
+    huntFooterRect(HUNT_STOP, w, h, bx, by, bw, bh);
+    Theme::drawButton(t, bx, by, bw, bh, "STOP", false);
 }
