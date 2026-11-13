@@ -21,7 +21,7 @@ assert "if (uiLogCategoryHitBack(gestureStartX, gestureStartY," in main
 assert "uiLogTick(t, now, engine, 0," in main
 assert "tft.width(), tft.height());" in main
 assert "CategoryRoster::matches(s_category, d->type)" in log
-assert "const uint32_t sec = (uint32_t)(now - d->lastSeen) / 1000u" in log
+assert "const uint32_t age = kept ? 0 : (uint32_t)(now - d->lastSeen) / 1000u;" in log
 assert 'else t.printf("%ddBm", d->rssi);' in log
 assert 'if (s_category != DetectionType::UNKNOWN && !fresh)' in log
 assert '(d->channel ? 6500 : 4000)' in log
