@@ -245,6 +245,7 @@ static void drawCrashCard(TFT_eSPI& t) {
 #include "ui_ignorelist.h"
 #include "ui_alertrules.h"
 #include "frame_push.h"
+#include "remote_mirror.h"
 #include "draw_band.h"
 #include "frame_prof.h"
 #include "fast_sprite.h"
@@ -747,6 +748,12 @@ static bool readTouchRaw(int16_t& a, int16_t& b);
 // into this rotation's coordinates. No board has its own maths any more.
 static TouchPoint pollTouch() {
     TouchPoint tp = { false, 0, 0 };
+    // Remote mouse/gesture events feed the same hit-testing path as physical
+    // touchscreen touches; normal hardware remains the default.
+    int rx=0,ry=0;
+    if(RemoteMirror::touch(tft.width(),tft.height(),rx,ry)){
+        tp.valid=true;tp.x=rx;tp.y=ry;return tp;
+    }
     int16_t a, b;
     if (!readTouchRaw(a, b)) return tp;
     const int w = tft.width(), h = tft.height();
@@ -3682,6 +3689,10 @@ static inline void pushFrame(int x, int y) {
 #endif
     }
     s_pushAccumUs += micros() - t0;
+    // Export precisely the 8-bit sprite rows pushed to the physical LCD;
+    // banded CYD32 recovery renders are sent in order without reallocation.
+    if(frameBufferOk && frame.getColorDepth()==8)
+        RemoteMirror::capture(frame.buf(),frame.bufW(),frame.bufH(),tft.height(),y);
 }
 
 // Draw a whole screen the way the 3.5" has to: into the half-height sprite
