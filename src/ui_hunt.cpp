@@ -33,7 +33,7 @@ static const int RSSI_LO = -100, RSSI_HI = -30;
 // font geometry as the global SCAN/LOG/DESK bar. One shared rect definition
 // drives BOTH draw and hit tests, including after screen rotation.
 enum HuntFooterSlot : uint8_t { HUNT_BACK = 0, HUNT_GRAPH = 1, HUNT_STOP = 2 };
-static void huntFooterRect(HuntFooterSlot slot, int screenW, int screenH,
+static __attribute__((noinline)) void huntFooterRect(HuntFooterSlot slot, int screenW, int screenH,
                            int& x, int& y, int& w, int& h) {
     const Theme::ButtonBarGeom g = Theme::computeButtonBar(screenW, screenH);
     x = g.x[slot];
@@ -41,7 +41,9 @@ static void huntFooterRect(HuntFooterSlot slot, int screenW, int screenH,
     w = g.w[slot];
     h = g.h;
 }
-static bool hitHuntFooter(HuntFooterSlot slot, int x, int y,
+// Shared (rather than inlined three times): cuts duplicate 2.8 firmware
+// geometry code while keeping exactly the same physical hit rectangle.
+static __attribute__((noinline)) bool hitHuntFooter(HuntFooterSlot slot, int x, int y,
                           int screenW, int screenH) {
     int bx, by, bw, bh;
     huntFooterRect(slot, screenW, screenH, bx, by, bw, bh);
