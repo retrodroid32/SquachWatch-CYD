@@ -365,7 +365,8 @@ int uiLogRowAt(TFT_eSPI& t, int x, int y, int screenW, int screenH) {
 void uiLogTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, int scrollOffset,
                bool confirmPending, const char* confirmLabel,
                bool infoPending, const char* infoTypeName, const char* infoText,
-               bool confirmWatched, bool confirmHunted, bool confirmIgnored) {
+               bool confirmWatched, bool confirmHunted, bool confirmIgnored,
+               bool advance) {
     int w = t.width();
     int h = t.height();
 
@@ -393,20 +394,10 @@ void uiLogTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, int scroll
     // Only the BACKGROUND moves. Everything else on this screen still
     // begins where it did, so no content shifts.
     const int bgTop = 0;
-switch (Settings::background()) {
-        case Settings::Background::STARFIELD: Theme::drawStarfield(t, now, bgTop, bodyBottom); break;
-        case Settings::Background::TOASTERS:   Theme::drawFlyingToasters(t, now, bgTop, bodyBottom); break;
-        case Settings::Background::AQUARIUM:   Theme::drawAquarium(t, now, bgTop, bodyBottom); break;
-        case Settings::Background::TERMINAL:   Theme::drawTerminalLog(t, now, bgTop, bodyBottom); break;
-        case Settings::Background::FIREFLIES:  Theme::drawFireflies(t, now, bgTop, bodyBottom); break;
-        case Settings::Background::FIRE:       Theme::drawFire(t, now, bgTop, bodyBottom); break;
-        case Settings::Background::SNOWFALL:   Theme::drawSnowfall(t, now, bgTop, bodyBottom); break;
-        case Settings::Background::SPECTRUM:   Theme::drawGibson(t, now, bgTop, bodyBottom, eng); break;
-        case Settings::Background::SYNTHWAVE: Theme::drawSynthwave(t, now, bgTop, bodyBottom); break;
-        // Fills rather than skips -- see the note in drawActiveBackground.
-        case Settings::Background::BLACK:      t.fillRect(0, bgTop, t.width(), bodyBottom - bgTop, Theme::BG); break;
-        default:                               Theme::drawDigitalRain(t, now, bgTop, bodyBottom, true); break;
-    }
+    // CLEAR owns the background dispatcher already. Reusing it avoids a
+    // duplicate switch in flash and advances animation only once per
+    // logical frame (the CYD32 renderer draws more than one sprite band).
+    Theme::drawActiveBackground(t, now, bgTop, bodyBottom, eng, advance);
     Theme::restorePalette(saved);
     // Floating corner controls plus the LOG's central view selector.
     const uint16_t count = g_view == LogView::DEVICES
