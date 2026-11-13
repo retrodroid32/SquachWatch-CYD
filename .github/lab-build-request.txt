@@ -1,4 +1,4 @@
-CATEGORY-PILLS-ROSTER-POST224-R1
+CATEGORY-PILLS-ROSTER-POST224-R2
 # PR #226, rebased as an ancestry-preserving merge onto approved HUNT #224.
 # Clickable CLEAR category counters; bounded 64-entry radio-fresh/stale roster;
 # device name, live dBm versus LAST age; short tap opens WATCH/HUNT actions.
@@ -7,3 +7,8 @@ CATEGORY-PILLS-ROSTER-POST224-R1
 # >=8192 bytes in real firmware.bin for every released board, no bypass.
 # Only after full green Build may Build and release firmware create LAB images.
 # LAB only; do NOT tag, make production GitHub Release, or merge PR #226.
+# R2: publish the latest shared-render-core #226 LAB once exact-commit Build passes.
+# Prior R1 release #223 blocked correctly on failed older #226 size check.
+# Build #982 d1fbb74 passed all 12 profiles and 10 real-image OTA margins.
+# This request-file-only change triggers fresh exact-SHA CI and LAB release.
+# No production GitHub Release, version tag, master merge, or reserve change.
