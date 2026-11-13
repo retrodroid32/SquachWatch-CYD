@@ -65,9 +65,7 @@ static uint32_t s_caughtUntil = 0;
 static bool     s_caughtFired = false;
 static bool     s_gaugeStarted = false;
 #if SQW_HUNT_RSSI_DEBUG
-static bool #if SQW_HUNT_RSSI_DEBUG
-    s_prevSignalLive = false;
-#endif  // transition-only serial diagnostic
+static bool s_prevSignalLive = false;  // transition-only serial diagnostic
 #endif
 
 // Alternate HUNT history view. No dynamic allocations, NVS settings or
@@ -100,7 +98,9 @@ void uiHuntInit(TFT_eSPI& t) {
     s_caughtUntil     = 0;
     s_caughtFired     = false;
     s_gaugeStarted    = false;
+#if SQW_HUNT_RSSI_DEBUG
     s_prevSignalLive = false;
+#endif
     s_history.reset();
     s_graphMode       = false;
     s_listScroll      = 0;
