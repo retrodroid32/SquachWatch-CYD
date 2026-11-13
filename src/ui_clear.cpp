@@ -2599,6 +2599,7 @@ static uint8_t activeCounterTypes(DetectionType* out) {
 // picked dynamically off the live orientation in uiClearTick() rather
 // than fixed at compile time -- it changes every time the screen
 // rotates, not just once per board.
+static const uint8_t CATEGORY_PILL_ROW_H = 22;
 static const uint8_t MAX_PER_ROW_PORTRAIT   = 4;
 static const uint8_t COUNTER_ROWS_LANDSCAPE = 2;
 // Three rows in portrait at eleven columns and at twelve alike, so turning
@@ -2621,11 +2622,11 @@ struct ClearLayoutCache {
 
 static ClearLayoutCache s_clearLayout;
 
-static const ClearLayoutCache& clearLayoutFor(TFT_eSPI& t) {
-    const int w = t.width(), h = t.height();
+static const ClearLayoutCache& clearLayoutFor(int w, int h) {
     const bool ibeacon = Settings::typeEnabled(DetectionType::IBEACON);
     if (s_clearLayout.valid && s_clearLayout.w == w && s_clearLayout.h == h &&
-        s_clearLayout.ibeacon == ibeacon) return s_clearLayout;
+        s_clearLayout.ibeacon == ibeacon &&
+        s_clearLayout.bar.h == Theme::computeButtonBar(w, h).h) return s_clearLayout;
 
     ClearLayoutCache& l = s_clearLayout;
     l.valid = true;
@@ -2634,9 +2635,8 @@ static const ClearLayoutCache& clearLayoutFor(TFT_eSPI& t) {
     l.ibeacon = ibeacon;
     l.counterRows = (w > h) ? COUNTER_ROWS_LANDSCAPE : COUNTER_ROWS_PORTRAIT;
     l.bar = Theme::computeButtonBar(w, h);
-    const int lineH = 14;
-    const int countersTop = l.bar.y - l.counterRows * lineH - 6;
-    l.counterTextTop = (int16_t)(countersTop + 9);
+    const int countersTop = l.bar.y - l.counterRows * CATEGORY_PILL_ROW_H - 5;
+    l.counterTextTop = (int16_t)countersTop;
     l.squachyBottom = (int16_t)(l.counterTextTop - 2);
     l.counterN = activeCounterTypes(l.types);
 
@@ -2657,57 +2657,33 @@ static const ClearLayoutCache& clearLayoutFor(TFT_eSPI& t) {
     return l;
 }
 
-struct CounterLineCache {
-    bool valid = false;
-    uint32_t key = 0;
-    char text[80] = "";
-    int16_t width = 0;
-};
-static CounterLineCache s_counterLineCache[COUNTER_ROWS_PORTRAIT];
-
-static uint32_t counterLineKey(const DetectionEngine& eng,
-                               const DetectionType* types, uint8_t n) {
-    uint32_t h = 2166136261u;
-    h = (h ^ n) * 16777619u;
-    for (uint8_t i = 0; i < n; i++) {
-        const uint16_t count = counterCount(eng, types[i]);
-        h = (h ^ (uint8_t)types[i]) * 16777619u;
-        h = (h ^ (uint8_t)count) * 16777619u;
-        h = (h ^ (uint8_t)(count >> 8)) * 16777619u;
-    }
-    return h;
+// Zero-allocation geometry shared by draw and hit-testing. Rows have at
+// most 6 columns (landscape) or 4 (portrait), and all fit inside the panel.
+static void categoryPillRect(const ClearLayoutCache& l, uint8_t row, uint8_t col,
+                             int& x, int& y, int& w, int& h) {
+    const int n = l.rowCount[row];
+    const int gap = 3, margin = 5;
+    const int cellW = (l.w - 2 * margin - (n - 1) * gap) / n;
+    const int used = n * cellW + (n - 1) * gap;
+    x = (l.w - used) / 2 + col * (cellW + gap);
+    y = l.counterTextTop + row * CATEGORY_PILL_ROW_H;
+    w = cellW;
+    h = CATEGORY_PILL_ROW_H - 2;
 }
 
-static void drawCounterLine(TFT_eSPI& t, int w, int y, const DetectionEngine& eng,
-                            const DetectionType* types, uint8_t n, uint8_t cacheIx) {
-    CounterLineCache& cache = s_counterLineCache[cacheIx];
-    const uint32_t key = counterLineKey(eng, types, n);
-    if (!cache.valid || cache.key != key) {
-        cache.valid = true;
-        cache.key = key;
-        cache.text[0] = '\0';
-        int off = 0;
-        for (uint8_t i = 0; i < n && off < (int)sizeof(cache.text) - 1; i++) {
-            const int wrote = snprintf(cache.text + off, sizeof(cache.text) - off, "%s:%u  ",
-                                       counterLabel(types[i]), counterCount(eng, types[i]));
-            if (wrote <= 0) break;
-            off += wrote;
-            if (off >= (int)sizeof(cache.text)) {
-                off = sizeof(cache.text) - 1;
-                cache.text[off] = '\0';
-                break;
-            }
+// A tapped zero-count pill still opens history: an inactive/stale device
+// must remain discoverable even when the main counter has returned to 0.
+DetectionType uiClearCategoryHit(int x, int y, int screenW, int screenH) {
+    const ClearLayoutCache& l = clearLayoutFor(screenW, screenH);
+    for (uint8_t row = 0; row < l.counterRows; ++row) {
+        for (uint8_t col = 0; col < l.rowCount[row]; ++col) {
+            int px, py, pw, ph;
+            categoryPillRect(l, row, col, px, py, pw, ph);
+            if (x >= px && x < px + pw && y >= py && y < py + ph)
+                return l.types[l.rowStart[row] + col];
         }
-        while (off > 0 && cache.text[off - 1] == ' ') cache.text[--off] = '\0';
-        cache.width = (int16_t)t.textWidth(cache.text);
     }
-
-    const int x = (w - cache.width) / 2;
-    const int PAD_X = 4, PAD_Y = 2;
-    t.fillRect(x - PAD_X, y - PAD_Y, cache.width + 2 * PAD_X,
-               t.fontHeight() + 2 * PAD_Y, Theme::BG);
-    t.setCursor(x, y);
-    t.print(cache.text);
+    return DetectionType::UNKNOWN;
 }
 
 #if SQUACH_MESH
@@ -2842,13 +2818,16 @@ bool uiMascotStep(uint32_t now, bool advance) {
     return true;
 }
 
-void uiClearTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool advance, bool scanMenu) {
-    const ClearLayoutCache& layout = clearLayoutFor(t);
+void uiClearTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng,
+                 bool advance, bool scanMenu, int screenW, int screenH) {
+    // The CYD32 two-band sprite can have HALF the physical panel height.
+    // Layout/hit rectangles must use the panel coordinates, never that band.
+    const ClearLayoutCache& layout = clearLayoutFor(
+        screenW > 0 ? screenW : t.width(), screenH > 0 ? screenH : t.height());
     const int w = layout.w;
     const int h = layout.h;
     const uint8_t counterRows = layout.counterRows;
     const Theme::ButtonBarGeom& bar = layout.bar;
-    const int lineH = 14;
     const int counterTextTop = layout.counterTextTop;
 
     // This value feeds banter, not layout. Scanning the entire detection ring
@@ -3236,17 +3215,32 @@ void uiClearTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool adv
     t.setTextColor(Theme::CYAN, Theme::BG);
     t.setTextWrap(false);
 
-    // Row membership and string formatting are cached until orientation,
-    // beacon visibility, or a displayed count changes. The opaque plate/text
-    // still composites every rendered frame because the animated background
-    // underneath it is intentionally fresh.
+    // Draw distinct tappable category pills on an opaque backing. Each
+    // pill's rectangle is also the touch rectangle; keep stable across
+    // redraws, screen rotations and text-count changes.
     t.setTextFont(1);
     for (uint8_t row = 0; row < counterRows; row++) {
-        const int rowY = counterTextTop + row * lineH;
-        if (DrawBand::has(rowY, rowY + lineH))
-            drawCounterLine(t, w, rowY, eng,
-                            layout.types + layout.rowStart[row],
-                            layout.rowCount[row], row);
+        const int rowY = counterTextTop + row * CATEGORY_PILL_ROW_H;
+        if (!DrawBand::has(rowY, rowY + CATEGORY_PILL_ROW_H)) continue;
+        for (uint8_t col = 0; col < layout.rowCount[row]; col++) {
+            const DetectionType type = layout.types[layout.rowStart[row] + col];
+            int px, py, pw, ph;
+            categoryPillRect(layout, row, col, px, py, pw, ph);
+            const uint16_t count = counterCount(eng, type);
+            const uint16_t outline = count ? Theme::CYAN : Theme::PURPLE;
+            t.fillRoundRect(px, py, pw, ph, 3, Theme::BG);
+            t.drawRoundRect(px, py, pw, ph, 3, outline);
+            const char* label = counterLabel(type);
+            t.setTextSize(1);
+            t.setTextColor(count ? Theme::WHITE : Theme::W95_SHADOW, Theme::BG);
+            t.setCursor(px + (pw - t.textWidth(label)) / 2, py + 2);
+            t.print(label);
+            char num[8];
+            snprintf(num, sizeof num, "%u", (unsigned)count);
+            t.setTextColor(count ? Theme::GREEN : Theme::VAPOR_PURPLE, Theme::BG);
+            t.setCursor(px + (pw - t.textWidth(num)) / 2, py + 11);
+            t.print(num);
+        }
     }
 
     // Soft buttons, straight over the background: it repaints the whole
