@@ -585,10 +585,15 @@ class BleScanCallbacks : public NimBLEScanCallbacks {
         // The matched row's own label, for the types that cover several
         // devices -- see where the vendor is written, below.
         const char* label = nullptr;
-        // Manufacturer data. Read the first raw AD field directly rather
-        // than asking NimBLE to copy it into a temporary std::string.
-        AdvFieldView mfg;
-        if (advFieldAt(payload, BLE_HS_ADV_TYPE_MFG_DATA, 0, mfg) && mfg.len >= 2) {
+        // A peer can advertise one manufacturer AD structure and append a
+        // second in its scan response. NimBLE assembles both into payload.
+        // Examine bounded, already-owned fields: the first VALID signature
+        // wins, preserving precedence without allocating in the callback.
+        for (uint8_t fieldIndex = 0; fieldIndex < 8; ++fieldIndex) {
+            AdvFieldView mfg;
+            if (!advFieldAt(payload, BLE_HS_ADV_TYPE_MFG_DATA,
+                            fieldIndex, mfg)) break;
+            if (mfg.len < 2) continue;
             const uint16_t mfgId = (uint16_t)mfg.data[0] | ((uint16_t)mfg.data[1] << 8);
             det.type = lookupMfgId(mfgId);
             label    = mfgIdName(mfgId);
@@ -634,6 +639,7 @@ class BleScanCallbacks : public NimBLEScanCallbacks {
                     }
                 }
             }
+            if (det.type != DetectionType::UNKNOWN) break;
         }
         // Raw-advert fallback. The block above only runs when NimBLE
         // parsed a manufacturer-data field and put Apple's company ID
