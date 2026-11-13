@@ -657,6 +657,54 @@ switch (Settings::background()) {
         // sun used to shine through.
         Theme::drawListRowPanel(t, w, y, rowH);
 
+        if (s_category != DetectionType::UNKNOWN) {
+            // Category view: the device name is the primary tap target.
+            // Keep the exact underlying type on line 2 (TRACKER is not
+            // automatically an AirTag, CAMERA is not automatically Ring).
+            char privateName[40], label[40];
+            const char* own = d->name[0] ? Privacy::name(d->name, privateName,
+                                                        sizeof privateName)
+                                         : vendorText(*d);
+            snprintf(label, sizeof label, "%s", own);
+            t.setTextSize(2);
+            while (label[0] && t.textWidth(label) > w - 92)
+                label[strlen(label) - 1] = 0;
+            t.setTextColor(d->active && !d->restored ? Theme::WHITE : Theme::W95_SHADOW,
+                           Theme::BG);
+            t.setCursor(8, y + 3);
+            t.print(label);
+            t.setTextSize(1);
+            const char* status = d->restored ? "SAVED" : d->active ? "LIVE" : "GONE";
+            const int statusW = t.textWidth(status);
+            t.setTextColor(d->active && !d->restored ? Theme::GREEN : Theme::AMBER,
+                           Theme::BG);
+            t.setCursor(w - statusW - 9, y + 5);
+            t.print(status);
+
+            t.setTextColor(Theme::CYAN, Theme::BG);
+            t.setCursor(8, y + detailY);
+            t.print(detectionTypeName(d->type));
+            // The RAM ring records lastSeen in millis(), including after
+            // expireStale marks it inactive. Saved flash rows have no
+            // monotonic lastSeen; never invent a time for them.
+            char signal[32];
+            if (d->restored) snprintf(signal, sizeof signal, "HISTORY");
+            else if (d->active) snprintf(signal, sizeof signal, "%d dBm", (int)d->rssi);
+            else {
+                const uint32_t sec = (uint32_t)(now - d->lastSeen) / 1000u;
+                if (sec < 60) snprintf(signal, sizeof signal, "LAST %lus",
+                                       (unsigned long)sec);
+                else snprintf(signal, sizeof signal, "LAST %lum",
+                              (unsigned long)(sec / 60u));
+            }
+            t.setTextColor(d->active && !d->restored ? Theme::GREEN : Theme::AMBER,
+                           Theme::BG);
+            t.setCursor(w - t.textWidth(signal) - 9, y + detailY);
+            t.print(signal);
+            y += rowH;
+            continue;
+        }
+
         // A row the black box kept from an earlier boot is drawn faded: it
         // is history, and it sat beside live rows looking exactly like one.
         const bool kept = d->restored;
