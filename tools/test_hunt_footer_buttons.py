@@ -21,6 +21,22 @@ assert "x >= 8 && x <= 72 && y >= 21" not in ui
 assert "touchJustDown && (now - lastTouch) > TOUCH_DEBOUNCE_MS" in main
 assert "uiHuntHitGraph(tp.x, tp.y, tft.width(), tft.height())" in main
 assert "uiHuntToggleGraph();" in main
+# Physical 3.2 CYD uses multiple half-height sprite passes in drawTwoBand.
+# The footer may NEVER use the sprite's height; it must match tft touch coords.
+assert "uiHuntTick(t, now, engine, advance, tft.width(), tft.height())" in main
+assert "uiHuntListTick(t, now, engine, tft.width(), tft.height())" in main
+assert "const int h = screenH > 0 ? screenH : t.height();" in ui
+assert "const int w = screenW > 0 ? screenW : t.width();" in ui
+assert "drawHuntList(t, now, eng, screenW, screenH);" in ui
+for physical_h in (240,320):
+  half_h=physical_h//2
+  for font_h in (8,11,14,18,22):
+    bh=max(20,font_h+10)
+    physical_footer_y=physical_h-bh-6
+    sprite_footer_y=half_h-bh-6
+    assert physical_footer_y > half_h or physical_h==240 and bh>=32
+    assert sprite_footer_y != physical_footer_y
+    assert physical_footer_y+bh <= physical_h
 assert "const int margin = 8, gap = 8;" in theme
 assert "int bw = (screenW - 2 * margin - 2 * gap) / 3;" in theme
 assert "g.y = screenH - g.h - 6;" in theme
