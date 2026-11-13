@@ -44,7 +44,7 @@ void uiLogTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng,
                int scrollOffset, bool confirmPending, const char* confirmLabel,
                bool infoPending, const char* infoTypeName, const char* infoText,
                bool confirmWatched, bool confirmHunted, bool confirmIgnored,
-               int screenW = 0, int screenH = 0);
+               int screenW = 0, int screenH = 0, bool advance = true);
 void uiLogScroll(int delta);          // positive = scroll down (older)
 
 // One DEVICES row, newest first, and how many device rows there are. The first
@@ -53,7 +53,7 @@ void uiLogScroll(int delta);          // positive = scroll down (older)
 // flash is carried in a buffer of this screen's, so the pointer is good until
 // the next call -- draw it or copy it, do not keep it.
 const Detection* uiLogRow(const DetectionEngine& eng, int idx);
-uint16_t         uiLogRowCount(const DetectionEngine& eng);
+uint16_t         uiLogRowCount(const DetectionEngine& eng, uint32_t now = 0);
 
 // DEVICES row index (0 = topmost visible, already adjusted for scroll) a tap
 // at (x,y) falls within, or -1 if outside the device list -- used by

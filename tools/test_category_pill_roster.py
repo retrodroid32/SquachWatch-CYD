@@ -21,11 +21,17 @@ assert "if (uiLogCategoryHitBack(gestureStartX, gestureStartY," in main
 assert "uiLogTick(t, now, engine, 0," in main
 assert "tft.width(), tft.height());" in main
 assert "CategoryRoster::matches(s_category, d->type)" in log
+assert "CategoryRoster::fresh(*d, now) == (pass == 0)" in log
+assert "const bool fresh = CategoryRoster::fresh(*d, now);" in log
+assert "inline bool fresh(const Detection& d, uint32_t now)" in headers
+assert "uiLogRowCount(eng, now)" in log
+assert "Theme::drawActiveBackground(t, now, bgTop, bodyBottom, eng, advance)" in log
+assert "case Settings::Background::FIRE" not in log
 assert "const uint32_t age = kept ? 0 : (uint32_t)(now - d->lastSeen) / 1000u;" in log
 assert 'else t.printf("%ddBm", d->rssi);' in log
 assert 'if (s_category != DetectionType::UNKNOWN && !fresh)' in log
-assert '(d->channel ? 6500 : 4000)' in log
-assert 't.printf("LAST %lus", (unsigned long)age)' in log
+assert '(d.channel ? 6500 : 4000)' in headers
+assert 't.printf("LAST %lu%c", (unsigned long)(seconds ? age : age / 60u),' in log
 assert "s_category != DetectionType::UNKNOWN" in log
 assert "if (s_category != DetectionType::UNKNOWN) return categoryReindex(eng);" in log
 assert 'Theme::drawButton(t, bar.x[1], bar.y, bar.w[1], bar.h, "BACK", false)' in log

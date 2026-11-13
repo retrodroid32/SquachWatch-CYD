@@ -23,6 +23,13 @@ inline bool matches(DetectionType group, DetectionType actual) {
     return group != DetectionType::UNKNOWN && group == actual;
 }
 
+// Do not confuse the engine's 60-second active counter with a fresh
+// observation. This same wrap-safe predicate drives roster order and labels.
+inline bool fresh(const Detection& d, uint32_t now) {
+    return !d.restored && d.active &&
+           (int32_t)(now - d.lastSeen) <= (d.channel ? 6500 : 4000);
+}
+
 inline const char* label(DetectionType group) {
     switch (group) {
         case DetectionType::AIRTAG: return "TRACKER";

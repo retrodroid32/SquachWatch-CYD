@@ -30,15 +30,15 @@ void uiLogSetCategory(DetectionType group) {
 }
 DetectionType uiLogCategory() { return s_category; }
 
-// Active rows are shown first; stale rows still appear below in newest-first
-// order. No allocations, duplicate MACs, or log mutation.
-static uint8_t categoryReindex(const DetectionEngine& eng) {
+// Radio-fresh rows first, then recently seen rows, newest-first in each group.
+// A 30-second-old row must not outrank a signal actually being received.
+static uint8_t categoryReindex(const DetectionEngine& eng, uint32_t now) {
     s_categoryCount = 0;
     for (uint8_t pass = 0; pass < 2; ++pass) {
         for (uint8_t i = 0; i < eng.logCount() && s_categoryCount < 64; ++i) {
             const Detection* d = eng.logAt(i);
             if (d && CategoryRoster::matches(s_category, d->type) &&
-                ((d->active && !d->restored) == (pass == 0))) {
+                (CategoryRoster::fresh(*d, now) == (pass == 0))) {
                 s_categorySlots[s_categoryCount++] = i;
             }
         }
@@ -114,8 +114,9 @@ static void ensureIndex(const DetectionEngine& eng) {
     invalidatePage();
 }
 
-uint16_t uiLogRowCount(const DetectionEngine& eng) {
-    if (s_category != DetectionType::UNKNOWN) return categoryReindex(eng);
+uint16_t uiLogRowCount(const DetectionEngine& eng, uint32_t now) {
+    if (s_category != DetectionType::UNKNOWN)
+        return categoryReindex(eng, now ? now : millis());
     ensureIndex(eng);
     return (uint16_t)(eng.logCount() + LogIndex::count());
 }
@@ -420,7 +421,7 @@ void uiLogTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, int scroll
                bool confirmPending, const char* confirmLabel,
                bool infoPending, const char* infoTypeName, const char* infoText,
                bool confirmWatched, bool confirmHunted, bool confirmIgnored,
-               int screenW, int screenH) {
+               int screenW, int screenH, bool advance) {
     const int w = screenW > 0 ? screenW : t.width();
     const int h = screenH > 0 ? screenH : t.height();
     (void)scrollOffset;
@@ -449,37 +450,24 @@ void uiLogTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, int scroll
     // Only the BACKGROUND moves. Everything else on this screen still
     // begins where it did, so no content shifts.
     const int bgTop = 0;
-if (s_category != DetectionType::UNKNOWN) {
-    // A calm opaque background is faster and avoids a busy redraw behind
-    // live device rows on the 3.2-inch multi-band display.
-    t.fillRect(0, bgTop, w, bodyBottom - bgTop, Theme::BG);
-} else {
-switch (Settings::background()) {
-        case Settings::Background::STARFIELD: Theme::drawStarfield(t, now, bgTop, bodyBottom); break;
-        case Settings::Background::TOASTERS:   Theme::drawFlyingToasters(t, now, bgTop, bodyBottom); break;
-        case Settings::Background::AQUARIUM:   Theme::drawAquarium(t, now, bgTop, bodyBottom); break;
-        case Settings::Background::TERMINAL:   Theme::drawTerminalLog(t, now, bgTop, bodyBottom); break;
-        case Settings::Background::FIREFLIES:  Theme::drawFireflies(t, now, bgTop, bodyBottom); break;
-        case Settings::Background::FIRE:       Theme::drawFire(t, now, bgTop, bodyBottom); break;
-        case Settings::Background::SNOWFALL:   Theme::drawSnowfall(t, now, bgTop, bodyBottom); break;
-        case Settings::Background::SPECTRUM:   Theme::drawGibson(t, now, bgTop, bodyBottom, eng); break;
-        case Settings::Background::SYNTHWAVE: Theme::drawSynthwave(t, now, bgTop, bodyBottom); break;
-        // Fills rather than skips -- see the note in drawActiveBackground.
-        case Settings::Background::BLACK:      t.fillRect(0, bgTop, t.width(), bodyBottom - bgTop, Theme::BG); break;
-        default:                               Theme::drawDigitalRain(t, now, bgTop, bodyBottom, true); break;
+    if (s_category != DetectionType::UNKNOWN) {
+        // Bounded category roster gets a calm, opaque background.
+        t.fillRect(0, bgTop, w, bodyBottom - bgTop, Theme::BG);
+    } else {
+        // Reuse CLEAR's complete background dispatcher instead of keeping
+        // a duplicate switch that wastes OTA flash. Advance animation only
+        // on the logical frame's first pass on banded displays.
+        Theme::drawActiveBackground(t, now, bgTop, bodyBottom, eng, advance);
     }
-}
     Theme::restorePalette(saved);
     // Floating corner controls plus the LOG's central view selector.
     const uint16_t count = g_view == LogView::DEVICES
-                         ? uiLogRowCount(eng)
+                         ? uiLogRowCount(eng, now)
                          : BlackBox::detectionsKept();
     char title[32];
-    if (s_category != DetectionType::UNKNOWN)
-        snprintf(title, sizeof(title), ">> %s (%u) <<",
-                 CategoryRoster::label(s_category), (unsigned)count);
-    else
-        snprintf(title, sizeof(title), ">> LOG  (%u) <<", (unsigned)count);
+    const char* titleName = s_category == DetectionType::UNKNOWN
+        ? "LOG " : CategoryRoster::label(s_category);
+    snprintf(title, sizeof title, ">> %s (%u) <<", titleName, (unsigned)count);
     Theme::drawTitleBar(t, title);
     if (s_category == DetectionType::UNKNOWN) {
         drawViewTabs(t);
@@ -715,16 +703,18 @@ switch (Settings::background()) {
         // LOG uses the historic RSSI, but a CATEGORY page is about the
         // device's presence RIGHT NOW. Do not call a 60-second-old engine
         // entry LIVE: BLE freshness is 4s and Wi-Fi 6.5s (HUNT's rule).
-        const bool fresh = !kept && d->active &&
-            (int32_t)(now - d->lastSeen) <= (d->channel ? 6500 : 4000);
+        const bool fresh = CategoryRoster::fresh(*d, now);
         t.setTextColor(kept ? dim : (s_category != DetectionType::UNKNOWN && !fresh
                                             ? Theme::AMBER : Theme::CYAN), Theme::BG);
         t.setCursor(116, y + detailY);
         if (s_category != DetectionType::UNKNOWN && !fresh) {
             const uint32_t age = kept ? 0 : (uint32_t)(now - d->lastSeen) / 1000u;
             if (kept) t.print("SAVED");
-            else if (age < 60) t.printf("LAST %lus", (unsigned long)age);
-            else t.printf("LAST %lum", (unsigned long)(age / 60u));
+            else {
+                const bool seconds = age < 60u;
+                t.printf("LAST %lu%c", (unsigned long)(seconds ? age : age / 60u),
+                         seconds ? 's' : 'm');
+            }
         } else t.printf("%ddBm", d->rssi);
         // Prefer the rolling ~15-second trend. While fewer than three
         // samples exist, retain the old two-point arrow so a fresh row still
@@ -780,7 +770,8 @@ switch (Settings::background()) {
         const char* reg = Regulars::nameFor(d->mac);
         const int nameX = labelEnd + 8;
         int rightEdge = tsX - 6;
-        bool drawSpark = !kept && d->active && d->rssiHistCount >= 3;
+        bool drawSpark = !kept && d->active && d->rssiHistCount >= 3 &&
+                         (s_category == DetectionType::UNKNOWN || fresh);
         int sparkX = 0;
         const int sparkW = 30;
         const int sparkH = 9;
