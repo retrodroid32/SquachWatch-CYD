@@ -1489,6 +1489,34 @@ static void enterLog() {
     uiLogInit(*canvas);
 }
 
+// Category pages reuse LOG's device actions, not a second Watch/Hunt UI.
+static void enterCategoryLog(DetectionType category) {
+    enterLog();
+    uiLogSetCategory(category);
+}
+
+// Capture a real device snapshot BEFORE presenting a WATCH/HUNT/IGNORE
+// action. The live ring can change while a menu is open; the menu never
+// holds a pointer into a slot that may be overwritten.
+static bool armLogConfirmAt(int x, int y) {
+    const int row = uiLogRowAt(tft, x, y, tft.width(), tft.height());
+    const Detection* d = row >= 0 ? uiLogRow(engine, row) : nullptr;
+    if (!d) return false;
+    memcpy(s_confirmMac, d->mac, 6);
+    s_confirmIsBle = (d->channel == 0);
+    s_confirmType = d->type;
+    s_confirmDetection = *d;
+    snprintf(s_confirmVendor, sizeof s_confirmVendor, "%s", vendorText(*d));
+    memcpy(s_confirmName, d->name, sizeof s_confirmName);
+    s_confirmLabelIsName = d->name[0] != 0;
+    const char* lbl = s_confirmLabelIsName ? d->name : vendorText(*d);
+    strncpy(s_confirmLabel, lbl, sizeof(s_confirmLabel) - 1);
+    s_confirmLabel[sizeof(s_confirmLabel) - 1] = 0;
+    s_confirmPending = true;
+    s_confirmArmed = false;
+    return true;
+}
+
 static bool    s_rawScanIsBle = true;
 static bool    s_rawScanCachedView = false;
 
@@ -4615,6 +4643,7 @@ void loop() {
     if (Theme::consumePetUnlock())      Squachy::unlockPet();
 
             bool boring = Settings::boringMode();
+            DetectionType tappedCategory = DetectionType::UNKNOWN;
             ButtonId barBtn = tp.valid ? Theme::hitTestButtonBar(tp.x, tp.y, tft.width(), tft.height()) : ButtonId::NONE;
 
             // Left/right 10% slivers of the screen (excluding the button
@@ -4778,6 +4807,13 @@ void loop() {
                 sqActive  = false;
                 s_huntReturn = HuntReturn::HOME;
                 enterHuntList();
+            } else if (touchJustDown && !s_scanPickerOpen &&
+                       (now - lastTouch) > TOUCH_DEBOUNCE_MS &&
+                       (tappedCategory = uiClearCategoryHit(
+                           tp.x, tp.y, tft.width(), tft.height())) != DetectionType::UNKNOWN) {
+                lastTouch = now;
+                sqActive = false;
+                enterCategoryLog(tappedCategory);
             } else if (touchJustDown && (now - lastTouch) > TOUCH_DEBOUNCE_MS &&
                        uiClearSquadHit(tp.x, tp.y)) {
                 // The squad badge, ahead of the scene gestures for the same
