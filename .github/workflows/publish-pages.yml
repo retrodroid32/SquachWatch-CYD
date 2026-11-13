@@ -107,7 +107,29 @@ jobs:
           test -s _site/update/index.html
           test -s _site/emulator/index.html
 
+      # A retry of a failed publish job belongs to the SAME workflow run.
+      # Re-uploading the same "github-pages" artifact creates two entries,
+      # and deploy-pages rejects duplicate names (observed Nov 4).
+      - name: Check for existing Pages artifact on retry
+        id: existing_pages
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          count="$(gh api "repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts?per_page=100" --jq '[.artifacts[] | select(.name == "github-pages" and .expired == false)] | length')"
+          if [ "$count" -gt 1 ]; then
+            echo "::error::Duplicate github-pages artifacts already exist in this run; start a fresh run instead."
+            exit 1
+          fi
+          if [ "$count" -eq 1 ]; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "Reusing the first attempt's Pages artifact."
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Upload Pages artifact
+        if: steps.existing_pages.outputs.exists == 'false'
         uses: actions/upload-pages-artifact@v5
         with:
           path: _site
@@ -115,3 +137,7 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v5
+        with:
+          # GitHub Pages remained in updating_pages past the 10-minute
+          # default on Nov 4 despite a fully uploaded ~50 MB site.
+          timeout: 1200000
