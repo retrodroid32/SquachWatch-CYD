@@ -1,10 +1,9 @@
-CATEGORY-PILLS-CLOCK-DUALCOUNT-R3
-# LAB PR #226 — 2026-11-13; based on validated code commit edc0e5fd.
-# v1.41 clickable category roster, corrected no-trust timestamp UP+,
-# green radio-fresh active / blue unique-detection-records since boot.
-# Grouped TRACKER/CAMERA/HACKER counts match the roster's types.
-# GitHub Build #43485289268 passed all jobs on edc0e5fd.
-# Request-file-only commit triggers exact-commit PR Build then LAB build
-# and release firmware; CI gate MUST verify exact SHA before publishing.
-# Firmware 2.8 ST7789 and 3.2 ST7798; all required OTA slot guards unchanged.
-# LAB only. No production GitHub Release, v-tag, master merge, or PR merge.
+FIRST-SEEN-STABLE-R1
+# PR #230: preserve initial first-seen timestamps for BLE/WiFi/DEAUTH.
+# LAST SEEN and active RSSI continue updating; visit-start anti-spam uses
+# a separate 64-slot timestamp sidecar, so no renewed firstSeen on return.
+# Prior exact-source PR Build #43533337026 SUCCESS for 04dc7e6c87a2285134e644870effc0a3e01d7fd8.
+# Request-file-only commit: CI must pass AGAIN on exact new SHA before release.
+# Full firmware matrix, host tests, emulator and >=8192-byte OTA reserve.
+# LAB-only (2.8 ST7789 and 3.2 ST7798); no production tag or GitHub release.
+# Draft PR #230; do not merge without physical hardware validation.
