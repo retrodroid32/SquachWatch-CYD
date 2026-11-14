@@ -5346,7 +5346,7 @@ void loop() {
             // touch polling, causing BACK to require repeated taps.
             // Render on state changes, not every loop while touch is held.
             const bool wlNeedsDraw = wlDirty || wlNewEntry || touchJustDown || touchJustUp ||
-                                     (now-wlLastDrawAt>=2000);
+                                     RemoteMirror::wantsRender() || (now-wlLastDrawAt>=2000);
             if (wlNeedsDraw) {
                 wlLastDrawAt=now;
                 wlDirty=false;
@@ -7436,7 +7436,7 @@ void loop() {
             static uint32_t hlLastDrawAt = 0, hlEntryAt = 0;
             const bool hlNewEntry = hlEntryAt != transitionStart;
             const bool hlNeedsDraw = hlNewEntry || touchJustDown || touchJustUp ||
-                                     tp.valid || (now - hlLastDrawAt >= 2000);
+                                     RemoteMirror::wantsRender() || tp.valid || (now - hlLastDrawAt >= 2000);
             if (hlNeedsDraw) {
                 hlEntryAt = transitionStart;
                 hlLastDrawAt = now;
