@@ -1,9 +1,9 @@
-NATIVE-UI-V2-PARTIAL-MODEL-R1
-# SquachWatch LAB #234 (stacked on pixel-mirror PR #232), 2026-11-14.
-# UI CAPS 2 / READY 2 / STATE 2 with hardware screen state and orientation.
-# Real category counters, bounded RAM LOG list, PIN/private rows, USB touch.
-# Authentic RGB332 MIRROR fallback retained for unsupported UI screens.
-# Do not imply complete native Windows rendering; many of 42 screens remain partial.
-# Tested source commit f0c07acab43a95bd6757b3a4a2388f8cc6c65e0d; CI Build #43597553117 PASSED.
-# Exact request-commit CI must pass before release, min OTA 8192 bytes unchanged.
-# LAB-only 2.8 ST7789 and 3.2 ST7798; NO master merge or production tag/release.
+BOOTSAFE-MIRROR-ROLLBACK-R1
+# Emergency LAB only to isolate post-flash boot-loop report on PR #235.
+# Device source reverts to PR #234 exact LAB tested commit 30122af91c74.
+# Excludes PR #235 mirror source/status/2048TX/redraw changes.
+# Includes fail-closed web flasher Pages historical signature recovery patch.
+# Green source Build #43644368967 head 7d25faed663335fa95e4323f24eccb578db9c82d.
+# Release must check exact new request commit and OTA minimum >=8192 bytes.
+# Physical boot NOT confirmed. User should retain verified production as recovery.
+# No merge, tag, production release or flash erase.
