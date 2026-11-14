@@ -224,7 +224,7 @@ void tick(uint8_t screen,int w,int h,uint8_t rotation,
     if(!s.enabled)return;
     if(w<1||h<1||w>480||h>480)return;
     const uint32_t now=millis();
-    const uint8_t kind=screen==1?1:screen==3?2:0;
+    const uint8_t kind=screen==1?1:(screen==3 && logCategory!=255)?2:0;
     if(s.screen!=screen||s.width!=w||s.height!=h||s.rotation!=rotation||
        s.category!=logCategory||s.kind!=kind){
         s.screen=screen;s.width=w;s.height=h;s.rotation=rotation;
