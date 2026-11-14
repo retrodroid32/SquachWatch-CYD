@@ -38,7 +38,7 @@ class NativeUiStateTests(unittest.TestCase):
         self.assertIn("Serial.availableForWrite()<64", REMOTE)
         self.assertIn('Serial.printf("UI STATE 1 %u %d %d %u %lu\\n"', REMOTE)
         self.assertIn("RemoteMirror::uiTick((uint8_t)state", MAIN)
-        self.assertRegex(STATE, r"enum class AppState\\s*:\\s*uint8_t")
+        self.assertRegex(STATE, r"enum class AppState\s*:\s*uint8_t")
         # The UI STATE frame is intentionally metadata, not detections or pixels.
         body = REMOTE.split("void uiTick(", 1)[1].split("bool touch(", 1)[0]
         self.assertNotIn("MIRROR ROW", body)
