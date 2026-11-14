@@ -8,7 +8,7 @@ This SquachWatch-only draft is stacked on PR #234 (which is stacked on PR #232).
 2. The retained full-frame snapshot is eligible only if actual pushFrame() previously presented **the same screen, rotation and transition**. A pending screenshot on a static page can use that legitimate retained display, but cannot use a stale frame after navigation.
 3. A frame in progress is aborted with an explicit `MIRROR ERROR SCREEN_CHANGED` on display-source/screen/rotation transition; baseline hash is invalidated, and remote hold is cancelled. The host must discard the incomplete frame and request a fresh keyframe.
 4. Changed-row transmission remains bounded and nonblocking; allow at most **four RGB332 rows / pushed frame pass**, with maximum 32 candidate rows examined. Classic CYD UART TX buffer increased to **2048 B**, while each full record is queued only if it fits without waiting. This reduces low-refresh ST7798 band-capture latency but requires physical radio performance validation. No second LCD buffer is allocated.
-5. Recovery-band capture can request a new actual draw on an otherwise static CLEAR page to prevent a screenshot from waiting forever for the next cosmetic redraw.
+5. Recovery-band capture can request real redraws on otherwise static CLEAR, WATCH_LIST and HUNT_LIST pages (the rosters normally redraw about every two seconds) to prevent a single screenshot from taking longer than the Windows timeout. This is active only when the USB host explicitly requests a frame.
 6. Existing 6-second no-progress timeout, explicit PIN denial, `MIRROR PAUSE / RESUME` LOG priority, physical touch precedence, and old `MIRROR READY / BEGIN / ROW / END / DELTA` framing remain. No WiFi/BLE listener is added.
 
 ## Wire protocol
