@@ -1,9 +1,10 @@
-NATIVE-UI-V2-PARTIAL-MODEL-R1
-# SquachWatch LAB #234 (stacked on pixel-mirror PR #232), 2026-11-14.
-# UI CAPS 2 / READY 2 / STATE 2 with hardware screen state and orientation.
-# Real category counters, bounded RAM LOG list, PIN/private rows, USB touch.
-# Authentic RGB332 MIRROR fallback retained for unsupported UI screens.
-# Do not imply complete native Windows rendering; many of 42 screens remain partial.
-# Tested source commit f0c07acab43a95bd6757b3a4a2388f8cc6c65e0d; CI Build #43597553117 PASSED.
-# Exact request-commit CI must pass before release, min OTA 8192 bytes unchanged.
-# LAB-only 2.8 ST7789 and 3.2 ST7798; NO master merge or production tag/release.
+MIRROR-CAPTURE-RELIABILITY-R1
+# SquachWatch PR #235 LAB only: correct live RGB332 screen capture for Windows R7.3.
+# Real sprite source tracking: 2.8 ST7789 full, 3.2 ST7798 recovery bands.
+# CYD32 direct-panel SD_FILES rejects stale pixel capture explicitly.
+# MIRROR STATUS/QUEUED diagnostics, screen/rotation-aware abort, bounded faster rows.
+# Static CLEAR/WATCH_LIST/HUNT_LIST can redraw on an explicit capture request.
+# Uses USB only; PIN locked refusal, native touch and LOG priority preserved.
+# Tested code commit ce88c2d0116ea86119dec3b60b9de2f8f7cd72a7 passed full CI #43623730661.
+# LAB-only; release's exact-commit build and OTA >=8192 B are mandatory.
+# No master merge, no production release/tag or branch removal.
