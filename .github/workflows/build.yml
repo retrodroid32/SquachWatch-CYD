@@ -134,6 +134,7 @@ jobs:
           python3 tools/test_shared_draw_two_band.py
           python3 tools/test_category_pill_roster.py
           python3 tools/test_remote_mirror_v2.py
+          python3 tools/test_native_ui_v2.py
       - name: Verify protected master-context LAB Pages recovery
         run: python3 tools/test_verify_lab_pages_recovery.py
       - name: Reject oversized OTA images and mismatched LAB manifests
