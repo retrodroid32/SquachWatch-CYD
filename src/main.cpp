@@ -3827,6 +3827,8 @@ void loop() {
     FramePush::newFrame();
     bool renderedThisLoop = true;
     uint32_t now = millis();
+    // Small opt-in serial state telemetry; PIN check also revokes existing sessions.
+    RemoteMirror::uiTick((uint8_t)state,tft.width(),tft.height(),screenRotation,Security::locked());
 #if defined(TWATCH_S3)
     twatchCrownTick(now);
     twatchMotionTick(now);

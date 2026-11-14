@@ -7,6 +7,10 @@ namespace RemoteMirror {
 namespace {
 struct State {
   bool enabled=false,requested=false,streaming=false,down=false;
+  bool uiEnabled=false,uiRequested=false;
+  uint8_t uiScreen=255,uiRotation=255;
+  uint32_t lastUiAt=0;
+  int uiWidth=0,uiHeight=0;
   int x=0,y=0,width=0,height=0,nextY=0;
   uint32_t lastTouch=0,seq=0;
 };
@@ -56,9 +60,63 @@ bool command(const char* line){
   }
   Serial.println("MIRROR ERROR COMMAND");return true;
 }
+// SquachEmit-compatible low-bandwidth UI state transport for SquachWatch.
+// This is a capability/telemetry foundation, NOT a complete Windows renderer.
+// Command handling is reached only after Clock::pollSerial's PIN check.
+bool uiCommand(const char* line){
+  if(!line||strncmp(line,"UI ",3)!=0)return false;
+  State& s=state();
+  if(strcmp(line,"UI ON")==0){
+    s.uiEnabled=true;s.uiRequested=true;s.lastUiAt=0;
+    Serial.println("UI READY 1 SQUACHWATCH TOUCH STATE");
+    return true;
+  }
+  if(strcmp(line,"UI OFF")==0){
+    s.uiEnabled=false;s.uiRequested=false;
+    if(!s.enabled)s.down=false;
+    Serial.println("UI OFF OK");
+    return true;
+  }
+  if(!s.uiEnabled){
+    Serial.println("UI ERROR DISABLED");
+    return true;
+  }
+  if(strcmp(line,"UI GET")==0){s.uiRequested=true;return true;}
+  int x=0,y=0;char phase[8]={0};
+  if(sscanf(line,"UI TOUCH %d %d %7s",&x,&y,phase)==3 &&
+     x>=0 && y>=0 && x<s.uiWidth && y<s.uiHeight){
+    if(strcmp(phase,"UP")==0)s.down=false;
+    else if(strcmp(phase,"DOWN")==0||strcmp(phase,"MOVE")==0){
+      s.x=x;s.y=y;s.down=true;s.lastTouch=millis();
+    }else{Serial.println("UI ERROR TOUCH_PHASE");return true;}
+    Serial.println("UI TOUCH OK");return true;
+  }
+  Serial.println("UI ERROR COMMAND");return true;
+}
+void uiTick(uint8_t screen,int width,int height,uint8_t rotation,bool locked){
+  State& s=state();
+  // A lock acquired after UI ON must also revoke a live session.
+  if(locked){
+    s.uiEnabled=false;s.uiRequested=false;s.enabled=false;
+    s.requested=false;s.streaming=false;s.down=false;
+    return;
+  }
+  if(!s.uiEnabled)return;
+  if(width<1||height<1||width>480||height>480)return;
+  s.uiWidth=width;s.uiHeight=height;
+  const uint32_t now=millis();
+  if(!s.uiRequested&&now-s.lastUiAt<200)return; // <=5 updates/s
+  if(Serial.availableForWrite()<64)return; // Don't block the radio/UI loop.
+  s.uiRequested=false;s.lastUiAt=now;
+  s.uiScreen=screen;s.uiRotation=rotation;
+  // Numeric screen ID is stable AppState; no screen text, PIN, MAC or
+  // potentially sensitive detection details are serialized.
+  Serial.printf("UI STATE 1 %u %d %d %u %lu\n",
+    (unsigned)screen,width,height,(unsigned)rotation,(unsigned long)now);
+}
 bool touch(int width,int height,int& x,int& y){
   State& s=state();
-  if(!s.enabled||!s.down)return false;
+  if((!s.enabled&&!s.uiEnabled)||!s.down)return false;
   if(millis()-s.lastTouch>4000){s.down=false;return false;}
   if(s.x>=width||s.y>=height){s.down=false;return false;}
   x=s.x;y=s.y;return true;

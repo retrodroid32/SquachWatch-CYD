@@ -484,6 +484,7 @@ void pollSerial() {
         }
 
         if (RemoteMirror::command(line)) continue;
+        if (RemoteMirror::uiCommand(line)) continue;
         if (strncasecmp(line, "FLOOD ", 6) == 0) {
             // A thousand a second is five times the loudest room measured;
             // a typo like -1 would be sixty-five thousand in one burst.

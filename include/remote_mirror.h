@@ -6,6 +6,9 @@
 #include <stdint.h>
 namespace RemoteMirror {
   bool command(const char* line);
+  // Small UI state stream, separate from the authentic RGB332 pixel mirror.
+  bool uiCommand(const char* line);
+  void uiTick(uint8_t screen,int width,int height,uint8_t rotation,bool locked);
   // Returns true when a valid active injected press overrides physical input.
   bool touch(int width,int height,int& x,int& y);
   void capture(const uint8_t* bytes,int width,int bandHeight,int panelHeight,int y);
