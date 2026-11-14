@@ -1,8 +1,9 @@
-USB-MIRROR-ROWDELTA-V2-R1
-# LAB PR #232 — authentic RGB332 SquachWatch 2.8 ST7789 and 3.2 ST7798.
-# Initial full authentic sprite keyframe; optional sequence-checked changed-row delta.
-# USB-only native DOWN/MOVE/UP and PIN-locked refusal; LOG evidence priority.
-# Base firmware commit 809517344931235548635b5c39fd6da50f7ce5cd passed Build #43538644007.
-# Request-only commit triggers EXACT new commit Build then LAB publication.
-# Full board matrix and 8192-byte final OTA reserve must remain PASS.
-# Draft PR; no merge, production release, public GitHub Release or version tag.
+NATIVE-UI-V2-PARTIAL-MODEL-R1
+# SquachWatch LAB #234 (stacked on pixel-mirror PR #232), 2026-11-14.
+# UI CAPS 2 / READY 2 / STATE 2 with hardware screen state and orientation.
+# Real category counters, bounded RAM LOG list, PIN/private rows, USB touch.
+# Authentic RGB332 MIRROR fallback retained for unsupported UI screens.
+# Do not imply complete native Windows rendering; many of 42 screens remain partial.
+# Tested source commit f0c07acab43a95bd6757b3a4a2388f8cc6c65e0d; CI Build #43597553117 PASSED.
+# Exact request-commit CI must pass before release, min OTA 8192 bytes unchanged.
+# LAB-only 2.8 ST7789 and 3.2 ST7798; NO master merge or production tag/release.
