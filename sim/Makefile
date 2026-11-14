@@ -142,6 +142,7 @@ SIM_SRCS := $(SIM_DIR)/main_sim.cpp $(SIM_DIR)/detection_sim.cpp $(SRC)/touch_ca
 # to pull in here. No board macro is defined (no CYD35, no AWOK), which
 # selects the same plain XPT2046 path the real cyd board takes.
 LIVE_SRCS := $(SRC)/main.cpp \
+             $(SRC)/remote_ui.cpp \
              $(SRC)/remote_mirror.cpp \
              $(SRC)/cap_touch.cpp \
              $(SRC)/touch_cal.cpp \
@@ -163,6 +164,7 @@ LIVE_FLAGS := -include $(SIM_DIR)/Arduino.h -include $(INC)/cyd_user_setup.h
 # Needs emsdk on PATH:  source ~/emsdk/emsdk_env.sh
 WASM_SRCS := $(UI_SRCS) \
              $(SRC)/main.cpp \
+             $(SRC)/remote_ui.cpp \
              $(SRC)/remote_mirror.cpp \
              $(SRC)/cap_touch.cpp \
              $(SRC)/touch_cal.cpp \
