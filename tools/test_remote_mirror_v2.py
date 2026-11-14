@@ -37,7 +37,7 @@ for token in (
 ):
     assert token in mirror, token
 
-assert 'constexpr int MAX_SENT_PER_PASS = 2;' in mirror
+assert 'constexpr int MAX_SENT_PER_PASS = 4;' in mirror
 assert 'constexpr int MAX_SCANNED_PER_PASS = 32;' in mirror
 assert 'Serial.availableForWrite()<n+32' in mirror
 assert 'Serial.write((const uint8_t*)p,(size_t)n)' in mirror
@@ -63,7 +63,7 @@ assert push.index('frame.pushSprite(x, y)') < push.index('RemoteMirror::capture(
 assert 'frame.bufW(),frame.bufH(),tft.height(),y' in push
 assert 's_recoveryBands==1 && canvas==&frame' in main
 assert 'if(!frameBufferOk) RemoteMirror::unavailable();' in main
-assert 'Serial.setTxBufferSize(1024);' in main
+assert 'Serial.setTxBufferSize(2048);' in main
 assert '$(SRC)/remote_mirror.cpp' in sim
 
 # Keep the two independent device protocols, never silently change SquachEmit.

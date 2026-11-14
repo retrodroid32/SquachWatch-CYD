@@ -1,7 +1,7 @@
 // SquachWatch-CYD USB workbench, authentic RGB332 row capture.
 // No TFT GRAM readback and no reconstructed UI state. Every transmitted row
 // is copied from the 8-bit sprite immediately associated with a panel push.
-// Captures are bounded: two changed rows per rendering pass, zero heap allocs.
+// Captures are bounded: up to four changed rows per rendering pass, zero heap allocs.
 // The host applies updates only after an END with a matching sequence.
 #include "remote_mirror.h"
 #include "security.h"
@@ -19,7 +19,7 @@ namespace RemoteMirror {
 namespace {
 constexpr int MAX_H = 480;
 constexpr int MAX_W = 320;
-constexpr int MAX_SENT_PER_PASS = 2;
+constexpr int MAX_SENT_PER_PASS = 4;
 constexpr int MAX_SCANNED_PER_PASS = 32;
 constexpr uint32_t TOUCH_EXPIRY_MS = 1800;
 struct Session {
@@ -27,8 +27,15 @@ struct Session {
     bool delta=false, baselineValid=false, down=false;
     int x=0,y=0, width=0,height=0,nextRow=0;
     uint32_t touchAt=0, sequence=0, committed=0, baseRequested=0;
-    uint32_t lastProgressAt=0;
+    uint32_t lastProgressAt=0, acceptedAt=0, rowsSent=0, bytesSent=0;
+    uint8_t screenAtStart=255, rotationAtStart=255;
 };
+struct SourceContext {
+    // 0=no buffer, 1=full sprite, 2=recovery-band sprite, 3=direct TFT.
+    uint8_t mode=0, bands=0, screen=255, rotation=255;
+    bool known=false;
+};
+SourceContext& source() { static SourceContext c; return c; }
 Session& session() { static Session s; return s; }
 // Hashes cost 3840 bytes regardless of orientation or frame-band count;
 // never allocate a second 76.8KB LCD image in already-constrained CYD RAM.
@@ -59,6 +66,7 @@ void resetPending(Session& s) {
 void fail(Session& s,const char* why) {
     resetPending(s);
     s.baselineValid=false;
+    s.down=false;
     Serial.printf("MIRROR ERROR %s\n",why);
 }
 int encodeRow(char* out,size_t cap,uint32_t seq,int y,const uint8_t* src,int width) {
@@ -85,6 +93,19 @@ bool command(const char* line) {
 #else
         Serial.println("MIRROR CAPS 2 UNSUPPORTED_BOARD");
 #endif
+        return true;
+    }
+    if(strcmp(line,"MIRROR STATUS")==0) {
+        const SourceContext& c=source();
+        const char* phase=s.paused?"PAUSED":s.running?"STREAMING":
+            s.pending?"PENDING":s.enabled?"READY":"OFF";
+        const uint32_t age=(s.pending||s.running)
+            ?(uint32_t)(millis()-s.acceptedAt):0;
+        Serial.printf("MIRROR STATUS 2 %s %u %u %u %u %lu %d %d %lu %lu %lu\n",
+            phase,(unsigned)c.mode,(unsigned)c.bands,(unsigned)c.screen,
+            (unsigned)c.rotation,(unsigned long)s.sequence,s.nextRow,s.height,
+            (unsigned long)s.rowsSent,(unsigned long)s.bytesSent,
+            (unsigned long)age);
         return true;
     }
     if(strcmp(line,"MIRROR OFF")==0) {
@@ -117,6 +138,15 @@ bool command(const char* line) {
     }
     if(s.paused) { Serial.println("MIRROR ERROR PAUSED"); return true; }
     if(strcmp(line,"MIRROR FRAME")==0 || strncmp(line,"MIRROR FRAME ",13)==0) {
+        // Report a real capture limitation immediately. The Windows frame
+        // assembler must never wait for bytes from an unrendered sprite.
+        const SourceContext& c=source();
+        if(!c.known || c.mode==0) {
+            Serial.println("MIRROR ERROR NO_AUTHENTIC_BUFFER");return true;
+        }
+        if(c.mode==3) {
+            Serial.println("MIRROR ERROR DIRECT_PANEL_UNSUPPORTED");return true;
+        }
         if(s.running || s.pending) { Serial.println("MIRROR ERROR BUSY"); return true; }
         unsigned long last=0; char extra=0;
         const bool withBase=strncmp(line,"MIRROR FRAME ",13)==0;
@@ -126,6 +156,10 @@ bool command(const char* line) {
         s.baseRequested=withBase?(uint32_t)last:0;
         s.delta=withBase && s.baselineValid && s.baseRequested==s.committed;
         s.pending=true; s.lastProgressAt=millis();
+        s.acceptedAt=s.lastProgressAt;s.rowsSent=0;s.bytesSent=0;
+        s.screenAtStart=c.screen;s.rotationAtStart=c.rotation;
+        Serial.printf("MIRROR QUEUED %u %u %u\n",
+             (unsigned)c.mode,(unsigned)c.bands,(unsigned)c.screen);
         return true;
     }
     int x=0,y=0; char phase[8]={};
@@ -159,6 +193,32 @@ bool touch(int w,int h,int& x,int& y) {
 #endif
 }
 void stopForNative() { session()=Session{}; }
+void panelState(uint8_t mode,uint8_t bands,uint8_t screen,uint8_t rotation) {
+    SourceContext& c=source();
+    const bool changed=!c.known || c.mode!=mode || c.bands!=bands ||
+                       c.screen!=screen || c.rotation!=rotation;
+    c.known=true;c.mode=mode;c.bands=bands;c.screen=screen;c.rotation=rotation;
+    if(!changed) return;
+    Session& s=session();
+    if((s.pending||s.running) && (s.screenAtStart!=screen ||
+        s.rotationAtStart!=rotation || mode==0 || mode==3)) {
+        fail(s,mode==3?"DIRECT_PANEL_UNSUPPORTED":
+            mode==0?"NO_AUTHENTIC_BUFFER":"SCREEN_CHANGED");
+    }
+    // Changed dimensions, source or physical screen invalidate old pixel
+    // hashes, never apply a delta across a screen transition.
+    s.baselineValid=false;
+    s.down=false;
+}
+bool wantsRender() {
+#if SQW_CLASSIC_MIRROR
+    const Session& s=session();
+    return s.enabled && !s.paused && (s.pending||s.running) &&
+           source().mode==2;
+#else
+    return false;
+#endif
+}
 void pauseEvidence() {
     Session& s=session();
     if(!s.enabled) return;
@@ -184,6 +244,11 @@ void capture(const uint8_t* src,int w,int bandH,int panelH,int y) {
 #if SQW_CLASSIC_MIRROR
     Session& s=session();
     if(!s.enabled || s.paused || (!s.pending && !s.running)) return;
+    if(source().known && (source().mode==0 || source().mode==3)) {
+        fail(s,source().mode==3?"DIRECT_PANEL_UNSUPPORTED":
+                              "NO_AUTHENTIC_BUFFER");
+        return;
+    }
     if(Security::locked()) {
         s.down=false; fail(s,"LOCKED"); s.enabled=false; return;
     }
@@ -207,7 +272,7 @@ void capture(const uint8_t* src,int w,int bandH,int panelH,int y) {
         if(n<=0 || n>=int(sizeof(rec)) || !sendRecord(rec,n)) return;
         s.sequence=next; s.width=w; s.height=panelH;
         s.pending=false; s.running=true; s.nextRow=0;
-        s.lastProgressAt=millis();
+        s.lastProgressAt=millis();s.bytesSent+=(uint32_t)n;
     }
     if(w!=s.width || panelH!=s.height) {fail(s,"ROTATION_RESTART");return;}
     // A half-screen sprite is reused for many bands. Never read a stale band:
@@ -236,6 +301,7 @@ void capture(const uint8_t* src,int w,int bandH,int panelH,int y) {
             if(!n) {fail(s,"ENCODE_OVERFLOW");return;}
             if(!sendRecord(record,n)) return; // next drawn push resumes this row
             sent++; s.lastProgressAt=millis();
+            s.rowsSent++;s.bytesSent+=(uint32_t)n;
         }
         pendingHash[row]=hash;
         ++s.nextRow; ++scanned;

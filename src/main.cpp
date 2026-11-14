@@ -3016,7 +3016,7 @@ void setup() {
 #if defined(ARDUINO_ARCH_ESP32) && (defined(CYD) || defined(CYD32))
     // A complete 320-pixel base64 ROW is ~455 bytes. Reserve sufficient
     // UART TX space for one atomic nonblocking line and other LOG traffic.
-    Serial.setTxBufferSize(1024);
+    Serial.setTxBufferSize(2048);
 #endif
     Serial.begin(SERIAL_BAUD);
 #if defined(TWATCH_S3) || defined(FREENOVE_S3)
@@ -3679,6 +3679,12 @@ static uint32_t s_bandUs[2] = {0, 0};      // measurement: the 3.5"'s two draw p
 static uint8_t  s_rosterPushesThisLoop = 0;
 static uint32_t s_rosterPushDiagAt = 0;
 
+// Never read a retained full sprite that belongs to an earlier screen,
+// rotation or transition. Only actual LCD pushFrame establishes provenance.
+static AppState s_mirrorPresentedState=AppState::BOOT;
+static uint8_t s_mirrorPresentedRotation=255;
+static uint32_t s_mirrorPresentedTransition=UINT32_MAX;
+static bool s_mirrorHasPresented=false;
 static inline void pushFrame(int x, int y) {
 #if defined(TWATCH_S3)
     if (s_panelAsleep) return;   // nothing to show it to; see applyBrightness()
@@ -3727,6 +3733,10 @@ static inline void pushFrame(int x, int y) {
 #endif
     }
     s_pushAccumUs += micros() - t0;
+    s_mirrorPresentedState=state;
+    s_mirrorPresentedRotation=screenRotation;
+    s_mirrorPresentedTransition=transitionStart;
+    s_mirrorHasPresented=true;
     // Only authentic 8-bit sprite data that has just been pushed to the TFT
     // may be mirrored. Multi-band recovery passes use the actual band offset.
     if(frameBufferOk && frame.getColorDepth()==8)
@@ -3874,6 +3884,22 @@ static uint32_t    s_lastScreenAt   = 0;     // transitionStart of the screen be
 void loop() {
     // Cheap and unconditional: available() is a register read, and this
     // is the only way in for the one serial command the firmware takes.
+    // Resolve the actual LCD draw path BEFORE accepting a USB FRAME.
+    // CYD32's SD browser deliberately draws directly to TFT; its sprite
+    // contains unrelated, potentially stale content and must not be sent.
+    uint8_t mirrorSource=0;
+#if defined(ARDUINO_ARCH_ESP32) && (defined(CYD) || defined(CYD32))
+    if(frameBufferOk && frame.created() && frame.buf() &&
+       frame.getColorDepth()==8 && frame.bufW()==tft.width() &&
+       s_recoveryBands>=1 &&
+       frame.bufH()*s_recoveryBands==tft.height())
+        mirrorSource=s_recoveryBands==1?1:2;
+#if defined(CYD32)
+    if(state==AppState::SD_FILES) mirrorSource=3;
+#endif
+#endif
+    RemoteMirror::panelState(mirrorSource,s_recoveryBands,
+                             (uint8_t)state,screenRotation);
     Clock::pollSerial();
     RemoteMirror::tick();
     // Full-frame static pages can have no new LCD push for many seconds.
@@ -3881,7 +3907,12 @@ void loop() {
     // sprites remain captured ONLY from live pushFrame() passes.
 #if defined(ARDUINO_ARCH_ESP32) && (defined(CYD) || defined(CYD32))
     if(!frameBufferOk) RemoteMirror::unavailable();
-    else if(s_recoveryBands==1 && canvas==&frame && frame.buf() &&
+    else if(s_mirrorHasPresented &&
+            s_mirrorPresentedState==state &&
+            s_mirrorPresentedRotation==screenRotation &&
+            s_mirrorPresentedTransition==transitionStart &&
+            mirrorSource==1 &&
+            s_recoveryBands==1 && canvas==&frame && frame.buf() &&
             frame.getColorDepth()==8 &&
             frame.bufW()==tft.width() && frame.bufH()==tft.height())
         RemoteMirror::capture(frame.buf(),frame.bufW(),frame.bufH(),tft.height(),0);
@@ -4546,7 +4577,7 @@ void loop() {
             const bool drawClear = clearShouldRender(
                 now, engine, s_scanPickerOpen,
                 tp.valid || touchJustDown || touchJustUp,
-                forceClearVisual);
+                forceClearVisual || RemoteMirror::wantsRender());
 
             if (drawClear) {
 #if defined(CYD35)
@@ -5315,7 +5346,7 @@ void loop() {
             // touch polling, causing BACK to require repeated taps.
             // Render on state changes, not every loop while touch is held.
             const bool wlNeedsDraw = wlDirty || wlNewEntry || touchJustDown || touchJustUp ||
-                                     (now-wlLastDrawAt>=2000);
+                                     RemoteMirror::wantsRender() || (now-wlLastDrawAt>=2000);
             if (wlNeedsDraw) {
                 wlLastDrawAt=now;
                 wlDirty=false;
@@ -7405,7 +7436,7 @@ void loop() {
             static uint32_t hlLastDrawAt = 0, hlEntryAt = 0;
             const bool hlNewEntry = hlEntryAt != transitionStart;
             const bool hlNeedsDraw = hlNewEntry || touchJustDown || touchJustUp ||
-                                     tp.valid || (now - hlLastDrawAt >= 2000);
+                                     RemoteMirror::wantsRender() || tp.valid || (now - hlLastDrawAt >= 2000);
             if (hlNeedsDraw) {
                 hlEntryAt = transitionStart;
                 hlLastDrawAt = now;
