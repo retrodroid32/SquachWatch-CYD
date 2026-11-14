@@ -1,10 +1,9 @@
 MIRROR-CAPTURE-RELIABILITY-R1
-# SquachWatch PR #235 LAB only: correct live RGB332 screen capture for Windows R7.3.
-# Real sprite source tracking: 2.8 ST7789 full, 3.2 ST7798 recovery bands.
-# CYD32 direct-panel SD_FILES rejects stale pixel capture explicitly.
-# MIRROR STATUS/QUEUED diagnostics, screen/rotation-aware abort, bounded faster rows.
-# Static CLEAR/WATCH_LIST/HUNT_LIST can redraw on an explicit capture request.
-# Uses USB only; PIN locked refusal, native touch and LOG priority preserved.
-# Tested code commit ce88c2d0116ea86119dec3b60b9de2f8f7cd72a7 passed full CI #43623730661.
-# LAB-only; release's exact-commit build and OTA >=8192 B are mandatory.
-# No master merge, no production release/tag or branch removal.
+# LAB-only SquachWatch PR #235: USB pixel mirror source/transfer fixes.
+# Re-request after resolving Pages 503 historical release .sig asset.
+# Release site recovery code and offline regression now included.
+# Previously failing Build and release #43624805123 lacked Pages fallback.
+# Full source CI #43635702832 SUCCESS on ba6d7760c42d8402a099674bba865b5d77a03f53.
+# Mandatory exact-commit CI, final OTA >=8192 B, no production tag/release.
+# CYD 2.8 ST7789 and CYD 3.2 ST7798 firmware plus Web Flasher LAB.
+# PR remains draft, no merge or branch cleanup.
