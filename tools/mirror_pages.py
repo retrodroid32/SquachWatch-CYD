@@ -40,8 +40,8 @@ class PagesMirror:
         components = rel.split("/")
         if (len(components) != 2 or
             components[0] not in self.historical_versions or
-            not re.fullmatch(r"v[0-9]+\\.[0-9]+\\.[0-9]+", components[0]) or
-            not re.fullmatch(r"[A-Za-z0-9-]+-firmware\\.sig", components[1])):
+            not re.fullmatch(r"v[0-9]+\.[0-9]+\.[0-9]+", components[0]) or
+            not re.fullmatch(r"[A-Za-z0-9-]+-firmware\.sig", components[1])):
             raise RuntimeError(f"unsafe historical signature fallback: {rel}")
         if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", self.release_repo):
             raise RuntimeError("GitHub release repository unavailable for safe Pages recovery")
