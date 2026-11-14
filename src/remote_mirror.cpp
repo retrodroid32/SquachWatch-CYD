@@ -111,7 +111,7 @@ void uiTick(uint8_t screen,int width,int height,uint8_t rotation,bool locked){
   s.uiScreen=screen;s.uiRotation=rotation;
   // Numeric screen ID is stable AppState; no screen text, PIN, MAC or
   // potentially sensitive detection details are serialized.
-  Serial.printf("UI STATE 1 %u %d %d %u %lu\\n",
+  Serial.printf("UI STATE 1 %u %d %d %u %lu\n",
     (unsigned)screen,width,height,(unsigned)rotation,(unsigned long)now);
 }
 bool touch(int width,int height,int& x,int& y){
