@@ -198,6 +198,17 @@ void capture(const uint8_t* src,int w,int bandH,int panelH,int y) {
     if(w!=s.width || panelH!=s.height) {fail(s,"ROTATION_RESTART");return;}
     // A half-screen sprite is reused for many bands. Never read a stale band:
     // process the next row only when its pixels are currently in this sprite.
+    // If the last row was already queued but END lacked TX space, the
+    // following push must still be allowed to complete the transaction.
+    if(s.nextRow==s.height) {
+        char end[64];
+        const int n=snprintf(end,sizeof(end),"MIRROR END %lu\n",
+                             (unsigned long)s.sequence);
+        if(!sendRecord(end,n)) return;
+        memcpy(baselineHash,pendingHash,(size_t)s.height*sizeof(uint32_t));
+        s.committed=s.sequence; s.baselineValid=true; resetPending(s);
+        return;
+    }
     if(s.nextRow<y || s.nextRow>=y+bandH) return;
     int sent=0,scanned=0;
     while(s.nextRow<panelH && s.nextRow<y+bandH &&
