@@ -158,6 +158,7 @@ bool touch(int w,int h,int& x,int& y) {
     (void)w;(void)h;(void)x;(void)y;return false;
 #endif
 }
+void stopForNative() { session()=Session{}; }
 void pauseEvidence() {
     Session& s=session();
     if(!s.enabled) return;
