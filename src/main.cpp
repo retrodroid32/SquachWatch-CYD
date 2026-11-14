@@ -3873,6 +3873,7 @@ void loop() {
     // Cheap and unconditional: available() is a register read, and this
     // is the only way in for the one serial command the firmware takes.
     Clock::pollSerial();
+    RemoteMirror::tick();
     // Full-frame static pages can have no new LCD push for many seconds.
     // Read the already-pushed sprite in bounded slices; banded recovery
     // sprites remain captured ONLY from live pushFrame() passes.
