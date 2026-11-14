@@ -24,7 +24,7 @@ Device image records:
 - MIRROR DELTA <seq> <base-seq> <width> <height> RGB332: changed-row delta based on a previously committed and explicitly acknowledged sequence.
 - MIRROR ROW <seq> <y> <base64>: exactly width RGB332 bytes; y is actual physical screen row, not recovery-band offset.
 - MIRROR END <seq>: commit marker. The Windows decoder MUST validate sequence, orientation, row completeness, row uniqueness, and DELTA base before showing pixels.
-- MIRROR ERROR <reason>: discard any unfinished image and resynchronize with a full keyframe. Reasons include DISABLED, PAUSED, BUSY, LOCKED, ROTATION_RESTART, EVIDENCE_PAUSE, NO_AUTHENTIC_BUFFER, BAD_SPRITE_GEOMETRY, ENCODE_OVERFLOW, BASE_SEQUENCE, COMMAND.
+- MIRROR ERROR <reason>: discard any unfinished image and resynchronize with a full keyframe. Reasons include DISABLED, PAUSED, BUSY, LOCKED, ROTATION_RESTART, EVIDENCE_PAUSE, NO_AUTHENTIC_BUFFER, BAD_SPRITE_GEOMETRY, ENCODE_OVERFLOW, BASE_SEQUENCE, COMMAND, NO_FRAME_REFRESH_OR_TX (no valid framebuffer refresh / USB backpressure for 6 seconds).
 - MIRROR PAUSED, MIRROR RESUMED, MIRROR OFF OK, MIRROR TOUCH OK: state/control acknowledgments. MOVE omits ACK to reduce serial noise.
 
 Example:
