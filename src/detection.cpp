@@ -1973,7 +1973,9 @@ void DetectionEngine::processDeauthQ() {
                 row.channel   = e.channel;
                 row.hits      = _deauthWinCount;
                 row.lastSeen  = now;
-                row.firstSeen = now;
+                // A repeated deauth burst is the same log identity.
+                // Keep its original first sighting, even after it went stale.
+                if (reactivating) row.visitStarted = now;
                 row.restored  = 0;
                 row.evidence  = EvidenceKind::WIFI_DEAUTH;
                 if (reactivating) {
@@ -2176,7 +2178,9 @@ void DetectionEngine::applyBle(Detection d) {
                 _log[slot].hits++;
                 _log[slot].active = true;
                 _log[slot].restored = 0;
-                _log[slot].firstSeen = nowMs;      // fresh sighting for alert purposes
+                // Keep FIRST SEEN; new alerts, repeat threshold and RSSI
+                // history still restart for this new continuous visit.
+                _log[slot].visitStarted = nowMs;
                 _log[slot].repeats = 1;
                 detectionRssiInit(_log[slot], d.rssi, nowMs);
                 _typeCounts[(uint8_t)d.type]++;
@@ -3285,7 +3289,7 @@ void DetectionEngine::processWiFiQ(uint32_t budgetUs, uint8_t maxItems) {
             if (reactivating) {
                 _log[slot].active = true;
                 _log[slot].restored = 0;
-                _log[slot].firstSeen = nowMs;
+                _log[slot].visitStarted = nowMs;
                 _log[slot].repeats = 1;
                 detectionRssiInit(_log[slot], e.rssi, nowMs);
                 _typeCounts[(uint8_t)t]++;
@@ -3351,6 +3355,9 @@ void DetectionEngine::pushLog(const Detection& d) {
     const uint8_t slot = _logHead;
     if (_logCount == LOG_CAP) unindexLogSlot(slot);
     _log[slot] = d;
+    // New log row: first sighting and current visit begin together. This
+    // field is independent of firstSeen on subsequent reacquisitions.
+    _log[slot].visitStarted = d.firstSeen;
     if (_log[slot].repeats == 0) _log[slot].repeats = 1;
     if (_log[slot].rssiHistCount == 0)
         detectionRssiInit(_log[slot], d.rssi, millis());
@@ -3488,7 +3495,7 @@ void DetectionEngine::expireStale() {
             // stops contributing as a throw-away identity.
             if (gone.channel == 0 &&
                 _spam.noteVanish(gone.type,
-                                 (uint32_t)(gone.lastSeen - gone.firstSeen),
+                                 (uint32_t)(gone.lastSeen - gone.visitStarted),
                                  gone.hits, now)) {
                 Serial.printf("[spam] %s flood: short-lived tracker identities piling up\n",
                               detectionTypeName(gone.type));
