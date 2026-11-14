@@ -33,6 +33,12 @@ assert "if(state==AppState::SD_FILES) mirrorSource=3;" in main
 assert "RemoteMirror::panelState(mirrorSource,s_recoveryBands," in main
 assert main.index("RemoteMirror::panelState(mirrorSource") < main.index("Clock::pollSerial();", main.index("void loop()"))
 assert "forceClearVisual || RemoteMirror::wantsRender()" in main
+assert "const bool wlNeedsDraw" in main
+assert "const bool hlNeedsDraw" in main
+wl=main.split("const bool wlNeedsDraw",1)[1].split("if (wlNeedsDraw)",1)[0]
+hl=main.split("const bool hlNeedsDraw",1)[1].split("if (hlNeedsDraw)",1)[0]
+assert "RemoteMirror::wantsRender()" in wl
+assert "RemoteMirror::wantsRender()" in hl
 assert "RemoteMirror::capture(frame.buf(),frame.bufW(),frame.bufH(),tft.height(),y)" in main
 assert "RemoteMirror::pauseEvidence();\n            logDump();" in clock
 assert "python3 tools/test_mirror_capture_reliability.py" in workflow
