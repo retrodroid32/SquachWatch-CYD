@@ -186,8 +186,14 @@ struct Detection {
     // vendorText() rather than testing it at every use.
     const char*    vendor;
     char           name[20];
+    // First sighting of this MAC + type in the current RAM log entry.
+    // Never reset on reactivation; shown in LOG / category roster.
     uint32_t       firstSeen;
-    uint32_t       lastSeen;
+    uint32_t       lastSeen;       // most recent packet, updated every sighting
+    // Start of the current continuous visit. Changes only after a stale
+    // device reappears, keeping short-visit spam heuristics independent of
+    // the stable FIRST SEEN timestamp. Adds four bytes per log entry.
+    uint32_t       visitStarted;
     uint16_t       hits;
     // AUTO SNOOZE (Settings). `alerts` counts the full-screen alerts this
     // device has actually raised; `quietBar` is the strongest RSSI it ever
