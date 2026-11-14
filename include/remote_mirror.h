@@ -11,4 +11,6 @@ namespace RemoteMirror {
   void pauseEvidence();
   // Direct-panel fallback has no authentic sprite pixels to report.
   void unavailable();
+  // Timeout pending requests if rendering switched to an unsupported path.
+  void tick();
 }
