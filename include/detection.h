@@ -739,6 +739,11 @@ private:
 
     // Detection log
     Detection  _log[LOG_CAP];
+    // Current visit start per physical ring slot. `Detection::firstSeen`
+    // stays the ORIGINAL sighting for the lifetime of the retained row;
+    // anti-spam's short-visit test still measures each return separately.
+    // Kept outside Detection to avoid enlarging the SD queue's row copies.
+    uint32_t   _visitStartMs[LOG_CAP] = {0};
     uint8_t    _logCount = 0;            // number of valid entries (<= LOG_CAP)
     uint8_t    _logHead  = 0;            // next slot to write
     Detection* _latest   = nullptr;      // pointer into _log or null
