@@ -88,3 +88,21 @@ print("PASS: 2.8/3.2 category pills, rotation, touch, stale RSSI, grouped identi
 assert 's_category != DetectionType::UNKNOWN && !Clock::trusted()' in log
 assert '"UP+%lu:%02lu"' in log
 assert 'while (name[0] && t.textWidth(name) > w - 92)' in log
+
+# FIRST SEEN is immutable during ordinary same-identity reacquisition. A
+# separate visit clock preserves the anti-spam short-visit behavior, while
+# LAST SEEN still advances whenever a packet arrives.
+detection = (r / "src/detection.cpp").read_text()
+state = (r / "include/state.h").read_text()
+assert "uint32_t       visitStarted;" in state
+assert "_log[slot].visitStarted = d.firstSeen;" in detection
+assert "_log[slot].visitStarted = nowMs;" in detection
+assert "if (reactivating) row.visitStarted = now;" in detection
+assert detection.count("_log[slot].visitStarted = nowMs;") == 2, "BLE + Wi-Fi visits"
+assert "_log[slot].firstSeen = nowMs;" not in detection
+assert "row.firstSeen = now;" not in detection
+assert "(uint32_t)(gone.lastSeen - gone.visitStarted)" in detection
+assert "_log[slot].lastSeen = nowMs;" in detection
+assert "row.lastSeen  = now;" in detection
+assert "Clock::formatStamp(d->firstSeen, ts, sizeof(ts))" in log
+print("PASS: FIRST SEEN stays stable on BLE/Wi-Fi/deauth reappearance")
