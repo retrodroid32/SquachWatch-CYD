@@ -13,4 +13,6 @@ namespace RemoteMirror {
   void unavailable();
   // Timeout pending requests if rendering switched to an unsupported path.
   void tick();
+  // Disable pixel capture when the USB host selects native UI mode.
+  void stopForNative();
 }
