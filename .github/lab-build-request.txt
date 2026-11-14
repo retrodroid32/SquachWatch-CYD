@@ -1,10 +1,8 @@
-CATEGORY-PILLS-CLOCK-DUALCOUNT-R3
-# LAB PR #226 — 2026-11-13; based on validated code commit edc0e5fd.
-# v1.41 clickable category roster, corrected no-trust timestamp UP+,
-# green radio-fresh active / blue unique-detection-records since boot.
-# Grouped TRACKER/CAMERA/HACKER counts match the roster's types.
-# GitHub Build #43485289268 passed all jobs on edc0e5fd.
-# Request-file-only commit triggers exact-commit PR Build then LAB build
-# and release firmware; CI gate MUST verify exact SHA before publishing.
-# Firmware 2.8 ST7789 and 3.2 ST7798; all required OTA slot guards unchanged.
-# LAB only. No production GitHub Release, v-tag, master merge, or PR merge.
+USB-MIRROR-ROWDELTA-V2-R1
+# LAB PR #232 — authentic RGB332 SquachWatch 2.8 ST7789 and 3.2 ST7798.
+# Initial full authentic sprite keyframe; optional sequence-checked changed-row delta.
+# USB-only native DOWN/MOVE/UP and PIN-locked refusal; LOG evidence priority.
+# Base firmware commit 809517344931235548635b5c39fd6da50f7ce5cd passed Build #43538644007.
+# Request-only commit triggers EXACT new commit Build then LAB publication.
+# Full board matrix and 8192-byte final OTA reserve must remain PASS.
+# Draft PR; no merge, production release, public GitHub Release or version tag.
