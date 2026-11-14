@@ -27,6 +27,7 @@ struct Session {
     bool delta=false, baselineValid=false, down=false;
     int x=0,y=0, width=0,height=0,nextRow=0;
     uint32_t touchAt=0, sequence=0, committed=0, baseRequested=0;
+    uint32_t lastProgressAt=0;
 };
 Session& session() { static Session s; return s; }
 // Hashes cost 3840 bytes regardless of orientation or frame-band count;
@@ -124,7 +125,7 @@ bool command(const char* line) {
         }
         s.baseRequested=withBase?(uint32_t)last:0;
         s.delta=withBase && s.baselineValid && s.baseRequested==s.committed;
-        s.pending=true;
+        s.pending=true; s.lastProgressAt=millis();
         return true;
     }
     int x=0,y=0; char phase[8]={};
@@ -167,6 +168,17 @@ void unavailable() {
     Session& s=session();
     if(s.enabled && (s.pending||s.running)) fail(s,"NO_AUTHENTIC_BUFFER");
 }
+void tick() {
+#if SQW_CLASSIC_MIRROR
+    Session& s=session();
+    if(!s.enabled || s.paused || (!s.pending && !s.running)) return;
+    // A direct-panel render or an indefinitely congested UART can never
+    // become an authentic LCD frame. Fail explicitly instead of leaving
+    // the EXE waiting or showing the last image as if it were live.
+    if((uint32_t)(millis()-s.lastProgressAt)>6000u)
+        fail(s,"NO_FRAME_REFRESH_OR_TX");
+#endif
+}
 void capture(const uint8_t* src,int w,int bandH,int panelH,int y) {
 #if SQW_CLASSIC_MIRROR
     Session& s=session();
@@ -194,6 +206,7 @@ void capture(const uint8_t* src,int w,int bandH,int panelH,int y) {
         if(n<=0 || n>=int(sizeof(rec)) || !sendRecord(rec,n)) return;
         s.sequence=next; s.width=w; s.height=panelH;
         s.pending=false; s.running=true; s.nextRow=0;
+        s.lastProgressAt=millis();
     }
     if(w!=s.width || panelH!=s.height) {fail(s,"ROTATION_RESTART");return;}
     // A half-screen sprite is reused for many bands. Never read a stale band:
@@ -221,10 +234,11 @@ void capture(const uint8_t* src,int w,int bandH,int panelH,int y) {
             const int n=encodeRow(record,sizeof(record),s.sequence,row,bytes,w);
             if(!n) {fail(s,"ENCODE_OVERFLOW");return;}
             if(!sendRecord(record,n)) return; // next drawn push resumes this row
-            sent++;
+            sent++; s.lastProgressAt=millis();
         }
         pendingHash[row]=hash;
         ++s.nextRow; ++scanned;
+        s.lastProgressAt=millis();
     }
     if(s.nextRow==s.height) {
         char end[64];
