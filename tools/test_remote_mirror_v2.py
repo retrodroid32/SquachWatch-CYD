@@ -30,7 +30,8 @@ for token in (
     's.baseRequested==s.committed',
     'memcpy(baselineHash,pendingHash,',
     's.committed=s.sequence; s.baselineValid=true;',
-    'Security::locked()',
+    'Security::locked()', 'void tick()',
+    'NO_FRAME_REFRESH_OR_TX',
     'if(s.nextRow==s.height)',
     'if(s.nextRow<y || s.nextRow>=y+bandH) return;',
 ):
