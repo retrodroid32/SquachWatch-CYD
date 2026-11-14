@@ -247,6 +247,7 @@ static void drawCrashCard(TFT_eSPI& t) {
 #include "ui_alertrules.h"
 #include "frame_push.h"
 #include "remote_mirror.h"
+#include "remote_ui.h"
 #include "draw_band.h"
 #include "frame_prof.h"
 #include "fast_sprite.h"
@@ -754,7 +755,8 @@ static TouchPoint pollTouch() {
     // touch simultaneously. Remote input uses identical downstream hit-tests.
     if (!readTouchRaw(a, b)) {
         int rx=0, ry=0;
-        if(RemoteMirror::touch(tft.width(),tft.height(),rx,ry)) {
+        if(RemoteMirror::touch(tft.width(),tft.height(),rx,ry) ||
+           RemoteUi::touch(tft.width(),tft.height(),rx,ry)) {
             tp.valid=true; tp.x=rx; tp.y=ry;
         }
         return tp;
@@ -4003,6 +4005,11 @@ void loop() {
         touchJustUp = false;
     }
     engine.loop();
+    // Authoritative native USB view-model telemetry. LOG/EVT and unsupported
+    // 42-state screens are explicitly marked as requiring pixel fallback.
+    RemoteUi::tick((uint8_t)state,tft.width(),tft.height(),screenRotation,
+        engine,state==AppState::LOG ?
+          (uiLogView()==LogView::DEVICES ? (uint8_t)uiLogCategory() : 255) : 0);
 #if defined(GPS_SUPPORT) && defined(GPS_RX_PIN)
     GpsRuntime::tick(now);
 #endif

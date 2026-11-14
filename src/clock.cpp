@@ -2,7 +2,8 @@
 #include "clock.h"
 #include "serial_flush.h"
 #include "security.h"
-#include "remote_mirror.h"   // a locked device takes no console commands
+#include "remote_mirror.h"
+#include "remote_ui.h"   // a locked device takes no console commands
 #include "ota_wifi.h"    // the WIFI command lists the saved networks
 #include "detection.h"   // WINDOW N, for the bench; RADIO
 #if defined(ARDUINO_ARCH_ESP32)
@@ -484,7 +485,12 @@ void pollSerial() {
         }
 
         // PIN guard above also applies to MIRROR and remote touch.
+        // Pixel and native UI are mutually exclusive so one USB port cannot
+        // mistake model records for an authentic LCD screenshot.
+        if (strcmp(line, "UI ON") == 0) RemoteMirror::stopForNative();
+        if (strcmp(line, "MIRROR ON") == 0) RemoteUi::stop();
         if (RemoteMirror::command(line)) continue;
+        if (RemoteUi::command(line)) continue;
         if (strncasecmp(line, "FLOOD ", 6) == 0) {
             // A thousand a second is five times the loudest room measured;
             // a typo like -1 would be sixty-five thousand in one burst.
