@@ -10,7 +10,11 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import posixpath
+import re
+import subprocess
+import tempfile
 import time
 import urllib.error
 import urllib.parse
@@ -19,10 +23,46 @@ from pathlib import Path
 
 
 class PagesMirror:
-    def __init__(self, base: str, dest: Path) -> None:
+    def __init__(self, base: str, dest: Path, release_repo: str = "") -> None:
         self.base = base.rstrip("/") + "/"
         self.dest = dest
+        self.release_repo = release_repo
+        self.historical_versions: set[str] = set()
         self.count = 0
+
+    def restore_historical_signature(self, rel: str) -> bytes:
+        """Recover one exact immutable release signature, never an arbitrary file.
+
+        Called ONLY after Pages exhausted transient HTTP/network retries.
+        Release assets must exist and have the expected detached-signature size;
+        otherwise fail before any wholesale Pages deployment occurs.
+        """
+        components = rel.split("/")
+        if (len(components) != 2 or
+            components[0] not in self.historical_versions or
+            not re.fullmatch(r"v[0-9]+\\.[0-9]+\\.[0-9]+", components[0]) or
+            not re.fullmatch(r"[A-Za-z0-9-]+-firmware\\.sig", components[1])):
+            raise RuntimeError(f"unsafe historical signature fallback: {rel}")
+        if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", self.release_repo):
+            raise RuntimeError("GitHub release repository unavailable for safe Pages recovery")
+        with tempfile.TemporaryDirectory(prefix="sqw-pages-restore-") as folder:
+            args = ["gh", "release", "download", components[0],
+                    "--pattern", components[1], "--dir", folder,
+                    "--repo", self.release_repo]
+            try:
+                subprocess.run(args, check=True, capture_output=True, text=True, timeout=90)
+            except (OSError, subprocess.CalledProcessError,
+                    subprocess.TimeoutExpired) as exc:
+                raise RuntimeError(f"GitHub release fallback failed for {rel}: {exc}") from exc
+            path = Path(folder) / components[1]
+            if not path.is_file():
+                raise RuntimeError(f"GitHub release asset missing: {rel}")
+            data = path.read_bytes()
+        if not 64 <= len(data) <= 256:
+            raise RuntimeError(f"invalid GitHub release signature length: {rel} ({len(data)} bytes)")
+        print(f"::warning::Recovered preserved {rel} from matching immutable GitHub "
+              f"Release {components[0]} because deployed Pages was unavailable", flush=True)
+        return data
 
     @staticmethod
     def clean(rel: str) -> str:
@@ -56,6 +96,13 @@ class PagesMirror:
             except (urllib.error.URLError, TimeoutError) as exc:
                 reason = str(getattr(exc, "reason", exc))
             if attempt == attempts:
+                # Version-history detached signatures are also attached to
+                # their exact immutable GitHub Releases. If Pages itself is
+                # unhealthy, recover ONLY this narrowly-scoped historical
+                # asset. Never skip it or fabricate bytes.
+                if optional and rel.endswith("-firmware.sig") and "/" in rel:
+                    data = self.restore_historical_signature(rel)
+                    break
                 raise RuntimeError(
                     f"could not mirror {url} after {attempts} attempts: {reason}"
                 )
@@ -100,7 +147,8 @@ def main() -> None:
     ap.add_argument("--dest", required=True, type=Path)
     args = ap.parse_args()
 
-    mirror = PagesMirror(args.base, args.dest)
+    mirror = PagesMirror(args.base, args.dest,
+                         release_repo=os.environ.get("GITHUB_REPOSITORY", ""))
     args.dest.mkdir(parents=True, exist_ok=True)
 
     boards_raw = mirror.fetch("boards.json")
@@ -108,6 +156,12 @@ def main() -> None:
     assert boards_raw is not None and versions_raw is not None
     boards = json.loads(boards_raw)
     versions = json.loads(versions_raw)
+    mirror.historical_versions = {
+        mirror.clean(entry["dir"])
+        for entry in versions.get("versions", [])
+        if isinstance(entry, dict) and isinstance(entry.get("dir"), str)
+        and entry["dir"]
+    }
 
     # upload-pages-artifact adds/uses this marker and the deployed copy is
     # intentionally zero bytes. Recreate it locally instead of trying to
