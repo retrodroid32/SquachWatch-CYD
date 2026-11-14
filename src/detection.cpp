@@ -1,5 +1,6 @@
 // SquachWatch-CYD — DetectionEngine implementation
 #include "detection.h"
+#include "detection_visit.h"
 #include "hunt_signal.h"
 #include "serial_flush.h"
 #include "signatures.h"
@@ -1965,6 +1966,7 @@ void DetectionEngine::processDeauthQ() {
                 const uint8_t beforeRepeats = reactivating ? 0 : row.repeats;
                 if (reactivating) {
                     row.repeats = 1;
+                    DetectionVisit::restart(_visitStartMs[(uint8_t)foundSlot], now);
                     detectionRssiInit(row, e.rssi, now);
                 } else {
                     if (row.repeats < 255) row.repeats++;
@@ -1973,7 +1975,7 @@ void DetectionEngine::processDeauthQ() {
                 row.channel   = e.channel;
                 row.hits      = _deauthWinCount;
                 row.lastSeen  = now;
-                row.firstSeen = now;
+                // Do not overwrite the first-ever sighting on a return.
                 row.restored  = 0;
                 row.evidence  = EvidenceKind::WIFI_DEAUTH;
                 if (reactivating) {
@@ -2176,7 +2178,7 @@ void DetectionEngine::applyBle(Detection d) {
                 _log[slot].hits++;
                 _log[slot].active = true;
                 _log[slot].restored = 0;
-                _log[slot].firstSeen = nowMs;      // fresh sighting for alert purposes
+                DetectionVisit::restart(_visitStartMs[slot], nowMs);  // new visit, original timestamp retained
                 _log[slot].repeats = 1;
                 detectionRssiInit(_log[slot], d.rssi, nowMs);
                 _typeCounts[(uint8_t)d.type]++;
@@ -3285,7 +3287,7 @@ void DetectionEngine::processWiFiQ(uint32_t budgetUs, uint8_t maxItems) {
             if (reactivating) {
                 _log[slot].active = true;
                 _log[slot].restored = 0;
-                _log[slot].firstSeen = nowMs;
+                DetectionVisit::restart(_visitStartMs[slot], nowMs);
                 _log[slot].repeats = 1;
                 detectionRssiInit(_log[slot], e.rssi, nowMs);
                 _typeCounts[(uint8_t)t]++;
@@ -3350,6 +3352,7 @@ void DetectionEngine::processWiFiQ(uint32_t budgetUs, uint8_t maxItems) {
 void DetectionEngine::pushLog(const Detection& d) {
     const uint8_t slot = _logHead;
     if (_logCount == LOG_CAP) unindexLogSlot(slot);
+    _visitStartMs[slot] = d.firstSeen; // new identity occupies this ring slot
     _log[slot] = d;
     if (_log[slot].repeats == 0) _log[slot].repeats = 1;
     if (_log[slot].rssiHistCount == 0)
@@ -3488,7 +3491,7 @@ void DetectionEngine::expireStale() {
             // stops contributing as a throw-away identity.
             if (gone.channel == 0 &&
                 _spam.noteVanish(gone.type,
-                                 (uint32_t)(gone.lastSeen - gone.firstSeen),
+                                 DetectionVisit::elapsedMs(_visitStartMs[slot], gone.lastSeen),
                                  gone.hits, now)) {
                 Serial.printf("[spam] %s flood: short-lived tracker identities piling up\n",
                               detectionTypeName(gone.type));
