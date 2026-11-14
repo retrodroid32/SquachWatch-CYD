@@ -480,7 +480,14 @@ void pollSerial() {
         // Locked means locked here too -- otherwise the lock screen is a door
         // with a USB cable propped against it.
         if (Security::locked()) {
-            Serial.println("[security] locked -- unlock it on the screen first.");
+            // Explicit machine-readable refusals for both Workbench screen
+            // transports; never accept remote touch or stream locked pixels.
+            if (strncmp(line,"MIRROR",6)==0)
+                Serial.println("MIRROR ERROR LOCKED");
+            else if (strncmp(line,"UI ",3)==0)
+                Serial.println("UI ERROR LOCKED");
+            else
+                Serial.println("[security] locked -- unlock it on the screen first.");
             continue;
         }
 
