@@ -13,6 +13,9 @@ namespace RemoteMirror {
   void unavailable();
   // Timeout pending requests if rendering switched to an unsupported path.
   void tick();
+  // Report the actual panel path before serial commands and abort frames on navigation.
+  // mode: 0 unavailable, 1 full sprite, 2 banded sprite, 3 direct panel.
+  void panelState(uint8_t mode,uint8_t bands,uint8_t screen,uint8_t rotation);
   // Disable pixel capture when the USB host selects native UI mode.
   void stopForNative();
 }
