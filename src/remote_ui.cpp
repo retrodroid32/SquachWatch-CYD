@@ -5,7 +5,7 @@
 #include <Arduino.h>
 #include <stdio.h>
 #include <string.h>
-#if defined(ARDUINO_ARCH_ESP32) && defined(CYD)
+#if defined(ARDUINO_ARCH_ESP32) && (defined(CYD) || defined(CYD32))
 #include "security.h"
 #include "detection.h"
 #include "category_roster.h"
@@ -167,6 +167,12 @@ bool command(const char* line) {
     }
     if(!s.enabled){Serial.println("UI ERROR DISABLED");return true;}
     if(strcmp(line,"UI GET")==0){s.force=true;return true;}
+    if(strcmp(line,"UI STATUS")==0){
+        Serial.printf("UI STATUS 2 %u %u %d %d %u %u\n",
+            (unsigned)s.enabled,(unsigned)s.screen,(int)s.width,(int)s.height,
+            (unsigned)s.rotation,(unsigned)s.kind);
+        return true;
+    }
     if(strcmp(line,"UI COUNTS")==0){s.countRequested=true;return true;}
     unsigned start=0,limit=0;char extra=0;
     if(sscanf(line,"UI LIST %u %u %c",&start,&limit,&extra)==2){

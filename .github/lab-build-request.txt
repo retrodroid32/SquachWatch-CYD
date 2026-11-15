@@ -1,9 +1,8 @@
-BOOTSAFE-MIRROR-ROLLBACK-R1
-# Emergency LAB only to isolate post-flash boot-loop report on PR #235.
-# Device source reverts to PR #234 exact LAB tested commit 30122af91c74.
-# Excludes PR #235 mirror source/status/2048TX/redraw changes.
-# Includes fail-closed web flasher Pages historical signature recovery patch.
-# Green source Build #43644368967 head 7d25faed663335fa95e4323f24eccb578db9c82d.
-# Release must check exact new request commit and OTA minimum >=8192 bytes.
-# Physical boot NOT confirmed. User should retain verified production as recovery.
-# No merge, tag, production release or flash erase.
+NATIVE-UI-CYD32-TRANSPORT-R1
+# LAB only, based on user-verified boot-safe PR #236.
+# Enable native USB UI STATE 2 and TOUCH on both CYD 2.8 and CYD32 3.2.
+# Add UI STATUS diagnostic, preserve partial native model and pixel fallback.
+# Do not reintroduce PR #235 boot-loop-prone mirror capture changes.
+# CI must pass exact request commit with full firmware matrix and >=8192B OTA reserve.
+# LAB firmware + Web Flasher only; no public production release, tag, merge or NVS wipe.
+# Hardware startup, touch and EXE native renderer acceptance remain pending.
