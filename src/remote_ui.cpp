@@ -240,14 +240,13 @@ void tick(uint8_t screen,int w,int h,uint8_t rotation,
     }
     // One bounded record per loop; no interleaved snapshot lines.
     if(s.listRequested){listTick(s,eng,now);return;}
-    if((s.force && (uint32_t)(now-s.lastAt)>=200u) || (uint32_t)(now-s.lastAt)>=200u){
+    if((uint32_t)(now-s.lastAt)>=200u){
         char out[96];
         const uint16_t next=s.seq==65535?1:(uint16_t)(s.seq+1);
         const int n=snprintf(out,sizeof(out),
            "UI STATE 2 %u %u %d %d %u %lu %u %u\n",
            (unsigned)next,(unsigned)screen,w,h,(unsigned)rotation,
            (unsigned long)now,(unsigned)Privacy::on(),(unsigned)kind);
-        // Keep the 5Hz ceiling even with repeated host UI GET commands.
         if(n>0 && n<int(sizeof(out)) && send(out,n)){
             s.seq=next;s.lastAt=now;s.force=false;
         }
