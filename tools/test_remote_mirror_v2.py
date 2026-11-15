@@ -71,4 +71,19 @@ assert 'SquachEmit PR #37 remain unchanged' in doc
 assert 'MIRROR FRAME 12' in doc
 assert 'MIRROR PAUSE' in doc and 'LOG' in doc
 assert 'python3 tools/test_remote_mirror_v2.py' in ci
-print("PASS: SquachWatch USB authentic row-delta mirror, native touch, LOG/PIN gates")
+
+# CYD32 authenticity and memory regression checks, LAB memory recovery R1.
+assert 'MIRROR STATUS 2 %u %u %u %u %u %u %d' in mirror
+assert 'MIRROR ERROR NO_AUTHENTIC_BUFFER' in mirror
+assert 'MIRROR ERROR DIRECT_PANEL_UNSUPPORTED' in mirror
+assert 'SCREEN_CHANGED' in mirror
+assert 'void panelState(' in mirror
+assert 'RemoteMirror::panelState(mirrorSource,s_recoveryBands' in main
+assert 'if(state==AppState::SD_FILES)mirrorSource=3;' in main
+assert '[frame-early] try bands=' in main
+assert 'for (uint8_t bands=2; bands<=16; bands<<=1)' in main
+assert 'const bool bootUpdateAllowed = false;' in main
+assert 'bootUpdateAllowed && Settings::updateCheck()' in main
+assert 'CYD32 uses the early boot sprite allocation, never reallocates here' in main
+
+print("PASS: authentic row capture, startup buffer fallback, stale-screen guards and PIN")
