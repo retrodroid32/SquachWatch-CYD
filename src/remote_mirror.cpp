@@ -28,8 +28,11 @@ struct Session {
     int x=0,y=0, width=0,height=0,nextRow=0;
     uint32_t touchAt=0, sequence=0, committed=0, baseRequested=0;
     uint32_t lastProgressAt=0;
+    uint8_t screenAtStart=255,rotationAtStart=255;
 };
 Session& session() { static Session s; return s; }
+struct Panel {uint8_t mode=0,bands=0,screen=255,rotation=255;bool known=false;};
+Panel& panel(){static Panel p;return p;}
 // Hashes cost 3840 bytes regardless of orientation or frame-band count;
 // never allocate a second 76.8KB LCD image in already-constrained CYD RAM.
 uint32_t baselineHash[MAX_H] = {};
@@ -87,6 +90,13 @@ bool command(const char* line) {
 #endif
         return true;
     }
+    if(strcmp(line,"MIRROR STATUS")==0) {
+        const Panel& p=panel();
+        Serial.printf("MIRROR STATUS 2 %u %u %u %u %u %u %d\n",
+             (unsigned)p.mode,(unsigned)p.bands,(unsigned)p.screen,
+             (unsigned)p.rotation,(unsigned)s.enabled,(unsigned)s.running,s.nextRow);
+        return true;
+    }
     if(strcmp(line,"MIRROR OFF")==0) {
         s=Session{};
         Serial.println("MIRROR OFF OK");
@@ -117,6 +127,9 @@ bool command(const char* line) {
     }
     if(s.paused) { Serial.println("MIRROR ERROR PAUSED"); return true; }
     if(strcmp(line,"MIRROR FRAME")==0 || strncmp(line,"MIRROR FRAME ",13)==0) {
+        const Panel& p=panel();
+        if(!p.known || p.mode==0){Serial.println("MIRROR ERROR NO_AUTHENTIC_BUFFER");return true;}
+        if(p.mode==3){Serial.println("MIRROR ERROR DIRECT_PANEL_UNSUPPORTED");return true;}
         if(s.running || s.pending) { Serial.println("MIRROR ERROR BUSY"); return true; }
         unsigned long last=0; char extra=0;
         const bool withBase=strncmp(line,"MIRROR FRAME ",13)==0;
@@ -126,6 +139,7 @@ bool command(const char* line) {
         s.baseRequested=withBase?(uint32_t)last:0;
         s.delta=withBase && s.baselineValid && s.baseRequested==s.committed;
         s.pending=true; s.lastProgressAt=millis();
+        s.screenAtStart=p.screen;s.rotationAtStart=p.rotation;
         return true;
     }
     int x=0,y=0; char phase[8]={};
@@ -159,6 +173,19 @@ bool touch(int w,int h,int& x,int& y) {
 #endif
 }
 void stopForNative() { session()=Session{}; }
+void panelState(uint8_t mode,uint8_t bands,uint8_t screen,uint8_t rotation){
+    Panel& p=panel();
+    const bool changed=!p.known || p.mode!=mode || p.bands!=bands ||
+                       p.screen!=screen || p.rotation!=rotation;
+    p.mode=mode;p.bands=bands;p.screen=screen;p.rotation=rotation;p.known=true;
+    if(!changed)return;
+    Session& s=session();
+    if(s.pending||s.running){
+       fail(s,mode==3?"DIRECT_PANEL_UNSUPPORTED":mode==0?
+          "NO_AUTHENTIC_BUFFER":"SCREEN_CHANGED");
+    }
+    s.baselineValid=false;s.down=false;
+}
 void pauseEvidence() {
     Session& s=session();
     if(!s.enabled) return;
@@ -184,6 +211,9 @@ void capture(const uint8_t* src,int w,int bandH,int panelH,int y) {
 #if SQW_CLASSIC_MIRROR
     Session& s=session();
     if(!s.enabled || s.paused || (!s.pending && !s.running)) return;
+    if(panel().known && (panel().mode==0 || panel().mode==3)) {
+       fail(s,panel().mode==3?"DIRECT_PANEL_UNSUPPORTED":"NO_AUTHENTIC_BUFFER");return;
+    }
     if(Security::locked()) {
         s.down=false; fail(s,"LOCKED"); s.enabled=false; return;
     }

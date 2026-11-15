@@ -1,8 +1,8 @@
-NATIVE-UI-CYD32-TRANSPORT-R1
-# LAB only, based on user-verified boot-safe PR #236.
-# Enable native USB UI STATE 2 and TOUCH on both CYD 2.8 and CYD32 3.2.
-# Add UI STATUS diagnostic, preserve partial native model and pixel fallback.
-# Do not reintroduce PR #235 boot-loop-prone mirror capture changes.
-# CI must pass exact request commit with full firmware matrix and >=8192B OTA reserve.
-# LAB firmware + Web Flasher only; no public production release, tag, merge or NVS wipe.
-# Hardware startup, touch and EXE native renderer acceptance remain pending.
+CYD32-EARLY-BUFFER-AUTHENTIC-MIRROR-R1
+# LAB-only CYD32 3.2 early framebuffer memory recovery and authentic USB mirror provenance.
+# Early 2/4/8/16-band allocation, no second framebuffer, no boot check heap churn.
+# MIRROR STATUS and explicit unsupported/changed-source errors; no fabricated pixels.
+# Preserve USB RGB332 authentic row capture, 1024 TX buffer, PIN, LOG and radio.
+# Require exact-commit Build green full board matrix and minimum OTA 8192-byte reserve.
+# No production release, tags, merges, branch deletion or NVS erase.
+# Physical 3.2 ST7798 and 2.8 ST7789 testing mandatory, readback unverified.
