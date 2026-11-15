@@ -3918,6 +3918,20 @@ static uint32_t    s_lastScreenAt   = 0;     // transitionStart of the screen be
 void loop() {
     // Cheap and unconditional: available() is a register read, and this
     // is the only way in for the one serial command the firmware takes.
+    // Track panel source and screen transitions before accepting MIRROR FRAME.
+    // No heap/second framebuffer; SD browser on CYD32 draws directly to TFT.
+    uint8_t mirrorSource = 0;
+#if defined(ARDUINO_ARCH_ESP32) && (defined(CYD) || defined(CYD32))
+    if(frameBufferOk && frame.created() && frame.buf() &&
+       frame.getColorDepth()==8 && frame.bufW()==tft.width() &&
+       s_recoveryBands>=1 &&
+       frame.bufH()*s_recoveryBands==tft.height())
+       mirrorSource=s_recoveryBands==1?1:2;
+#if defined(CYD32)
+    if(state==AppState::SD_FILES)mirrorSource=3;
+#endif
+#endif
+    RemoteMirror::panelState(mirrorSource,s_recoveryBands,(uint8_t)state,screenRotation);
     Clock::pollSerial();
     RemoteMirror::tick();
     // Full-frame static pages can have no new LCD push for many seconds.
