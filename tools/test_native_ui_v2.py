@@ -17,6 +17,9 @@ sim=read('sim/Makefile')
 doc=read('docs/LAB_NATIVE_UI_STATE_USB_V2.md')
 assert 'UI CAPS 2 SQUACHWATCH STATE COUNTS RECENT_LOG TOUCH PIXEL_FALLBACK PARTIAL' in ui
 assert 'UI READY 2 SQUACHWATCH TOUCH PARTIAL' in ui
+assert '#if defined(ARDUINO_ARCH_ESP32) && (defined(CYD) || defined(CYD32))' in ui
+assert 'UI STATUS 2 %u %u %d %d %u %u' in ui
+assert 'if((uint32_t)(now-s.lastAt)>=200u)' in ui
 for cmd in ('UI HELLO','UI ON','UI GET','UI COUNTS','UI OFF',
             'UI LIST %u %u %c','UI TOUCH %d %d %7s'):
     assert cmd in ui,cmd
