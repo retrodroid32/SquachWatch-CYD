@@ -3112,6 +3112,40 @@ void setup() {
     applyColorOrder();
     tft.fillScreen(Theme::BG);
 
+#if defined(CYD32) && defined(GPS_SUPPORT) && defined(GPS_RX_PIN)
+    // Reserve display memory before optional Wi-Fi OTA checks, radio setup,
+    // SD, GPS or diagnostic workers fragment the internal 8-bit heap.
+    // Never allocate a second image for USB mirroring. Reuse this same sprite
+    // in each vertical band and preserve it through rotation.
+    frame.setColorDepth(8);
+    frameBufferOk = false;
+    for (uint8_t bands=2; bands<=16; bands<<=1) {
+        if (tft.height()%bands) continue;
+        const uint32_t bytes=(uint32_t)tft.width()*(uint32_t)(tft.height()/bands);
+        const uint32_t largest=heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
+        Serial.printf("[frame-early] try bands=%u bytes=%lu free=%lu largest=%lu\n",
+           (unsigned)bands,(unsigned long)bytes,(unsigned long)ESP.getFreeHeap(),
+           (unsigned long)largest);
+        if (largest < bytes+1024u) continue;
+        if (!frame.createSprite(tft.width(),tft.height()/bands)) continue;
+        s_recoveryBands=bands;
+        frameBufferOk=true;
+        canvas=&tft;  // drawTwoBandCore uses viewport bands and pushSprite
+        break;
+    }
+    if(frameBufferOk) {
+        frame.setTextSize(1);
+        Serial.printf("[frame-early] ready bands=%u free=%lu largest=%lu\n",
+          (unsigned)s_recoveryBands,(unsigned long)ESP.getFreeHeap(),
+          (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
+    } else {
+        s_recoveryBands=1;
+        canvas=&tft;
+        Serial.println("MIRROR ERROR NO_AUTHENTIC_BUFFER");
+        Serial.println("[frame-early] no contiguous sprite; direct-panel mode");
+    }
+#endif
+
     // Hand the digitalWrite(HIGH) backlight pins above off to LEDC PWM
     // so the settings-menu brightness slider can dim them — same
     // "drive both boards' pin, only one is really wired" reasoning as
@@ -3161,9 +3195,17 @@ void setup() {
     // Tells, never installs. Skipped with no saved network, with the board
     // locked, or with UPDATE CHECK off.
     bool bootCheckRan = false;
+#if defined(CYD32) && defined(GPS_SUPPORT) && defined(GPS_RX_PIN)
+    // The optional auto-update TLS check can fragment the only block large
+    // enough for the ST7798 sprite. Manual OTA in UPDATE OVER WIFI remains.
+    const bool bootUpdateAllowed = false;
+    Serial.println("[ota] CYD32 automatic boot check disabled to protect frame memory");
+#else
+    const bool bootUpdateAllowed = true;
+#endif
     if (takeBootCheckSkip()) {
         Serial.println("[ota] boot check skipped: the frame buffer failed after the last one");
-    } else if (Settings::updateCheck() && !Security::locked() && OtaCore::available() && OtaWifi::hasSaved()) {
+    } else if (bootUpdateAllowed && Settings::updateCheck() && !Security::locked() && OtaCore::available() && OtaWifi::hasSaved()) {
         bootCheckRan = true;
         // The backlight down first, for the same reason it goes down at the
         // radio start below: WiFi's RF calibration plus a full backlight is
@@ -3206,6 +3248,7 @@ void setup() {
     }
     frame.setTextSize(1);
 #else
+#if !(defined(CYD32) && defined(GPS_SUPPORT) && defined(GPS_RX_PIN))
     // 8-bit (palette) mode: 320x240 needs ~75KB instead of ~150KB at
     // 16-bit — the full 16-bit buffer didn't fit in the available
     // contiguous heap on this board.
@@ -3250,6 +3293,7 @@ void setup() {
         canvas = &tft;
     }
 #endif
+#endif // CYD32 uses the early boot sprite allocation, never reallocates here
 #endif
 
     // Builds a 512-byte lookup table and nothing else; it touches no bus
