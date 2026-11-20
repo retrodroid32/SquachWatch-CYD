@@ -3199,18 +3199,56 @@ void setup() {
     // PSRAM pushes slower and cannot go by DMA. Keep it inside.
     frame.setAttribute(PSRAM_ENABLE, false);
 #endif
-#if defined(CYD32) && defined(GPS_SUPPORT) && defined(GPS_RX_PIN)
-    // ST7798 has substantially less contiguous free heap after WiFi +
-    // NimBLE + SD + GPS. Retain a 2-band sprite (half the 77KB memory)
-    // permanently, using the established band renderer, rather than
-    // repeatedly destroying the full sprite during RF scans.
-    s_recoveryBands = 2;
-#endif
+#if defined(CYD32)
+    // CYD 3.2 ST7798: the SD-in-at-boot + Wi-Fi OTA check can leave
+    // ~53 KB as the largest free block, even with >130 KB total free.
+    // The original full 320x240 sprite needs 76.8 KB. GPS-less builds
+    // never selected the existing two-band path, so they restarted after
+    // the allocation failed. Keep the already-validated band renderer and
+    // find one safe size WITHOUT ever allocating another full framebuffer.
+    bool cyd32Allocated = false;
+    for (uint8_t bands = 2; bands <= 16; bands <<= 1) {
+        if (tft.height() % bands) continue;
+        const int bandHeight = tft.height() / bands;
+        const uint32_t wanted = (uint32_t)tft.width() * (uint32_t)bandHeight;
+        const uint32_t largest = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
+        if (largest < wanted + 1024u) {
+            Serial.printf("[frame-boot] skip %u bands: need %lu + reserve, largest %lu\n",
+                          (unsigned)bands, (unsigned long)wanted, (unsigned long)largest);
+            continue;
+        }
+        if (!frame.createSprite(tft.width(), bandHeight)) {
+            Serial.printf("[frame-boot] %u bands allocation failed; trying smaller\n", (unsigned)bands);
+            continue;
+        }
+        s_recoveryBands = bands;
+        frameBufferOk = true;
+        canvas = &tft;
+        cyd32Allocated = true;
+        Serial.printf("[frame-boot] CYD32 ready: bands=%u sprite=%lu heap=%lu largest=%lu\n",
+                      (unsigned)bands, (unsigned long)wanted,
+                      (unsigned long)ESP.getFreeHeap(),
+                      (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
+        break;
+    }
+    if (!cyd32Allocated) {
+        // Explicit final fallback rather than rebooting indefinitely or
+        // running with a stale frameBufferOk=true. Never call drawTwoBand()
+        // with a nonexistent sprite. UI may be slower in direct-panel mode
+        // but boot, SD, radio, PIN and diagnostics stay accessible.
+        frameBufferOk = false;
+        s_recoveryBands = 1;
+        canvas = &tft;
+        Serial.printf("[frame-boot] CYD32 DIRECT PANEL: no sprite; heap=%lu largest=%lu\n",
+                      (unsigned long)ESP.getFreeHeap(),
+                      (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
+    }
+#else
+    // Other boards retain their previous allocation and recovery behavior.
     if (!frame.createSprite(tft.width(), tft.height() / s_recoveryBands)) {
         Serial.println("ERROR: frame buffer allocation failed (low memory)");
 #if HAVE_NVS_ERASE
         if (bootCheckRan) {
-            // The check's leftovers took the block. Once more, without it.
             g_bootCheckSkip = CHKSKIP_MAGIC;
             serialFlush();
             delay(20);
@@ -3220,20 +3258,8 @@ void setup() {
         (void)bootCheckRan;
 #endif
     }
-    frame.setTextSize(1);
-#if defined(CYD32) && defined(GPS_SUPPORT) && defined(GPS_RX_PIN)
-    if (frame.created()) {
-        canvas = &tft; // drawTwoBand uses the sprite and pushes each band
-        Serial.printf("[frame] CYD32 two-band buffered renderer, sprite %lu bytes, heap %lu/%lu\n",
-                      (unsigned long)(tft.width() * (tft.height() / s_recoveryBands)),
-                      (unsigned long)ESP.getFreeHeap(),
-                      (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
-    } else {
-        frameBufferOk = false;
-        s_recoveryBands = 1;
-        canvas = &tft;
-    }
 #endif
+    frame.setTextSize(1);
 #endif
 
     // Builds a 512-byte lookup table and nothing else; it touches no bus

@@ -1,5 +1,5 @@
-UPSTREAM-V148-PHASE1-R1-SECURITY-DEAUTH
-LAB only. Upstream 1.45 first PIN boot lock and Wi-Fi disassociation/first-boot deauth detection fixes.
-Source PR #239, base fork master. No GUI/memory/mirror modifications.
-Require exact-head successful full board Build and OTA image >=8192 reserve.
-No merge, no public production tag, no branch deletion. CYD 2.8 and 3.2 hardware verification required.
+CYD32-SD-IN-BOOT-ADAPTIVE-R1
+LAB only. CYD 3.2 ST7798 startup: adaptive 2,4,8,16 band RGB332 frame allocator, no allocation-driven reboot, boot memory diagnostics.
+Source PR #240 stacked on PR #239. Previous code untouched on 2.8 CYD.
+Require exact-head successful Build and OTA image size/partition gates.
+No merge, no production release/tag, no branch deletion. Hardware validation of boot with inserted SD card required.
