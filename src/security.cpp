@@ -183,6 +183,9 @@ bool setPin(const char* digits) {
     s_prefs.putBytes("salt", s_salt, 8);
     s_prefs.putBytes("hash", s_hash, 32);
     s_prefs.putBool("on", true);
+    // Upstream v1.45.0: a first PIN must protect the next boot too.
+    // When replacing an existing PIN, preserve the user's explicit choice.
+    if (!s_enabled) setLockAtBoot(true);
     s_enabled = true;
     s_fails = 0; s_prefs.putUChar("fails", 0);
     return true;
