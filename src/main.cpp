@@ -3490,6 +3490,20 @@ void setup() {
     // against a frame built by an independent implementation.
     MeshTalk::begin();
 #endif
+#if defined(CYD) && !defined(CYD32) && !defined(CYD35) && !defined(AWOK) && !defined(RLPHANTOM) && !defined(RLPHANTOM_R)
+    // Only create the optional 4 KB SD presence task when enough heap
+    // survives WiFi, BLE and the mandatory mesh crypto self-test.
+    // If skipped, SD remains explicitly offline (not falsely mounted).
+    if (ESP.getFreeHeap() >= 24000u &&
+        heap_caps_get_largest_free_block(MALLOC_CAP_8BIT) >= 12000u) {
+        engine.sd().startMonitor();
+        Serial.println("[sd] CYD28 SD monitor started after mesh init");
+    } else {
+        Serial.printf("[sd] CYD28 monitor deferred: heap=%lu largest=%lu\n",
+                      (unsigned long)ESP.getFreeHeap(),
+                      (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
+    }
+#endif
 #if defined(GPS_SUPPORT) && defined(GPS_RX_PIN)
     // The GPS UART allocation follows the mesh cipher self-test, as proven
     // necessary on the low-heap CYD ST7798 startup path.
