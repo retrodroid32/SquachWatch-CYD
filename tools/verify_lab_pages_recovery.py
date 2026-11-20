@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """Validate a manual LAB Pages recovery without rebuilding untrusted firmware.
 
-Called only from the trusted default-branch publish-pages.yml. The source
-release run may be red, but *only* because github-pages rejected its deploy
-job before runner allocation. CI, tests, firmware and site packaging must
-all have succeeded at the exact requested SHA.
+Called only from the trusted default-branch publish-pages.yml. Accept
+either a completed successful lab-branch release (Pages is a separate
+workflow) or a historical manually dispatched release whose sole failure
+was the legacy Pages job. CI, tests, firmware and site packaging must all
+have succeeded at the exact requested SHA.
 """
 import argparse
 import json
@@ -19,10 +20,19 @@ REQUIRED = ("preflight", "ci-gate", "build-and-release")
 def verify(run: dict, payload: dict, sha: str, repo: str) -> None:
     if not re.fullmatch(r"[0-9a-f]{40}", sha):
         raise ValueError("A complete 40-character hexadecimal SHA is required")
-    if run.get("name") != RELEASE_WORKFLOW or run.get("event") != "workflow_dispatch":
-        raise ValueError("Source must be a dispatched Build and release firmware workflow")
-    if run.get("status") != "completed" or run.get("conclusion") != "failure":
-        raise ValueError("Source must be a completed LAB release with Pages-only failure")
+    if run.get("name") != RELEASE_WORKFLOW:
+        raise ValueError("Source must be a Build and release firmware workflow")
+    if run.get("status") != "completed":
+        raise ValueError("Source firmware run must have completed")
+    event, outcome = run.get("event"), run.get("conclusion")
+    # After separating Pages publishing from firmware release, the LAB
+    # branch push finishes successfully even if the following Pages run
+    # fails. The older manual-dispatch recovery shape is kept for
+    # compatibility, but no failed source build is ever accepted.
+    push_success = event == "push" and outcome == "success"
+    legacy_pages_failure = event == "workflow_dispatch" and outcome == "failure"
+    if not (push_success or legacy_pages_failure):
+        raise ValueError("Source must be a successful lab push or legacy Pages-only failure")
     if run.get("head_sha") != sha:
         raise ValueError("Exact commit SHA mismatch; refusing to publish another build")
     if not str(run.get("head_branch", "")).startswith("lab/"):
@@ -37,8 +47,10 @@ def verify(run: dict, payload: dict, sha: str, repo: str) -> None:
         if len(matching) != 1 or matching[0].get("conclusion") != "success":
             raise ValueError(f"Required source gate {required} did not pass")
     failed = [j.get("name") for j in jobs if j.get("conclusion") != "success"]
-    if failed != [DEPLOY_JOB]:
-        raise ValueError(f"Only the isolated Pages deploy job may fail: {failed}")
+    if push_success and failed:
+        raise ValueError(f"Successful LAB source cannot have failed jobs: {failed}")
+    if legacy_pages_failure and failed != [DEPLOY_JOB]:
+        raise ValueError(f"Only the isolated legacy Pages deploy job may fail: {failed}")
     print(f"PASS: verified LAB artifact recovery for {repo} at {sha}")
 
 
