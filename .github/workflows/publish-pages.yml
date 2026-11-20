@@ -107,11 +107,42 @@ jobs:
           test -s _site/update/index.html
           test -s _site/emulator/index.html
 
+      # A rerun keeps artifacts from previous attempts of the same run.
+      # Giving each attempt its own artifact avoids the observed
+      # "Multiple artifacts named github-pages" deployment failure.
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v5
         with:
+          name: github-pages-attempt-${{ github.run_attempt }}
           path: _site
+
+      # The upload action can finish before the run-artifact API is updated.
+      # GitHub reported zero artifacts immediately after a successful upload.
+      # Poll only for this attempt's unique name and refuse duplicates.
+      - name: Confirm Pages artifact is visible
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PAGES_ARTIFACT_NAME: github-pages-attempt-${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          for i in $(seq 1 24); do
+            count=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/artifacts?per_page=100" \
+              --jq '[.artifacts[] | select(.name == env.PAGES_ARTIFACT_NAME and .expired == false)] | length')
+            if [[ "$count" == "1" ]]; then
+              echo "Pages artifact visible: $PAGES_ARTIFACT_NAME"
+              exit 0
+            fi
+            if [[ "$count" != "0" ]]; then
+              echo "::error::Expected exactly one artifact, got $count"
+              exit 1
+            fi
+            sleep 5
+          done
+          echo "::error::Pages artifact did not become visible within the validation window"
+          exit 1
 
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v5
+        with:
+          artifact_name: github-pages-attempt-${{ github.run_attempt }}
