@@ -1045,7 +1045,12 @@ bool DetectionEngine::init() {
 
     // 5. SD card (best-effort), now that the radios have what they need.
     _sd.begin();
-    _sd.startMonitor();  // raw-sector SD presence checks off the display thread
+#if !(defined(CYD) && !defined(CYD32) && !defined(CYD35) && !defined(AWOK) && !defined(RLPHANTOM) && !defined(RLPHANTOM_R))
+    _sd.startMonitor();  // other boards preserve original startup behavior
+#else
+    // Start the optional monitor only after MeshTalk's crypto self-test has
+    // run; the 2.8 boot log shows the SD stack exhausting its last block.
+#endif
 
     return true;
 }
