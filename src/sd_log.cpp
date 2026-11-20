@@ -64,6 +64,20 @@ bool SdLog::begin() {
 #if defined(FREENOVE_S3)
     return false;   // this board's slot is SDMMC; the SPI logger has no validated mapping
 #endif
+#if defined(CYD) && !defined(CYD32) && !defined(CYD35) && !defined(AWOK) && !defined(RLPHANTOM) && !defined(RLPHANTOM_R)
+    // Classic 2.8: SD/FAT consumed ~16 KB on the user's SD-in boot,
+    // leaving just 48 contiguous bytes and making the mesh crypto self-test
+    // fail. SD is optional; enough RAM for radios/crypto is not.
+    // Re-evaluate every actual mount attempt, including monitor RESCAN.
+    const size_t sdHeap = ESP.getFreeHeap();
+    const size_t sdLargest = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
+    if (sdHeap < 45000u || sdLargest < 28000u) {
+        _statusDetail = "SD DEFERRED - LOW RAM";
+        Serial.printf("[sd] deferred: insufficient mount reserve heap=%lu largest=%lu\n",
+                      (unsigned long)sdHeap, (unsigned long)sdLargest);
+        return false;  // no allocation, no FAT mutation, no forced reboot
+    }
+#endif
     Serial.printf("[sd] mounting: heap %lu, largest block %lu\n", (unsigned long)ESP.getFreeHeap(), (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
 #if defined(CYD35)
     // (The RL Phantom used to land here too, and its SD card never worked as

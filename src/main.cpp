@@ -3199,31 +3199,67 @@ void setup() {
     // PSRAM pushes slower and cannot go by DMA. Keep it inside.
     frame.setAttribute(PSRAM_ENABLE, false);
 #endif
-#if defined(CYD32) && defined(GPS_SUPPORT) && defined(GPS_RX_PIN)
-    // ST7798 has substantially less contiguous free heap after WiFi +
-    // NimBLE + SD + GPS. Retain a 2-band sprite (half the 77KB memory)
-    // permanently, using the established band renderer, rather than
-    // repeatedly destroying the full sprite during RF scans.
+#if defined(CYD) && !defined(CYD32) && !defined(CYD35) && !defined(AWOK) && !defined(RLPHANTOM) && !defined(RLPHANTOM_R)
+    // CYD 2.8 SD-in boot: user hardware showed largest contiguous block
+    // 53236 after OTA boot check. A 76800-byte full RGB332 sprite cannot
+    // fit and used to force a software restart. Worse, SD mounted after
+    // the radios and exhausted all remaining allocatable memory.
+    // Reserve radio + mesh heap by using a modest sprite on the classic
+    // 2.8; the existing drawTwoBandCore can render any dividing band count.
+    // No reset on allocation failure: direct LCD is a safe last resort.
+    bool cyd28Allocated = false;
+    for (uint8_t bands = 8; bands <= 16; bands <<= 1) {
+        if (tft.height() % bands) continue;
+        const int bandHeight = tft.height() / bands;
+        const uint32_t wanted = (uint32_t)tft.width() * (uint32_t)bandHeight;
+        const uint32_t largest = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
+        if (largest < wanted + 1024u) {
+            Serial.printf("[frame-boot] CYD28 skip %u bands: need %lu, largest %lu\n",
+                          (unsigned)bands, (unsigned long)wanted, (unsigned long)largest);
+            continue;
+        }
+        if (!frame.createSprite(tft.width(), bandHeight)) continue;
+        s_recoveryBands = bands;
+        frameBufferOk = true;
+        canvas = &tft;
+        cyd28Allocated = true;
+        Serial.printf("[frame-boot] CYD28 ready: bands=%u sprite=%lu heap=%lu largest=%lu\n",
+                      (unsigned)bands, (unsigned long)wanted,
+                      (unsigned long)ESP.getFreeHeap(),
+                      (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
+        break;
+    }
+    if (!cyd28Allocated) {
+        frameBufferOk = false;
+        s_recoveryBands = 1;
+        canvas = &tft;
+        Serial.printf("[frame-boot] CYD28 DIRECT PANEL: heap=%lu largest=%lu\n",
+                      (unsigned long)ESP.getFreeHeap(),
+                      (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
+    }
+#else
+    // Other boards retain the original allocation and recovery policy.
+    #if defined(CYD32) && defined(GPS_SUPPORT) && defined(GPS_RX_PIN)
     s_recoveryBands = 2;
-#endif
+    #endif
     if (!frame.createSprite(tft.width(), tft.height() / s_recoveryBands)) {
         Serial.println("ERROR: frame buffer allocation failed (low memory)");
-#if HAVE_NVS_ERASE
+    #if HAVE_NVS_ERASE
         if (bootCheckRan) {
-            // The check's leftovers took the block. Once more, without it.
             g_bootCheckSkip = CHKSKIP_MAGIC;
             serialFlush();
             delay(20);
             esp_restart();
         }
-#else
+    #else
         (void)bootCheckRan;
-#endif
+    #endif
     }
+#endif
     frame.setTextSize(1);
 #if defined(CYD32) && defined(GPS_SUPPORT) && defined(GPS_RX_PIN)
     if (frame.created()) {
-        canvas = &tft; // drawTwoBand uses the sprite and pushes each band
+        canvas = &tft;
         Serial.printf("[frame] CYD32 two-band buffered renderer, sprite %lu bytes, heap %lu/%lu\n",
                       (unsigned long)(tft.width() * (tft.height() / s_recoveryBands)),
                       (unsigned long)ESP.getFreeHeap(),
@@ -3453,6 +3489,20 @@ void setup() {
     // ready: this is where the crypto self-test runs, on the real cipher,
     // against a frame built by an independent implementation.
     MeshTalk::begin();
+#endif
+#if defined(CYD) && !defined(CYD32) && !defined(CYD35) && !defined(AWOK) && !defined(RLPHANTOM) && !defined(RLPHANTOM_R)
+    // Only create the optional 4 KB SD presence task when enough heap
+    // survives WiFi, BLE and the mandatory mesh crypto self-test.
+    // If skipped, SD remains explicitly offline (not falsely mounted).
+    if (ESP.getFreeHeap() >= 24000u &&
+        heap_caps_get_largest_free_block(MALLOC_CAP_8BIT) >= 12000u) {
+        engine.sd().startMonitor();
+        Serial.println("[sd] CYD28 SD monitor started after mesh init");
+    } else {
+        Serial.printf("[sd] CYD28 monitor deferred: heap=%lu largest=%lu\n",
+                      (unsigned long)ESP.getFreeHeap(),
+                      (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
+    }
 #endif
 #if defined(GPS_SUPPORT) && defined(GPS_RX_PIN)
     // The GPS UART allocation follows the mesh cipher self-test, as proven

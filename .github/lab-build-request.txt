@@ -1,5 +1,5 @@
-UPSTREAM-V148-PHASE1-R1-SECURITY-DEAUTH
-LAB only. Upstream 1.45 first PIN boot lock and Wi-Fi disassociation/first-boot deauth detection fixes.
-Source PR #239, base fork master. No GUI/memory/mirror modifications.
-Require exact-head successful full board Build and OTA image >=8192 reserve.
-No merge, no public production tag, no branch deletion. CYD 2.8 and 3.2 hardware verification required.
+CYD28-SD-IN-BOOT-MEMORY-R1
+LAB only. Fix CYD 2.8 ST7789 cold boot with inserted SD card: bounded 8/16 band sprite, no allocation restart, fail-closed SD mount when RAM would exhaust mesh crypto, delay monitor until after mesh init.
+Source PR #241 stacked on phase 1 PR #239. PR #240 CYD32 remains separate and unmerged.
+Require full exact-head CI matrix, host test, OTASize guard and LAB Pages release.
+No public production tag/release, no merge, no branch deletion. Physical verification required; SD may remain DEFERRED - LOW RAM.

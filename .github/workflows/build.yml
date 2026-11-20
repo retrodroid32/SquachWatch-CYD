@@ -144,6 +144,8 @@ jobs:
         run: make -C test
       - name: Verify upstream v1.48 Phase 1 guards
         run: python3 tools/test_upstream_v148_phase1.py
+      - name: Verify classic CYD 2.8 SD-in boot memory safeguards
+        run: python3 tools/test_cyd28_sd_boot_memory.py
       - name: Verify CYD32 native LCD transfer and one-time rotation clear
         run: python3 tools/test_cyd32_native_push.py
 
