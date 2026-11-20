@@ -3213,19 +3213,19 @@ void setup() {
         const uint32_t wanted = (uint32_t)tft.width() * (uint32_t)bandHeight;
         const uint32_t largest = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
         if (largest < wanted + 1024u) {
-            Serial.printf("[frame-boot] skip %u bands: need %lu + reserve, largest %lu\\n",
+            Serial.printf("[frame-boot] skip %u bands: need %lu + reserve, largest %lu\n",
                           (unsigned)bands, (unsigned long)wanted, (unsigned long)largest);
             continue;
         }
         if (!frame.createSprite(tft.width(), bandHeight)) {
-            Serial.printf("[frame-boot] %u bands allocation failed; trying smaller\\n", (unsigned)bands);
+            Serial.printf("[frame-boot] %u bands allocation failed; trying smaller\n", (unsigned)bands);
             continue;
         }
         s_recoveryBands = bands;
         frameBufferOk = true;
         canvas = &tft;
         cyd32Allocated = true;
-        Serial.printf("[frame-boot] CYD32 ready: bands=%u sprite=%lu heap=%lu largest=%lu\\n",
+        Serial.printf("[frame-boot] CYD32 ready: bands=%u sprite=%lu heap=%lu largest=%lu\n",
                       (unsigned)bands, (unsigned long)wanted,
                       (unsigned long)ESP.getFreeHeap(),
                       (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
@@ -3239,7 +3239,7 @@ void setup() {
         frameBufferOk = false;
         s_recoveryBands = 1;
         canvas = &tft;
-        Serial.printf("[frame-boot] CYD32 DIRECT PANEL: no sprite; heap=%lu largest=%lu\\n",
+        Serial.printf("[frame-boot] CYD32 DIRECT PANEL: no sprite; heap=%lu largest=%lu\n",
                       (unsigned long)ESP.getFreeHeap(),
                       (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
     }
