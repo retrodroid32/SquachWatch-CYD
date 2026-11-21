@@ -5813,7 +5813,21 @@ void loop() {
             if (frameBufferOk) {
                 // Buffered path: animations and unchanged-row suppression
                 // behave as normal.
-                drawTwoBand([&](TFT_eSPI& t, bool advance) { uiSettingsTick(t, now, engine, false, advance); });
+                // The classic CYD28 SD boot recovery uses short sprite
+                // bands. SETTINGS must lay out the pinned [ UP ]/[ BACK ]
+                // strip using the actual rotated LCD height, not the
+                // 15-40px height returned by a recovery-band sprite.
+                // Keep buffered rendering so the menu does not flicker.
+#if defined(CYD) && !defined(CYD32) && !defined(CYD35) && \
+    !defined(AWOK) && !defined(RLPHANTOM) && !defined(RLPHANTOM_R)
+                const int settingsPhysicalH =
+                    s_recoveryBands > 1 ? tft.height() : 0;
+#else
+                const int settingsPhysicalH = 0;
+#endif
+                drawTwoBand([&](TFT_eSPI& t, bool advance) {
+                    uiSettingsTick(t, now, engine, false, advance, settingsPhysicalH);
+                });
             } else {
                 // When WiFi OTA leaves too little contiguous RAM to restore
                 // the full-screen sprite, drawing every loop straight to
