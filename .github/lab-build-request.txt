@@ -1,6 +1,4 @@
-CYD28-SETTINGS-PHYSICAL-REDRAW-R4
-LAB only — repair classic CYD 2.8 ST7789 SYSTEM/SETTINGS visual corruption and missing UP/BACK after SD FILES. Draw SETTINGS on the full rotated physical LCD under 8/16-band memory recovery; state-driven redraw avoids band text wrap and flicker.
-Retains successful SD FILES R2 direct draw, R1 SD cold-boot recovery and the original buffered SETTINGS on other hardware. Background snapshot between events is an explicit visual tradeoff.
-Stacks on unmerged #246 R3, #245 R2, #241 R1 and #239 upstream phase 1. No merge, branch deletion, public release or production tag.
-Require exact-head full Build, LAB Build and release firmware, host R4 regression test, Pages publication, and hardware validation of portrait/landscape/settings navigation with SD inserted.
-Pages historical signature recovery: on repeated 503, restore exact historical optional .sig from same official version-tagged GitHub Release; fail closed if missing. Host regression test added. Require exact-HEAD CI and LAB publish success before flashing.
+CYD28-MAIN-BAND-STABILITY-R5
+LAB only — fix CYD 2.8 ST7789 main-screen flicker, ghosted SETTINGS pixels and partial redraw documented in user video. Per-screen-frame (not per-stripe) FramePush cadence, scrub reused low-memory stripe sprite and invalidate row cache on MAIN entry.
+Stacked on unmerged #248 R5, #247 R4, #246 R3, #245 R2, #241 R1, #239 Phase 1. Keep SD cold-boot memory safeguards and working SD FILES/browser fix.
+Require exact-head Build full board matrix, dedicated stripe/transition regression, successful Build and release firmware, Pages LAB publication, and physical 2.8 validation. NO production release/tag/merge/branch deletion without explicit user approval.
