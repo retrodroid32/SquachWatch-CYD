@@ -1220,8 +1220,14 @@ static void rowContent(SettingsRow r, const DetectionEngine& eng, char* valBuf, 
 }
 
 void uiSettingsTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng,
-                    bool staticBackground, bool advance) {
-    int w = t.width(), h = t.height();
+                    bool staticBackground, bool advance, int physicalHeight) {
+    // The 2.8-inch low-memory renderer passes a 15-40px TFT_eSprite
+    // for each physical band. Its height is not the actual screen height.
+    // Position rows, overlays and the pinned [ UP ] / [ BACK ] strip using
+    // the complete rotated LCD height; the renderer's viewport still clips
+    // drawing to each physical band.
+    const int w = t.width();
+    const int h = physicalHeight > 0 ? physicalHeight : t.height();
 
     // buildDisplayList() has no engine of its own and is called by the hit test
     // too, so the answer is cached here once a frame. Same pattern ui_clear.cpp
