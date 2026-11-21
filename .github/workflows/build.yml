@@ -135,6 +135,8 @@ jobs:
           python3 tools/test_category_pill_roster.py
       - name: Verify protected master-context LAB Pages recovery
         run: python3 tools/test_verify_lab_pages_recovery.py
+      - name: Verify exact-artifact GitHub Pages REST deployment
+        run: python3 tools/test_pages_rest_deploy.py
       - name: Reject oversized OTA images and mismatched LAB manifests
         run: |
           python3 tools/test_check_app_image_sizes.py
