@@ -1,6 +1,6 @@
-CYD28-SD-SYSTEM-BACK-R3
-LAB only: preserve working CYD 2.8 ST7789 SD cold boot and SD FILES landscape redraw R2; restore SYSTEM pinned UP and SETTINGS pinned BACK following return from SD FILES.
-Physical-panel layout height is passed into uiSettingsTick on classic CYD28 recovery-band SETTINGS only. Buffer, clipping, touch mapping and other boards remain unchanged.
-Source PR #246 stacked on unmerged PR #245 (R2), PR #241 (SD memory), PR #239 (upstream).
-Require exact-head Build matrix, SD FILES/SYSTEM regression tests, Build and release firmware LAB and Pages publication.
-No production tag/release, no merge and no branch deletion; test portrait and landscape with SD inserted at boot.
+CYD28-SETTINGS-PHYSICAL-REDRAW-R4
+LAB only — repair classic CYD 2.8 ST7789 SYSTEM/SETTINGS visual corruption and missing UP/BACK after SD FILES. Draw SETTINGS on the full rotated physical LCD under 8/16-band memory recovery; state-driven redraw avoids band text wrap and flicker.
+Retains successful SD FILES R2 direct draw, R1 SD cold-boot recovery and the original buffered SETTINGS on other hardware. Background snapshot between events is an explicit visual tradeoff.
+Stacks on unmerged #246 R3, #245 R2, #241 R1 and #239 upstream phase 1. No merge, branch deletion, public release or production tag.
+Require exact-head full Build, LAB Build and release firmware, host R4 regression test, Pages publication, and hardware validation of portrait/landscape/settings navigation with SD inserted.
+Pages historical signature recovery: on repeated 503, restore exact historical optional .sig from same official version-tagged GitHub Release; fail closed if missing. Host regression test added. Require exact-HEAD CI and LAB publish success before flashing.

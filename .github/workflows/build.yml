@@ -135,6 +135,8 @@ jobs:
           python3 tools/test_category_pill_roster.py
       - name: Verify protected master-context LAB Pages recovery
         run: python3 tools/test_verify_lab_pages_recovery.py
+      - name: Verify fallback for transient historical Pages signature failures
+        run: python3 tools/test_mirror_pages_release_fallback.py
       - name: Reject oversized OTA images and mismatched LAB manifests
         run: |
           python3 tools/test_check_app_image_sizes.py
@@ -150,6 +152,8 @@ jobs:
         run: python3 tools/test_cyd28_sd_files_landscape.py
       - name: Verify CYD 2.8 SYSTEM UP/BACK after SD FILES return
         run: python3 tools/test_cyd28_sd_system_back.py
+      - name: Verify CYD 2.8 physical-panel SETTINGS after SD FILES
+        run: python3 tools/test_cyd28_settings_physical_redraw.py
       - name: Verify CYD32 native LCD transfer and one-time rotation clear
         run: python3 tools/test_cyd32_native_push.py
 
