@@ -1,5 +1,6 @@
-CYD28-SD-FILES-LANDSCAPE-R2
-LAB only — CYD 2.8 ST7789 R1 SD cold-boot recovery with landscape SD FILES rendering fix. Render dirty SD FILES directly to rotated physical TFT when multi-band memory recovery is active; invalidate FramePush and bound long filenames to prevent wrapped/overlapping rows.
-Source PR #245 stacked on PR #241 and upstream Phase 1 PR #239; all are unmerged.
-Require full exact-head CI, host rotation geometry regression, successful Build and release firmware (LAB), and preserved production root on Pages.
-No production tag/release; no merge or branch deletion. Physical validation with SD inserted at cold boot and both display orientations is required.
+CYD28-SD-SYSTEM-BACK-R3
+LAB only: preserve working CYD 2.8 ST7789 SD cold boot and SD FILES landscape redraw R2; restore SYSTEM pinned UP and SETTINGS pinned BACK following return from SD FILES.
+Physical-panel layout height is passed into uiSettingsTick on classic CYD28 recovery-band SETTINGS only. Buffer, clipping, touch mapping and other boards remain unchanged.
+Source PR #246 stacked on unmerged PR #245 (R2), PR #241 (SD memory), PR #239 (upstream).
+Require exact-head Build matrix, SD FILES/SYSTEM regression tests, Build and release firmware LAB and Pages publication.
+No production tag/release, no merge and no branch deletion; test portrait and landscape with SD inserted at boot.
