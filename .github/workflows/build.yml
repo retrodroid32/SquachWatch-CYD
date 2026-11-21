@@ -150,6 +150,8 @@ jobs:
         run: python3 tools/test_cyd28_sd_files_landscape.py
       - name: Verify CYD 2.8 SYSTEM UP/BACK after SD FILES return
         run: python3 tools/test_cyd28_sd_system_back.py
+      - name: Verify CYD 2.8 physical-panel SETTINGS after SD FILES
+        run: python3 tools/test_cyd28_settings_physical_redraw.py
       - name: Verify CYD32 native LCD transfer and one-time rotation clear
         run: python3 tools/test_cyd32_native_push.py
 
