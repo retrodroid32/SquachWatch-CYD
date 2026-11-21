@@ -4479,7 +4479,7 @@ void loop() {
                 ++bootFrames;
                 const uint32_t dt = (uint32_t)(now - bootStatsAt);
                 if (dt >= 1000u) {
-                    Serial.printf("[boot-r9] bands=%u fps=%lu render_avg_us=%lu render_max_us=%lu heap=%lu\\n",
+                    Serial.printf("[boot-r9] bands=%u fps=%lu render_avg_us=%lu render_max_us=%lu heap=%lu\n",
                                   (unsigned)s_recoveryBands,
                                   (unsigned long)((uint32_t)bootFrames * 1000u / dt),
                                   (unsigned long)(bootRenderTotalUs / bootFrames),
