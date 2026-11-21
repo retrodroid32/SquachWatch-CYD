@@ -86,8 +86,13 @@ enum class SettingsRow : uint8_t {
 void uiSettingsInit(TFT_eSPI& t);
 // staticBackground is for the low-memory, direct-to-panel fallback after OTA:
 // avoid continuously repainting an animated background without a sprite.
+// physicalHeight is needed when classic CYD28 renders into short recovery
+// bands: the sprite reports its band height, but page geometry and the
+// pinned UP/BACK bar must use the actual rotated physical LCD height.
+// Zero preserves the existing full-buffer/direct-panel behavior.
 void uiSettingsTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng,
-                    bool staticBackground = false, bool advance = true);
+                    bool staticBackground = false, bool advance = true,
+                    int physicalHeight = 0);
 void uiSettingsScroll(int delta);     // positive = scroll down
 
 // Sub-pages are this same screen with a different list on it, so their rows
