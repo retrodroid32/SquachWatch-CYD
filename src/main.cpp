@@ -185,8 +185,9 @@ static void crashCrumbTick(uint32_t now, uint32_t lifetime, uint8_t screen) {
 // the splash is the bug report.
 static bool crashCardWanted() { return g_lastCrash.valid || g_lastCrash.haveDump; }
 static const char* resetReasonName();
-static void drawCrashCard(TFT_eSPI& t) {
-    const int w = t.width(), h = t.height();
+static void drawCrashCard(TFT_eSPI& t, int physicalW = 0, int physicalH = 0) {
+    const int w = physicalW > 0 ? physicalW : t.width();
+    const int h = physicalH > 0 ? physicalH : t.height();
     const int lines = 1 + (g_lastCrash.haveDump ? 2 : (g_lastCrash.valid ? 1 : 0));
     const int bh = 8 + lines * 11;
     const int y0 = h - bh - 4;
@@ -1273,6 +1274,12 @@ static void enterBoot() {
     // boot canvas in that sprite rather than clearing the live LCD each
     // time the unbuffered splash starts.
 #if defined(CYD32) && defined(GPS_SUPPORT) && defined(GPS_RX_PIN)
+    if (frameBufferOk && s_recoveryBands > 1) uiBootInit(frame);
+    else                                      uiBootInit(*canvas);
+#elif defined(CYD) && !defined(CYD35) && !defined(AWOK) && \
+      !defined(RLPHANTOM) && !defined(RLPHANTOM_R)
+    // R8: CYD28's 8/16-band startup has canvas=&tft. Reset the boot
+    // animation on its retained tiny sprite, not by clearing the panel.
     if (frameBufferOk && s_recoveryBands > 1) uiBootInit(frame);
     else                                      uiBootInit(*canvas);
 #else
@@ -4442,6 +4449,24 @@ void loop() {
                 });
             } else {
                 uiBootTick(*canvas, now);
+                if (crashCardWanted()) drawCrashCard(*canvas);
+            }
+#elif defined(CYD) && !defined(CYD35) && !defined(AWOK) && \
+      !defined(RLPHANTOM) && !defined(RLPHANTOM_R)
+            // R8: only BOOT needed a renderer correction after R7. Draw
+            // the full rotated intro with R1's already-proven buffered
+            // band path, the same path used by the stable MAIN screen.
+            // We do NOT touch MAIN, SETTINGS, SD FILES or FramePush.
+            if (frameBufferOk && s_recoveryBands > 1) {
+                drawTwoBand([&](TFT_eSPI& t, bool) {
+                    uiBootTick(t, now, tft.width(), tft.height(), true);
+                    if (crashCardWanted())
+                        drawCrashCard(t, tft.width(), tft.height());
+                });
+            } else {
+                // Last-resort low-heap direct fallback: no buffer exists.
+                // Suppress intentional boot glitch bursts regardless.
+                uiBootTick(*canvas, now, 0, 0, true);
                 if (crashCardWanted()) drawCrashCard(*canvas);
             }
 #else
