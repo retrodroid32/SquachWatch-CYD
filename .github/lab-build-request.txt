@@ -1,5 +1,4 @@
-CYD28-R1-SD-BUFFERED-RECOVERY-R7
-LAB ONLY. Rebuild from known-stable R1 PR #241 SHA 88e6c820b84f1da0290c142fecf28297b0498fa1, not from R6. R2 PR #245 introduced direct LCD SD browser; R3-R6 compounded display path changes. R7 retains byte-for-byte R1 CLEAR and band renderer, FramePush, SD mount and detection. SD FILES now renders into original R1 buffer with actual rotated physical layout geometry, no direct LCD writes; SETTINGS init cannot blank physical LCD in CYD28 recovery bands.
-Source draft PR #250 stacked ONLY on R1 #241 and upstream #239. Leave R2 #245, R3 #246, R4 #247, R5 #248, R6 #249 unmerged and untouched.
-Require exact-head full Build and successful LAB Build and release firmware + Pages flasher publication, host R7 regression, final OTA slot margin >=8192, and separate physical 2.8 ST7789 validation. NO production release, merge, tag, or branch deletion.
-R7 emulator parity: sim/sd_browser_sim.cpp now matches physical-size SdBrowser::draw signature; require re-run of exact-head emulator plus firmware build and LAB publication.
+CYD28-R7-BUFFERED-BOOT-INTRO-R8
+LAB only. Hardware user confirms R7 MAIN/SETTINGS/SD FILES no longer flash; only animated INTRO/BOOT flashes before MAIN. R8 uses R1/R7 8/16-band framebuffer for CYD 2.8 BOOT instead of direct physical LCD; real rotated geometry for boot and crash overlay; suppress boot-only intentional CRT glitch bursts on CYD 2.8. Do not modify successful R7 MAIN, SD mount, frame push, menus.
+Source draft PR #251 stacked on R7 #250, R1 #241 and #239; leave other PRs unchanged.
+Require exact-head full CI (firmware matrix, host, emulator, R8 regression, OTA margin), Build and release firmware for LAB, successful Pages publication, and on-board boot/MAIN/SD tests. No merge, tag, public production release or branch deletion without explicit user approval.
