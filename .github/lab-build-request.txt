@@ -1,5 +1,4 @@
-CYD28-SD-IN-BOOT-MEMORY-R1
-LAB only. Fix CYD 2.8 ST7789 cold boot with inserted SD card: bounded 8/16 band sprite, no allocation restart, fail-closed SD mount when RAM would exhaust mesh crypto, delay monitor until after mesh init.
-Source PR #241 stacked on phase 1 PR #239. PR #240 CYD32 remains separate and unmerged.
-Require full exact-head CI matrix, host test, OTASize guard and LAB Pages release.
-No public production tag/release, no merge, no branch deletion. Physical verification required; SD may remain DEFERRED - LOW RAM.
+CYD28-R1-SD-BUFFERED-RECOVERY-R7
+LAB ONLY. Rebuild from known-stable R1 PR #241 SHA 88e6c820b84f1da0290c142fecf28297b0498fa1, not from R6. R2 PR #245 introduced direct LCD SD browser; R3-R6 compounded display path changes. R7 retains byte-for-byte R1 CLEAR and band renderer, FramePush, SD mount and detection. SD FILES now renders into original R1 buffer with actual rotated physical layout geometry, no direct LCD writes; SETTINGS init cannot blank physical LCD in CYD28 recovery bands.
+Source draft PR #250 stacked ONLY on R1 #241 and upstream #239. Leave R2 #245, R3 #246, R4 #247, R5 #248, R6 #249 unmerged and untouched.
+Require exact-head full Build and successful LAB Build and release firmware + Pages flasher publication, host R7 regression, final OTA slot margin >=8192, and separate physical 2.8 ST7789 validation. NO production release, merge, tag, or branch deletion.
