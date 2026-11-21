@@ -3034,6 +3034,16 @@ void setup() {
     delay(200);
     Serial.println();
     printBootBanner();
+#if defined(CYD) && !defined(CYD32) && !defined(CYD35) && \
+    !defined(AWOK) && !defined(RLPHANTOM) && !defined(RLPHANTOM_R)
+    // R6: distinguish actual firmware restarts from draw-only corruption.
+    // The full banner above already decodes reset names; this compact raw
+    // record also makes it possible to correlate resets with heap pressure.
+    Serial.printf("[cyd28-r6] boot reset=%u (%s), free=%lu largest=%lu\n",
+                  (unsigned)esp_reset_reason(), resetReasonName(),
+                  (unsigned long)ESP.getFreeHeap(),
+                  (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
+#endif
 #if defined(TWATCH_S3)
     twatchPowerUp();
 #endif
