@@ -1,4 +1,4 @@
-CYD28-MAIN-BAND-STABILITY-R5
-LAB only — fix CYD 2.8 ST7789 main-screen flicker, ghosted SETTINGS pixels and partial redraw documented in user video. Per-screen-frame (not per-stripe) FramePush cadence, scrub reused low-memory stripe sprite and invalidate row cache on MAIN entry.
-Stacked on unmerged #248 R5, #247 R4, #246 R3, #245 R2, #241 R1, #239 Phase 1. Keep SD cold-boot memory safeguards and working SD FILES/browser fix.
-Require exact-head Build full board matrix, dedicated stripe/transition regression, successful Build and release firmware, Pages LAB publication, and physical 2.8 validation. NO production release/tag/merge/branch deletion without explicit user approval.
+CYD28-NATIVE-BAND-PUSH-R6
+LAB only. Hardware R5 FAIL: main-screen flicker/ghosted UI persists. Video also shows 'CHECKING FOR UPDATES' then startup, possibly a reset. Classic CYD 2.8 ST7789 low-memory 8/16-band renderer: native TFT_eSPI stripe push instead of custom FramePush raw SPI; suppress physical TFT clear on SETTINGS entry; add boot reset code + heap diagnostic.
+Source draft PR #249 stacked on #248 R5, #247 R4, #246 R3, #245 R2, #241 R1, #239 upstream. Preserve SD cold-boot and browser fixes.
+Require exact-head Build full board matrix, R6 host regression, successful Build and release firmware LAB + Pages publication, and physical 2.8 hardware verification. No merge/tag/public production release/branch deletion.

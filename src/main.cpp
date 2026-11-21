@@ -1573,6 +1573,17 @@ static void enterSettings() {
     Theme::releaseClockBackdrop();
     state = AppState::SETTINGS;
     transitionStart = millis();
+#if defined(CYD) && !defined(CYD32) && !defined(CYD35) && \
+    !defined(AWOK) && !defined(RLPHANTOM) && !defined(RLPHANTOM_R)
+    if (frameBufferOk && s_recoveryBands > 1) {
+        // R6: R4 draws SETTINGS directly to the physical panel on its
+        // next tick. canvas=&tft in recovery mode, so uiSettingsInit(*canvas)
+        // used to wipe the live LCD *before* that tick could paint the
+        // menu, creating an obvious blank/flicker on every entry.
+        // Initialise state using the small off-screen sprite instead.
+        uiSettingsInit(frame);
+    } else
+#endif
     uiSettingsInit(*canvas);
 }
 
@@ -3023,6 +3034,16 @@ void setup() {
     delay(200);
     Serial.println();
     printBootBanner();
+#if defined(CYD) && !defined(CYD32) && !defined(CYD35) && \
+    !defined(AWOK) && !defined(RLPHANTOM) && !defined(RLPHANTOM_R)
+    // R6: distinguish actual firmware restarts from draw-only corruption.
+    // The full banner above already decodes reset names; this compact raw
+    // record also makes it possible to correlate resets with heap pressure.
+    Serial.printf("[cyd28-r6] boot reset=%u (%s), free=%lu largest=%lu\n",
+                  (unsigned)esp_reset_reason(), resetReasonName(),
+                  (unsigned long)ESP.getFreeHeap(),
+                  (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
+#endif
 #if defined(TWATCH_S3)
     twatchPowerUp();
 #endif
@@ -3745,6 +3766,25 @@ static inline void pushFrame(int x, int y) {
             Serial.printf("[roster-push] WARNING state=%u pushes=%u x=%d y=%d\n",
                           (unsigned)state, (unsigned)s_rosterPushesThisLoop, x, y);
         }
+#if defined(CYD) && !defined(CYD32) && !defined(CYD35) && \
+    !defined(AWOK) && !defined(RLPHANTOM) && !defined(RLPHANTOM_R)
+    } else if (s_recoveryBands > 1) {
+        // R6 hardware isolation: classic CYD 2.8 under R1 low-heap
+        // 8/16-band recovery. The fast raw-SPI FramePush path uses
+        // register bursts, row hashes and multiple address windows per
+        // reused stripe. User hardware still shows missing/glitched rows
+        // (and at least one apparent reboot) after R5's cadence fix.
+        // Let the known TFT_eSPI ST7789 driver own each complete stripe's
+        // transaction and address window, as on CYD32. No extra heap.
+        static bool loggedNativeBand = false;
+        if (!loggedNativeBand) {
+            loggedNativeBand = true;
+            Serial.printf("[push-r6] CYD28 native sprite bands=%u, framebuffer=%ldx%ld\n",
+                          (unsigned)s_recoveryBands, (long)frame.bufW(), (long)frame.bufH());
+        }
+        frame.pushSprite(x, y);
+        FramePush::invalidate();
+#endif
 #if defined(CYD32)
     } else {
         // Hardware isolation: ST7798 sometimes retains old portrait/
