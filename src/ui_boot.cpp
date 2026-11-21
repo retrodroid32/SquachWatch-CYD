@@ -52,18 +52,28 @@ void uiBootInit(TFT_eSPI& t) {
     s_glitchStage = 0;
 }
 
-void uiBootTick(TFT_eSPI& t, uint32_t now) {
+void uiBootTick(TFT_eSPI& t, uint32_t now, int physicalW,
+                int physicalH, bool suppressGlitch) {
     if (s_bootAt == 0) s_bootAt = now ? now : 1;
     const uint32_t bootEl = now - s_bootAt;
     // Two bursts inside the 3s window: one early enough to be seen, one
     // late enough to feel like the thing is still settling. Intensities
     // stay mild -- 3 and up add a full-screen pixel-shift tear, which
     // on a splash reads as a fault rather than as style.
-    if (s_glitchStage == 0 && bootEl > 500)  { Theme::triggerGlitchBurst(2); s_glitchStage = 1; }
-    if (s_glitchStage == 1 && bootEl > 1750) { Theme::triggerGlitchBurst(1); s_glitchStage = 2; }
+    // R8: in classic CYD28 recovery mode, BOOT is now rendered into the
+    // same low-memory stripes as MAIN. The scripted chromatic/CRT bursts
+    // look like the reported screen flashing; suppress them on this board
+    // while leaving every other device's boot artwork unchanged.
+    if (!suppressGlitch) {
+        if (s_glitchStage == 0 && bootEl > 500)  { Theme::triggerGlitchBurst(2); s_glitchStage = 1; }
+        if (s_glitchStage == 1 && bootEl > 1750) { Theme::triggerGlitchBurst(1); s_glitchStage = 2; }
+    }
 
-    int w = t.width();
-    int h = t.height();
+    // A band sprite is only 15/30/40px high, but splash geometry and all
+    // absolute draw coordinates must use the whole rotated LCD. The stripe
+    // viewport clips those absolute coordinates to its allocated RAM.
+    const int w = physicalW > 0 ? physicalW : t.width();
+    const int h = physicalH > 0 ? physicalH : t.height();
     int yHoriz = (h * 5) / 8;
 
     // The same composed scene the SYNTHWAVE background uses -- sky,
@@ -132,9 +142,19 @@ void uiBootTick(TFT_eSPI& t, uint32_t now) {
     const int sx = (w - sw) / 2;
     const int sy = 54;
 
-    const bool glitch = Theme::glitchActive();
-    const int  split  = glitch ? 3 + (int)random(0, 3) : 1;
-    const int  jitter = glitch ? (int)random(-2, 3) : 0;
+    const bool glitch = !suppressGlitch && Theme::glitchActive();
+    // Freeze random displacement across all sprite stripes that constitute
+    // one screen frame, so the subtitle cannot jump between adjacent bands.
+    static uint32_t s_chromaAt = UINT32_MAX;
+    static int s_chromaSplit = 1;
+    static int s_chromaJitter = 0;
+    if (s_chromaAt != now) {
+        s_chromaAt = now;
+        s_chromaSplit = glitch ? 3 + (int)random(0, 3) : 1;
+        s_chromaJitter = glitch ? (int)random(-2, 3) : 0;
+    }
+    const int split = s_chromaSplit;
+    const int jitter = s_chromaJitter;
 
     // Shadow first, so everything else sits on top of it. Two pixels
     // down and right: enough to lift the word off the sunset without
@@ -169,7 +189,8 @@ void uiBootTick(TFT_eSPI& t, uint32_t now) {
 
     // Snow over the subtitle's own box. A no-op while glitchActive() is
     // false, so this is safe to call every frame.
-    Theme::drawGlitchStatic(t, sx - 4, sy - 2, sx + sw + 4, sy + 18);
+    if (!suppressGlitch)
+        Theme::drawGlitchStatic(t, sx - 4, sy - 2, sx + sw + 4, sy + 18);
 
     // Squachy himself, standing on the floor just past the horizon,
     // giving a friendly wave (and a little on-brand attitude) while
