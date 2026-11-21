@@ -3,6 +3,7 @@
 #include "theme.h"
 #include "squachy.h"
 #include "settings.h"
+#include "draw_band.h"
 
 // Stamped in by extra_script.py from `git describe` at build time --
 // same macro the Diary screen already reads (see its own guard
@@ -100,18 +101,31 @@ void uiBootTick(TFT_eSPI& t, uint32_t now, int physicalW,
     // behind it. Drawn as a dilation -- the same glyphs at every offset
     // inside a radius-3 disc -- rather than a rectangular halo, so the
     // stroke follows the letterforms instead of boxing them.
-    for (int dy = -3; dy <= 3; dy++) {
-        for (int dx = -3; dx <= 3; dx++) {
-            if (dx * dx + dy * dy > 9 || (dx == 0 && dy == 0)) continue;
-            Theme::drawBangersText(t, tx + dx, 8 + dy, title, Theme::BLACK, Theme::BangersSize::LG);
+    // R9: this was 28+ complete glyph scans on EACH of R8's 8/16
+    // recovery stripes, even though the title only spans the top ~50px.
+    // The existing outline helper does the same thick silhouette in one
+    // scan; skip it entirely on stripes that cannot contain the title.
+    // Keep the original 3px circular dilation on every other board.
+    if (DrawBand::has(0, 52)) {
+        if (suppressGlitch) {
+            Theme::drawBangersOutline(t, tx, 8, title, Theme::BLACK,
+                                     Theme::BangersSize::LG, 3);
+        } else {
+            for (int dy = -3; dy <= 3; dy++) {
+                for (int dx = -3; dx <= 3; dx++) {
+                    if (dx * dx + dy * dy > 9 || (dx == 0 && dy == 0)) continue;
+                    Theme::drawBangersText(t, tx + dx, 8 + dy, title, Theme::BLACK,
+                                           Theme::BangersSize::LG);
+                }
+            }
         }
+        Theme::drawBangersText(t, tx, 8, title, Theme::VAPOR_PINK, Theme::BangersSize::LG);
     }
-    Theme::drawBangersText(t, tx, 8, title, Theme::VAPOR_PINK, Theme::BangersSize::LG);
 
-    // gradient line — moved up right under the title (the v1.0 line
-    // used to sit here; removed so Squachy below gets that room too).
-    for (int x = 0; x < w; x++) {
-        t.drawFastHLine(x, 46, 1, Theme::titlebarColor(x, w));
+    // The gradient divider also lives in only one or two real stripes.
+    if (DrawBand::has(46, 47)) {
+        for (int x = 0; x < w; x++)
+            t.drawFastHLine(x, 46, 1, Theme::titlebarColor(x, w));
     }
 
     // TALKING SASQUACH subtitle -- the brand line under the product
@@ -142,6 +156,9 @@ void uiBootTick(TFT_eSPI& t, uint32_t now, int physicalW,
     const int sx = (w - sw) / 2;
     const int sy = 54;
 
+    // Subtitle and its shadows occupy ~28px, not an entire panel.
+    // Avoid repeating the text renderer across the other 6-14 stripes.
+    if (DrawBand::has(sy - 4, sy + 27)) {
     const bool glitch = !suppressGlitch && Theme::glitchActive();
     // Freeze random displacement across all sprite stripes that constitute
     // one screen frame, so the subtitle cannot jump between adjacent bands.
@@ -191,6 +208,7 @@ void uiBootTick(TFT_eSPI& t, uint32_t now, int physicalW,
     // false, so this is safe to call every frame.
     if (!suppressGlitch)
         Theme::drawGlitchStatic(t, sx - 4, sy - 2, sx + sw + 4, sy + 18);
+    } // subtitle's physical band only
 
     // Squachy himself, standing on the floor just past the horizon,
     // giving a friendly wave (and a little on-brand attitude) while
@@ -200,7 +218,10 @@ void uiBootTick(TFT_eSPI& t, uint32_t now, int physicalW,
     // extra room to be this big. Skipped in "boring mode" — the rest
     // of the boot splash (wordmark, subtitle, INITIALIZING...) is
     // unaffected, this only cuts the mascot cameo.
-    if (!Settings::boringMode()) {
+    // On CYD28 the cameo and speech bubble are entirely below h/5;
+    // skipping invisible top stripes avoids repeating very costly body
+    // polygons while keeping exactly the same wave pose/time everywhere.
+    if (!Settings::boringMode() && DrawBand::has(h / 5, h)) {
         // 2.0, up from 1.6, standing on h-19 rather than yHoriz+50.
         //
         // Measured off a render: the subtitle's ink ends at row 67 and
@@ -267,11 +288,12 @@ void uiBootTick(TFT_eSPI& t, uint32_t now, int physicalW,
 #if defined(CYD35)
     t.setTextColor(Theme::AMBER);   // not the cyan the rest of the line uses
 #endif
-    t.print(init);
+    if (DrawBand::has(h - 19, h)) t.print(init);
 
     // animated scanline sweeping top to bottom every 600 ms
     int phase = (int)((now / 600) % (uint32_t)h);
-    Theme::drawScanline(t, phase, Theme::VAPOR_PURPLE);
+    if (DrawBand::has(phase, phase + 1))
+        Theme::drawScanline(t, phase, Theme::VAPOR_PURPLE);
 }
 
 bool uiBootDone(uint32_t startMs, uint32_t holdMs) {
