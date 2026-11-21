@@ -7268,10 +7268,28 @@ void loop() {
                 s_sdFilesDirty = true;
             }
 #if defined(CYD32)
-            // Always render this non-animated filesystem menu directly to
-            // the real TFT on the 3.2", independent of recovery-band layout.
-            // A small/stale sprite can otherwise leave 25% of CLEAR visible.
+            // This non-animated filesystem menu needs full panel dimensions.
             if (s_sdFilesDirty) SdBrowser::draw(tft);
+#elif defined(CYD) && !defined(CYD35) && !defined(AWOK) && \
+      !defined(RLPHANTOM) && !defined(RLPHANTOM_R)
+            if (s_sdFilesDirty) {
+                if (frameBufferOk && s_recoveryBands > 1) {
+                    // CYD28 R1 uses 8/16-row bands to save SD boot RAM.
+                    // Passing their TFT_eSprite to SdBrowser::draw() makes
+                    // t.height() a *band* height (e.g. 30, not 240). All
+                    // h-relative buttons, header icons and file rows then
+                    // repeat at different physical offsets in landscape.
+                    // SD FILES is event-driven, so paint the real panel only
+                    // when dirty and use the full rotated TFT dimensions.
+                    SdBrowser::draw(tft);
+                    // Direct pixels bypass FramePush's row hashes. Force the
+                    // next buffered screen to replace every physical row.
+                    FramePush::invalidate();
+                } else {
+                    // Preserve the original full-buffer/direct fallback.
+                    drawTwoBand([&](TFT_eSPI& t, bool) { SdBrowser::draw(t); });
+                }
+            }
 #else
             if (s_sdFilesDirty)
                 drawTwoBand([&](TFT_eSPI& t, bool) { SdBrowser::draw(t); });
