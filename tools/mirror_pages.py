@@ -10,7 +10,11 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import posixpath
+import re
+import subprocess
+import tempfile
 import time
 import urllib.error
 import urllib.parse
@@ -31,6 +35,50 @@ class PagesMirror:
         if not norm or norm == "." or norm == ".." or norm.startswith("../"):
             raise ValueError(f"unsafe Pages path: {rel!r}")
         return norm
+
+    def _release_signature_fallback(self, rel: str) -> bytes | None:
+        """Recover a historical optional signature from its official release.
+
+        Pages intermittently 503s on old .sig files, despite the official
+        versioned GitHub Release still carrying that exact signed sidecar.
+        Only accept well-formed vX.Y.Z/BOARD-firmware.sig names in THIS repo.
+        Never substitute other firmware, manifests, or required Pages files.
+        Missing/failed fallback is a hard failure in fetch(), not a silently
+        incomplete production mirror.
+        """
+        parts = rel.split("/")
+        if len(parts) != 2:
+            return None
+        tag, filename = parts
+        if not re.fullmatch(r"v[0-9]+\.[0-9]+\.[0-9]+", tag):
+            return None
+        if not re.fullmatch(r"[a-z0-9][a-z0-9-]*-firmware\.sig", filename):
+            return None
+        repo = os.environ.get("GITHUB_REPOSITORY", "")
+        if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repo):
+            return None
+
+        with tempfile.TemporaryDirectory(prefix="sqw-release-sig-") as tmp:
+            cmd = [
+                "gh", "release", "download", tag,
+                "--repo", repo, "--pattern", filename, "--dir", tmp,
+            ]
+            try:
+                subprocess.run(cmd, check=True, capture_output=True,
+                               text=True, timeout=60)
+                data = (Path(tmp) / filename).read_bytes()
+            except (OSError, subprocess.CalledProcessError,
+                    subprocess.TimeoutExpired) as exc:
+                print(f"::warning::Historical signature fallback failed for "
+                      f"{rel}: {type(exc).__name__}", flush=True)
+                return None
+        # Signatures are tiny (about 70 bytes). Reject anything implausible,
+        # such as an HTML error page or a accidentally downloaded firmware.
+        if not data or len(data) > 4096:
+            raise RuntimeError(f"invalid historical release signature {rel}: {len(data)} bytes")
+        print(f"::notice::Recovered historical {rel} from GitHub Release "
+              f"{tag} after Pages failures; production history retained", flush=True)
+        return data
 
     def fetch(self, rel: str, *, optional: bool = False) -> bytes | None:
         rel = self.clean(rel)
@@ -56,6 +104,11 @@ class PagesMirror:
             except (urllib.error.URLError, TimeoutError) as exc:
                 reason = str(getattr(exc, "reason", exc))
             if attempt == attempts:
+                if optional:
+                    fallback = self._release_signature_fallback(rel)
+                    if fallback is not None:
+                        data = fallback
+                        break
                 raise RuntimeError(
                     f"could not mirror {url} after {attempts} attempts: {reason}"
                 )

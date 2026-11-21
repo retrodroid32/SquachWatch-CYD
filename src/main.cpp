@@ -1563,6 +1563,15 @@ static void enterSettings() {
     Theme::releaseClockBackdrop();
     state = AppState::SETTINGS;
     transitionStart = millis();
+#if defined(CYD) && !defined(CYD32) && !defined(CYD35) && \
+    !defined(AWOK) && !defined(RLPHANTOM) && !defined(RLPHANTOM_R)
+    if (frameBufferOk && s_recoveryBands > 1) {
+        // canvas points at the physical LCD in R1 band-recovery mode.
+        // Reset SETTINGS offscreen, not by wiping a live physical panel
+        // just as the buffered SD FILES transitions to it.
+        uiSettingsInit(frame);
+    } else
+#endif
     uiSettingsInit(*canvas);
 }
 
@@ -7268,10 +7277,19 @@ void loop() {
                 s_sdFilesDirty = true;
             }
 #if defined(CYD32)
-            // Always render this non-animated filesystem menu directly to
-            // the real TFT on the 3.2", independent of recovery-band layout.
-            // A small/stale sprite can otherwise leave 25% of CLEAR visible.
+            // Preserve the previously validated native CYD32 file browser.
             if (s_sdFilesDirty) SdBrowser::draw(tft);
+#elif defined(CYD) && !defined(CYD35) && !defined(AWOK) && \
+    !defined(RLPHANTOM) && !defined(RLPHANTOM_R)
+            if (s_sdFilesDirty) {
+                // R7: keep the R1 buffered renderer. R2 switched this
+                // screen to physical LCD writes; R3-R6 mixed incompatible
+                // buffered and direct screen paths. Instead pass the real
+                // rotated LCD geometry to SD FILES *inside* the R1 bands.
+                drawTwoBand([&](TFT_eSPI& t, bool) {
+                    SdBrowser::draw(t, tft.width(), tft.height());
+                });
+            }
 #else
             if (s_sdFilesDirty)
                 drawTwoBand([&](TFT_eSPI& t, bool) { SdBrowser::draw(t); });
