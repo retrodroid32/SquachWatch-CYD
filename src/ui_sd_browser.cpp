@@ -117,9 +117,11 @@ void smallLine(TFT_eSPI& t, int x, int y, const char* s, uint16_t c) {
     t.setTextWrap(true);
 }
 void line(TFT_eSPI& t, int x, int y, const char* s, uint16_t color) {
-    t.setTextFont(1); t.setTextSize(2);
+    t.setTextFont(1); t.setTextSize(2); t.setTextWrap(false);
     t.setTextColor(color, Theme::BG);
     t.setCursor(x, y); t.print(s);
+    // Do not let long SD filenames/paths wrap into the next row.
+    t.setTextWrap(true);
 }
 // Include the full 30-pixel BACK button and a small margin above it.
 // Other action buttons end at h-36 or higher, so h-33 cannot steal them.
@@ -211,9 +213,15 @@ void draw(TFT_eSPI& t) {
     } else {
         line(t, 8, 48, folder, Theme::AMBER);
         const int rows = (h - 116) / 22 < 5 ? (h - 116) / 22 : 5;
+        // TFT_eSPI built-in font 1 at text size 2 occupies 12 px/ASCII
+        // character. Limit names to the *rotated* physical panel width;
+        // otherwise long filenames wrap over the next row in landscape.
+        const int fit = (w - 16) / 12 - 2; // subtract the "> " / "- " prefix
+        const int nameChars = fit < 1 ? 1 : (fit > 31 ? 31 : fit);
         for (int i = 0; i < rows && i < count; i++) {
             char label[41];
-            snprintf(label, sizeof label, "%s %.31s", entries[i].dir ? ">" : "-", entries[i].name);
+            snprintf(label, sizeof label, "%c %.*s",
+                     entries[i].dir ? '>' : '-', nameChars, entries[i].name);
             line(t, 8, 70 + 22 * i, label, entries[i].dir ? Theme::CYAN : Theme::WHITE);
         }
         if (error) line(t, 8, 73, "READ ERROR", Theme::RED);

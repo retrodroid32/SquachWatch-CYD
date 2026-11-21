@@ -1,5 +1,5 @@
-CYD28-SD-IN-BOOT-MEMORY-R1
-LAB only. Fix CYD 2.8 ST7789 cold boot with inserted SD card: bounded 8/16 band sprite, no allocation restart, fail-closed SD mount when RAM would exhaust mesh crypto, delay monitor until after mesh init.
-Source PR #241 stacked on phase 1 PR #239. PR #240 CYD32 remains separate and unmerged.
-Require full exact-head CI matrix, host test, OTASize guard and LAB Pages release.
-No public production tag/release, no merge, no branch deletion. Physical verification required; SD may remain DEFERRED - LOW RAM.
+CYD28-SD-FILES-LANDSCAPE-R2
+LAB only — CYD 2.8 ST7789 R1 SD cold-boot recovery with landscape SD FILES rendering fix. Render dirty SD FILES directly to rotated physical TFT when multi-band memory recovery is active; invalidate FramePush and bound long filenames to prevent wrapped/overlapping rows.
+Source PR #245 stacked on PR #241 and upstream Phase 1 PR #239; all are unmerged.
+Require full exact-head CI, host rotation geometry regression, successful Build and release firmware (LAB), and preserved production root on Pages.
+No production tag/release; no merge or branch deletion. Physical validation with SD inserted at cold boot and both display orientations is required.
