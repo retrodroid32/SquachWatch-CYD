@@ -5810,6 +5810,48 @@ void loop() {
             break;
         }
         case AppState::SETTINGS: {
+#if defined(CYD) && !defined(CYD32) && !defined(CYD35) && \
+    !defined(AWOK) && !defined(RLPHANTOM) && !defined(RLPHANTOM_R)
+            if (frameBufferOk && s_recoveryBands > 1) {
+                // CYD28 R4: this page has text, scrolling, corner icons and
+                // pinned buttons that assume a real 240/320px draw target.
+                // R3 fixed layout height but still sent TFT_eSprite's tiny
+                // 15-40px buffer to print()/the background renderer, which
+                // visibly wraps/clips pixels across strips. SD FILES R2
+                // proved one direct full-panel draw is stable on this board.
+                // Keep the small sprite allocated for all other screens;
+                // redraw SETTINGS only when its state can actually change.
+                static uint32_t paintedScene = UINT32_MAX;
+                static uint32_t paintedAt = 0;
+                static SettingsPage paintedPage = SettingsPage::MAIN;
+                static int prevX = -1, prevY = -1;
+                static bool paintNext = false;
+                const SettingsPage page = uiSettingsCurrentPage();
+                const bool moved = tp.valid && prevX >= 0 &&
+                                   (abs(tp.x - prevX) > 3 || abs(tp.y - prevY) > 3);
+                const bool first = paintedScene != transitionStart || paintedPage != page;
+                const bool input = touchJustDown || touchJustUp || paintNext;
+                const bool slowRefresh = (uint32_t)(now - paintedAt) >= 30000UL;
+                if (first || input || slowRefresh ||
+                    (moved && (uint32_t)(now - paintedAt) >= 250UL)) {
+                    // One complete physical-panel snapshot, not eight copies
+                    // of text drawn against a sprite with the wrong height.
+                    // Background animation is paused between redraws to avoid
+                    // direct-panel flicker; row and button visuals are intact.
+                    uiSettingsTick(tft, now, engine, false);
+                    // Direct drawing bypasses the row-hash push cache.
+                    FramePush::invalidate();
+                    paintedScene = transitionStart;
+                    paintedPage = page;
+                    paintedAt = now;
+                }
+                // Tap handlers below commit *after* this draw; update values
+                // on the next loop even if the touch has just been released.
+                paintNext = touchJustUp;
+                prevX = tp.valid ? tp.x : -1;
+                prevY = tp.valid ? tp.y : -1;
+            } else
+#endif
             if (frameBufferOk) {
                 // Buffered path: animations and unchanged-row suppression
                 // behave as normal.
