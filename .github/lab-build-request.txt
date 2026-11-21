@@ -1,4 +1,4 @@
-CYD28-R7-BUFFERED-BOOT-INTRO-R8
-LAB only. Hardware user confirms R7 MAIN/SETTINGS/SD FILES no longer flash; only animated INTRO/BOOT flashes before MAIN. R8 uses R1/R7 8/16-band framebuffer for CYD 2.8 BOOT instead of direct physical LCD; real rotated geometry for boot and crash overlay; suppress boot-only intentional CRT glitch bursts on CYD 2.8. Do not modify successful R7 MAIN, SD mount, frame push, menus.
-Source draft PR #251 stacked on R7 #250, R1 #241 and #239; leave other PRs unchanged.
-Require exact-head full CI (firmware matrix, host, emulator, R8 regression, OTA margin), Build and release firmware for LAB, successful Pages publication, and on-board boot/MAIN/SD tests. No merge, tag, public production release or branch deletion without explicit user approval.
+CYD28-BOOT-FRAME-OPTIMIZATION-R9
+LAB ONLY. Hardware R8 confirmed no boot intro flashing but animation is choppy/low FPS. Preserve R7 stable MAIN/SETTINGS/SD and R8 flicker removal, optimize CYD28 BOOT-only Bangers outline via single-pass helper and DrawBand::has pixel visibility gating. Includes [boot-r9] boot-only observed FPS and render_us logging once per second.
+Source draft PR #252 stacked on unmerged #251 R8, #250 R7, #241 R1 and #239 phase1. Leave other PRs unmerged/untouched.
+Require exact-head full Build (host, emulator, every board firmware, OTA size), R7/R8/R9 source regressions, successful Build and release firmware LAB, Pages publish, hardware boot FPS verification. No production release/tag, merge, branch deletion.
