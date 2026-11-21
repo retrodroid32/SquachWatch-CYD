@@ -119,30 +119,82 @@ jobs:
       # The upload action can finish before the run-artifact API is updated.
       # GitHub reported zero artifacts immediately after a successful upload.
       # Poll only for this attempt's unique name and refuse duplicates.
-      - name: Confirm Pages artifact is visible
+      # deploy-pages's internal artifact list returned zero after the public
+      # GitHub REST API verified this same uploaded artifact. Pin the exact
+      # ID by REST and call the standard Pages deployment API directly.
+      - name: Confirm exact Pages artifact and capture ID
+        id: pages_artifact
         env:
           GH_TOKEN: ${{ github.token }}
           PAGES_ARTIFACT_NAME: github-pages-attempt-${{ github.run_attempt }}
         run: |
           set -euo pipefail
           for i in $(seq 1 24); do
-            count=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/artifacts?per_page=100" \
-              --jq '[.artifacts[] | select(.name == env.PAGES_ARTIFACT_NAME and .expired == false)] | length')
+            data=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/artifacts?per_page=100")
+            count=$(printf '%s' "$data" | jq --arg name "$PAGES_ARTIFACT_NAME" \
+              '[.artifacts[] | select(.name == $name and .expired == false)] | length')
             if [[ "$count" == "1" ]]; then
-              echo "Pages artifact visible: $PAGES_ARTIFACT_NAME"
+              artifact_id=$(printf '%s' "$data" | jq -r --arg name "$PAGES_ARTIFACT_NAME" \
+                '.artifacts[] | select(.name == $name and .expired == false) | .id')
+              [[ "$artifact_id" =~ ^[0-9]+$ ]] || exit 1
+              echo "artifact_id=$artifact_id" >> "$GITHUB_OUTPUT"
+              echo "Verified exact Pages artifact ID $artifact_id"
               exit 0
             fi
             if [[ "$count" != "0" ]]; then
-              echo "::error::Expected exactly one artifact, got $count"
+              echo "::error::Expected exactly one Pages artifact, got $count"
               exit 1
             fi
             sleep 5
           done
-          echo "::error::Pages artifact did not become visible within the validation window"
+          echo "::error::Pages artifact not visible after bounded retry"
           exit 1
 
-      - name: Deploy to GitHub Pages
+      # Use the same GitHub Pages API and OIDC token as deploy-pages, but
+      # bypass its inconsistent internal artifact-name lookup. The artifact
+      # ID above comes from this exact run; the site bytes are unchanged.
+      - name: Deploy verified artifact to GitHub Pages
         id: deployment
-        uses: actions/deploy-pages@v5
+        uses: actions/github-script@v8
+        env:
+          PAGES_ARTIFACT_ID: ${{ steps.pages_artifact.outputs.artifact_id }}
         with:
-          artifact_name: github-pages-attempt-${{ github.run_attempt }}
+          script: |
+            const artifactId = Number(process.env.PAGES_ARTIFACT_ID);
+            if (!Number.isSafeInteger(artifactId) || artifactId <= 0) {
+              throw new Error('Missing or invalid verified Pages artifact ID');
+            }
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const oidcToken = await core.getIDToken();
+            core.setSecret(oidcToken);
+            const {data: deployment} = await github.request(
+              'POST /repos/{owner}/{repo}/pages/deployments', {
+                owner, repo,
+                artifact_id: artifactId,
+                pages_build_version: context.sha,
+                oidc_token: oidcToken
+              }
+            );
+            const deploymentId = deployment.id ||
+              deployment.status_url?.split('/').pop() || context.sha;
+            core.info('Created Pages deployment using validated artifact ' + artifactId);
+            for (let attempt = 0; attempt < 90; attempt++) {
+              await new Promise(resolve => setTimeout(resolve, 5000));
+              const {data: status} = await github.request(
+                'GET /repos/{owner}/{repo}/pages/deployments/{deploymentId}', {
+                  owner, repo, deploymentId
+                }
+              );
+              if (status.status === 'succeed') {
+                core.setOutput('page_url', deployment.page_url);
+                core.info('GitHub Pages deployment succeeded');
+                return;
+              }
+              if (['deployment_failed', 'deployment_content_failed',
+                   'deployment_cancelled', 'deployment_lost'].includes(status.status)) {
+                throw new Error('GitHub Pages deployment failed: ' + status.status);
+              }
+              if (attempt % 6 === 0) core.info('Pages deployment status: ' + status.status);
+            }
+            throw new Error('GitHub Pages deployment status timed out');
