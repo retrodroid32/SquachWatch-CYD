@@ -1326,6 +1326,16 @@ static void enterClear() {
     // The normal full-frame and unbuffered paths retain the old init.
 #if !defined(CYD35)
     if (!(frameBufferOk && s_recoveryBands > 1)) uiClearInit(*canvas);
+#if defined(CYD) && !defined(CYD32) && !defined(AWOK) && \
+    !defined(RLPHANTOM) && !defined(RLPHANTOM_R)
+    else {
+        // R5: the previous screen may have drawn directly to the physical
+        // LCD (R4 SETTINGS or R2 SD FILES). Every stripe of the first CLEAR
+        // frame must overwrite that page, even when a row hash happens to
+        // match a value remembered before the direct drawing.
+        FramePush::invalidate();
+    }
+#endif
 #else
     uiClearInit(*canvas);
 #endif
@@ -3821,6 +3831,17 @@ static __attribute__((noinline, noclone)) void drawTwoBandCore(
         for (int b = 0; b < s_recoveryBands; ++b) {
             const int y = b * bandH;
             DrawBand::set(y, y + bandH);
+#if defined(CYD) && !defined(CYD32) && !defined(AWOK) && \
+    !defined(RLPHANTOM) && !defined(RLPHANTOM_R)
+            // R5: the R1 retained 8/16-band sprite is reused for every
+            // stripe. The previous stripe may leave glyph cells or sprite
+            // pixels behind where the next stripe's logical scene does not
+            // paint. Reset the viewport BEFORE clearing the physical-size
+            // stripe, then apply the new stripe's screen-coordinate viewport.
+            // Clear only ~5-10 KB of RAM, never the actual LCD.
+            frame.resetViewport();
+            frame.fillSprite(Theme::BG);
+#endif
             frame.setViewport(0, -y, tft.width(), tft.height(), true);
             const uint32_t drawStartUs = micros();
             invoke(context, (TFT_eSPI&)frame, b == 0);
