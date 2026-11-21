@@ -4458,11 +4458,37 @@ void loop() {
             // band path, the same path used by the stable MAIN screen.
             // We do NOT touch MAIN, SETTINGS, SD FILES or FramePush.
             if (frameBufferOk && s_recoveryBands > 1) {
+                // R9 boot-only performance telemetry. R8 removed flashing
+                // but the full intro was choppy on physical CYD28. Measure
+                // elapsed render time and real completed screen frames,
+                // including all stripes, once per second (not each stripe).
+                const uint32_t bootRenderStartUs = micros();
                 drawTwoBand([&](TFT_eSPI& t, bool) {
                     uiBootTick(t, now, tft.width(), tft.height(), true);
                     if (crashCardWanted())
                         drawCrashCard(t, tft.width(), tft.height());
                 });
+                static uint32_t bootStatsAt = 0;
+                static uint32_t bootRenderTotalUs = 0;
+                static uint32_t bootRenderWorstUs = 0;
+                static uint16_t bootFrames = 0;
+                const uint32_t us = micros() - bootRenderStartUs;
+                if (!bootStatsAt) bootStatsAt = now;
+                bootRenderTotalUs += us;
+                if (us > bootRenderWorstUs) bootRenderWorstUs = us;
+                ++bootFrames;
+                const uint32_t dt = (uint32_t)(now - bootStatsAt);
+                if (dt >= 1000u) {
+                    Serial.printf("[boot-r9] bands=%u fps=%lu render_avg_us=%lu render_max_us=%lu heap=%lu\\n",
+                                  (unsigned)s_recoveryBands,
+                                  (unsigned long)((uint32_t)bootFrames * 1000u / dt),
+                                  (unsigned long)(bootRenderTotalUs / bootFrames),
+                                  (unsigned long)bootRenderWorstUs,
+                                  (unsigned long)ESP.getFreeHeap());
+                    bootFrames = 0;
+                    bootRenderTotalUs = bootRenderWorstUs = 0;
+                    bootStatsAt = now;
+                }
             } else {
                 // Last-resort low-heap direct fallback: no buffer exists.
                 // Suppress intentional boot glitch bursts regardless.
