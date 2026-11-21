@@ -8,7 +8,7 @@ push = (root / "src/frame_push.cpp").read_text(encoding="utf-8")
 guard = "#if defined(CYD) && !defined(CYD32) && !defined(CYD35)"
 assert "for (uint8_t bands = 8; bands <= 16; bands <<= 1)" in main
 draw = main.split("static __attribute__((noinline, noclone)) void drawTwoBandCore(", 1)[1].split(
-    "template <typename F>", 1)[0]
+    "template <typename F>", 1)[0].split("#else\n    if (s_recoveryBands > 1 && frameBufferOk) {", 1)[1]
 assert "frame.resetViewport();\n            frame.fillSprite(Theme::BG);" in draw
 assert draw.index("frame.resetViewport();\n            frame.fillSprite") < draw.index("frame.setViewport(0, -y,")
 assert draw.index("frame.setViewport(0, -y,") < draw.index("invoke(context,")
