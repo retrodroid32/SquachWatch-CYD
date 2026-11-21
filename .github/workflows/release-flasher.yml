@@ -113,6 +113,7 @@ jobs:
           python3 tools/board_matrix.py validate
           python3 -m py_compile tools/mirror_pages.py
           python3 tools/test_mirror_pages_release_fallback.py
+          python3 tools/test_cyd28_main_band_stability.py
           for guard in \
             tools/test_v141_arlo_oui.py \
             tools/test_v141_privacy_confirm.py \

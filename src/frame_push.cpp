@@ -44,6 +44,13 @@ static uint32_t s_rowHash[MAX_ROWS];
 static bool     s_valid   = false;
 static int32_t  s_validW  = 0, s_validH = 0;
 static uint32_t s_frameNo = 0;
+#if defined(CYD) && !defined(CYD32) && !defined(CYD35) && \
+    !defined(AWOK) && !defined(RLPHANTOM) && !defined(RLPHANTOM_R)
+// A 2.8 recovery frame is composed of 8/16 stripe uploads, not 8/16
+// independent frames. Keep the forced full-refresh decision for the entire
+// UI loop so every physical row belongs to the same refresh generation.
+static bool s_cyd28FullFrame = false;
+#endif
 static int32_t  s_lastRows = 0;
 #if defined(CYD35)
 static uint32_t s_hashUs = 0, s_wireUs = 0;
@@ -68,13 +75,30 @@ bool begin() {
 bool available() { return s_ready; }
 void setEnabled(bool on) { s_enabled = on; }
 bool enabled() { return s_ready && s_enabled; }
-void invalidate() { s_valid = false; }
+void invalidate() {
+    s_valid = false;
+#if defined(CYD) && !defined(CYD32) && !defined(CYD35) && \
+    !defined(AWOK) && !defined(RLPHANTOM) && !defined(RLPHANTOM_R)
+    // If an unbuffered menu touched the glass after newFrame(), its next
+    // stripe render must replace every row, including bands 2 through 16.
+    s_cyd28FullFrame = true;
+#endif
+}
 #if defined(CYD35)
 void newFrame() { s_lastRows = 0; s_hashUs = 0; s_wireUs = 0; }
 uint32_t hashUs() { return s_hashUs; }
 uint32_t wireUs() { return s_wireUs; }
 #else
-void newFrame() { s_lastRows = 0; }
+void newFrame() {
+    s_lastRows = 0;
+#if defined(CYD) && !defined(CYD32) && !defined(CYD35) && \
+    !defined(AWOK) && !defined(RLPHANTOM) && !defined(RLPHANTOM_R)
+    // One count per actual loop frame, not one count per stripe push.
+    // The decision is stable for every stripe in this render pass.
+    ++s_frameNo;
+    s_cyd28FullFrame = !s_valid || (s_frameNo % 64u) == 0u;
+#endif
+}
 uint32_t hashUs() { return 0; }
 uint32_t wireUs() { return 0; }
 #endif
@@ -132,10 +156,18 @@ bool push(TFT_eSPI& tft, const uint8_t* src, int32_t w, int32_t h, int32_t x, in
     // A span has to be whole bursts: 320 wide, any row is; 240 wide, two.
     const int32_t align = (int32_t)(PX_PER_BURST / gcd32((uint32_t)w, PX_PER_BURST));
 
-    // A frame is every band of it, so the periodic full refresh counts pushes
-    // rather than frames: 64 pushes is 64 frames on one band and 32 on two.
+    // On classic CYD 2.8 an entire displayed frame uses 8/16 stripe pushes.
+    // All stripes share the decision made by newFrame(); otherwise refreshing
+    // every 64 pushes causes a visible periodic full write every 4–8 frames.
+#if defined(CYD) && !defined(CYD32) && !defined(CYD35) && \
+    !defined(AWOK) && !defined(RLPHANTOM) && !defined(RLPHANTOM_R)
+    const bool full = s_cyd28FullFrame || !s_valid ||
+                      s_validW != w || s_validH != h;
+#else
+    // Other boards keep their original per-push refresh cadence.
     const bool full = !s_valid || s_validW != w || s_validH != h || (s_frameNo % 64) == 0;
     s_frameNo++;
+#endif
 
     // Hash every row, and mark the ones to send. Full: all of them.
     static bool changed[MAX_ROWS];
