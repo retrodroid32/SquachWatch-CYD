@@ -18,8 +18,8 @@ def between(content, start, end):
 # CYD32 retains HALF8 as a guaranteed fallback; R11 may choose FULL8
 # only after explicit free/largest contiguous heap safety checks.
 setup = between(main, "void setup() {", "void loop() {") if "void setup() {" in main else main
-assert "s_recoveryBands = cyd32Full8 ? 1 : 2;" in main
-assert "frame.createSprite(tft.width(), tft.height() / s_recoveryBands)" in main
+assert "if (!cyd32Allocated)" in setup
+assert "for (uint8_t bands = 2; bands <= 16; bands <<= 1)" in setup
 assert "if (cyd32CanTryFull8() &&" in setup
 assert "if (cyd32Full8ReservesIntact())" in setup
 assert "frame.deleteSprite();" in setup

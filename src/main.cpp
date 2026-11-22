@@ -3283,31 +3283,60 @@ void setup() {
                       (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
     }
 #else
-    // Other boards retain the original allocation and recovery policy.
-    // R11 CYD32 LAB: SquachEmit's faster single-pass FULL8 is an optional
-    // strictly measured allocation, NOT a forced firmware configuration.
-    // GPS boards without safe contiguous RAM retain R10's proven HALF8.
-    #if defined(CYD32) && defined(GPS_SUPPORT) && defined(GPS_RX_PIN)
-    bool cyd32Full8 = false;
-    if (cyd32CanTryFull8() &&
-        frame.createSprite(tft.width(), tft.height())) {
+    // R12: CYD32 SD-in cold boot recovery, preserving R11's guarded FULL8.
+    // Step down through 2/4/8/16 bands when HALF8 cannot fit the heap.
+#if defined(CYD32)
+    bool cyd32Allocated = false;
+#if defined(GPS_SUPPORT) && defined(GPS_RX_PIN)
+    if (cyd32CanTryFull8() && frame.createSprite(tft.width(), tft.height())) {
         if (cyd32Full8ReservesIntact()) {
-            cyd32Full8 = true;
+            cyd32Allocated = true;
+            s_recoveryBands = 1;
         } else {
             frame.deleteSprite();
         }
     }
-    s_recoveryBands = cyd32Full8 ? 1 : 2;
-    Serial.printf("[cyd32-r11] boot mode=%s try_safe=%u free=%lu largest=%lu bytes=%lu\n",
-                  cyd32Full8 ? "FULL8" : "HALF8",
-                  (unsigned)cyd32Full8,
-                  (unsigned long)ESP.getFreeHeap(),
-                  (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT),
-                  (unsigned long)((uint32_t)tft.width() *
-                                  (uint32_t)(tft.height() / s_recoveryBands)));
-    #endif
-    if (!frame.created() &&
-        !frame.createSprite(tft.width(), tft.height() / s_recoveryBands)) {
+#endif
+    if (!cyd32Allocated) {
+        for (uint8_t bands = 2; bands <= 16; bands <<= 1) {
+            if (tft.height() % bands) continue;
+            const int bandHeight = tft.height() / bands;
+            const uint32_t wanted = (uint32_t)tft.width() * (uint32_t)bandHeight;
+            const uint32_t largest = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
+            if (largest < wanted + 1024u) {
+                Serial.printf("[frame-boot] CYD32 skip %u bands: need %lu + reserve, largest %lu\n",
+                              (unsigned)bands, (unsigned long)wanted, (unsigned long)largest);
+                continue;
+            }
+            if (!frame.createSprite(tft.width(), bandHeight)) {
+                Serial.printf("[frame-boot] CYD32 %u-band allocation failed; retrying smaller\n",
+                              (unsigned)bands);
+                continue;
+            }
+            cyd32Allocated = true;
+            s_recoveryBands = bands;
+            break;
+        }
+    }
+    if (cyd32Allocated) {
+        frameBufferOk = true;
+        canvas = s_recoveryBands == 1 ? (TFT_eSPI*)&frame : &tft;
+        Serial.printf("[frame-boot] CYD32 ready: bands=%u sprite=%lu free=%lu largest=%lu\n",
+                      (unsigned)s_recoveryBands,
+                      (unsigned long)((uint32_t)tft.width() * (uint32_t)(tft.height() / s_recoveryBands)),
+                      (unsigned long)ESP.getFreeHeap(),
+                      (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
+    } else {
+        frameBufferOk = false;
+        s_recoveryBands = 1;
+        canvas = &tft;
+        Serial.printf("[frame-boot] CYD32 DIRECT PANEL: no sprite; free=%lu largest=%lu\n",
+                      (unsigned long)ESP.getFreeHeap(),
+                      (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
+    }
+#else
+    // Other boards retain their original allocation and recovery policy.
+    if (!frame.createSprite(tft.width(), tft.height() / s_recoveryBands)) {
         Serial.println("ERROR: frame buffer allocation failed (low memory)");
     #if HAVE_NVS_ERASE
         if (bootCheckRan) {
@@ -3321,19 +3350,14 @@ void setup() {
     #endif
     }
 #endif
+#endif
     frame.setTextSize(1);
-#if defined(CYD32) && defined(GPS_SUPPORT) && defined(GPS_RX_PIN)
-    if (frame.created()) {
-        canvas = s_recoveryBands == 1 ? (TFT_eSPI*)&frame : &tft;
-        Serial.printf("[frame] CYD32 %s buffered renderer, sprite %lu bytes, heap %lu/%lu\n",
-                      s_recoveryBands == 1 ? "FULL8 single-pass" : "HALF8 two-band",
-                      (unsigned long)(tft.width() * (tft.height() / s_recoveryBands)),
+#if defined(CYD32)
+    if (frameBufferOk && frame.created()) {
+        Serial.printf("[frame] CYD32 %u-band buffered renderer, heap %lu/%lu\n",
+                      (unsigned)s_recoveryBands,
                       (unsigned long)ESP.getFreeHeap(),
                       (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
-    } else {
-        frameBufferOk = false;
-        s_recoveryBands = 1;
-        canvas = &tft;
     }
 #endif
 #endif
