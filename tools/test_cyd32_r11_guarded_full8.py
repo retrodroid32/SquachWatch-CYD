@@ -22,10 +22,11 @@ assert "if (cyd32CanTryFull8() &&" in setup
 assert "frame.createSprite(tft.width(), tft.height()))" in setup
 assert "if (cyd32Full8ReservesIntact())" in setup
 assert "frame.deleteSprite();" in setup
-assert "s_recoveryBands = cyd32Full8 ? 1 : 2;" in setup
-assert "if (!frame.created() &&" in setup
-assert "!frame.createSprite(tft.width(), tft.height() / s_recoveryBands)" in setup
-assert 'cyd32Full8 ? "FULL8" : "HALF8"' in setup
+assert "s_recoveryBands = 1;" in setup
+assert "if (!cyd32Allocated)" in setup
+assert "for (uint8_t bands = 2; bands <= 16; bands <<= 1)" in setup
+assert "if (!frame.createSprite(tft.width(), bandHeight))" in setup
+assert "CYD32 DIRECT PANEL: no sprite" in setup
 assert "canvas = s_recoveryBands == 1 ? (TFT_eSPI*)&frame : &tft;" in setup
 
 # After WiFi download framebuffer is lent. Don't silently allocate unsafe
