@@ -3283,6 +3283,7 @@ void setup() {
                       (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
     }
 #else
+    // Other boards retain the original allocation and recovery policy.
     // R11 CYD32 LAB: SquachEmit's faster single-pass FULL8 is an optional
     // strictly measured allocation, NOT a forced firmware configuration.
     // GPS boards without safe contiguous RAM retain R10's proven HALF8.
