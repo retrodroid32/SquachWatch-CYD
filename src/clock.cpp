@@ -1,7 +1,8 @@
 // SquachWatch-CYD — wall-clock time. See clock.h.
 #include "clock.h"
 #include "serial_flush.h"
-#include "security.h"   // a locked device takes no console commands
+#include "security.h"
+#include "remote_mirror.h"   // a locked device takes no console commands
 #include "ota_wifi.h"    // the WIFI command lists the saved networks
 #include "detection.h"   // WINDOW N, for the bench; RADIO
 #if defined(ARDUINO_ARCH_ESP32)
@@ -482,6 +483,7 @@ void pollSerial() {
             continue;
         }
 
+        if (RemoteMirror::command(line)) continue;
         if (strncasecmp(line, "FLOOD ", 6) == 0) {
             // A thousand a second is five times the loudest room measured;
             // a typo like -1 would be sixty-five thousand in one burst.
