@@ -3669,6 +3669,9 @@ static uint32_t s_pushUsAvg  = 0;
 static uint32_t s_frameUsAvg = 0;
 static uint32_t s_loopsSinceSay = 0;
 static uint32_t s_pushAccumUs = 0;   // summed within a frame: cyd35 pushes twice
+#if defined(CYD32) && defined(GPS_SUPPORT) && defined(GPS_RX_PIN)
+static uint32_t s_cyd32OnePassDrawUs = 0;  // FULL8 BOOT/CLEAR paint, not radio/input work
+#endif
 
 // Stage 2: keep radio/input logic free to loop quickly without repainting the
 // animated CLEAR screen faster than a person can see. 30 fps is above the
@@ -4546,10 +4549,18 @@ void loop() {
                         drawCrashCard(t, tft.width(), tft.height());
                 });
             } else {
-                // Constrained emergency fallback is deliberately unchanged:
-                // do not increase RAM use or force a 76,800-byte FULL8.
+                // FULL8 (when R11 heap guards permit) renders once into
+                // the retained sprite. The fallback still keeps R10's
+                // native panel / scripted-glitch suppression behavior.
+#if defined(GPS_SUPPORT) && defined(GPS_RX_PIN)
+                const uint32_t paintAt = micros();
+#endif
                 uiBootTick(*canvas, now, 0, 0, true);
                 if (crashCardWanted()) drawCrashCard(*canvas);
+#if defined(GPS_SUPPORT) && defined(GPS_RX_PIN)
+                if (frameBufferOk)
+                    s_cyd32OnePassDrawUs = micros() - paintAt;
+#endif
             }
 #elif defined(CYD) && !defined(CYD35) && !defined(AWOK) && \
       !defined(RLPHANTOM) && !defined(RLPHANTOM_R)
@@ -4761,7 +4772,14 @@ void loop() {
 #endif
                     });
                 } else {
+#if defined(CYD32) && defined(GPS_SUPPORT) && defined(GPS_RX_PIN)
+                    const uint32_t paintAt = micros();
+#endif
                     uiClearTick(*canvas, now, engine, true, s_scanPickerOpen, tft.width(), tft.height());
+#if defined(CYD32) && defined(GPS_SUPPORT) && defined(GPS_RX_PIN)
+                    if (frameBufferOk)
+                        s_cyd32OnePassDrawUs = micros() - paintAt;
+#endif
                 }
 #endif
                 FrameProf::lap(FrameProf::CHROME);
@@ -7724,6 +7742,41 @@ void loop() {
     }
 
     const uint32_t frameUs = micros() - frameStartUs;
+#if defined(CYD32) && defined(GPS_SUPPORT) && defined(GPS_RX_PIN)
+    // R11: a FULL8 render takes just one logical background/Squachy
+    // pass and one native TFT_eSPI push. Log real completed physical
+    // FPS and draw/SPI cost, comparable with R10 HALF8 [cyd32-frame].
+    if (frameBufferOk && s_recoveryBands == 1 && renderedThisLoop &&
+        (state == AppState::BOOT || state == AppState::CLEAR)) {
+        static uint32_t winAt = 0, count = 0;
+        static uint32_t drawSum = 0, pushSum = 0;
+        static uint32_t drawMax = 0, pushMax = 0;
+        static AppState measuredState = AppState::BOOT;
+        if (!winAt || measuredState != state) {
+            winAt = now;
+            measuredState = state;
+            count = drawSum = pushSum = drawMax = pushMax = 0;
+        }
+        ++count;
+        drawSum += s_cyd32OnePassDrawUs;
+        pushSum += s_pushAccumUs;
+        if (s_cyd32OnePassDrawUs > drawMax) drawMax = s_cyd32OnePassDrawUs;
+        if (s_pushAccumUs > pushMax) pushMax = s_pushAccumUs;
+        const uint32_t elapsed = now - winAt;
+        if (elapsed >= (state == AppState::BOOT ? 1000u : 5000u) && count) {
+            Serial.printf("[cyd32-frame] screen=%s fps=%lu bands=1 draw_us=%lu push_us=%lu draw_max_us=%lu push_max_us=%lu free=%lu largest=%lu mode=NATIVE_FULL8\n",
+                          state == AppState::BOOT ? "BOOT" : "MAIN",
+                          (unsigned long)(count * 1000u / elapsed),
+                          (unsigned long)(drawSum / count),
+                          (unsigned long)(pushSum / count),
+                          (unsigned long)drawMax, (unsigned long)pushMax,
+                          (unsigned long)ESP.getFreeHeap(),
+                          (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
+            winAt = now;
+            count = drawSum = pushSum = drawMax = pushMax = 0;
+        }
+    }
+#endif
     if (renderedThisLoop) {
         s_pushUsAvg  = emaUpdate(s_pushUsAvg, s_pushAccumUs);
         s_frameUsAvg = emaUpdate(s_frameUsAvg, frameUs);
