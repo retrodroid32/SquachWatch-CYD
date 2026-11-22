@@ -1,4 +1,5 @@
-CYD28-BOOT-FRAME-OPTIMIZATION-R9
-LAB ONLY. Hardware R8 confirmed no boot intro flashing but animation is choppy/low FPS. Preserve R7 stable MAIN/SETTINGS/SD and R8 flicker removal, optimize CYD28 BOOT-only Bangers outline via single-pass helper and DrawBand::has pixel visibility gating. Includes [boot-r9] boot-only observed FPS and render_us logging once per second.
-Source draft PR #252 stacked on unmerged #251 R8, #250 R7, #241 R1 and #239 phase1. Leave other PRs unmerged/untouched.
-Require exact-head full Build (host, emulator, every board firmware, OTA size), R7/R8/R9 source regressions, successful Build and release firmware LAB, Pages publish, hardware boot FPS verification. No production release/tag, merge, branch deletion.
+CYD32-SQUACHEMIT-SCENE-CLOCK-R10
+LAB ONLY — audit SquachEmit R12 PR #58, R14.2 #63, R14.3 #64, R14.6 #70, R14.7 #72 against SquachWatch. Exact-head source PR #253, branch lab/cyd32-scene-clock-boot-native-r10-20261121, stacked on unmerged R9 #252.
+FIX: ST7798 Gibson flyZ only advances once per shared logical timestamp (top/bottom seam), Digital Rain red glyph uses shared now, CYD32 BOOT uses full rotated LCD dimensions inside its existing two-band RGB332 frame (no direct physical erase). Adds BOOT/MAIN actual physical-frame FPS, draw/push times and free/largest heap.
+PROTECT: 3.2 GPS HALF8 framebuffer, native TFT_eSPI pushSprite, no raw SPI/FramePush experiment, continuous animations, R9 ST7789 2.8 stable SD/main/intro code and all existing branches/PRs.
+REQUIRE: full exact-head Build board matrix including 2.8 ST7789 and 3.2 ST7798, source regressions+emulator, successful LAB Build and release firmware, Pages publication. Physical hardware acceptance still required for Synthwave/Gibson/Digital Rain/Snowfall, seam, boot, rotation, SD, GPS, Wi-Fi, BLE, SquachMesh, WATCH/HUNT. NO merge, no production tags/releases, no branch deletion.
