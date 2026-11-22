@@ -53,12 +53,14 @@ assert "drawDigitalRain(t, now, yStart, yEnd, advance)" in background
 
 # Gibson's previous dt=16 for a repeated timestamp caused upper/lower
 # camera drift; R10 makes the second pass dt=0.
-gib = between(theme, "void drawGibson(", "void drawActiveBackground(")
+# Gibson is located after the wrapper in the large source module; its
+# implementation runs to the end of the file in this fork.
+gib = theme.split("void drawGibson(", 1)[1]
 assert "now == lastMs ? 0u" in gib
 assert "if (dt) flyZ = fmodf" in gib
 assert "uint32_t dt = (lastMs && now > lastMs) ? (now - lastMs) : 16u;" not in gib
 
-rain = between(theme, "void drawDigitalRain(", "void drawGibson(")
+rain = between(theme, "void drawDigitalRain(", "void drawActiveBackground(")
 assert "(uint32_t)(now - s_redGlyphSaid) < 500u;" in rain
 assert "(uint32_t)(millis() - s_redGlyphSaid) < 500u;" not in rain
 
