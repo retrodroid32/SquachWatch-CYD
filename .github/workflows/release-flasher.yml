@@ -116,6 +116,7 @@ jobs:
           python3 tools/test_cyd28_r8_boot_buffer.py
           python3 tools/test_cyd28_r9_boot_perf.py
           python3 tools/test_cyd32_scene_clock_r10.py
+          python3 tools/test_cyd32_r11_guarded_full8.py
           python3 tools/test_mirror_pages_release_fallback.py
           for guard in \
             tools/test_v141_arlo_oui.py \

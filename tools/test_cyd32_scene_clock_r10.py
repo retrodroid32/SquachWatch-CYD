@@ -15,11 +15,14 @@ clear_ui = (root / "src/ui_clear.cpp").read_text(encoding="utf-8")
 def between(content, start, end):
     return content.split(start, 1)[1].split(end, 1)[0]
 
-# CYD32 remains half-height with GPS; never force 76,800B FULL8 at boot.
+# CYD32 retains HALF8 as a guaranteed fallback; R11 may choose FULL8
+# only after explicit free/largest contiguous heap safety checks.
 setup = between(main, "void setup() {", "void loop() {") if "void setup() {" in main else main
-assert "s_recoveryBands = 2;" in main
+assert "s_recoveryBands = cyd32Full8 ? 1 : 2;" in main
 assert "frame.createSprite(tft.width(), tft.height() / s_recoveryBands)" in main
-assert "frame.createSprite(tft.width(), tft.height())" not in setup
+assert "if (cyd32CanTryFull8() &&" in setup
+assert "if (cyd32Full8ReservesIntact())" in setup
+assert "frame.deleteSprite();" in setup
 assert "#if defined(CYD32) && defined(GPS_SUPPORT) && defined(GPS_RX_PIN)" in main
 
 # ST7798 must stay on safe native TFT_eSPI push, with cached rows invalidated.
