@@ -1,6 +1,5 @@
-CYD32-GUARDED-FULL8-FPS-R11-CI-ANCHOR-FIX
-LAB ONLY. Hardware reports R10 ST7798 animations severely laggy/choppy. Exact-head draft PR #254 stacked on R10 #253. SquachWatch ONLY, no changes to SquachEmit.
-Experiment: select 1x 76,800-byte RGB332 FULL8 renderer only when preallocation preserves 64KiB free + 24KiB largest allocatable plus 8KiB cushion and postallocation preserves >=64KiB free and >=24KiB largest; otherwise retain R10 HALF8 native TFT_eSPI pushSprite. Use identical guards during Wi-Fi framebuffer restore; preserve in-place rotation. Includes [cyd32-r11] mode, real FULL8 [cyd32-frame] FPS/draw/push/free/largest; R10 HALF8 telemetry retained.
-CRITICAL: Preserve the stable R9 CYD 2.8 SD/MAIN/boot, R10 band-clock correctness, ST7798 native LCD push, GPS/Wi-Fi/BLE/SquachMesh heap reserves. No default fast raw SPI. Never copy frozen animation.
-REQUIRE: exact-head full CI (all boards including 2.8 ST7789 and 3.2 ST7798, emulator, host, R10/R11 regressions), Build and release firmware LAB, successful Pages deployment; physical confirmation needed to determine if FULL8 selected and is genuinely smoother. No merge, production release/tag, branch deletion.
-Exact-head revision restores source-test CYD28 allocation section marker; source behavior unchanged.
+CYD32-R12-SD-BOOT-ANIMATION-SAFE
+LAB ONLY PR #255, stacked on guarded FULL8 R11 #254. Preserve working CYD 3.2 ST7798 animation renderer. Add safe SD-in boot sprite fallback: guarded FULL8 then 2/4/8/16 bands, direct panel if none, no allocation-triggered CYD32 restart.
+Require exact-head full board matrix, emulator, host R10/R11/R12 regressions, OTA image size/partition reserves and successful LAB release + Pages deployment. Include CYD 2.8 ST7789 and CYD 3.2 ST7798.
+Hardware validation pending: SD inserted cold boot x3, rotated UI, GPS, BLE, WiFi, Mesh, frame FPS and memory telemetry.
+Never merge to master, tag production, delete branches or modify SquachEmit.
