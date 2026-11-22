@@ -1384,7 +1384,11 @@ void drawDigitalRain(TFT_eSPI& t, uint32_t now, int yStart, int yEnd, bool advan
     // slowest of them, and never one falling behind him.
     static int      redCol = -1;
     static uint32_t redFrom = 0, redNext = 0;
-    const bool redHere = s_redGlyphOn && s_redGlyphSaid && (uint32_t)(millis() - s_redGlyphSaid) < 500u;
+    // One logical-frame clock across both LCD bands. Reading millis() here
+    // again can cross the 500 ms boundary between top and bottom, changing
+    // whether the red glyph appears partway through the same frame.
+    const bool redHere = s_redGlyphOn && s_redGlyphSaid &&
+                         (uint32_t)(now - s_redGlyphSaid) < 500u;
     if (!redHere) redCol = -1;
     if (advance && redHere) {
         if (redCol >= 0 && (redCol >= cols ||
@@ -8158,10 +8162,16 @@ void drawGibson(TFT_eSPI& t, uint32_t now, int yStart, int yEnd,
     // so one stalled frame does not teleport the camera down the corridor.
     static uint32_t lastMs = 0;
     static float    flyZ   = 0.0f;
-    uint32_t dt = (lastMs && now > lastMs) ? (now - lastMs) : 16u;
+    // R10 / SquachEmit R14.3 parity: the caller supplies the SAME now to
+    // the two CYD32/ST7798 bands. The second pass must reuse flyZ exactly.
+    // Previously now == lastMs meant dt=16 (!), moving the camera again
+    // between the upper and lower panel. This also accumulated phantom
+    // movement on any repeated-timestamp draw. A genuine later frame
+    // advances once; the first ever call retains the original 16 ms seed.
+    uint32_t dt = !lastMs ? 16u : (now == lastMs ? 0u : (uint32_t)(now - lastMs));
     if (dt > 100u) dt = 100u;
-    lastMs = now;
-    flyZ = fmodf(flyZ + (float)dt * GIB_SPEED, (float)GIB_SPAN);
+    if (now != lastMs) lastMs = now;
+    if (dt) flyZ = fmodf(flyZ + (float)dt * GIB_SPEED, (float)GIB_SPAN);
 
     auto depthOf = [&](uint8_t i) {
         // Recycling at the reference depth made towers pop out of existence
