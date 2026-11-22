@@ -1803,6 +1803,23 @@ static void releaseFrameBuffer(const char* who, bool clearPanel = true) {
 // failed or cancelled one gets the buffer back on its way out, or, if the
 // heap will not give a 77 KB block again, draws unbuffered until a restart
 // (the same fallback a failed rotate takes).
+#if defined(CYD32) && defined(GPS_SUPPORT) && defined(GPS_RX_PIN)
+// R11: a full 320x240 RGB332 buffer is 76,800 bytes. Only *attempt*
+// it if a 64 KiB radio/GPS/SD heap reserve and 24 KiB largest-block
+// reserve (plus an 8 KiB allocation cushion) are available beforehand.
+// Check both again AFTER allocation; keep original HALF8 if either fails.
+// The pixel buffer must stay in ordinary 8-bit internal heap.
+static bool cyd32CanTryFull8() {
+    const uint32_t pixels = (uint32_t)tft.width() * (uint32_t)tft.height();
+    return ESP.getFreeHeap() >= pixels + 64u * 1024u + 8u * 1024u &&
+           heap_caps_get_largest_free_block(MALLOC_CAP_8BIT) >=
+               pixels + 24u * 1024u + 8u * 1024u;
+}
+static bool cyd32Full8ReservesIntact() {
+    return ESP.getFreeHeap() >= 64u * 1024u &&
+           heap_caps_get_largest_free_block(MALLOC_CAP_8BIT) >= 24u * 1024u;
+}
+#endif
 static bool s_frameLent = false;
 // Number of vertical sprite bands in ordinary (non-CYD35) builds. Normal
 // operation uses a full frame (1). After an OTA check, fragmented ESP32 heap
@@ -1849,8 +1866,20 @@ static void restoreFrameBuffer() {
     // the display. 16 bands needs just 4,800 bytes on 320x240 CYDs.
     for (uint8_t bands = 1; bands <= 16; bands <<= 1) {
         if (tft.height() % bands != 0) continue;
+#if defined(CYD32) && defined(GPS_SUPPORT) && defined(GPS_RX_PIN)
+        // A fragmented post-Wi-Fi heap is not equivalent to boot memory.
+        // Don't silently steal 76.8KB from radio/GPS by retrying FULL8
+        // without the exact same pre/post-allocation reserve checks.
+        if (bands == 1 && !cyd32CanTryFull8()) continue;
+#endif
         const int bandHeight = tft.height() / bands;
         if (!frame.createSprite(tft.width(), bandHeight)) continue;
+#if defined(CYD32) && defined(GPS_SUPPORT) && defined(GPS_RX_PIN)
+        if (bands == 1 && !cyd32Full8ReservesIntact()) {
+            frame.deleteSprite();
+            continue;
+        }
+#endif
         frame.setTextSize(1);
         frameBufferOk = true;
         s_recoveryBands = bands;
@@ -3254,11 +3283,30 @@ void setup() {
                       (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
     }
 #else
-    // Other boards retain the original allocation and recovery policy.
+    // R11 CYD32 LAB: SquachEmit's faster single-pass FULL8 is an optional
+    // strictly measured allocation, NOT a forced firmware configuration.
+    // GPS boards without safe contiguous RAM retain R10's proven HALF8.
     #if defined(CYD32) && defined(GPS_SUPPORT) && defined(GPS_RX_PIN)
-    s_recoveryBands = 2;
+    bool cyd32Full8 = false;
+    if (cyd32CanTryFull8() &&
+        frame.createSprite(tft.width(), tft.height())) {
+        if (cyd32Full8ReservesIntact()) {
+            cyd32Full8 = true;
+        } else {
+            frame.deleteSprite();
+        }
+    }
+    s_recoveryBands = cyd32Full8 ? 1 : 2;
+    Serial.printf("[cyd32-r11] boot mode=%s try_safe=%u free=%lu largest=%lu bytes=%lu\n",
+                  cyd32Full8 ? "FULL8" : "HALF8",
+                  (unsigned)cyd32Full8,
+                  (unsigned long)ESP.getFreeHeap(),
+                  (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT),
+                  (unsigned long)((uint32_t)tft.width() *
+                                  (uint32_t)(tft.height() / s_recoveryBands)));
     #endif
-    if (!frame.createSprite(tft.width(), tft.height() / s_recoveryBands)) {
+    if (!frame.created() &&
+        !frame.createSprite(tft.width(), tft.height() / s_recoveryBands)) {
         Serial.println("ERROR: frame buffer allocation failed (low memory)");
     #if HAVE_NVS_ERASE
         if (bootCheckRan) {
@@ -3275,8 +3323,9 @@ void setup() {
     frame.setTextSize(1);
 #if defined(CYD32) && defined(GPS_SUPPORT) && defined(GPS_RX_PIN)
     if (frame.created()) {
-        canvas = &tft;
-        Serial.printf("[frame] CYD32 two-band buffered renderer, sprite %lu bytes, heap %lu/%lu\n",
+        canvas = s_recoveryBands == 1 ? (TFT_eSPI*)&frame : &tft;
+        Serial.printf("[frame] CYD32 %s buffered renderer, sprite %lu bytes, heap %lu/%lu\n",
+                      s_recoveryBands == 1 ? "FULL8 single-pass" : "HALF8 two-band",
                       (unsigned long)(tft.width() * (tft.height() / s_recoveryBands)),
                       (unsigned long)ESP.getFreeHeap(),
                       (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
