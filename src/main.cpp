@@ -246,6 +246,7 @@ static void drawCrashCard(TFT_eSPI& t) {
 #include "ui_ignorelist.h"
 #include "ui_alertrules.h"
 #include "frame_push.h"
+#include "remote_mirror.h"
 #include "draw_band.h"
 #include "frame_prof.h"
 #include "fast_sprite.h"
@@ -749,7 +750,15 @@ static bool readTouchRaw(int16_t& a, int16_t& b);
 static TouchPoint pollTouch() {
     TouchPoint tp = { false, 0, 0 };
     int16_t a, b;
-    if (!readTouchRaw(a, b)) return tp;
+    // The physical touchscreen always wins if a hand and the workbench mouse
+    // touch simultaneously. Remote input uses identical downstream hit-tests.
+    if (!readTouchRaw(a, b)) {
+        int rx=0, ry=0;
+        if(RemoteMirror::touch(tft.width(),tft.height(),rx,ry)) {
+            tp.valid=true; tp.x=rx; tp.y=ry;
+        }
+        return tp;
+    }
     const int w = tft.width(), h = tft.height();
     float sx, sy;
     TouchFit::toScreen(s_touchFit, a, b, screenRotation, sx, sy);
@@ -3002,6 +3011,11 @@ void setup() {
     // Before anything else can allocate: the breadcrumb has to be read out
     // while it is still the previous life's, not this one's.
     crashReportInit();
+#if defined(ARDUINO_ARCH_ESP32) && (defined(CYD) || defined(CYD32))
+    // A complete 320-pixel base64 ROW is ~455 bytes. Reserve sufficient
+    // UART TX space for one atomic nonblocking line and other LOG traffic.
+    Serial.setTxBufferSize(1024);
+#endif
     Serial.begin(SERIAL_BAUD);
 #if defined(TWATCH_S3) || defined(FREENOVE_S3)
     // Native USB: with nothing reading the port, every print would otherwise
@@ -3711,6 +3725,10 @@ static inline void pushFrame(int x, int y) {
 #endif
     }
     s_pushAccumUs += micros() - t0;
+    // Only authentic 8-bit sprite data that has just been pushed to the TFT
+    // may be mirrored. Multi-band recovery passes use the actual band offset.
+    if(frameBufferOk && frame.getColorDepth()==8)
+        RemoteMirror::capture(frame.buf(),frame.bufW(),frame.bufH(),tft.height(),y);
 }
 
 // Draw a whole screen the way the 3.5" has to: into the half-height sprite
@@ -3855,6 +3873,17 @@ void loop() {
     // Cheap and unconditional: available() is a register read, and this
     // is the only way in for the one serial command the firmware takes.
     Clock::pollSerial();
+    RemoteMirror::tick();
+    // Full-frame static pages can have no new LCD push for many seconds.
+    // Read the already-pushed sprite in bounded slices; banded recovery
+    // sprites remain captured ONLY from live pushFrame() passes.
+#if defined(ARDUINO_ARCH_ESP32) && (defined(CYD) || defined(CYD32))
+    if(!frameBufferOk) RemoteMirror::unavailable();
+    else if(s_recoveryBands==1 && canvas==&frame && frame.buf() &&
+            frame.getColorDepth()==8 &&
+            frame.bufW()==tft.width() && frame.bufH()==tft.height())
+        RemoteMirror::capture(frame.buf(),frame.bufW(),frame.bufH(),tft.height(),0);
+#endif
     uint32_t frameStartUs = micros();
     s_loopsSinceSay++;   // the real loop rate, pacing delays included; on the [frame] line
     FrameProf::begin();
