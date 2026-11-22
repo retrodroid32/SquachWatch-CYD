@@ -9,7 +9,7 @@
 // pins, and nothing else on the Phantom's build uses 4, 16 or 17. The AWOK
 // and the 3.5" are unverified and get nothing -- see the header for why that
 // is a rule and not a shortcut.
-#if defined(FREENOVE_S3)
+#if defined(FREENOVE_S3) || defined(NM_CYD_C5)
 #define STATUS_LIGHT_HW 2
 #elif defined(ESP32) && !defined(CYD35) && !defined(AWOK) && !defined(TWATCH_S3)
 #define STATUS_LIGHT_HW 1
@@ -28,7 +28,13 @@ static const int     PIN_R = 4, PIN_G = 16, PIN_B = 17;
 #endif
 static const uint8_t CH_R  = 3, CH_G  = 4,  CH_B  = 5;
 #if STATUS_LIGHT_HW == 2
+// Freenove S3 and RockBase C5 both use one addressable RGB LED, on
+// different pins. Preserve the already-validated Freenove GPIO42 path.
+#if defined(NM_CYD_C5)
+static const uint8_t PIN_WS2812 = 27;
+#else
 static const uint8_t PIN_WS2812 = 42;
+#endif
 #endif
 
 static const uint32_t TICK_MS        = 20;
