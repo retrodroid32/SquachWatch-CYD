@@ -962,8 +962,8 @@ bool DetectionEngine::init() {
             } else {
                 g_engine->postWiFi(frame + 16, pkt->rx_ctrl.rssi, pkt->rx_ctrl.channel, ssid, enc);
             }
-        } else if (type == 0 && subtype == 12) {
-            // Deauthentication: addr2 (transmitter -- the attacker, or
+        } else if (type == 0 && (subtype == 12 || subtype == 10)) {
+            // Deauthentication and disassociation share addr2 (transmitter -- the attacker, or
             // a spoofed AP address) at the same offset probe requests
             // use above. A single frame here is completely normal
             // WiFi traffic (a phone disconnecting, an AP restarting);
@@ -1928,9 +1928,10 @@ void DetectionEngine::processDeauthQ() {
         // Window/cooldown bookkeeping above still runs even while
         // disabled, so re-enabling doesn't instantly fire off a stale
         // accumulated count -- only the actual recording is gated.
-        if (_deauthWinCount >= DEAUTH_THRESHOLD && (now - _deauthLastFireMs) > DEAUTH_COOLDOWN_MS &&
+        if (_deauthWinCount >= DEAUTH_THRESHOLD &&
+            (_deauthLastFireMs == 0 || (uint32_t)(now - _deauthLastFireMs) > DEAUTH_COOLDOWN_MS) &&
             Settings::typeEnabled(DetectionType::DEAUTH)) {
-            _deauthLastFireMs = now;
+            _deauthLastFireMs = now ? now : 1u; // 0 is the never-fired sentinel
             Detection d;
             memset(&d, 0, sizeof(d));
             memcpy(d.mac, e.mac, 6);

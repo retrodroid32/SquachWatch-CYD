@@ -1,10 +1,6 @@
-CATEGORY-PILLS-CLOCK-DUALCOUNT-R3
-# LAB PR #226 — 2026-11-13; based on validated code commit edc0e5fd.
-# v1.41 clickable category roster, corrected no-trust timestamp UP+,
-# green radio-fresh active / blue unique-detection-records since boot.
-# Grouped TRACKER/CAMERA/HACKER counts match the roster's types.
-# GitHub Build #43485289268 passed all jobs on edc0e5fd.
-# Request-file-only commit triggers exact-commit PR Build then LAB build
-# and release firmware; CI gate MUST verify exact SHA before publishing.
-# Firmware 2.8 ST7789 and 3.2 ST7798; all required OTA slot guards unchanged.
-# LAB only. No production GitHub Release, v-tag, master merge, or PR merge.
+UPSTREAM-V148-PHASE1-R1-SECURITY-DEAUTH
+LAB-only web flasher publication request for PR #239: PIN boot-lock, disassociation frames, first-boot deauth cooldown.
+CYD 2.8 ST7789 and CYD 3.2 ST7798. Keep production unchanged.
+Publication gate: exact-head PR Build success, full firmware board matrix, tests and OTA slot reserve.
+Physical hardware verification pending. Do not merge, tag production, or delete branches.
+Requested 2026-11-21 for LAB web-flasher upload testing.

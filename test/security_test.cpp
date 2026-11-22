@@ -53,6 +53,17 @@ int main() {
         ck("the length is chosen first", Security::pinLength() == 6);
         ck("a PIN of another length is refused", !Security::setPin("1234"));
         ck("the chosen length is taken", Security::setPin("123456") && Security::enabled());
+        ck("first PIN enables LOCK AT BOOT by default", Security::lockAtBoot());
+        Security::begin();
+        ck("first PIN survives reset as locked", Security::locked());
+        ck("the valid PIN unlocks after reboot",
+           Security::check("123456", 100) == Check::OK && !Security::locked());
+        Security::setLockAtBoot(false);
+        ck("user may explicitly disable LOCK AT BOOT", !Security::lockAtBoot());
+        ck("replacing an existing PIN preserves that choice",
+           Security::setPin("123456") && !Security::lockAtBoot());
+        Security::begin();
+        ck("replacement PIN preserves unlocked boot", !Security::locked());
         Security::setPinLength(Security::PinLen::FOUR);
         ck("and the length is fixed once a PIN exists", Security::pinLength() == 6);
         ck("verify() accepts it", Security::verify("123456"));
