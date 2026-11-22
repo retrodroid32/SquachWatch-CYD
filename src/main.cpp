@@ -1273,7 +1273,7 @@ static void enterBoot() {
     // The GPS-enabled 3.2 CYD owns only a half-height sprite. Prepare its
     // boot canvas in that sprite rather than clearing the live LCD each
     // time the unbuffered splash starts.
-#if defined(CYD32) && defined(GPS_SUPPORT) && defined(GPS_RX_PIN)
+#if defined(CYD32)
     if (frameBufferOk && s_recoveryBands > 1) uiBootInit(frame);
     else                                      uiBootInit(*canvas);
 #elif defined(CYD) && !defined(CYD35) && !defined(AWOK) && \
@@ -4437,18 +4437,23 @@ void loop() {
             } else {
                 uiBootTick(tft, now);
             }
-#elif defined(CYD32) && defined(GPS_SUPPORT) && defined(GPS_RX_PIN)
-            // BOOT used to draw directly to the TFT on CYD32 while CLEAR
-            // drew through two buffered bands. Keep both sides of the
-            // handoff buffered, so the 3.2 panel never shows half-painted
-            // text/background primitives on its way to the main screen.
+#elif defined(CYD32)
+            // SquachEmit R14.2/R14.3 parity: BOOT uses exactly the same
+            // physical 320x240 (or rotated 240x320) composition as MAIN,
+            // even though its low-memory RGB332 sprite is only half tall.
+            // The old uiBootTick(t, now) laid out Squachy and the lower
+            // status against the sprite's height rather than LCD height.
+            // One now for both passes; native TFT_eSPI pushes unchanged.
             if (frameBufferOk && s_recoveryBands > 1) {
                 drawTwoBand([&](TFT_eSPI& t, bool) {
-                    uiBootTick(t, now);
-                    if (crashCardWanted()) drawCrashCard(t);
+                    uiBootTick(t, now, tft.width(), tft.height(), true);
+                    if (crashCardWanted())
+                        drawCrashCard(t, tft.width(), tft.height());
                 });
             } else {
-                uiBootTick(*canvas, now);
+                // Constrained emergency fallback is deliberately unchanged:
+                // do not increase RAM use or force a 76,800-byte FULL8.
+                uiBootTick(*canvas, now, 0, 0, true);
                 if (crashCardWanted()) drawCrashCard(*canvas);
             }
 #elif defined(CYD) && !defined(CYD35) && !defined(AWOK) && \
