@@ -3858,6 +3858,52 @@ static __attribute__((noinline, noclone)) void drawTwoBandCore(
         frame.resetViewport();
         DrawBand::all();
         DrawBand::setEnabled(false);
+#if defined(CYD32)
+        // R10 / SquachEmit R14.3 performance parity. Count COMPLETED
+        // physical screens, not band pushes or loop iterations. Keep the
+        // ST7798's native pushSprite() path and exact GPS half-frame size.
+        // BOOT is short (~3s), so report each second; MAIN every 5s.
+        // No heap allocation and no per-frame serial traffic.
+        {
+            static AppState lastMeasured = AppState::BOOT;
+            static uint32_t windowStartMs = 0;
+            static uint32_t completed = 0;
+            static uint32_t drawTotalUs = 0, pushTotalUs = 0;
+            static uint32_t drawWorstUs = 0, pushWorstUs = 0;
+            const uint32_t measureNow = millis();
+            if (!windowStartMs || state != lastMeasured) {
+                lastMeasured = state;
+                windowStartMs = measureNow;
+                completed = 0;
+                drawTotalUs = pushTotalUs = 0;
+                drawWorstUs = pushWorstUs = 0;
+            }
+            if (state == AppState::BOOT || state == AppState::CLEAR) {
+                ++completed;
+                drawTotalUs += totalDrawUs;
+                pushTotalUs += totalPushUs;
+                if (totalDrawUs > drawWorstUs) drawWorstUs = totalDrawUs;
+                if (totalPushUs > pushWorstUs) pushWorstUs = totalPushUs;
+                const uint32_t windowMs = (uint32_t)(measureNow - windowStartMs);
+                const uint32_t intervalMs = state == AppState::BOOT ? 1000u : 5000u;
+                if (windowMs >= intervalMs && completed) {
+                    Serial.printf("[cyd32-frame] screen=%s fps=%lu bands=%u draw_us=%lu push_us=%lu draw_max_us=%lu push_max_us=%lu free=%lu largest=%lu mode=NATIVE\n",
+                                  state == AppState::BOOT ? "BOOT" : "MAIN",
+                                  (unsigned long)(completed * 1000u / windowMs),
+                                  (unsigned)s_recoveryBands,
+                                  (unsigned long)(drawTotalUs / completed),
+                                  (unsigned long)(pushTotalUs / completed),
+                                  (unsigned long)drawWorstUs,
+                                  (unsigned long)pushWorstUs,
+                                  (unsigned long)ESP.getFreeHeap(),
+                                  (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
+                    windowStartMs = measureNow;
+                    completed = drawTotalUs = pushTotalUs = 0;
+                    drawWorstUs = pushWorstUs = 0;
+                }
+            }
+        }
+#endif
         // Diagnostic only; once per five seconds, not on every frame.
         // Main-screen latency can be caused by expensive paint work OR SPI.
         // Distinguish the two and identify the physical band responsible.
