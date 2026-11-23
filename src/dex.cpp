@@ -111,6 +111,11 @@ const Entry ENTRY[ENTRIES] = {
       "Conferences. The back of a hoodie. Two tables over.",
       "A radio-attack tool is in the room. Act natural. I am a lamp.",
       "A pocket toy for attacking radios. It announces itself." },
+    { DetectionType::LISTENER, Rarity::COMMON, "LIST", "SPEAKER", "BOTH",
+      "A smart-speaker family: Sonos or HomePod, or a Google speaker during setup. Some models have no microphone. The listener category ships off until you enable it.",
+      "Homes, hotels and rentals. A desk or a shelf.",
+      "Someone said smart speaker. I heard everything. Allegedly.",
+      "Speaker brand radio. A microphone is possible, not certain." },
 };
 
 Record   s_rec[ENTRIES];
