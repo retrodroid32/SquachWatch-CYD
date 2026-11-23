@@ -207,6 +207,58 @@ const OuiEntry kOuiTable[] = {
     // higher.
     {{0x02,0xC0,0xCA}, "Hak5-LA",    DetectionType::HACKER, Confidence::LOW_CONF},
     {{0x02,0x13,0x37}, "Hak5-LA",    DetectionType::HACKER, Confidence::LOW_CONF},
+    // Upstream v1.50 missing signature entries; preserve fork-specific existing rules.
+    {{0x00, 0x1D, 0x96}, "WatchGuard",   DetectionType::AXON,       Confidence::MED_CONF},
+    {{0x00, 0x23, 0xBD}, "DigitalAlly",  DetectionType::AXON,       Confidence::MED_CONF},
+    {{0x00, 0x30, 0x44}, "Cradlepoint",  DetectionType::AXON,       Confidence::LOW_CONF},
+    {{0x00, 0xE0, 0x1C}, "Cradlepoint",  DetectionType::AXON,       Confidence::LOW_CONF},
+    {{0x00, 0xA0, 0xD5}, "AirLink",      DetectionType::AXON,       Confidence::LOW_CONF},
+    {{0x28, 0xA3, 0x31}, "AirLink",      DetectionType::AXON,       Confidence::LOW_CONF},
+    {{0x50, 0x13, 0x9D}, "AirLink",      DetectionType::AXON,       Confidence::LOW_CONF},
+    {{0x64, 0xCE, 0x6E}, "AirLink",      DetectionType::AXON,       Confidence::LOW_CONF},
+    {{0x84, 0xDB, 0x2F}, "AirLink",      DetectionType::AXON,       Confidence::LOW_CONF},
+    {{0xCC, 0x93, 0x4A}, "AirLink",      DetectionType::AXON,       Confidence::LOW_CONF},
+    {{0xD4, 0x11, 0xD6}, "ShotSpotter",  DetectionType::RAVEN,      Confidence::HIGH_CONF},
+    {{0x3C, 0xA0, 0x70}, "Blink",        DetectionType::CAMERA,     Confidence::MED_CONF},
+    {{0x70, 0xAD, 0x43}, "Blink",        DetectionType::CAMERA,     Confidence::MED_CONF},
+    {{0x74, 0x13, 0x48}, "Blink",        DetectionType::CAMERA,     Confidence::MED_CONF},
+    {{0x74, 0xAB, 0x93}, "Blink",        DetectionType::CAMERA,     Confidence::MED_CONF},
+    {{0xC8, 0x19, 0xD8}, "Blink",        DetectionType::CAMERA,     Confidence::MED_CONF},
+    {{0xF0, 0x74, 0xC1}, "Blink",        DetectionType::CAMERA,     Confidence::MED_CONF},
+    {{0xD4, 0x2D, 0xC5}, "i-PRO",        DetectionType::CAMERA,     Confidence::HIGH_CONF},
+    {{0x00, 0x25, 0x42}, "BlackVue",     DetectionType::CAMERA,     Confidence::HIGH_CONF},
+    {{0x44, 0x27, 0xF3}, "70mai",        DetectionType::CAMERA,     Confidence::HIGH_CONF},
+    {{0xB8, 0x59, 0xC8}, "70mai",        DetectionType::CAMERA,     Confidence::HIGH_CONF},
+    {{0x00, 0x1F, 0x4F}, "Thinkware",    DetectionType::CAMERA,     Confidence::HIGH_CONF},
+    {{0x00, 0x16, 0xB2}, "Lytx",         DetectionType::CAMERA,     Confidence::MED_CONF},   // registered as DriveCam Inc, Lytx's old name
+    {{0x2C, 0x42, 0x05}, "Lytx",         DetectionType::CAMERA,     Confidence::MED_CONF},
+    {{0x50, 0xDF, 0x95}, "Lytx",         DetectionType::CAMERA,     Confidence::MED_CONF},
+    {{0x70, 0xE4, 0x6E}, "Lytx",         DetectionType::CAMERA,     Confidence::MED_CONF},
+    {{0x58, 0xA7, 0x48}, "Lytx",         DetectionType::CAMERA,     Confidence::MED_CONF},
+    {{0xFC, 0xDB, 0x21}, "Samsara",      DetectionType::CAMERA,     Confidence::LOW_CONF},
+    {{0x28, 0xEA, 0x5B}, "Samsara",      DetectionType::CAMERA,     Confidence::LOW_CONF},
+    {{0x98, 0x59, 0x49}, "Luxottica",    DetectionType::META,       Confidence::MED_CONF},
+    {{0x28, 0xE8, 0x88}, "Rokid",        DetectionType::META,       Confidence::LOW_CONF},
+    {{0x98, 0xDA, 0x92}, "Vuzix",        DetectionType::META,       Confidence::LOW_CONF},
+    {{0x9C, 0x5A, 0x8A}, "DJI-BW",       DetectionType::DRONE,      Confidence::LOW_CONF},
+    {{0xEC, 0x72, 0xF7}, "DJI-BW",       DetectionType::DRONE,      Confidence::LOW_CONF},
+    {{0x34, 0x91, 0xF0}, "DJI-BW",       DetectionType::DRONE,      Confidence::LOW_CONF},
+    {{0xC8, 0xA1, 0x62}, "DJI-BW",       DetectionType::DRONE,      Confidence::LOW_CONF},
+    {{0x00,0x0E,0x58}, "Sonos",      DetectionType::LISTENER, Confidence::MED_CONF},
+    {{0x34,0x7E,0x5C}, "Sonos",      DetectionType::LISTENER, Confidence::MED_CONF},
+    {{0x38,0x42,0x0B}, "Sonos",      DetectionType::LISTENER, Confidence::MED_CONF},
+    {{0x48,0xA6,0xB8}, "Sonos",      DetectionType::LISTENER, Confidence::MED_CONF},
+    {{0x54,0x2A,0x1B}, "Sonos",      DetectionType::LISTENER, Confidence::MED_CONF},
+    {{0x5C,0xAA,0xFD}, "Sonos",      DetectionType::LISTENER, Confidence::MED_CONF},
+    {{0x60,0xF6,0x20}, "Sonos",      DetectionType::LISTENER, Confidence::MED_CONF},
+    {{0x74,0xCA,0x60}, "Sonos",      DetectionType::LISTENER, Confidence::MED_CONF},
+    {{0x78,0x28,0xCA}, "Sonos",      DetectionType::LISTENER, Confidence::MED_CONF},
+    {{0x80,0x4A,0xF2}, "Sonos",      DetectionType::LISTENER, Confidence::MED_CONF},
+    {{0x94,0x9F,0x3E}, "Sonos",      DetectionType::LISTENER, Confidence::MED_CONF},
+    {{0xB8,0xE9,0x37}, "Sonos",      DetectionType::LISTENER, Confidence::MED_CONF},
+    {{0xC4,0x38,0x75}, "Sonos",      DetectionType::LISTENER, Confidence::MED_CONF},
+    {{0xF0,0xF6,0xC1}, "Sonos",      DetectionType::LISTENER, Confidence::MED_CONF},
+    {{0xF8,0x5C,0x24}, "Sonos",      DetectionType::LISTENER, Confidence::MED_CONF},
 };
 const uint16_t kOuiCount = sizeof(kOuiTable) / sizeof(kOuiTable[0]);
 
@@ -253,6 +305,18 @@ const UuidEntry kUuidTable[] = {
     {0x3081, "Flipper",    DetectionType::HACKER},
     {0x3082, "Flipper",    DetectionType::HACKER},
     {0x3083, "Flipper",    DetectionType::HACKER},
+    // Upstream v1.50 missing signature entries; preserve fork-specific existing rules.
+    {0xFD84, "Tile",       DetectionType::TILE},      // Tile, Inc. — third SIG-assigned UUID
+    {0xFC81, "Axon",       DetectionType::AXON},
+    {0xFE6B, "Axon",       DetectionType::AXON},
+    {0xFE6C, "Axon",       DetectionType::AXON},
+    {0xFEB7, "Meta",       DetectionType::META},
+    {0xFEB8, "Meta",       DetectionType::META},
+    {0xFE45, "Snap",       DetectionType::META},
+    {0xFCB2, "Tracker",    DetectionType::GOOGLE_TAG},
+    {0xFE33, "Chipolo",    DetectionType::GOOGLE_TAG},
+    {0xFE65, "Chipolo",    DetectionType::GOOGLE_TAG},
+    {0xFE07, "Sonos",      DetectionType::LISTENER},
 };
 const uint16_t kUuidCount = sizeof(kUuidTable) / sizeof(kUuidTable[0]);
 
@@ -302,6 +366,27 @@ const SsidEntry kSsidPrefixes[] = {
     // suffix; MED at best, since somebody can also just name their home
     // network this as a joke.
     {"pwned",   "Deauther",     DetectionType::HACKER},
+    // Upstream v1.50 missing signature entries; preserve fork-specific existing rules.
+    {"Flock Camera", "Flock-Cam", DetectionType::FLOCK},
+    {"VIOFO_",     "Viofo",     DetectionType::CAMERA},
+    {"VIOFO-",     "Viofo",     DetectionType::CAMERA},
+    {"BlackVue",   "BlackVue",  DetectionType::CAMERA},
+    {"70mai_",     "70mai",     DetectionType::CAMERA},
+    {"thinkware",  "Thinkware", DetectionType::CAMERA},
+    {"NEXTBASE ",  "Nextbase",  DetectionType::CAMERA},
+    {"ROVE_R",     "Rove",      DetectionType::CAMERA},
+    {"REDTIGER_",  "Redtiger",  DetectionType::CAMERA},
+    {"AuxCamera_", "Lytx",      DetectionType::CAMERA},
+    {"DGK-",       "HDWifiCam", DetectionType::CAMERA},
+    {"ACCQ-",      "LookCam",   DetectionType::CAMERA},
+    {"BCCQ-",      "LookCam",   DetectionType::CAMERA},
+    {"XCCQ-",      "LookCam",   DetectionType::CAMERA},
+    {"HCAM-",      "TinyCam",   DetectionType::CAMERA},
+    {"CLOUDCAM_",  "YCC365",    DetectionType::CAMERA},
+    {"MEYE_",      "Sricam",    DetectionType::CAMERA},
+    {"GW_IPC",     "Yoosee",    DetectionType::CAMERA},
+    {"IPC_AP_",    "Zosi",      DetectionType::CAMERA},
+    {"GoogleHome", "Google speaker", DetectionType::LISTENER},
 };
 const uint16_t kSsidCount = sizeof(kSsidPrefixes) / sizeof(kSsidPrefixes[0]);
 
@@ -335,6 +420,11 @@ const MfgIdEntry kMfgIdTable[] = {
     // Technologies, who make headsets. Flipper is 0x0E29. Checked against
     // the SIG registry, the same way the OUI rows are checked against IEEE.
     {0x0E29, "Flipper",    DetectionType::HACKER},
+    // Upstream v1.50 missing signature entries; preserve fork-specific existing rules.
+    {0x060C, "Vuzix",      DetectionType::META},      // Vuzix smart glasses
+    {0x034D, "Axon",       DetectionType::AXON},
+    {0x08C3, "Chipolo",    DetectionType::GOOGLE_TAG},
+    {0x05A7, "Sonos",      DetectionType::LISTENER},
 };
 const uint16_t kMfgIdCount = sizeof(kMfgIdTable) / sizeof(kMfgIdTable[0]);
 
