@@ -2614,7 +2614,9 @@ static const ClearLayoutCache& clearLayoutFor(int w, int h) {
     l.ibeacon = ibeacon;
     l.listener = listener;
     l.counterN = activeCounterTypes(l.types);
-    l.counterRows = (w > h) ? COUNTER_ROWS_LANDSCAPE :
+    // Never squeeze seven pills onto one landscape row if both opt-in
+    // types are enabled: use three rows only in that exceptional case.
+    l.counterRows = (w > h) ? (uint8_t)(l.counterN > 12 ? 3 : COUNTER_ROWS_LANDSCAPE) :
         (uint8_t)((l.counterN + MAX_PER_ROW_PORTRAIT - 1) / MAX_PER_ROW_PORTRAIT);
     l.bar = Theme::computeButtonBar(w, h);
     const int countersTop = l.bar.y - l.counterRows * CATEGORY_PILL_ROW_H - 5;
