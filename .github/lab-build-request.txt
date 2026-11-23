@@ -1,7 +1,8 @@
-V150-R4-FULL-DETECTION-R2-HOST-ROSTER-FIX
+V150-R4-FULL-DETECTION-R3-LAYOUT-OVERFLOW-GUARD
 LAB PR #258, layered atop #257 R13 recovery with R12 CYD32 adaptive boot. Preserve ST7798 animation and CYD28 renderer.
 Full upstream v1.50 detection families (dashcam, fleet, hidden camera, router, glasses, smart speaker), Sony/Google setup and HomePod Siri, AirTag pairing/owner state, Google Find Hub frame, Flock FS, Axon BWC and BLE service-data UUID matching; info pages, emulator profiles and active LISTENER pill.
 Protect existing false-positive exclusions for generic Qualcomm Flock and generic FEAA Eddystone. New LISTENER off by default.
 Build #1067 failure: category roster test did not include LISTENER; fixed both actual on-device counter roster and native category test, plus Axon/BodyWorn checks.
 Require exact-head full CYD 2.8 ST7789 / CYD 3.2 ST7798 firmware matrix, host tests, emulator, R12 recovery and v1.50 detector regression, OTA partition margin. Then build and publish LAB web flasher (not production). Physical validation pending.
 No production tag, merge, branch deletion or SquachEmit changes.
+With both LISTENER and IBEACON explicitly enabled, category pills use three landscape rows rather than clipping seven columns; default layout unchanged.
