@@ -1,10 +1,5 @@
-CATEGORY-PILLS-CLOCK-DUALCOUNT-R3
-# LAB PR #226 — 2026-11-13; based on validated code commit edc0e5fd.
-# v1.41 clickable category roster, corrected no-trust timestamp UP+,
-# green radio-fresh active / blue unique-detection-records since boot.
-# Grouped TRACKER/CAMERA/HACKER counts match the roster's types.
-# GitHub Build #43485289268 passed all jobs on edc0e5fd.
-# Request-file-only commit triggers exact-commit PR Build then LAB build
-# and release firmware; CI gate MUST verify exact SHA before publishing.
-# Firmware 2.8 ST7789 and 3.2 ST7798; all required OTA slot guards unchanged.
-# LAB only. No production GitHub Release, v-tag, master merge, or PR merge.
+UPSTREAM-V150-SIGNATURES-R1-WYZE-SIMPLISAFE
+LAB PR #256 — upstream v1.50 first isolated detection signature backport.
+Wyze F0:C8:8B and 80:48:2C (CAMERA HIGH); SimpliSafe F8:51:28 (CAMERA MED); corrected HC-05 prefix 98:D3:31 (SKIMMER LOW).
+No display/animation/SD/GPS/WiFi/SquachMesh changes. Build both CYD 2.8 ST7789 and CYD 3.2 ST7798. Exact-head full CI, native host tests, emulator and OTA reserve guards required before LAB publication.
+Physical hardware validation pending. No production tag, merge, branch deletion or SquachEmit changes.
