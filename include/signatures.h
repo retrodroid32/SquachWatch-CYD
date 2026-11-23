@@ -89,6 +89,8 @@ bool isHomePodSiri(const uint8_t* mfg, uint8_t len);
 uint8_t airTagFrame(const uint8_t* payload, uint8_t len, uint8_t* status);
 uint8_t airTagStatusByte(const uint8_t* payload, uint8_t len);
 bool isP2pCamSsid(const char* ssid);
+uint8_t fmdnFrameType(const uint8_t* payload, uint8_t len);
+bool isFmdnPayload(const uint8_t* payload, uint8_t len);
 
 // iBeacon check, run against the PARSED manufacturer-data field (company
 // ID included, i.e. what NimBLE's getManufacturerData() returns).
