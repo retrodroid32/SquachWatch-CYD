@@ -158,6 +158,8 @@ jobs:
         run: python3 tools/test_cyd32_r11_guarded_full8.py
       - name: Verify CYD32 R12 SD-in boot fallback
         run: python3 tools/test_cyd32_r12_sd_boot_adaptive.py
+      - name: Verify v1.50 detector label integration
+        run: python3 tools/test_upstream_v150_signatures_r1.py
       - name: Verify Pages historical signature recovery
         run: python3 tools/test_mirror_pages_release_fallback.py
       - name: Verify CYD32 native LCD transfer and one-time rotation clear
