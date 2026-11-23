@@ -698,6 +698,14 @@ class BleScanCallbacks : public NimBLEScanCallbacks {
             det.evidenceCode = 0xFEAA;
         }
 
+        if (det.type == DetectionType::UNKNOWN &&
+            isAxonBwcPayload(payload.data(), (uint8_t)payload.size())) {
+            det.type = DetectionType::AXON;
+            label = "Axon-BWC";
+            det.evidence = EvidenceKind::BLE_UUID;
+            det.evidenceCode = 0;
+        }
+
         // Other service UUIDs. Parse 16-bit UUID-list AD fields directly
         // from the payload, avoiding temporary NimBLEUUID objects in the scan path.
         if (det.type == DetectionType::UNKNOWN) {
