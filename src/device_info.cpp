@@ -55,6 +55,11 @@ const Device kDevices[] = {
     { DetectionType::AXON, "AXON SIGNAL", "Axon-Signal", nullptr,
       "Axon Signal: small Bluetooth sensors on holsters and patrol cars that tell nearby body cameras to start recording when a gun is drawn or the lights go on. Graded low." },
 
+    { DetectionType::AXON, "AXON BODY CAM", "Axon-BWC", nullptr,
+      "A body-camera activation radio carrying the exact BWCDEVICE marker, not a generic Bluetooth device. An announcement alone does not show recording status." },
+    { DetectionType::AXON, "BODYWORN", "BodyWorn", "BodyWorn",
+      "A BodyWorn body-camera accessory advertising its name. Names can be spoofed; treat the match as a lead rather than definite police equipment." },
+
     // ---- ALPR ---------------------------------------------------------------
     { DetectionType::ALPR, "MOTOROLA", "ALPR-Mtrla", nullptr,
       "A radio on a Motorola Solutions block. Motorola owns Vigilant, a big plate-reader maker, but also makes police radios and much else: a possible plate reader, not a sure one." },
