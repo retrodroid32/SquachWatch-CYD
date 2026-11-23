@@ -144,6 +144,8 @@ jobs:
           python3 tools/test_blackbox_ota_layout.py
       - name: Run host tests
         run: make -C test
+      - name: Verify v1.50 signature backport
+        run: python3 tools/test_upstream_v150_signatures_r1.py
       - name: Verify CYD32 native LCD transfer and one-time rotation clear
         run: python3 tools/test_cyd32_native_push.py
 
