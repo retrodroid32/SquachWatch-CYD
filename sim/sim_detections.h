@@ -105,6 +105,8 @@ inline const SimDetectionProfile kSimProfiles[] = {
     { DetectionType::HACKER,      {0x06, 0x50, 0x49}, "Pineapple",   "",               -60, true,  "WiFi Pineapple" },
     { DetectionType::HACKER,      {0x06, 0xDE, 0xA7}, "Deauther",    "",               -57, true,  "ESP deauther" },
     { DetectionType::HACKER,      {0x02, 0xC0, 0xCA}, "Hak5-LA",     "",               -63, true,  "Hak5 address" },
+    { DetectionType::AXON,        {0x02,0xBA,0x01}, "Axon-BWC",     "", -70, false, "Axon BWC beacon" },
+    { DetectionType::AXON,        {0x02,0xBA,0x02}, "BodyWorn",     "", -70, false, "BodyWorn device" },
     // Upstream v1.50 families, reproducible simulator selectors for MORE INFO.
     { DetectionType::AXON,        {0x00,0x30,0x44}, "Cradlepoint",   "", -72, true,  "Fleet router" },
     { DetectionType::AXON,        {0x00,0x1D,0x96}, "WatchGuard",    "", -71, true,  "WatchGuard camera" },
