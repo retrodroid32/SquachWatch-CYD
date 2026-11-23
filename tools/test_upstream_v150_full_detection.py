@@ -34,6 +34,7 @@ assert "isAxonBwcPayload(payload.data()" in det
 assert "bool isAxonBwcPayload(" in sig and "bool isFlockFsName(" in sig
 assert "BodyWorn" in sig and "BodyWorn" in info and "BodyWorn" in sim
 assert "DetectionType::LISTENER" in (root / "src/ui_clear.cpp").read_text()
+assert "DetectionType::LISTENER, Rarity::COMMON" in (root / "src/dex.cpp").read_text()
 assert "0x16" in det and "uuid == 0xFEAA || uuid == 0xFFFA" in det
 assert "OWNER_WITH" in det and "OWNER_AWAY" in det
 assert "det.owner" in det
