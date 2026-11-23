@@ -105,6 +105,19 @@ inline const SimDetectionProfile kSimProfiles[] = {
     { DetectionType::HACKER,      {0x06, 0x50, 0x49}, "Pineapple",   "",               -60, true,  "WiFi Pineapple" },
     { DetectionType::HACKER,      {0x06, 0xDE, 0xA7}, "Deauther",    "",               -57, true,  "ESP deauther" },
     { DetectionType::HACKER,      {0x02, 0xC0, 0xCA}, "Hak5-LA",     "",               -63, true,  "Hak5 address" },
+    // Upstream v1.50 families, reproducible simulator selectors for MORE INFO.
+    { DetectionType::AXON,        {0x00,0x30,0x44}, "Cradlepoint",   "", -72, true,  "Fleet router" },
+    { DetectionType::AXON,        {0x00,0x1D,0x96}, "WatchGuard",    "", -71, true,  "WatchGuard camera" },
+    { DetectionType::AXON,        {0x00,0x23,0xBD}, "DigitalAlly",   "", -71, true,  "Digital Ally camera" },
+    { DetectionType::CAMERA,      {0xD4,0x2D,0xC5}, "i-PRO",         "", -66, true,  "i-PRO camera" },
+    { DetectionType::CAMERA,      {0x00,0x25,0x42}, "BlackVue",      "", -66, true,  "Dashcam BlackVue" },
+    { DetectionType::CAMERA,      {0x00,0x16,0xB2}, "Lytx",          "", -67, true,  "Fleet camera Lytx" },
+    { DetectionType::CAMERA,      {0x02,0x12,0x34}, "P2P-Cam",       "", -64, true,  "Hidden camera setup" },
+    { DetectionType::META,        {0x28,0xE8,0x88}, "Rokid",         "", -68, true,  "Rokid glasses" },
+    { DetectionType::META,        {0x98,0xDA,0x92}, "Vuzix",         "", -68, true,  "Vuzix glasses" },
+    { DetectionType::LISTENER,    {0x00,0x0E,0x58}, "Sonos",         "", -62, true,  "Sonos speaker" },
+    { DetectionType::LISTENER,    {0x02,0x01,0x07}, "HomePod",       "", -61, false, "HomePod wake word" },
+    { DetectionType::LISTENER,    {0x02,0x07,0x01}, "Google speaker","", -61, true,  "Google Home setup" },
 };
 inline const size_t kSimProfileCount = sizeof(kSimProfiles) / sizeof(kSimProfiles[0]);
 
