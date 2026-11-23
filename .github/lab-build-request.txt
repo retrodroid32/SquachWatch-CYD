@@ -1,6 +1,7 @@
-V150-R4-FULL-DETECTION-AIRTAG-SONOS-CAMERA
-PR #258, LAB ONLY, based on #257 R13 guarded CYD32 R12 SD-in boot recovery.
-Upstream v1.50 complete device-signature backport: new dashcam/fleet/hidden-camera/Rokid/Vuzix/patrol-router and Sonos/GoogleHome signature tables; opt-in LISTENER, HomePod Siri, AirTag pair/nearby/separated matching, Find Hub owner-state frames, P2P/V380/Vantrue hotspot rules.
-Retain fork false-positive checks: generic Qualcomm QCA/Flock no bare match, generic FEAA Eddystone no bare Find Hub match. Keep validated R11/R12 ST7798 display and CYD28 R7-R9 memory recovery.
-Require exact-head full board matrix (CYD2.8 ST7789 and CYD3.2 ST7798), emulator, native host/device-info tests, v1.50 full-detection and R12 guards, OTA reserve, LAB manifest and Pages publication. Physical hardware test pending.
-No production merge, tag, release, branch deletion or SquachEmit changes.
+V150-R4-FULL-DETECTION-R2-HOST-ROSTER-FIX
+LAB PR #258, layered atop #257 R13 recovery with R12 CYD32 adaptive boot. Preserve ST7798 animation and CYD28 renderer.
+Full upstream v1.50 detection families (dashcam, fleet, hidden camera, router, glasses, smart speaker), Sony/Google setup and HomePod Siri, AirTag pairing/owner state, Google Find Hub frame, Flock FS, Axon BWC and BLE service-data UUID matching; info pages, emulator profiles and active LISTENER pill.
+Protect existing false-positive exclusions for generic Qualcomm Flock and generic FEAA Eddystone. New LISTENER off by default.
+Build #1067 failure: category roster test did not include LISTENER; fixed both actual on-device counter roster and native category test, plus Axon/BodyWorn checks.
+Require exact-head full CYD 2.8 ST7789 / CYD 3.2 ST7798 firmware matrix, host tests, emulator, R12 recovery and v1.50 detector regression, OTA partition margin. Then build and publish LAB web flasher (not production). Physical validation pending.
+No production tag, merge, branch deletion or SquachEmit changes.
