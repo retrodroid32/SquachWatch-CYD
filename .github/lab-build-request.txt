@@ -1,4 +1,6 @@
-V150-R3-BOOT-RECOVERY-R12-INTEGRATED
-LAB PR #257 critical boot-loop recovery. The earlier #256 signature LAB was based on master and omitted R12 CYD32 adaptive framebuffer allocation. This build combines R12 guarded FULL8 / 2-4-8-16-band / direct-panel boot fallback with v1.50 Wyze, SimpliSafe, HC-05 metadata, device info and emulator coverage.
-Require exact-head full host tests (device info), R10/R11/R12/v150 regressions, CYD 2.8 and CYD 3.2 firmware matrix, emulator, OTA reserves; build and release LAB firmware to web flasher after all gates pass.
-Hardware gate: CYD3.2 SD-in 3 cold boots, WiFi/GPS/BLE/SquachMesh, 60s animations and rotation; CYD2.8 smoke. No production merge, tag, branch deletion or SquachEmit changes.
+V150-R4-FULL-DETECTION-AIRTAG-SONOS-CAMERA
+PR #258, LAB ONLY, based on #257 R13 guarded CYD32 R12 SD-in boot recovery.
+Upstream v1.50 complete device-signature backport: new dashcam/fleet/hidden-camera/Rokid/Vuzix/patrol-router and Sonos/GoogleHome signature tables; opt-in LISTENER, HomePod Siri, AirTag pair/nearby/separated matching, Find Hub owner-state frames, P2P/V380/Vantrue hotspot rules.
+Retain fork false-positive checks: generic Qualcomm QCA/Flock no bare match, generic FEAA Eddystone no bare Find Hub match. Keep validated R11/R12 ST7798 display and CYD28 R7-R9 memory recovery.
+Require exact-head full board matrix (CYD2.8 ST7789 and CYD3.2 ST7798), emulator, native host/device-info tests, v1.50 full-detection and R12 guards, OTA reserve, LAB manifest and Pages publication. Physical hardware test pending.
+No production merge, tag, release, branch deletion or SquachEmit changes.
