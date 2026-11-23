@@ -1,4 +1,4 @@
-V150-R4-FULL-DETECTION-R8-AIRTAG-VECTOR-GUARD
+V150-R4-FULL-DETECTION-R9-PRIVATE-MATCHER-AUDIT
 LAB PR #258, layered atop #257 R13 recovery with R12 CYD32 adaptive boot. Preserve ST7798 animation and CYD28 renderer.
 Full upstream v1.50 detection families (dashcam, fleet, hidden camera, router, glasses, smart speaker), Sony/Google setup and HomePod Siri, AirTag pairing/owner state, Google Find Hub frame, Flock FS, Axon BWC and BLE service-data UUID matching; info pages, emulator profiles and active LISTENER pill.
 Protect existing false-positive exclusions for generic Qualcomm Flock and generic FEAA Eddystone. New LISTENER off by default.
@@ -12,3 +12,4 @@ Build #1081 host dex_test crashed because increasing COUNT left Dex's last Entry
 Added explicit LIST label in BINGO for the new opt-in smart-speaker type; full host and firmware gates remain mandatory.
 
 Build #1087 firmware/emulator PASS but host detection_vectors_test failed on stale ambiguous Apple pairing expectation. Replaced with negative ambiguous/AirPods checks and positive AirTag-specific unpaired and nearby-owner frames. Preserve strict 00:55 model match, memory-safe R12 CYD 3.2 boot code, and full matrix gates. Build/release LAB after exact-head gates; no production merge/tag.
+Build #1089 host tests passed; v1.50 source audit failed because it demanded a private static pairing helper be exported in a public header. Audit now checks helper in source only. Rebuild both classic CYD variants; LAB only, preserving R12 boot protection. Do not merge or production-tag.
