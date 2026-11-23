@@ -70,10 +70,12 @@ const Device kDevices[] = {
       "A BT04-A Bluetooth serial module, a cheap HC-05 alternative. Fine inside a robot; suspicious inside a card reader." },
     { DetectionType::SKIMMER, "LINVOR", "Skim-Linvor", "linvor",
       "An HC-06-style module on the prefix its linvor boards use: a Bluetooth serial link of the kind skimmers use to hand over stolen card numbers." },
-    { DetectionType::SKIMMER, "BT SERIAL", "Skim-SPP|Skim-CSR", "BT05|JDY-|MLT-BT|SPP-C",
+    { DetectionType::SKIMMER, "BT SERIAL", "Skim-SPP|Skim-CSR|Skim-HC05", "BT05|JDY-|MLT-BT|SPP-C",
       "Something offering a Bluetooth serial port, the link skimmers use to pass on stolen card data. Printers, scanners and car dongles use it too -- where you are is the tell." },
 
     // ---- CAMERA -------------------------------------------------------------
+    { DetectionType::CAMERA, "SIMPLISAFE", "SimpliSafe", nullptr,
+      "A SimpliSafe radio prefix: cameras and doorbells use it, but so do base stations and other home alarm gear. The prefix alone does not prove a camera." },
     { DetectionType::CAMERA, "WYZE", "Wyze", nullptr,
       "A Wyze camera or smart-home device, on Wyze's own registered block. Cheap, popular home cameras, often pointed at front doors and driveways." },
     { DetectionType::CAMERA, "WYZE MODULE", "Wyze-Mod", nullptr,
