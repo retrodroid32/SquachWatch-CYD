@@ -42,6 +42,9 @@ const Device kDevices[] = {
     { DetectionType::FLOCK, "FLOCK QCA", "Flock-QCA", nullptr,
       "A Qualcomm QCA9377 default address found inside Flock camera firmware, seen with Flock's wildcard-probe pattern. Qualcomm alone is generic; SquachWatch requires both clues." },
 
+    { DetectionType::FLOCK, "FLOCK HOTSPOT", "Flock-Cam", nullptr,
+      "A WiFi network beginning Flock Camera. It is a setup or service network name, not proof that a specific camera is operating or collecting plates." },
+
     // ---- AXON ---------------------------------------------------------------
     { DetectionType::AXON, "AXON BODY 2", "Axon-Body2", nullptr, AXON_BODY },
     { DetectionType::AXON, "AXON BODY 3", "Axon-Body3", nullptr, AXON_BODY },
