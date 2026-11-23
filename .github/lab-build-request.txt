@@ -1,5 +1,4 @@
-UPSTREAM-V150-SIGNATURES-R1-WYZE-SIMPLISAFE
-LAB PR #256 — upstream v1.50 first isolated detection signature backport.
-Wyze F0:C8:8B and 80:48:2C (CAMERA HIGH); SimpliSafe F8:51:28 (CAMERA MED); corrected HC-05 prefix 98:D3:31 (SKIMMER LOW).
-No display/animation/SD/GPS/WiFi/SquachMesh changes. Build both CYD 2.8 ST7789 and CYD 3.2 ST7798. Exact-head full CI, native host tests, emulator and OTA reserve guards required before LAB publication.
-Physical hardware validation pending. No production tag, merge, branch deletion or SquachEmit changes.
+UPSTREAM-V150-SIGNATURES-R2-DEVICE-PAGES
+LAB PR #256 — fix Build #1061 host DeviceInfo test: new SimpliSafe and Skim-HC05 vendor labels now have MORE INFO coverage and emulator profiles; preserve v1.50 Wyze additions and corrected HC-05 OUI.
+Require exact-head full host tests, emulator, firmware board matrix and OTA reserve checks. Publish LAB-only web flasher firmware for CYD 2.8 ST7789 and CYD 3.2 ST7798 after CI success.
+No changes to animations, SD, GPS, Wi-Fi, SquachMesh or production master; no merge, production tag or branch deletion.
