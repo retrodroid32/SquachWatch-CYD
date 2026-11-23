@@ -1,5 +1,4 @@
-CYD32-R12-SD-BOOT-ANIMATION-SAFE
-LAB ONLY PR #255, stacked on guarded FULL8 R11 #254. Preserve working CYD 3.2 ST7798 animation renderer. Add safe SD-in boot sprite fallback: guarded FULL8 then 2/4/8/16 bands, direct panel if none, no allocation-triggered CYD32 restart.
-Require exact-head full board matrix, emulator, host R10/R11/R12 regressions, OTA image size/partition reserves and successful LAB release + Pages deployment. Include CYD 2.8 ST7789 and CYD 3.2 ST7798.
-Hardware validation pending: SD inserted cold boot x3, rotated UI, GPS, BLE, WiFi, Mesh, frame FPS and memory telemetry.
-Never merge to master, tag production, delete branches or modify SquachEmit.
+V150-R3-BOOT-RECOVERY-R12-INTEGRATED
+LAB PR #257 critical boot-loop recovery. The earlier #256 signature LAB was based on master and omitted R12 CYD32 adaptive framebuffer allocation. This build combines R12 guarded FULL8 / 2-4-8-16-band / direct-panel boot fallback with v1.50 Wyze, SimpliSafe, HC-05 metadata, device info and emulator coverage.
+Require exact-head full host tests (device info), R10/R11/R12/v150 regressions, CYD 2.8 and CYD 3.2 firmware matrix, emulator, OTA reserves; build and release LAB firmware to web flasher after all gates pass.
+Hardware gate: CYD3.2 SD-in 3 cold boots, WiFi/GPS/BLE/SquachMesh, 60s animations and rotation; CYD2.8 smoke. No production merge, tag, branch deletion or SquachEmit changes.
