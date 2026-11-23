@@ -783,6 +783,25 @@ uint8_t airTagStatusByte(const uint8_t* payload, uint8_t len) {
 }
 
 
+// Google Find Hub service-data frames only. General Eddystone FEAA advertisements
+// are not enough to identify a tracker.
+uint8_t fmdnFrameType(const uint8_t* payload, uint8_t len) {
+    if (!payload) return 0;
+    for (uint8_t i = 0; i + 1 < len; ) {
+        const uint8_t n = payload[i];
+        if (n == 0 || (uint16_t)i + 1 + n > len) break;
+        if (n >= 4 && payload[i + 1] == 0x16 &&
+            payload[i + 2] == 0xAA && payload[i + 3] == 0xFE &&
+            (payload[i + 4] == 0x40 || payload[i + 4] == 0x41))
+            return payload[i + 4];
+        i = (uint8_t)(i + n + 1);
+    }
+    return 0;
+}
+bool isFmdnPayload(const uint8_t* payload, uint8_t len) {
+    return fmdnFrameType(payload, len) != 0;
+}
+
 Confidence confidenceFor(DetectionType t) {
     // Per docs/DETECTIONS.md. This is the type-level fallback only;
     // paths with stronger/weaker evidence override it in the detector or in
