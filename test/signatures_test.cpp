@@ -307,8 +307,11 @@ int main() {
     // 00:0E:58 sat in the ALPR block as "Vigilant" for eleven releases. It
     // is registered to Sonos, Inc. and was removed; this is here so it
     // cannot come back by copy-paste from an older detector.
-    ck("00:0E:58 no longer matches anything",
-       lookup(0x00, 0x0E, 0x58, &conf) == DetectionType::UNKNOWN);
+    // v1.50 now classifies the registered Sonos block as LISTENER, OFF by default.
+    ck("00:0E:58 identifies Sonos speaker family, never ALPR",
+       lookup(0x00, 0x0E, 0x58, &conf) == DetectionType::LISTENER);
+    ck("Sonos model may lack a microphone, confidence stays medium",
+       conf == Confidence::MED_CONF);
 
     return report();
 }
