@@ -234,6 +234,23 @@ static bool matchKnownServiceUuid16(const std::vector<uint8_t>& payload,
             }
         }
     }
+    // v1.50: trackers commonly announce their assigned 16-bit service
+    // UUID inside SERVICE DATA (AD 0x16), not in a UUID list. A bare
+    // FEAA Eddystone frame is NEVER a tracker: fmdnFrameType checks it.
+    for (uint8_t fieldIndex = 0;; ++fieldIndex) {
+        AdvFieldView field;
+        if (!advFieldAt(payload, 0x16, fieldIndex, field)) break;
+        if (field.len < 2) continue;
+        const uint16_t uuid = (uint16_t)field.data[0] |
+                              ((uint16_t)field.data[1] << 8);
+        if (uuid == 0xFEAA || uuid == 0xFFFA) continue;
+        const DetectionType matched = lookupUuid(uuid);
+        if (matched == DetectionType::UNKNOWN) continue;
+        type = matched;
+        label = uuidName(uuid);
+        if (matchedUuid) *matchedUuid = uuid;
+        return true;
+    }
     return false;
 }
 
