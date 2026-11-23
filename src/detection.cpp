@@ -631,6 +631,11 @@ class BleScanCallbacks : public NimBLEScanCallbacks {
                         // off the end of a 20-byte field.
                         snprintf(det.name, sizeof(det.name), "%02X%02X%02X %u.%u",
                                  b[4], b[5], b[6], major, minor);
+                    } else if (isHomePodSiri(b, mfg.len)) {
+                        det.type = DetectionType::LISTENER;
+                        label = "HomePod";
+                        det.evidence = EvidenceKind::BLE_MFG;
+                        det.evidenceCode = 0x004C;
                     }
                 }
             }
@@ -666,6 +671,16 @@ class BleScanCallbacks : public NimBLEScanCallbacks {
             det.evidenceCode = 0xFFFA;
         }
 
+        // v1.50: Find Hub's 0x40 / 0x41 service-data frame is specific.
+        // Bare Eddystone/0xFEAA UUIDs are not Google tracking signatures.
+        if (det.type == DetectionType::UNKNOWN &&
+            isFmdnPayload(payload.data(), (uint8_t)payload.size())) {
+            det.type = DetectionType::GOOGLE_TAG;
+            label = "FindHub";
+            det.evidence = EvidenceKind::BLE_UUID;
+            det.evidenceCode = 0xFEAA;
+        }
+
         // Other service UUIDs. Parse 16-bit UUID-list AD fields directly
         // from the payload, avoiding temporary NimBLEUUID objects in the scan path.
         if (det.type == DetectionType::UNKNOWN) {
@@ -688,6 +703,19 @@ class BleScanCallbacks : public NimBLEScanCallbacks {
         // none of those tables has a per-row grade, so the type's own
         // grade stands. Only the OUI table needed splitting.
         det.conf = confidenceFor(det.type);
+        if (det.type == DetectionType::LISTENER && label && strcmp(label, "HomePod") == 0)
+            det.conf = Confidence::HIGH_CONF;
+        if (det.type == DetectionType::AIRTAG) {
+            uint8_t status = 0;
+            const uint8_t frameType = airTagFrame(payload.data(), (uint8_t)payload.size(), &status);
+            det.owner = frameType == 0x02 ? OWNER_WITH :
+                        frameType == 0x19 ? OWNER_AWAY : OWNER_UNKNOWN;
+        }
+        if (det.type == DetectionType::GOOGLE_TAG) {
+            const uint8_t frameType = fmdnFrameType(payload.data(), (uint8_t)payload.size());
+            det.owner = frameType == 0x40 ? OWNER_WITH :
+                        frameType == 0x41 ? OWNER_AWAY : OWNER_UNKNOWN;
+        }
         // Common Apple proximity payloads can be AirPods or other accessories.
         // Only the narrower Find My subtype retains the type-level grade.
         if (det.type == DetectionType::AIRTAG &&
@@ -741,7 +769,9 @@ class BleScanCallbacks : public NimBLEScanCallbacks {
         } else if (det.type == DetectionType::SAMSUNG_TAG) {
             det.vendor = "Samsung";
         } else if (det.type == DetectionType::GOOGLE_TAG) {
-            det.vendor = "Google";
+            det.vendor = label ? label : "Google";
+        } else if (det.type == DetectionType::LISTENER) {
+            det.vendor = label ? label : "Sonos";
         } else if (det.type == DetectionType::TILE) {
             det.vendor = "Tile";
         } else if (det.type == DetectionType::IBEACON) {
