@@ -63,10 +63,11 @@ inline const SimDetectionProfile kSimProfiles[] = {
     { DetectionType::META,        {0x02, 0x0D, 0x53}, "Luxottica",   "",               -67, false, "Luxottica frames" },
     { DetectionType::META,        {0x02, 0x03, 0xC2}, "Snap",        "",               -65, false, "Snap Spectacles" },
     // SKIMMER -- over Bluetooth a name match is labelled just "BLE"
-    { DetectionType::SKIMMER,     {0x98, 0xD3, 0x00}, "BLE",         "HC-05",          -49, false, "HC-05 module" },
+    { DetectionType::SKIMMER,     {0x98, 0xD3, 0x31}, "BLE",         "HC-05",          -49, false, "HC-05 module" },
     { DetectionType::SKIMMER,     {0x02, 0x42, 0x04}, "BLE",         "RN42",           -52, false, "RN42 module" },
     { DetectionType::SKIMMER,     {0x02, 0xB7, 0x04}, "BLE",         "BT04-A",         -55, false, "BT04-A module" },
     { DetectionType::SKIMMER,     {0x20, 0x13, 0x00}, "Skim-Linvor", "linvor",         -51, false, "Linvor HC-06" },
+    { DetectionType::SKIMMER,     {0x98, 0xD3, 0x31}, "Skim-HC05",   "",               -51, false, "HC-05 prefix (unverified use)" },
     { DetectionType::SKIMMER,     {0x02, 0x11, 0x01}, "Skim-SPP",    "",               -53, false, "Bluetooth serial port" },
     // RAVEN, AIRTAG, DRONE
     { DetectionType::RAVEN,       {0x02, 0x31, 0x00}, "Raven",       "Gunshot Sensor", -79, false, "Raven gunshot sensor" },
@@ -76,6 +77,7 @@ inline const SimDetectionProfile kSimProfiles[] = {
     { DetectionType::ALPR,        {0x00, 0x04, 0x7D}, "ALPR-Mtrla",  "",               -76, true,  "Motorola plate reader" },
     { DetectionType::ALPR,        {0x00, 0xBF, 0x15}, "ALPR-Gentec", "",               -75, true,  "Genetec AutoVu" },
     // CAMERA -- each maker's own prefix from the OUI table
+    { DetectionType::CAMERA,      {0xF8, 0x51, 0x28}, "SimpliSafe",  "",               -65, true,  "SimpliSafe radio" },
     { DetectionType::CAMERA,      {0x2C, 0xAA, 0x8E}, "Wyze",        "",               -63, true,  "Wyze camera" },
     { DetectionType::CAMERA,      {0xB8, 0xD7, 0xAF}, "Wyze-Mod",    "",               -66, true,  "Wyze module" },
     { DetectionType::CAMERA,      {0xF0, 0x27, 0x2D}, "Amazon",      "",               -62, true,  "Amazon device" },
