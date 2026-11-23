@@ -1,4 +1,4 @@
-V150-R4-FULL-DETECTION-R6-DEX-CRASH-FIX
+V150-R4-FULL-DETECTION-R7-DEX-BINGO-PARITY
 LAB PR #258, layered atop #257 R13 recovery with R12 CYD32 adaptive boot. Preserve ST7798 animation and CYD28 renderer.
 Full upstream v1.50 detection families (dashcam, fleet, hidden camera, router, glasses, smart speaker), Sony/Google setup and HomePod Siri, AirTag pairing/owner state, Google Find Hub frame, Flock FS, Axon BWC and BLE service-data UUID matching; info pages, emulator profiles and active LISTENER pill.
 Protect existing false-positive exclusions for generic Qualcomm Flock and generic FEAA Eddystone. New LISTENER off by default.
@@ -9,3 +9,4 @@ With both LISTENER and IBEACON explicitly enabled, category pills use three land
 Build #1077 host test corrected: the old assertion that Sonos 00:0E:58 be UNKNOWN is superseded by its v1.50 LISTENER classification, MED confidence, never ALPR.
 Build #1079 device-info regression corrected: added Flock-Cam SSID MORE INFO page and corresponding emulator profile.
 Build #1081 host dex_test crashed because increasing COUNT left Dex's last Entry value-initialized (null text pointers). Added a fully initialized LISTENER entry and host/source regression tests; no change to memory fallback or rendering.
+Added explicit LIST label in BINGO for the new opt-in smart-speaker type; full host and firmware gates remain mandatory.
