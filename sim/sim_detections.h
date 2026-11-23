@@ -107,6 +107,7 @@ inline const SimDetectionProfile kSimProfiles[] = {
     { DetectionType::HACKER,      {0x02, 0xC0, 0xCA}, "Hak5-LA",     "",               -63, true,  "Hak5 address" },
     { DetectionType::AXON,        {0x02,0xBA,0x01}, "Axon-BWC",     "", -70, false, "Axon BWC beacon" },
     { DetectionType::AXON,        {0x02,0xBA,0x02}, "BodyWorn",     "", -70, false, "BodyWorn device" },
+    { DetectionType::FLOCK,       {0x02,0xF1,0x23}, "Flock-Cam",     "", -68, true, "Flock Camera SSID" },
     // Upstream v1.50 families, reproducible simulator selectors for MORE INFO.
     { DetectionType::AXON,        {0x00,0x30,0x44}, "Cradlepoint",   "", -72, true,  "Fleet router" },
     { DetectionType::AXON,        {0x00,0x1D,0x96}, "WatchGuard",    "", -71, true,  "WatchGuard camera" },
