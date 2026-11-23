@@ -1,4 +1,4 @@
-V150-R4-FULL-DETECTION-R4-SONOS-TEST
+V150-R4-FULL-DETECTION-R5-FLOCK-CAM-DEVICE-PAGE
 LAB PR #258, layered atop #257 R13 recovery with R12 CYD32 adaptive boot. Preserve ST7798 animation and CYD28 renderer.
 Full upstream v1.50 detection families (dashcam, fleet, hidden camera, router, glasses, smart speaker), Sony/Google setup and HomePod Siri, AirTag pairing/owner state, Google Find Hub frame, Flock FS, Axon BWC and BLE service-data UUID matching; info pages, emulator profiles and active LISTENER pill.
 Protect existing false-positive exclusions for generic Qualcomm Flock and generic FEAA Eddystone. New LISTENER off by default.
@@ -7,3 +7,4 @@ Require exact-head full CYD 2.8 ST7789 / CYD 3.2 ST7798 firmware matrix, host te
 No production tag, merge, branch deletion or SquachEmit changes.
 With both LISTENER and IBEACON explicitly enabled, category pills use three landscape rows rather than clipping seven columns; default layout unchanged.
 Build #1077 host test corrected: the old assertion that Sonos 00:0E:58 be UNKNOWN is superseded by its v1.50 LISTENER classification, MED confidence, never ALPR.
+Build #1079 device-info regression corrected: added Flock-Cam SSID MORE INFO page and corresponding emulator profile.
