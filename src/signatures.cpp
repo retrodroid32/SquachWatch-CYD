@@ -580,6 +580,39 @@ static bool isPineapplePagerSsid(const char* ssid) {
                     strcasecmp(ssid, "pager-open") == 0);
 }
 
+bool isP2pCamSsid(const char* ssid) {
+    if (!ssid) return false;
+    const char* p = ssid;
+    int n = 0;
+    while (*p >= 'A' && *p <= 'Z') { p++; n++; }
+    if (n < 3 || n > 4 || *p != '-') return false;
+    p++;
+    for (int i = 0; i < 6; i++, p++) if (*p < '0' || *p > '9') return false;
+    if (*p != '-') return false;
+    p++;
+    for (int i = 0; i < 5; i++, p++) if (*p < 'A' || *p > 'Z') return false;
+    return *p == '\0';
+}
+
+// V380's setup hotspot: "MV" and the camera's UID, six or more digits.
+static bool isV380Ssid(const char* ssid) {
+    if (!ssid || ssid[0] != 'M' || ssid[1] != 'V') return false;
+    const char* p = ssid + 2;
+    int n = 0;
+    while (*p >= '0' && *p <= '9') { p++; n++; }
+    return n >= 6 && *p == '\0';
+}
+
+// The names that are a shape rather than a prefix. Shared by lookupSsid()
+// and ssidVendorName() so the two never disagree.
+static const char* ssidPatternName(const char* ssid) {
+    if (!ssid) return nullptr;
+    if (isP2pCamSsid(ssid))             return "P2P-Cam";
+    if (isV380Ssid(ssid))               return "V380";
+    if (strcasestr(ssid, "_VANTRUE_"))  return "Vantrue";
+    return nullptr;
+}
+
 DetectionType lookupSsid(const char* ssid) {
     if (!ssid) return DetectionType::UNKNOWN;
     if (isPineapplePagerSsid(ssid)) return DetectionType::HACKER;
@@ -591,6 +624,7 @@ DetectionType lookupSsid(const char* ssid) {
             return kSsidPrefixes[i].type;
         }
     }
+    if (ssidPatternName(ssid)) return DetectionType::CAMERA;
     return DetectionType::UNKNOWN;
 }
 
@@ -615,7 +649,7 @@ const char* ssidVendorName(const char* ssid) {
             return kSsidPrefixes[i].name;
         }
     }
-    return nullptr;
+    return ssidPatternName(ssid);
 }
 
 DetectionType lookupMfgId(uint16_t mfgId) {
@@ -667,16 +701,87 @@ bool isSeparatedFindMyPayload(const uint8_t* payload, uint8_t len) {
     return false;
 }
 
+static bool isAirTagPairing(const uint8_t* p, uint8_t left) {
+    // p points at 4C; needs 4C 00 07 19 xx 00 55.
+    return left >= 7 && p[0] == 0x4C && p[1] == 0x00 && p[2] == 0x07 && p[3] == 0x19 &&
+           p[5] == 0x00 && p[6] == 0x55;
+}
+
 bool isAirTagPayload(const uint8_t* payload, uint8_t len) {
     if (!payload || len < 4) return false;
     for (uint8_t i = 0; i + 3 < len; i++) {
         if (payload[i] == 0x1E && payload[i + 1] == 0xFF &&
-            payload[i + 2] == 0x4C && payload[i + 3] == 0x00) return true;
-        if (payload[i] == 0x4C && payload[i + 1] == 0x00 &&
-            payload[i + 2] == 0x12 && payload[i + 3] == 0x19) return true;
+            payload[i + 2] == 0x4C && payload[i + 3] == 0x00) {
+            // A 30-byte Apple block whose type byte is 0x07 is Proximity
+            // Pairing: an AirTag not yet set up (model 00 55), or AirPods and
+            // the other headphones, which used to come up as AIRTAG here.
+            // 0x12 is the offline-finding block a set-up tag sends. Anything
+            // else keeps the old loose match.
+            if (i + 4 < len && payload[i + 4] == 0x07)
+                return isAirTagPairing(payload + i + 2, (uint8_t)(len - i - 2));
+            return true;
+        }
+        if (payload[i] == 0x4C && payload[i + 1] == 0x00 && payload[i + 2] == 0x12 &&
+            (payload[i + 3] == 0x19 || payload[i + 3] == 0x02)) return true;
+        if (isAirTagPairing(payload + i, (uint8_t)(len - i))) return true;
     }
     return false;
 }
+
+// Apple's Continuity "Hey Siri" message (furiousMAC/continuity, hey_siri.md):
+// type 0x08, length 7 -- a perceptual hash (2), SNR (1), confidence (1), the
+// device class (2), a random byte (1). Class 0x0007 is a HomePod, and nothing
+// else sends it. It goes out only when somebody near it says "Hey Siri", so
+// a HomePod shows up rarely, but when it does there is no doubt about it.
+// The class is read both ways round: the write-up gives it as a UINT16
+// without saying which end comes first.
+bool isHomePodSiri(const uint8_t* mfg, uint8_t len) {
+    if (!mfg || len < 4 || mfg[0] != 0x4C || mfg[1] != 0x00) return false;
+    for (uint8_t i = 2; i + 1 < len; ) {
+        const uint8_t type = mfg[i], l = mfg[i + 1];
+        if ((uint16_t)i + 2 + l > len) return false;
+        if (type == 0x08 && l == 7) {
+            const uint8_t* v = mfg + i + 2;
+            return (v[4] == 0x00 && v[5] == 0x07) || (v[4] == 0x07 && v[5] == 0x00);
+        }
+        i = (uint8_t)(i + 2 + l);
+    }
+    return false;
+}
+
+uint8_t airTagFrame(const uint8_t* payload, uint8_t len, uint8_t* status) {
+    if (!payload || len < 4) return 0;
+    for (uint8_t i = 0; i + 3 < len; i++) {
+        if (payload[i] == 0x4C && payload[i + 1] == 0x00 && payload[i + 2] == 0x12 &&
+            (payload[i + 3] == 0x19 || payload[i + 3] == 0x02)) {
+            if (status) *status = (i + 4 < len) ? payload[i + 4] : 0;
+            return payload[i + 3];
+        }
+        // Not set up with a phone yet: 0x07, with the pairing prefix byte
+        // where the status would be.
+        if (isAirTagPairing(payload + i, (uint8_t)(len - i))) {
+            if (status) *status = payload[i + 4];
+            return 0x07;
+        }
+    }
+    return 0;
+}
+
+// The offline-finding block's status byte, when the advert has one:
+// 4C 00 12 19 <status> <key...>. 0 when it is not there. Bits 7-6 are the
+// battery and bit 5 is set while the tag has been near its owner's phone
+// lately (the public Find My write-ups call it "maintained"); clear means
+// it has been apart from its owner, which is the state it beeps in and the
+// state worth knowing about. Read off real tags on the bench before the
+// card leans on it harder than a chip.
+uint8_t airTagStatusByte(const uint8_t* payload, uint8_t len) {
+    if (!payload || len < 5) return 0;
+    for (uint8_t i = 0; i + 4 < len; i++)
+        if (payload[i] == 0x4C && payload[i + 1] == 0x00 &&
+            payload[i + 2] == 0x12 && payload[i + 3] == 0x19) return payload[i + 4];
+    return 0;
+}
+
 
 Confidence confidenceFor(DetectionType t) {
     // Per docs/DETECTIONS.md. This is the type-level fallback only;
