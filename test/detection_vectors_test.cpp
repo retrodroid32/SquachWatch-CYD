@@ -32,8 +32,19 @@ int main() {
     ck("separated Find My subtype is stronger evidence",
        isSeparatedFindMyPayload(findMy, sizeof findMy));
     const uint8_t applePairing[]={0x1E,0xFF,0x4C,0x00,0x07,0x19,0,0,0};
-    ck("ambiguous Apple proximity advert stays a candidate",
-       isAirTagPayload(applePairing, sizeof applePairing));
+    ck("ambiguous Apple pairing advert is rejected, not misreported as AirTag",
+       !isAirTagPayload(applePairing, sizeof applePairing));
+    // v1.50: actual unpaired AirTag model 00:55 versus AirPods/other
+    // Apple proximity-pairing frames sharing the same general prefix.
+    const uint8_t realAirTagPairing[] = {0x1E,0xFF,0x4C,0x00,0x07,0x19,0x05,0x00,0x55,0x10,0x00};
+    const uint8_t airPodsPairing[] = {0x1E,0xFF,0x4C,0x00,0x07,0x19,0x05,0x01,0x20,0x10,0x00};
+    const uint8_t nearbyAirTag[] = {0x04,0xFF,0x4C,0x00,0x12,0x02,0xA5};
+    ck("AirTag-specific unpaired model is detected",
+       isAirTagPayload(realAirTagPairing, sizeof realAirTagPairing));
+    ck("AirPods proximity pairing is not detected as an AirTag",
+       !isAirTagPayload(airPodsPairing, sizeof airPodsPairing));
+    ck("nearby-owner Find My frame is detected",
+       isAirTagPayload(nearbyAirTag, sizeof nearbyAirTag));
     ck("ambiguous Apple pairing advert is not separated Find My",
        !isSeparatedFindMyPayload(applePairing, sizeof applePairing));
     ck("generic Eddystone UUID is not a Google tracker",
