@@ -23,7 +23,7 @@ for phrase in ("isP2pCamSsid(", "isV380Ssid(", "ssidPatternName(",
                "_VANTRUE_", 'return "P2P-Cam"', 'return "V380"'):
     assert phrase in sig, "Missing hotspot matcher " + phrase
 for phrase in ("isHomePodSiri(", "airTagFrame(", "airTagStatusByte(",
-               "isFmdnPayload(", "fmdnFrameType(", "isAirTagPairing("):
+               "isFmdnPayload(", "fmdnFrameType("):
     assert phrase in sig and phrase in hdr, "Missing frame decoder " + phrase
 assert "DetectionType::LISTENER" in det
 assert "LISTENER = 18" in state and "COUNT   = 19" in state
@@ -38,6 +38,7 @@ assert "DetectionType::LISTENER, Rarity::COMMON" in (root / "src/dex.cpp").read_
 assert "0x16" in det and "uuid == 0xFEAA || uuid == 0xFFFA" in det
 assert "OWNER_WITH" in det and "OWNER_AWAY" in det
 assert "det.owner" in det
+assert "static bool isAirTagPairing(" in sig
 assert "isAirTagPairing(payload + i" in sig
 assert "payload[i + 3] == 0x02" in sig
 assert '"P2P-Cam|HDWifiCam|LookCam|TinyCam|V380|YCC365|Sricam|Yoosee|Zosi"' in info
