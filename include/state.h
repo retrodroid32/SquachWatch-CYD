@@ -237,7 +237,12 @@ struct Detection {
     // so the gap since the last ask is how long it was really gone. Sits in
     // what was padding.
     uint16_t       askedMin;
+    // Owner-state evidence from Find My / Find Hub broadcasts (v1.50).
+    uint8_t        owner;
 };
+
+// Unknown or not paired, near owner, separated from owner.
+enum : uint8_t { OWNER_UNKNOWN = 0, OWNER_WITH = 1, OWNER_AWAY = 2 };
 
 inline void detectionRssiInit(Detection& d, int8_t rssi, uint32_t nowMs) {
     d.rssi = rssi;
