@@ -542,6 +542,19 @@ bool isBareSerialName(const char* name) {
     return name[10] == '\0';
 }
 
+// Flock accessory name with a bounded hexadecimal serial.
+bool isFlockFsName(const char* name) {
+    if (!name || strncmp(name, "FS-", 3) != 0) return false;
+    uint8_t count = 0;
+    for (const char* p = name + 3; *p; ++p, ++count) {
+        if (count >= 12) return false;
+        const char ch = *p;
+        if (!((ch >= '0' && ch <= '9') || (ch >= 'A' && ch <= 'F') ||
+              (ch >= 'a' && ch <= 'f'))) return false;
+    }
+    return count >= 4;
+}
+
 DetectionType lookupBtName(const char* name) {
     if (!name) return DetectionType::UNKNOWN;
     for (uint16_t i = 0; i < kBtClassicCount; i++) {
@@ -562,8 +575,10 @@ DetectionType lookupBtName(const char* name) {
     }
     // Production classifier and host tests share the exact-length predicate.
     if (isBareSerialName(name)) return DetectionType::FLOCK;
+    if (isFlockFsName(name)) return DetectionType::FLOCK;
     if (strcasestr(name, "Pigvision")) return DetectionType::FLOCK;
     if (strcasestr(name, "Axon"))     return DetectionType::AXON;
+    if (strcasestr(name, "BodyWorn")) return DetectionType::AXON;
     // A Flipper advertises "Flipper " followed by the unit's name. The
     // owner can change it, which is exactly why a name match is graded
     // down where it is used -- it is a string, not a signature. Left in
@@ -785,6 +800,21 @@ uint8_t airTagStatusByte(const uint8_t* payload, uint8_t len) {
 
 // Google Find Hub service-data frames only. General Eddystone FEAA advertisements
 // are not enough to identify a tracker.
+// Axon body-camera activation tag in raw BLE advertising data.
+bool isAxonBwcPayload(const uint8_t* payload, uint8_t len) {
+    static const char word[] = "BWCDEVICE";
+    if (!payload || len < 9) return false;
+    for (uint8_t i = 0; i + 9 <= len; ++i) {
+        bool forward = true, reverse = true;
+        for (uint8_t j = 0; j < 9 && (forward || reverse); ++j) {
+            if (payload[i + j] != (uint8_t)word[j]) forward = false;
+            if (payload[i + j] != (uint8_t)word[8 - j]) reverse = false;
+        }
+        if (forward || reverse) return true;
+    }
+    return false;
+}
+
 uint8_t fmdnFrameType(const uint8_t* payload, uint8_t len) {
     if (!payload) return 0;
     for (uint8_t i = 0; i + 1 < len; ) {
