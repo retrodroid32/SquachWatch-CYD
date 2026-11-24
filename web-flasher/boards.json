@@ -198,6 +198,20 @@
       "cyd28": false,
       "note": "ESP32-S3/16MB; experimental dedicated build. Wi-Fi signature scan and hardware bring-up only; NOT the full CYD firmware, not ready for normal web flasher.",
       "manifest": "manifest-tdeck-plus.json"
+    },
+    {
+      "id": "freenove35-st77922",
+      "label": "Freenove FNK0104N 3.5-inch ST77922 (LAB)",
+      "manifest": "manifest-freenove35-st77922.json",
+      "visible": false,
+      "ci": true,
+      "release": false,
+      "sign": false,
+      "shared_esp32": false,
+      "merged": false,
+      "lab": true,
+      "cyd28": false,
+      "note": "ESP32-S3 16MB QSPI ST77922 + I2C capacitive touch 0x55. Experimental hardware bring-up and v1.50 Wi-Fi signature scanner. NOT a full SquachWatch UI."
     }
   ]
 }
