@@ -98,6 +98,26 @@ jobs:
             '${{ github.event.pull_request.number }}' '${{ github.event.pull_request.head.sha }}' "$(git rev-parse HEAD)" \
             > lab-firmware/BUILD-INFO.txt
           test "$(stat -c%s lab-firmware/otadata.bin)" -eq 8192
+      # Dedicated ESP32-S3 artifact. Do not package this with classic ESP32
+      # boards or expose it as an unvalidated production flasher option.
+      - name: Package T-Deck Plus experimental LAB firmware
+        if: github.event_name == 'pull_request'
+        run: |
+          set -euo pipefail
+          mkdir -p lab-tdeck-plus
+          cp .pio/build/tdeck-plus/firmware.bin lab-tdeck-plus/firmware.bin
+          cp .pio/build/tdeck-plus/bootloader.bin lab-tdeck-plus/bootloader.bin
+          cp .pio/build/tdeck-plus/partitions.bin lab-tdeck-plus/partitions.bin
+          printf 'EXPERIMENTAL LILYGO T-DECK PLUS\nPR head: %s\nBoard: ESP32-S3 16MB\nGPIO10 power, ST7789 320x240, GT911, keyboard, GPS\nWiFi signatures only; full SquachWatch not yet ported\nDo not flash classic CYD binaries to T-Deck Plus\n' \
+            '${{ github.event.pull_request.head.sha }}' > lab-tdeck-plus/BUILD-INFO.txt
+      - name: Upload T-Deck Plus LAB firmware
+        if: github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v7
+        with:
+          name: lab-pr-${{ github.event.pull_request.number }}-tdeck-plus
+          path: lab-tdeck-plus/
+          if-no-files-found: error
+          retention-days: 14
       - name: Upload classic CYD LAB firmware
         if: github.event_name == 'pull_request'
         uses: actions/upload-artifact@v7
