@@ -31,7 +31,15 @@
 // Board hardware is the exact SquachWatch upstream ST77922 implementation,
 // not the earlier experimental SPI command/animation copy.
 // 320x480 panel is native portrait. Reuse 2.8-CYD app's screen renderers.
-namespace HW {constexpr int W=320,H=480;}
+namespace HW {constexpr int PW=320,PH=480; int W=PW,H=PH; uint8_t rotation=0;}
+static void panelToUI(uint16_t px,uint16_t py,uint16_t& x,uint16_t& y){
+  switch(HW::rotation){
+    case 1:x=py;y=HW::PW-1-px;break;
+    case 2:x=HW::PW-1-px;y=HW::PH-1-py;break;
+    case 3:x=HW::PH-1-py;y=px;break;
+    default:x=px;y=py;break;
+  }
+}
 static TFT_eSPI dummy;
 static TFT_eSprite view(&dummy);
 static bool screenOk=false,touchOk=false;
@@ -60,7 +68,7 @@ static bool startTouch(){
   St77922::reinit();
   return St77922Touch::probe();
 }
-static bool pollTouch(){return touchOk&&St77922Touch::read(touchX,touchY);}
+static bool pollTouch(){uint16_t px=0,py=0;if(!touchOk||!St77922Touch::read(px,py))return false;panelToUI(px,py,touchX,touchY);return true;}
 static void applyPanelColors(){
   static int previousInvert=-1, previousSwap=-1;
   const int inv=Settings::inverted()?1:0;
@@ -80,14 +88,19 @@ static bool present(){
   // then streams QSPI pixel chunks with 0x3C (continuation). Do not
   // substitute the 0x2C quad command used by the broken LAB firmware.
   St77922::wait();
-  St77922::setWindow(0,0,HW::W-1,HW::H-1);
+  St77922::setWindow(0,0,HW::PW-1,HW::PH-1);
   size_t offset=0,remaining=(size_t)HW::W*HW::H;
   bool first=true;
   while(remaining){
     size_t n=remaining<CHUNK_PX?remaining:CHUNK_PX;
     St77922::wait();  // bounce memory must be reusable before rewriting
     // TFT_eSprite 16-bit storage is already high-byte-first; do not swap twice.
-    memcpy(dmaFrameChunk,src+offset,n*sizeof(uint16_t));
+    if(HW::rotation==0)memcpy(dmaFrameChunk,src+offset,n*sizeof(uint16_t));
+    else for(size_t i=0;i<n;i++){
+      const size_t p=offset+i;uint16_t x,y;
+      panelToUI(p%HW::PW,p/HW::PW,x,y);
+      dmaFrameChunk[i]=src[(size_t)y*HW::W+x];
+    }
     if(!St77922::queuePixels(dmaFrameChunk,n,first)){
       ++frameErrors;
       Serial.printf("[freenove35] upstream QSPI queue FAIL count=%lu\n",(unsigned long)frameErrors);
@@ -128,9 +141,9 @@ static void enterSettings(){
   activeView=View::SETTINGS;
   uiSettingsInit(view);
 }
-static void enterLog(){
+static void enterLog(DetectionType category=DetectionType::UNKNOWN){
   activeView=View::LOG;
-  uiLogSetCategory(DetectionType::UNKNOWN);
+  uiLogSetCategory(category);
   uiLogInit(view);
 }
 static void enterRawScan(bool ble){
@@ -140,11 +153,33 @@ static void enterRawScan(bool ble){
   else engine.startRawWifiScan();
   uiRawScanInit(view,ble);
 }
+static bool setRotation(uint8_t next){
+  const uint8_t old=HW::rotation;
+  next&=3;
+  if(next==old)return true;
+  view.deleteSprite();
+  HW::rotation=next;
+  HW::W=(next&1)?HW::PH:HW::PW;
+  HW::H=(next&1)?HW::PW:HW::PH;
+  if(!view.createSprite(HW::W,HW::H)){
+    HW::rotation=old;
+    HW::W=(old&1)?HW::PH:HW::PW;
+    HW::H=(old&1)?HW::PW:HW::PH;
+    if(!view.createSprite(HW::W,HW::H))screenOk=false;
+    return false;
+  }
+  Settings::saveRotation(next);
+  Squachy::trigger(Squachy::Event::ROTATED);
+  return true;
+}
 static void handleTouch(uint16_t x,uint16_t y){
   const uint32_t now=millis();
   if((uint32_t)(now-lastTouchAt)<180)return;
   lastTouchAt=now;
   if(activeView==View::BOOT){enterClear();return;}
+  if(!Settings::rotationLocked()&&Theme::rotateButtonHit(x,y,HW::W)){
+    setRotation((HW::rotation+1)&3);return;
+  }
   if(Theme::settingsButtonHit(x,y)){
     if(activeView!=View::SETTINGS) enterSettings();
     else if(uiSettingsCurrentPage()!=SettingsPage::MAIN)
@@ -153,6 +188,10 @@ static void handleTouch(uint16_t x,uint16_t y){
     return;
   }
   if(activeView==View::CLEAR){
+    if(!scanPicker){
+      const DetectionType category=uiClearCategoryHit(x,y,HW::W,HW::H);
+      if(category!=DetectionType::UNKNOWN){enterLog(category);return;}
+    }
     const ButtonId hit=Theme::hitTestButtonBar(x,y,HW::W,HW::H);
     if(hit==ButtonId::LOG){Squachy::trigger(Squachy::Event::LOG_OPENED);enterLog();return;}
     if(scanPicker){
@@ -250,6 +289,7 @@ void setup(){
   if(!screenOk)return;
   randomSeed(esp_random());
   Settings::load();
+  setRotation(Settings::rotation());
   Clock::begin();
   // No CYD SD mount; engine SD initialization is guarded for this board.
   // Onboard ESP32-S3 WiFi/BLE are started by the real detection engine.
