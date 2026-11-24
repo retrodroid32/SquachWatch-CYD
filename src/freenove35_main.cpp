@@ -10,6 +10,20 @@
 #include <driver/spi_master.h>
 #include <esp_heap_caps.h>
 #include "signatures.h"
+#include "ui_boot.h"
+#include "ui_clear.h"
+#include "ui_settings.h"
+#include "ui_log.h"
+#include "theme.h"
+#include "settings.h"
+#include "detection.h"
+#include "squachy.h"
+#include "clock.h"
+#include "notices.h"
+#include "bingo.h"
+#include "dex.h"
+#include "regulars.h"
+
 
 namespace HW {
 constexpr int W=320, H=480;
@@ -194,120 +208,165 @@ static bool pollTouch(){
   touchX=x;touchY=y;++touches;
   return true;
 }
-static void textLine(int y,const char *t,uint16_t color=TFT_WHITE,int scale=2){
-  view.setTextColor(color,TFT_BLACK);view.drawString(t,12,y,scale);
+
+// The same art, fonts, mascot, animations, button geometry, and settings
+// modules as main.cpp. Only the hardware framebuffer and touch transfer are
+// board-specific. Avoid a second imitation dashboard.
+static DetectionEngine engine;
+enum class View : uint8_t { BOOT, CLEAR, SETTINGS, LOG };
+static View activeView=View::BOOT;
+static uint32_t bootAt=0, lastTouchAt=0;
+static bool touchHeld=false, radioReady=false;
+static uint32_t lastUITick=0, lastRuntimeTick=0;
+static void enterClear(){
+  activeView=View::CLEAR;
+  uiClearInit(view);
 }
-static void render(){
-  if(!view.getPointer())return;
-  view.fillSprite(TFT_BLACK);
-  view.fillRect(0,0,HW::W,38,TFT_DARKCYAN);
-  view.setTextColor(TFT_WHITE,TFT_DARKCYAN);
-  view.drawString("SQUACHWATCH",12,8,4);
-  textLine(48,"FREENOVE 3.5  FNK0104N",TFT_CYAN);
-  textLine(73,"ST77922 / ESP32-S3  LAB R1",TFT_CYAN);
-  char line[100];
-  if(page==0){
-    textLine(112,"HARDWARE",TFT_YELLOW,4);
-    snprintf(line,sizeof(line),"PSRAM %s (%lu MB)",psramFound()?"OK":"MISSING",
-      (unsigned long)(ESP.getPsramSize()/1048576));textLine(164,line);
-    snprintf(line,sizeof(line),"Heap %lu / largest %lu",
-      (unsigned long)ESP.getFreeHeap(),
-      (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));textLine(193,line);
-    snprintf(line,sizeof(line),"Touch %s  FW %d",touchOk?"OK":"NOT DETECTED",touchVersion);textLine(222,line);
-    snprintf(line,sizeof(line),"Touches %lu  XY %u,%u",
-      (unsigned long)touches,touchX,touchY);textLine(251,line);
-    snprintf(line,sizeof(line),"Battery ADC GPIO8: %u",lastBattery);textLine(280,line);
-    textLine(330,"ST77922 4-LANE QSPI",TFT_GREEN);
-    textLine(355,"WiFi v1.50 signature table",TFT_GREEN);
-  }else if(page==1){
-    textLine(112,"WI-FI SCAN",TFT_YELLOW,4);
-    snprintf(line,sizeof(line),"Networks: %d",networks);textLine(166,line);
-    snprintf(line,sizeof(line),"Signature hits: %d",matches);textLine(193,line);
-    textLine(240,lastSeen,TFT_GREEN);
-    textLine(283,scanning?"SCAN RUNNING":"Next scan <= 20s",TFT_CYAN);
-    textLine(323,"Full details on USB serial");
-  }else{
-    textLine(112,"NEXT DEVELOPMENT",TFT_YELLOW,4);
-    textLine(170,"BLE radio + detection engine");
-    textLine(201,"WATCH / HUNT + UI");
-    textLine(232,"SDMMC logging + file browser");
-    textLine(263,"SquachMesh + alerts");
-    textLine(306,"Hardware LAB bring-up only",TFT_ORANGE);
+static void enterSettings(){
+  activeView=View::SETTINGS;
+  uiSettingsInit(view);
+}
+static void enterLog(){
+  activeView=View::LOG;
+  uiLogSetCategory(DetectionType::UNKNOWN);
+  uiLogInit(view);
+}
+static void handleTouch(uint16_t x,uint16_t y){
+  const uint32_t now=millis();
+  if((uint32_t)(now-lastTouchAt)<180)return;
+  lastTouchAt=now;
+  if(activeView==View::BOOT){enterClear();return;}
+  if(Theme::settingsButtonHit(x,y)){
+    if(activeView!=View::SETTINGS) enterSettings();
+    else if(uiSettingsCurrentPage()!=SettingsPage::MAIN)
+      uiSettingsOpenPage(uiSettingsParentPage());
+    else enterClear();
+    return;
   }
-  view.drawFastHLine(0,421,HW::W,TFT_DARKGREY);
-  view.setTextColor(TFT_WHITE,TFT_BLACK);
-  view.drawString("TAP LEFT = BACK",12,430,2);
-  view.drawString("TAP RIGHT = NEXT",12,453,2);
-  if(!present())Serial.println("[freenove35] QSPI transfer error");
-  lastDraw=millis();
-}
-static void startWifi(){
-  WiFi.scanDelete();
-  int r=WiFi.scanNetworks(true,false,false,180);
-  scanning=(r==-1||r>=0);
-  lastScan=millis();
-}
-static void pollWifi(){
-  if(scanning){
-    int n=WiFi.scanComplete();
-    if(n==-1)return;
-    scanning=false; networks=max(n,0);matches=0;
-    for(int i=0;i<networks;++i){
-      String ssid=WiFi.SSID(i);
-      String macStr=WiFi.BSSIDstr(i);
-      unsigned int macParts[6]={};
-      uint8_t mac[6]={};
-      if(sscanf(macStr.c_str(),"%02x:%02x:%02x:%02x:%02x:%02x",
-        &macParts[0],&macParts[1],&macParts[2],&macParts[3],&macParts[4],&macParts[5])==6)
-        for(int k=0;k<6;++k)mac[k]=(uint8_t)macParts[k];
-      Confidence conf=Confidence::LOW_CONF;
-      DetectionType d=lookupSsid(ssid.c_str());
-      if(d==DetectionType::UNKNOWN)d=lookupOui(mac,&conf);
-      if(d!=DetectionType::UNKNOWN){
-        ++matches;
-        snprintf(lastSeen,sizeof(lastSeen),"%s / %.30s",detectionTypeName(d),ssid.c_str());
-        Serial.printf("[DETECT] %s %s %s RSSI=%d\n",detectionTypeName(d),
-          ssid.c_str(),macStr.c_str(),WiFi.RSSI(i));
-      }
+  if(activeView==View::CLEAR){
+    const ButtonId hit=Theme::hitTestButtonBar(x,y,HW::W,HW::H);
+    if(hit==ButtonId::LOG){Squachy::trigger(Squachy::Event::LOG_OPENED);enterLog();return;}
+    if(hit==ButtonId::SCAN){
+      // The native SCAN picker requires its full scanner UI. The
+      // detection engine continues passive BLE/WiFi scans in the meantime.
+      Theme::showToast("SCANNING","BLE + WIFI ACTIVE",Theme::CYAN);
+      return;
     }
-    Serial.printf("[freenove35] networks=%d matches=%d\n",networks,matches);
-    WiFi.scanDelete();redraw=true;
+    if(hit==ButtonId::CLR){enterLog();return;}
+    if(!Settings::backgroundLocked()&&(x<HW::W/10||x>=HW::W-HW::W/10)){
+      if(x<HW::W/10)Settings::cyclePrevBackground();
+      else Settings::cycleBackground();
+      return;
+    }
+    if(Squachy::hitTest(x,y)){Squachy::trigger(Squachy::Event::PETTED);return;}
+  }else if(activeView==View::SETTINGS){
+    if(uiSettingsTapPinnedBack(view,x,y,HW::W,HW::H)){
+      if(uiSettingsCurrentPage()==SettingsPage::MAIN)enterClear();
+      else uiSettingsOpenPage(uiSettingsParentPage());
+      return;
+    }
+    const SettingsRow choice=uiSettingsHitTest(view,x,y,HW::W,HW::H);
+    switch(choice){
+      case SettingsRow::APPEARANCE:uiSettingsOpenPage(SettingsPage::APPEARANCE);break;
+      case SettingsRow::SYSTEM:uiSettingsOpenPage(SettingsPage::SYSTEM);break;
+      case SettingsRow::DESK_MODE:uiSettingsOpenPage(SettingsPage::DESK);break;
+      case SettingsRow::BACK:
+        if(uiSettingsCurrentPage()==SettingsPage::MAIN)enterClear();
+        else uiSettingsOpenPage(uiSettingsParentPage());
+        break;
+      case SettingsRow::THEME:Settings::cyclePalette();break;
+      case SettingsRow::BACKGROUND:Settings::cycleBackground();break;
+      case SettingsRow::BACKGROUND_LOCK:Settings::toggleBackgroundLocked();break;
+      case SettingsRow::INVERT:Settings::toggleInvert();break;
+      case SettingsRow::RGB_SWAP:Settings::toggleRgbSwap();break;
+      case SettingsRow::BORING_MODE:Settings::toggleBoringMode();break;
+      case SettingsRow::ROTATION_LOCK:Settings::toggleRotationLock();break;
+      case SettingsRow::SHOW_WIFI_ICON:Settings::toggleWifiIcon();break;
+      case SettingsRow::SHOW_SD_ICON:Settings::toggleSdIcon();break;
+      case SettingsRow::PRIVACY:Settings::togglePrivacyMode();break;
+      case SettingsRow::FONTS:uiSettingsOpenPage(SettingsPage::FONTS);break;
+      default:
+        if(choice!=SettingsRow::NONE)Theme::showToast("FREENOVE LAB","PORT IN PROGRESS",Theme::AMBER);
+        break;
+    }
+  }else if(activeView==View::LOG){
+    if(uiLogCategoryHitBack(x,y,HW::W,HW::H)){enterClear();return;}
+    if(y>HW::H-65){enterClear();return;}
+    const LogViewTap v=uiLogHitView(x,y,HW::W,HW::H);
+    if(v==LogViewTap::DEVICES)uiLogSetView(LogView::DEVICES);
+    else if(v==LogViewTap::EVENTS)uiLogSetView(LogView::EVENTS);
+    else uiLogScroll(y>HW::H/2?1:-1);
   }
-  if(!scanning&&millis()-lastScan>=20000)startWifi();
+}
+static void renderOriginal(uint32_t now){
+  // Source-accurate UI. All drawing goes to the PSRAM-backed TFT_eSprite;
+  // the ST77922 QSPI push is the only board-specific rendering layer.
+  switch(activeView){
+    case View::BOOT:uiBootTick(view,now,HW::W,HW::H,true);break;
+    case View::CLEAR:uiClearTick(view,now,engine,true,false,HW::W,HW::H);break;
+    case View::SETTINGS:uiSettingsTick(view,now,engine,false,true);break;
+    case View::LOG:
+      uiLogTick(view,now,engine,0,false,nullptr,false,nullptr,nullptr,
+                false,false,false,HW::W,HW::H,true);
+      break;
+  }
+  if(!present())Serial.println("[freenove35] ST77922 transfer failed");
+  lastDraw=now;
 }
 void setup(){
   Serial.begin(115200);
   delay(200);
-  Serial.println("\n[SQUACHWATCH] Freenove FNK0104N / ST77922 LAB R1");
-  Serial.printf("PSRAM %s, size=%lu\n",psramFound()?"YES":"NO",
-    (unsigned long)ESP.getPsramSize());
+  Serial.println("\n[SQUACHWATCH] FNK0104N native SquachWatch UI + detection R2");
+  Serial.printf("[boot] PSRAM %s (%lu MB)\n",psramFound()?"yes":"NO",
+    (unsigned long)(ESP.getPsramSize()/1048576));
   screenOk=startPanel();
-  Serial.printf("ST77922 QSPI panel %s\n",screenOk?"INIT OK":"FAILED");
   touchOk=startTouch();
-  Serial.printf("Capacitive touch 0x55 %s, firmware=%u\n",touchOk?"FOUND":"NO ANSWER",touchVersion);
+  Serial.printf("[hw] ST77922=%d touch 0x55=%d fw=%u\n",
+                (int)screenOk,(int)touchOk,(unsigned)touchVersion);
   view.setColorDepth(16);
   if(!view.createSprite(HW::W,HW::H)){
-    Serial.println("[freenove35] Cannot allocate 320x480 frame in PSRAM");
+    Serial.println("[fatal] No PSRAM-backed native 320x480 RGB565 frame");
     screenOk=false;
   }
-  analogReadResolution(12);
-  WiFi.mode(WIFI_STA);WiFi.disconnect(false,false);
-  startWifi();
-  lastBattery=analogRead(HW::BAT_ADC);
-  render();
+  if(!screenOk)return;
+  randomSeed(esp_random());
+  Settings::load();
+  Clock::begin();
+  // No CYD SD mount; engine SD initialization is guarded for this board.
+  // Onboard ESP32-S3 WiFi/BLE are started by the real detection engine.
+  radioReady=engine.init();
+  Serial.printf("[radio] detector=%s\n",radioReady?"OK":"FAILED");
+  Bingo::begin(engine);
+  Dex::begin();
+  Regulars::begin();
+  Squachy::setIdleProvider([](){return Notices::idleLine(engine);});
+  Squachy::trigger(Squachy::Event::BOOTED,DetectionType::UNKNOWN,engine.lifetimeTotal());
+  uiBootInit(view);
+  bootAt=millis();
+  activeView=View::BOOT;
+  renderOriginal(bootAt);
 }
 void loop(){
-  pollWifi();
-  static bool pressed=false;
-  if(pollTouch()){
-    if(!pressed){
-      page=(uint8_t)((page+(touchX>=HW::W/2?1:2))%3);
-      redraw=true;
-    }
-    pressed=true;
-  }else pressed=false;
-  if(millis()-lastDraw>=1500){lastBattery=analogRead(HW::BAT_ADC);redraw=true;}
-  if(redraw){redraw=false;render();}
-  delay(10);
+  if(!screenOk){delay(500);return;}
+  const uint32_t now=millis();
+  if(radioReady)engine.loop();
+  if(now-lastRuntimeTick>=100){
+    lastRuntimeTick=now;
+    Clock::tick(now);
+    Bingo::tick(now);Dex::tick(now);Regulars::tick(now);
+  }
+  // GT911-style level handling is NOT used; ST77922 touch reports a
+  // valid point while pressed. Only process the first press in a gesture.
+  bool down=pollTouch();
+  if(down&&!touchHeld)handleTouch(touchX,touchY);
+  touchHeld=down;
+  if(activeView==View::BOOT&&now-bootAt>=3100)enterClear();
+  // ST77922 QSPI: a complete 307KB frame costs much more than classic CYD.
+  // Cap physical push rate; all UI timing uses actual millis().
+  if(now-lastUITick>=120){
+    lastUITick=now;
+    renderOriginal(now);
+  }
+  delay(4);
 }
 #endif // FREENOVE35_N
