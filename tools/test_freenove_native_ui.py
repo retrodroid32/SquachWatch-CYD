@@ -36,6 +36,12 @@ for token, label in required.items():
     require(token in source, "FNK0104N missing: " + label)
 require("#if !defined(FREENOVE35_N)" in detector and "_sd.begin()" in detector,
         "Classic CYD SPI SD probing must be guarded on FNK0104N")
+require("tx.base.cmd=0x32;tx.base.addr=0x2C00" in source,
+        "ST77922 QSPI must start RAMWR after every new drawing window")
+require("tx.base.addr=0x3C00" not in source,
+        "RAMWRC breaks new-address-window rendering on FNK0104N")
+require("frameErrors" in source and "LCD frames=" in source,
+        "Provide serial diagnostics for frozen/scrambled LCD reports")
 require("complete functional parity" in docs.lower(),
         "Do not claim that R2 means all existing fork features have shipped")
 print("Freenove native SquachWatch UI/source guard PASS")
