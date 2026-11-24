@@ -1,3 +1,9 @@
+## R5 — upstream SquachWatch ST77922 driver replacement
+
+The R1-R4 custom QSPI controller produced a static scrambled display in real hardware testing. **Replaced the custom SPI transaction layer with the exact upstream SquachWatch `src/st77922_qspi.cpp` and `src/st77922_touch.cpp` drivers**, sourced from `skizzophrenic/SquachWatch-CYD` (FNK0104N). The Freenove entry point now calls `St77922::begin()`, `St77922Touch::begin()`, `St77922::reinit()`, and streams native 320x480 RGB565 sprite pixels via `St77922::setWindow()` and `St77922::queuePixels()`. The original SquachWatch fork's assets, animation, radio scanner and screen widgets are unchanged.
+
+The working upstream driver explicitly sends single-lane 0x2C RAMWR before 0x3C QSPI continuation pixels; the earlier experimental driver sent mismatched commands. It also uses the real board's SPI2 IOMUX pin mapping. Limit first hardware trial to a conservative 40 MHz clock via `SQW_QSPI_HZ`. Verify a live moving Squachy screen and screenshot/frame integrity at boot. RGB byte order and touch input still require real device verification.
+
 # Freenove FNK0104N 3.5-inch — SquachWatch native UI R2
 
 **R2 changes the firmware's primary screen to the real SquachWatch interface.** The old R1 hardware diagnostic dashboard was not the requested product and is replaced.
