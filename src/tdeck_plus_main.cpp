@@ -1,3 +1,4 @@
+#if defined(TDECK_PLUS)
 // SquachWatch T-Deck Plus R1 — USB-flashable hardware bring-up / Wi-Fi detector.
 // Standalone from the CYD firmware until GT911/SD/GPS/keyboard hardware validation.
 // Hardware mapping: official LILYGO T-Deck Plus / ESP32-S3FN16R8.
@@ -216,7 +217,6 @@ static void pollControls() {
 }
 void setup() {
     Serial.begin(115200);
-    Serial.setTxTimeoutMs(0);
     delay(200);
     Serial.println("\n[SQUACHWATCH] T-Deck Plus experimental hardware R1");
     // Isolate all other SPI CS lines before initializing the display.
@@ -261,3 +261,5 @@ void loop() {
     }
     delay(5);
 }
+
+#endif  // TDECK_PLUS: do not compile this sketch for classic CYD, T-Watch or Freenove
