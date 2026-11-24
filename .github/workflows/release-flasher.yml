@@ -600,10 +600,20 @@ jobs:
           # page without changing normal production board choices.
           page = "_site/index.html"
           html = open(page, encoding="utf-8").read()
-          needle = "'./manifest-lab-twatch-s3.json'].forEach(function (path)"
-          if needle not in html:
-              raise SystemExit("LAB board picker markup changed; refusing blind patch")
-          html = html.replace(needle, "'./manifest-lab-twatch-s3.json', './manifest-lab-tdeck-plus.json', './manifest-lab-freenove35-st77922.json'].forEach(function (path)", 1)
+          # The published LAB picker may already contain T-Deck from an
+          # earlier deployment. Extend its array idempotently rather than
+          # assuming the original T-Watch must still be its final item.
+          start = html.find("function addLabOptions()")
+          end = html.find("].forEach(function (path)", start)
+          if start < 0 or end < 0 or end - start > 3000:
+              raise SystemExit("LAB picker array not found; refusing unrelated HTML edits")
+          picker = html[start:end]
+          for board in ("tdeck-plus", "freenove35-st77922"):
+              filename = "./manifest-lab-" + board + ".json"
+              if filename not in picker:
+                  html = html[:end] + ", '" + filename + "'" + html[end:]
+                  end += len(", '" + filename + "'")
+                  picker = html[start:end]
           open(page, "w", encoding="utf-8").write(html)
           # LAB firmware may require an updated OTA partition layout.
           # The mirrored production esp32-partitions.bin must remain
