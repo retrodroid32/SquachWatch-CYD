@@ -1099,6 +1099,7 @@ bool DetectionEngine::init() {
     }
 
     // 5. SD card (best-effort), now that the radios have what they need.
+#if !defined(FREENOVE35_N)
     _sd.begin();
 #if !(defined(CYD) && !defined(CYD32) && !defined(CYD35) && !defined(AWOK) && !defined(RLPHANTOM) && !defined(RLPHANTOM_R))
     _sd.startMonitor();  // other boards preserve original startup behavior
@@ -1107,6 +1108,11 @@ bool DetectionEngine::init() {
     // run; the 2.8 boot log shows the SD stack exhausting its last block.
 #endif
 
+#else
+    // FNK0104N shares LCD/SD resources differently from CYD. Never start
+    // the classic SPI SD implementation on an unvalidated QSPI panel bus.
+    Serial.println("[freenove35] SD deferred until dedicated SDMMC driver");
+#endif
     return true;
 }
 
