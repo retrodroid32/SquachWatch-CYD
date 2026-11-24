@@ -28,7 +28,7 @@ required = {
     "Squachy::trigger(": "original mascot behavior",
     "Settings::cycleBackground(": "background selection",
     "Settings::cyclePrevBackground(": "backward background selection",
-    "spi_device_polling_transmit(": "actual ST77922 QSPI transfer",
+    "St77922::queuePixels(": "exact upstream ST77922 QSPI transfer",
     "present()": "LCD framebuffer push",
     "pollTouch()": "capacitive touch input",
 }
@@ -36,10 +36,15 @@ for token, label in required.items():
     require(token in source, "FNK0104N missing: " + label)
 require("#if !defined(FREENOVE35_N)" in detector and "_sd.begin()" in detector,
         "Classic CYD SPI SD probing must be guarded on FNK0104N")
-require("tx.base.cmd=0x32;tx.base.addr=0x2C00" in source,
-        "ST77922 QSPI must start RAMWR after every new drawing window")
-require("tx.base.addr=0x3C00" not in source,
-        "RAMWRC breaks new-address-window rendering on FNK0104N")
+upstream_qspi = (ROOT / "src/st77922_qspi.cpp").read_text()
+upstream_touch = (ROOT / "src/st77922_touch.cpp").read_text()
+require("-DFREENOVE_S3_35=1" in profile and "St77922::begin()" in source,
+        "Freenove must use the actual SquachWatch upstream hardware driver")
+require("RAM_WRITE, nullptr, 0" in upstream_qspi and "RAM_CONTINUE << 8" in upstream_qspi,
+        "Keep upstream's RAMWR command followed by RAMWRC QSPI pixel streaming")
+require("St77922::reinit()" in source and "St77922Touch::begin" in source,
+        "Reinitialize the panel after integrated capacitive-touch reset")
+require("REG_POINT0" in upstream_touch, "Keep upstream ST77922 touch reporting")
 require("frameErrors" in source and "LCD frames=" in source,
         "Provide serial diagnostics for frozen/scrambled LCD reports")
 require("complete functional parity" in docs.lower(),
