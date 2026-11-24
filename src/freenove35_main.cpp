@@ -129,7 +129,10 @@ static bool panelPixels(const uint8_t *data,size_t bytes){
   spi_transaction_ext_t tx={};
   tx.base.flags=SPI_TRANS_MODE_QIO|SPI_TRANS_VARIABLE_CMD|SPI_TRANS_VARIABLE_ADDR;
   tx.command_bits=8;tx.address_bits=24;
-  tx.base.cmd=0x32;tx.base.addr=0x3C00;
+  // Every band sets a NEW 2A/2B address window. It must start with
+  // RAMWR (0x2C), not RAMWRC (0x3C), which is legal only for continuing
+  // an already active window. 0x3C caused the previous frozen/noisy LCD.
+  tx.base.cmd=0x32;tx.base.addr=0x2C00;
   tx.base.length=bytes*8;tx.base.tx_buffer=data;
   return spi_device_polling_transmit(spiPanel,reinterpret_cast<spi_transaction_t*>(&tx))==ESP_OK;
 }
@@ -160,8 +163,12 @@ static bool startPanel(){
   // The Freenove 3.5 has a native 320x480 portrait pixel map; this
   // diagnostic R1 draws in native orientation (no axis-swap support).
   digitalWrite(HW::BL,HIGH);
+  Serial.printf("[freenove35] ST77922 QSPI clock=%uHz write=RAMWR 0x2C width=%d height=%d\n",
+     40000000,HW::W,HW::H);
   return true;
 }
+static uint32_t frameCount=0, frameErrors=0;
+static uint32_t lastFrameReport=0;
 static bool present(){
   if(!screenOk||!view.getPointer())return false;
   const uint16_t *pixels=(const uint16_t*)view.getPointer();
@@ -175,8 +182,22 @@ static bool present(){
       dmaBuffer[i*2+1]=uint8_t(c);
     }
     if(!window(0,y,HW::W-1,y+count-1)||
-       !panelPixels(dmaBuffer,count*HW::W*2))return false;
+       !panelPixels(dmaBuffer,count*HW::W*2)){
+      frameErrors++;
+      if(frameErrors<=5 || (frameErrors%100)==0)
+        Serial.printf("[freenove35] QSPI band write FAIL y=%d rows=%d errors=%lu\n",
+          y,count,(unsigned long)frameErrors);
+      return false;
+    }
     delay(0);
+  }
+  ++frameCount;
+  uint32_t now=millis();
+  if((uint32_t)(now-lastFrameReport)>=5000){
+    Serial.printf("[freenove35] LCD frames=%lu errors=%lu heap=%lu psram=%lu\n",
+      (unsigned long)frameCount,(unsigned long)frameErrors,
+      (unsigned long)ESP.getFreeHeap(),(unsigned long)ESP.getFreePsram());
+    lastFrameReport=now;
   }
   return true;
 }
