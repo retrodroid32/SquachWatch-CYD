@@ -118,6 +118,23 @@ jobs:
           path: lab-tdeck-plus/
           if-no-files-found: error
           retention-days: 14
+      - name: Package Freenove FNK0104N 3.5 LAB firmware
+        if: github.event_name == 'pull_request'
+        run: |
+          set -euo pipefail
+          mkdir -p lab-freenove35-st77922
+          cp .pio/build/freenove35-st77922/firmware.bin lab-freenove35-st77922/firmware.bin
+          cp .pio/build/freenove35-st77922/bootloader.bin lab-freenove35-st77922/bootloader.bin
+          cp .pio/build/freenove35-st77922/partitions.bin lab-freenove35-st77922/partitions.bin
+          printf 'LAB FNK0104N ESP32-S3 3.5in ST77922 QSPI / touch 0x55\nsource %s\nExperimental display/touch/WiFi signature scanner ONLY\nNo CYD, FNK0104B, or T-Deck firmware may be flashed here.\n' '${{ github.event.pull_request.head.sha }}' > lab-freenove35-st77922/BUILD-INFO.txt
+      - name: Upload Freenove 3.5 LAB firmware
+        if: github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v7
+        with:
+          name: lab-pr-${{ github.event.pull_request.number }}-freenove35-st77922
+          path: lab-freenove35-st77922/
+          retention-days: 14
+          if-no-files-found: error
       - name: Upload classic CYD LAB firmware
         if: github.event_name == 'pull_request'
         uses: actions/upload-artifact@v7
