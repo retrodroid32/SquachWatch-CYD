@@ -1,3 +1,13 @@
+# Freenove FNK0104N 3.5-inch — SquachWatch native UI R2
+
+**R2 changes the firmware's primary screen to the real SquachWatch interface.** The old R1 hardware diagnostic dashboard was not the requested product and is replaced.
+
+R2 calls SquachWatch's existing uiBootTick(), uiClearTick(), Squachy animation and backgrounds, uiSettingsTick(), and uiLogTick() directly against a 320x480 16-bit PSRAM framebuffer, which is sent to the Freenove ST77922 using its QSPI bus. The real DetectionEngine runs BLE and Wi-Fi scanning; the classic CYD SPI SD mount is deliberately disabled on FNK0104N because its wiring differs.
+
+Current navigation: native boot splash -> main screen, mascot taps, left/right edge background selection, settings gear, supported appearance/background settings, and LOG. Settings rows requiring special hardware or complex subflows explicitly signal that they are not ported yet rather than silently pretending to work. Watch/Hunt, full raw-scan picker, SD logging, mesh and complete settings actions remain hardware-specific integration tasks. R2's aim is original SquachWatch look and live scanning; it is not yet complete functional parity.
+
+Panel/touch: ST77922 QSPI 320x480, I2C 0x55; native portrait only until on-device rotation verified. Verify that screen, mascot art, bubble, outfits, backgrounds, bottom button bar, settings rows and LOG match SquachWatch, and check scan and touch logs on USB at 115200.
+
 # Freenove FNK0104N 3.5-inch ST77922 capacitive — LAB R1
 
 **Hardware:** Freenove FNK0104N 3.5-inch 320 x 480 ST77922 QSPI display; ESP32-S3 N16R8, 16 MB flash, 8 MB OPI PSRAM; display CS10 CLK12 D0=11 D1=13 D2=14 D3=9, BL41; touch integrated ST77922 I2C 0x55 SDA38 SCL39, INT47 and RESET48.
