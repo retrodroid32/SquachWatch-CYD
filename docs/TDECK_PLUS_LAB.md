@@ -38,3 +38,6 @@ Reference: Official LILYGO T-Deck Plus Quick Start and LilyGoLib hardware pin ma
 
 ## Official upstream cross-check (2026-11-24)
 LILYGO T-Deck repo UnitTest/utilities.h: POWERON10, TFT CS12/DC11, SPI 41/38/40, GT911 INT16 and I2C 18/8, keyboard address 0x55, keyboard INT46, backlight42, GPS RX44/TX43. UnitTest::setBrightness(16) uses GPIO42 LOW for 3ms, then HIGH for 30us to select maximum brightness. GPSShield starts at 9600 baud with optional detection/recovery; other documentation examples show different GPS UART mappings (21/48), so the real onboard GNSS UART must be confirmed on hardware. The R1 port follows upstream UnitTest and GPSShield pin definitions, not audio codec pins 21/48.
+
+## CI isolation repair
+Build #1097 compiled the T-Deck S3 image successfully (776397 firmware bytes), but other board builds also included the new standalone sketch. R2 wraps the standalone entry points with TDECK_PLUS so classic CYD, T-Watch and Freenove keep their previous main.cpp without duplicate setup()/loop(). No changes to those hardware paths.
