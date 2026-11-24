@@ -80,9 +80,9 @@ static const PanelCommand panelInit[] = {
   {0x11, {}, 0, 120},   // SLPOUT
   {0x29, {}, 0, 0},     // DISPON
   {0x2C, {}, 0, 0},
-  {0x3A, {0x01), 1, 0},     // COLMOD as the vendor sets it (renders RGB565)
+  {0x3A, {0x01}, 1, 0},     // COLMOD as the vendor sets it (renders RGB565)
   {0x36, {0x00}, 1, 0},
-  {0x35, {0x01), 1, 20},    // TEON
+  {0x35, {0x01}, 1, 20},    // TEON
 };
 static spi_device_handle_t spiPanel=nullptr;
 static uint8_t *dmaBuffer=nullptr;
