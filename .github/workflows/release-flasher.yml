@@ -308,6 +308,8 @@ jobs:
           if [ "${{ steps.ver.outputs.is_lab }}" = "true" ]; then
             pio run -e tdeck-plus
             python3 tools/check_app_image_sizes.py tdeck-plus
+            pio run -e freenove35-st77922
+            python3 tools/check_app_image_sizes.py freenove35-st77922
           fi
           # Compare FINAL ESP32 image bytes to the actual partition table.
           # The ELF estimate overlooked a 240-byte overflow and shipped black-screen LAB firmware.
@@ -409,6 +411,9 @@ jobs:
             cp .pio/build/tdeck-plus/bootloader.bin tdeck-plus-bootloader.bin
             cp .pio/build/tdeck-plus/partitions.bin tdeck-plus-partitions.bin
             cp .pio/build/tdeck-plus/firmware.bin tdeck-plus-firmware.bin
+            cp .pio/build/freenove35-st77922/bootloader.bin freenove35-st77922-bootloader.bin
+            cp .pio/build/freenove35-st77922/partitions.bin freenove35-st77922-partitions.bin
+            cp .pio/build/freenove35-st77922/firmware.bin freenove35-st77922-firmware.bin
           fi
           # The S3 watch shares none of that: its own chip, its own bootloader
           # and its own table. otadata is the same eight bytes of boot_app0.
@@ -598,7 +603,7 @@ jobs:
           needle = "'./manifest-lab-twatch-s3.json'].forEach(function (path)"
           if needle not in html:
               raise SystemExit("LAB board picker markup changed; refusing blind patch")
-          html = html.replace(needle, "'./manifest-lab-twatch-s3.json', './manifest-lab-tdeck-plus.json'].forEach(function (path)", 1)
+          html = html.replace(needle, "'./manifest-lab-twatch-s3.json', './manifest-lab-tdeck-plus.json', './manifest-lab-freenove35-st77922.json'].forEach(function (path)", 1)
           open(page, "w", encoding="utf-8").write(html)
           # LAB firmware may require an updated OTA partition layout.
           # The mirrored production esp32-partitions.bin must remain
