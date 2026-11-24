@@ -192,7 +192,13 @@ void setWindow(int16_t x0, int16_t y0, int16_t x1, int16_t y1) {
 void wait() {
     if (!s_inFlight) return;
     spi_transaction_t* done = nullptr;
-    spi_device_get_trans_result(s_dev, &done, portMAX_DELAY);
+    const esp_err_t result = spi_device_get_trans_result(s_dev, &done, pdMS_TO_TICKS(1000));
+    if (result != ESP_OK) {
+        Serial.printf("[st77922] DMA completion timeout/error %d; restarting to avoid permanent freeze\n", (int)result);
+        Serial.flush();
+        ESP.restart();
+        return;
+    }
     s_inFlight = false;
 }
 
@@ -212,7 +218,7 @@ bool queuePixels(const uint16_t* dma, size_t count, bool first) {
     s_tx.address_bits   = 24;
     s_tx.base.tx_buffer = dma;
     s_tx.base.length    = count * 16;
-    const esp_err_t r = spi_device_queue_trans(s_dev, &s_tx.base, portMAX_DELAY);
+    const esp_err_t r = spi_device_queue_trans(s_dev, &s_tx.base, pdMS_TO_TICKS(1000));
     if (r != ESP_OK) { Serial.printf("[st77922] queue failed: %d\n", (int)r); return false; }
     s_inFlight = true;
     return true;
