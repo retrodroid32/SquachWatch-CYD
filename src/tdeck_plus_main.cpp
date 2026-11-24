@@ -14,7 +14,7 @@ constexpr uint8_t POWER=10, BACKLIGHT=42, LCD_CS=12, SD_CS=39, LORA_CS=9;
 constexpr uint8_t I2C_SDA=18, I2C_SCL=8;
 constexpr uint8_t KBD_ADDR=0x55;
 constexpr uint8_t TRACK_RIGHT=2, TRACK_UP=3, TRACK_LEFT=1, TRACK_DOWN=15, TRACK_CLICK=0;
-constexpr uint8_t GPS_RX=21, GPS_TX=48; // LILYGO T-Deck Plus GPS example
+constexpr uint8_t GPS_RX=44, GPS_TX=43; // LILYGO upstream utilities.h and GPSShield example
 constexpr uint8_t TOUCH_ADDRS[2]={0x5D,0x14}; // GT911 address depends on startup
 }
 
@@ -114,7 +114,7 @@ static void draw() {
       case 2:
         snprintf(line,sizeof line,"NMEA messages: %lu",(unsigned long)gpsSentences);
         lcd.drawString(line,8,67,2);
-        lcd.drawString("GPS UART 38400, RX=21 TX=48",8,97,2);
+        lcd.drawString("GPS UART 9600 RX=44 TX=43",8,97,2);
         if(gpsSentences) {
            lcd.setTextSize(1);
            lcd.drawString(gpsLine,4,137,1);
@@ -223,7 +223,8 @@ void setup() {
     for(uint8_t cs:{Deck::LCD_CS,Deck::SD_CS,Deck::LORA_CS}) {
         pinMode(cs,OUTPUT); digitalWrite(cs,HIGH);
     }
-    delay(100);
+    // LILYGO Keyboard_T_Deck_Master.ino delays 500ms after power enable.
+    delay(500);
     lcd.init();
     lcd.setRotation(1);
     lcd.invertDisplay(true);
@@ -233,9 +234,15 @@ void setup() {
         Wire.beginTransmission(addr);
         if(Wire.endTransmission()==0) {touchAddress=addr;break;}
     }
+    // Trackball center is GPIO0 (BOOT), keep input-only. Vendor map G01..G04.
     for(uint8_t p:{Deck::TRACK_RIGHT,Deck::TRACK_UP,Deck::TRACK_LEFT,Deck::TRACK_DOWN,Deck::TRACK_CLICK})
         pinMode(p,INPUT_PULLUP);
-    gpsPort.begin(38400,SERIAL_8N1,Deck::GPS_RX,Deck::GPS_TX);
+    // Upstream keyboard backlight default brightness command 0x02.
+    Wire.beginTransmission(Deck::KBD_ADDR);
+    Wire.write(0x02);
+    Wire.write(127);
+    Wire.endTransmission();
+    gpsPort.begin(9600,SERIAL_8N1,Deck::GPS_RX,Deck::GPS_TX);
     WiFi.mode(WIFI_STA);
     WiFi.disconnect(false,false);
     Serial.printf("[hw] PSRAM=%s size=%lu touch=0x%02x heap=%lu\n",
