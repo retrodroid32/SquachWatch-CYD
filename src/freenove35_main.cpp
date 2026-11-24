@@ -14,6 +14,7 @@
 #include "ui_clear.h"
 #include "ui_settings.h"
 #include "ui_log.h"
+#include "ui_rawscan.h"
 #include "theme.h"
 #include "settings.h"
 #include "detection.h"
@@ -213,12 +214,15 @@ static bool pollTouch(){
 // modules as main.cpp. Only the hardware framebuffer and touch transfer are
 // board-specific. Avoid a second imitation dashboard.
 static DetectionEngine engine;
-enum class View : uint8_t { BOOT, CLEAR, SETTINGS, LOG };
+enum class View : uint8_t { BOOT, CLEAR, SETTINGS, LOG, RAWSCAN };
 static View activeView=View::BOOT;
 static uint32_t bootAt=0, lastTouchAt=0;
+static bool scanPicker=false, rawBleMode=true;
 static bool touchHeld=false, radioReady=false;
 static uint32_t lastUITick=0, lastRuntimeTick=0;
 static void enterClear(){
+  if(activeView==View::RAWSCAN)engine.stopRawScan();
+  scanPicker=false;
   activeView=View::CLEAR;
   uiClearInit(view);
 }
@@ -230,6 +234,13 @@ static void enterLog(){
   activeView=View::LOG;
   uiLogSetCategory(DetectionType::UNKNOWN);
   uiLogInit(view);
+}
+static void enterRawScan(bool ble){
+  rawBleMode=ble;
+  activeView=View::RAWSCAN;
+  if(ble)engine.startRawBleScan();
+  else engine.startRawWifiScan();
+  uiRawScanInit(view,ble);
 }
 static void handleTouch(uint16_t x,uint16_t y){
   const uint32_t now=millis();
@@ -246,12 +257,12 @@ static void handleTouch(uint16_t x,uint16_t y){
   if(activeView==View::CLEAR){
     const ButtonId hit=Theme::hitTestButtonBar(x,y,HW::W,HW::H);
     if(hit==ButtonId::LOG){Squachy::trigger(Squachy::Event::LOG_OPENED);enterLog();return;}
-    if(hit==ButtonId::SCAN){
-      // The native SCAN picker requires its full scanner UI. The
-      // detection engine continues passive BLE/WiFi scans in the meantime.
-      Theme::showToast("SCANNING","BLE + WIFI ACTIVE",Theme::CYAN);
-      return;
+    if(scanPicker){
+      if(hit==ButtonId::SCAN){scanPicker=false;enterRawScan(true);return;}
+      if(hit==ButtonId::LOG){scanPicker=false;enterRawScan(false);return;}
+      if(hit==ButtonId::CLR){scanPicker=false;return;}
     }
+    if(hit==ButtonId::SCAN){scanPicker=true;return;}
     if(hit==ButtonId::CLR){enterLog();return;}
     if(!Settings::backgroundLocked()&&(x<HW::W/10||x>=HW::W-HW::W/10)){
       if(x<HW::W/10)Settings::cyclePrevBackground();
@@ -289,6 +300,11 @@ static void handleTouch(uint16_t x,uint16_t y){
         if(choice!=SettingsRow::NONE)Theme::showToast("FREENOVE LAB","PORT IN PROGRESS",Theme::AMBER);
         break;
     }
+  }else if(activeView==View::RAWSCAN){
+    const RawScanTap hit=uiRawScanHitTest(x,y,HW::W,HW::H);
+    if(hit==RawScanTap::BACK){enterClear();return;}
+    if(hit==RawScanTap::SWITCH){engine.stopRawScan();enterRawScan(!rawBleMode);return;}
+    uiRawScanScroll(y>HW::H/2?1:-1);
   }else if(activeView==View::LOG){
     if(uiLogCategoryHitBack(x,y,HW::W,HW::H)){enterClear();return;}
     if(y>HW::H-65){enterClear();return;}
@@ -303,11 +319,16 @@ static void renderOriginal(uint32_t now){
   // the ST77922 QSPI push is the only board-specific rendering layer.
   switch(activeView){
     case View::BOOT:uiBootTick(view,now,HW::W,HW::H,true);break;
-    case View::CLEAR:uiClearTick(view,now,engine,true,false,HW::W,HW::H);break;
+    case View::CLEAR:uiClearTick(view,now,engine,true,scanPicker,HW::W,HW::H);break;
     case View::SETTINGS:uiSettingsTick(view,now,engine,false,true);break;
     case View::LOG:
       uiLogTick(view,now,engine,0,false,nullptr,false,nullptr,nullptr,
                 false,false,false,HW::W,HW::H,true);
+      break;
+    case View::RAWSCAN:
+      uiRawScanTick(view,now,engine,rawBleMode,
+        rawBleMode?engine.rawBleScanDone():engine.rawWifiScanDone(),
+        false,nullptr,false,false,false,true);
       break;
   }
   if(!present())Serial.println("[freenove35] ST77922 transfer failed");
