@@ -196,7 +196,8 @@
       "merged": false,
       "lab": true,
       "cyd28": false,
-      "note": "ESP32-S3/16MB; experimental dedicated build. Wi-Fi signature scan and hardware bring-up only; NOT the full CYD firmware, not ready for normal web flasher."
+      "note": "ESP32-S3/16MB; experimental dedicated build. Wi-Fi signature scan and hardware bring-up only; NOT the full CYD firmware, not ready for normal web flasher.",
+      "manifest": "manifest-tdeck-plus.json"
     }
   ]
 }
