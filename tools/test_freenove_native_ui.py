@@ -15,6 +15,8 @@ def require(ok, msg):
 profile = pio.split("[env:freenove35-st77922]", 1)[1]
 require("-<main.cpp>" in profile and "+<*>" in profile,
         "FNK0104N must link the fork's real application modules")
+require("-DSQUACH_MESH=1" in profile and "${env.nimble_flags_mesh}" in profile,
+        "FNK0104N must match other S3 fork targets for mascot visit and mesh APIs")
 required = {
     "uiBootTick(": "original boot splash",
     "uiClearTick(": "original SquachWatch idle/Squachy/animation screen",
