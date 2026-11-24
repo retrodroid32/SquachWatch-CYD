@@ -60,9 +60,13 @@ static bool getTouch(uint16_t& x,uint16_t& y) {
     if(fingers>=1&&fingers<=5) {
         uint8_t data[4]={};
         if(i2cRead16(touchAddress,0x8150,data,4)) {
-            x=(uint16_t)data[0]|((uint16_t)data[1]<<8);
-            y=(uint16_t)data[2]|((uint16_t)data[3]<<8);
-            valid=(x<320&&y<240);
+            const uint16_t rawX=(uint16_t)data[0]|((uint16_t)data[1]<<8);
+            const uint16_t rawY=(uint16_t)data[2]|((uint16_t)data[3]<<8);
+            // Match official Touchpad.ino: setMaxCoordinates(320,240),
+            // setSwapXY(true), setMirrorXY(false,true). GT911 raw is
+            // portrait 240x320; screen is landscape 320x240.
+            valid=(rawX<240&&rawY<320);
+            if(valid){x=rawY;y=(uint16_t)(239-rawX);}
         }
     }
     i2cWrite16(touchAddress,0x814E,0);
