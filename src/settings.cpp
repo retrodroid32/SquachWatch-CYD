@@ -84,7 +84,8 @@ static const uint8_t CLOCK_BG_N  = 7;
 // rather than on type, so with an exact-match signature every one of them
 // would take over the display. Off by default, one tap away in DETECTION
 // FILTER, and everything about the detection itself is honest either way.
-static const uint32_t DEFAULT_OFF = (1u << (uint8_t)DetectionType::IBEACON);
+static const uint32_t DEFAULT_OFF = (1u << (uint8_t)DetectionType::IBEACON) |
+                                    (1u << (uint8_t)DetectionType::LISTENER);
 
 // typeEnabled()'s comment. Default has bits 1..(COUNT-1) set (every real
 // type on), computed once at namespace-init time rather than a hand-

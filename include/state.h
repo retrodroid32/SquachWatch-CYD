@@ -33,7 +33,9 @@ enum class DetectionType : uint8_t {
     // chip, and sixteen Espressif prefixes already sit under FLOCK. HACKER
     // takes exact signatures only, which is what keeps it worth alerting on.
     HACKER  = 17,
-    COUNT   = 18
+    // v1.50 smart speaker detection, intentionally OFF by default.
+    LISTENER = 18,
+    COUNT   = 19
 };
 static_assert((uint8_t)DetectionType::COUNT <= 32,
               "Detection type mask is uint32_t; widen it before adding more types");
@@ -57,6 +59,7 @@ inline const char* detectionTypeDisplayName(DetectionType t) {
         case DetectionType::EVILTWIN:    return "EVIL TWIN AP";
         case DetectionType::IBEACON:     return "PROXIMITY BEACON";
         case DetectionType::HACKER:      return "HACKER HARDWARE";
+        case DetectionType::LISTENER:    return "SMART SPEAKER";
         default:                         return "UNKNOWN";
     }
 }
@@ -80,6 +83,7 @@ inline const char* detectionTypeName(DetectionType t) {
         case DetectionType::EVILTWIN:    return "EVIL TWIN";
         case DetectionType::IBEACON:     return "IBEACON";
         case DetectionType::HACKER:      return "HACKER";
+        case DetectionType::LISTENER:    return "LISTENER";
         default:                         return "UNKNOWN";
     }
 }
@@ -233,7 +237,12 @@ struct Detection {
     // so the gap since the last ask is how long it was really gone. Sits in
     // what was padding.
     uint16_t       askedMin;
+    // Owner-state evidence from Find My / Find Hub broadcasts (v1.50).
+    uint8_t        owner;
 };
+
+// Unknown or not paired, near owner, separated from owner.
+enum : uint8_t { OWNER_UNKNOWN = 0, OWNER_WITH = 1, OWNER_AWAY = 2 };
 
 inline void detectionRssiInit(Detection& d, int8_t rssi, uint32_t nowMs) {
     d.rssi = rssi;

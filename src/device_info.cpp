@@ -42,6 +42,9 @@ const Device kDevices[] = {
     { DetectionType::FLOCK, "FLOCK QCA", "Flock-QCA", nullptr,
       "A Qualcomm QCA9377 default address found inside Flock camera firmware, seen with Flock's wildcard-probe pattern. Qualcomm alone is generic; SquachWatch requires both clues." },
 
+    { DetectionType::FLOCK, "FLOCK HOTSPOT", "Flock-Cam", nullptr,
+      "A WiFi network beginning Flock Camera. It is a setup or service network name, not proof that a specific camera is operating or collecting plates." },
+
     // ---- AXON ---------------------------------------------------------------
     { DetectionType::AXON, "AXON BODY 2", "Axon-Body2", nullptr, AXON_BODY },
     { DetectionType::AXON, "AXON BODY 3", "Axon-Body3", nullptr, AXON_BODY },
@@ -54,6 +57,11 @@ const Device kDevices[] = {
       "An address other detectors tie to modern Axon body cameras. A lead rather than proof, so it is graded low." },
     { DetectionType::AXON, "AXON SIGNAL", "Axon-Signal", nullptr,
       "Axon Signal: small Bluetooth sensors on holsters and patrol cars that tell nearby body cameras to start recording when a gun is drawn or the lights go on. Graded low." },
+
+    { DetectionType::AXON, "AXON BODY CAM", "Axon-BWC", nullptr,
+      "A body-camera activation radio carrying the exact BWCDEVICE marker, not a generic Bluetooth device. An announcement alone does not show recording status." },
+    { DetectionType::AXON, "BODYWORN", "BodyWorn", "BodyWorn",
+      "A BodyWorn body-camera accessory advertising its name. Names can be spoofed; treat the match as a lead rather than definite police equipment." },
 
     // ---- ALPR ---------------------------------------------------------------
     { DetectionType::ALPR, "MOTOROLA", "ALPR-Mtrla", nullptr,
@@ -108,6 +116,31 @@ const Device kDevices[] = {
       "A radio from Luxottica, the eyewear giant behind Ray-Ban and Oakley, which builds Meta's camera glasses." },
     { DetectionType::META, "SPECTACLES", "Snap", nullptr,
       "Snap Spectacles: camera glasses from Snapchat's maker that record clips from the wearer's point of view." },
+    // v1.50 families
+    { DetectionType::AXON, "FLEET ROUTER", "Cradlepoint|AirLink", nullptr,
+      "A rugged in-vehicle router, the kind that gives a patrol car its own WiFi and links its cameras and laptop to the station. Buses, ambulances and utility trucks carry the same boxes, so it is a hint, graded low." },
+    { DetectionType::AXON, "WATCHGUARD", "WatchGuard", nullptr,
+      "A radio on WatchGuard Video's block: Motorola's police body cameras and in-car video. Not the firewall company of the same name." },
+    { DetectionType::AXON, "DIGITAL ALLY", "DigitalAlly", nullptr,
+      "A radio on Digital Ally's block: body cameras and in-car video for police, ambulance and security fleets." },
+    { DetectionType::CAMERA, "I-PRO", "i-PRO", nullptr,
+      "An i-PRO camera: Panasonic's old security business, making CCTV and police body cameras. Found in cities, campuses and patrol cars." },
+    { DetectionType::CAMERA, "DASHCAM", "Viofo|BlackVue|70mai|Thinkware|Nextbase|Vantrue|Rove|Redtiger", nullptr,
+      "A dashcam's own WiFi, up for its phone app: the car it sits in is close and its camera is rolling. They film whatever is ahead, you included; some film the cabin too. Most only put the network up while the app is open." },
+    { DetectionType::CAMERA, "FLEET CAMERA", "Lytx|Samsara", nullptr,
+      "A fleet camera of the kind in delivery vans and trucks: road-facing, often driver-facing too, uploading clips over cellular. Samsara's block also covers its plain vehicle trackers, so that one is a weaker guess." },
+    { DetectionType::CAMERA, "HIDDEN CAMERA", "P2P-Cam|HDWifiCam|LookCam|TinyCam|V380|YCC365|Sricam|Yoosee|Zosi", nullptr,
+      "A cheap WiFi camera in setup mode, putting up its own network under a name from its app's firmware. The mini and hidden cameras sold for home security do this until paired. In a rental, worth a look round the room." },
+    { DetectionType::META, "ROKID", "Rokid", nullptr,
+      "A radio on the block registered to Rokid's parent company. Rokid Glasses carry a camera; its other headsets do not. A weak guess, graded low." },
+    { DetectionType::META, "VUZIX", "Vuzix", nullptr,
+      "Vuzix smart glasses, sold mostly to warehouses, hospitals and police. Many models have a camera." },
+    { DetectionType::LISTENER, "SONOS", "Sonos", nullptr,
+      "A Sonos speaker or audio device. Some models have microphones and some do not. Its maker prefix alone is not proof that audio is being recorded." },
+    { DetectionType::LISTENER, "HOMEPOD", "HomePod", nullptr,
+      "Apple HomePod identified through its Siri wake-word advertisement. This alone says nothing about recordings or their storage." },
+    { DetectionType::LISTENER, "GOOGLE HOME", "Google speaker", nullptr,
+      "A Google Home or Nest speaker in setup mode. The hotspot is visible while configuring the speaker; ordinary Google devices do not prove one." },
 };
 const uint8_t kDeviceCount = sizeof(kDevices) / sizeof(kDevices[0]);
 

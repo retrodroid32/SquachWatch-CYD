@@ -1,4 +1,4 @@
-V150-R3-BOOT-RECOVERY-R12-INTEGRATED
-LAB PR #257 critical boot-loop recovery. The earlier #256 signature LAB was based on master and omitted R12 CYD32 adaptive framebuffer allocation. This build combines R12 guarded FULL8 / 2-4-8-16-band / direct-panel boot fallback with v1.50 Wyze, SimpliSafe, HC-05 metadata, device info and emulator coverage.
-Require exact-head full host tests (device info), R10/R11/R12/v150 regressions, CYD 2.8 and CYD 3.2 firmware matrix, emulator, OTA reserves; build and release LAB firmware to web flasher after all gates pass.
-Hardware gate: CYD3.2 SD-in 3 cold boots, WiFi/GPS/BLE/SquachMesh, 60s animations and rotation; CYD2.8 smoke. No production merge, tag, branch deletion or SquachEmit changes.
+V150-R4-DETECTION-R10-LAB-PUBLICATION
+LAB-only publication retry after verified full PR #258 CI Build #1091: firmware + host tests + emulator PASS at adfd9881e74b5577f8fe2a3b2e2ef3cea9b3bebc.
+Force an exact-commit LAB release-flasher run via branch request-file filter. It must wait for the new matching PR Build, then run its own CI gate, compile the release board profiles and publish a LAB-only pages-site artifact. Never publish to production, create production tags, or merge master.
+Test targets: classic CYD 2.8 ST7789 and CYD 3.2 ST7798. Source is stacked on R12 memory-guarded framebuffer recovery; hardware SD-in cold boots and detection scans still pending.

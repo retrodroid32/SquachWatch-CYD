@@ -23,7 +23,8 @@ int main() {
         DetectionType::FLOCK, DetectionType::AXON, DetectionType::META,
         DetectionType::SKIMMER, DetectionType::RAVEN, DetectionType::AIRTAG,
         DetectionType::DRONE, DetectionType::ALPR, DetectionType::CAMERA,
-        DetectionType::HACKER, DetectionType::DEAUTH, DetectionType::IBEACON
+        DetectionType::HACKER, DetectionType::DEAUTH, DetectionType::IBEACON,
+        DetectionType::LISTENER
     };
     for (uint8_t ty = 1; ty < (uint8_t)DetectionType::COUNT; ++ty) {
         int matches = 0;

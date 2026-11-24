@@ -2508,6 +2508,7 @@ static const char* counterLabel(DetectionType t) {
         case DetectionType::CAMERA:      return "CAM";
         // Four letters, like HACK: this row is packed six-across.
         case DetectionType::IBEACON:     return "BCON";
+        case DetectionType::LISTENER:    return "LIST";
         case DetectionType::DEAUTH:      return "DEAUTH";
         // Four letters, not "HACKER": this row is packed six-across in
         // landscape and four-across on a 240px portrait panel. EVILTWIN
@@ -2561,11 +2562,12 @@ static const uint8_t FIXED_COUNTER_TYPES_N =
 // the one that asked for the type gets it, and the rule above stays true
 // without anybody having to remember it. Twelve is what this row has
 // always drawn, so the layout never grows.
-static const uint8_t MAX_COUNTER_TYPES = FIXED_COUNTER_TYPES_N + 1;
+static const uint8_t MAX_COUNTER_TYPES = FIXED_COUNTER_TYPES_N + 2;
 static uint8_t activeCounterTypes(DetectionType* out) {
     uint8_t n = 0;
     for (; n < FIXED_COUNTER_TYPES_N; n++) out[n] = FIXED_COUNTER_TYPES[n];
     if (Settings::typeEnabled(DetectionType::IBEACON)) out[n++] = DetectionType::IBEACON;
+    if (Settings::typeEnabled(DetectionType::LISTENER)) out[n++] = DetectionType::LISTENER;
     return n;
 }
 // Portrait (narrow) caps at 4 per row -- see the comment above. Landscape
@@ -2586,6 +2588,7 @@ struct ClearLayoutCache {
     bool valid = false;
     int16_t w = 0, h = 0;
     bool ibeacon = false;
+    bool listener = false;
     uint8_t counterRows = 0, counterN = 0;
     Theme::ButtonBarGeom bar = {};
     int16_t counterTextTop = 0;
@@ -2599,8 +2602,9 @@ static ClearLayoutCache s_clearLayout;
 
 static const ClearLayoutCache& clearLayoutFor(int w, int h) {
     const bool ibeacon = Settings::typeEnabled(DetectionType::IBEACON);
+    const bool listener = Settings::typeEnabled(DetectionType::LISTENER);
     if (s_clearLayout.valid && s_clearLayout.w == w && s_clearLayout.h == h &&
-        s_clearLayout.ibeacon == ibeacon &&
+        s_clearLayout.ibeacon == ibeacon && s_clearLayout.listener == listener &&
         s_clearLayout.bar.h == Theme::computeButtonBar(w, h).h) return s_clearLayout;
 
     ClearLayoutCache& l = s_clearLayout;
@@ -2608,12 +2612,16 @@ static const ClearLayoutCache& clearLayoutFor(int w, int h) {
     l.w = (int16_t)w;
     l.h = (int16_t)h;
     l.ibeacon = ibeacon;
-    l.counterRows = (w > h) ? COUNTER_ROWS_LANDSCAPE : COUNTER_ROWS_PORTRAIT;
+    l.listener = listener;
+    l.counterN = activeCounterTypes(l.types);
+    // Never squeeze seven pills onto one landscape row if both opt-in
+    // types are enabled: use three rows only in that exceptional case.
+    l.counterRows = (w > h) ? (uint8_t)(l.counterN > 12 ? 3 : COUNTER_ROWS_LANDSCAPE) :
+        (uint8_t)((l.counterN + MAX_PER_ROW_PORTRAIT - 1) / MAX_PER_ROW_PORTRAIT);
     l.bar = Theme::computeButtonBar(w, h);
     const int countersTop = l.bar.y - l.counterRows * CATEGORY_PILL_ROW_H - 5;
     l.counterTextTop = (int16_t)countersTop;
     l.squachyBottom = (int16_t)(l.counterTextTop - 2);
-    l.counterN = activeCounterTypes(l.types);
 
     const uint8_t base = l.counterN / l.counterRows;
     const uint8_t remainder = l.counterN % l.counterRows;

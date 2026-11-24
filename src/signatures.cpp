@@ -207,6 +207,58 @@ const OuiEntry kOuiTable[] = {
     // higher.
     {{0x02,0xC0,0xCA}, "Hak5-LA",    DetectionType::HACKER, Confidence::LOW_CONF},
     {{0x02,0x13,0x37}, "Hak5-LA",    DetectionType::HACKER, Confidence::LOW_CONF},
+    // Upstream v1.50 missing signature entries; preserve fork-specific existing rules.
+    {{0x00, 0x1D, 0x96}, "WatchGuard",   DetectionType::AXON,       Confidence::MED_CONF},
+    {{0x00, 0x23, 0xBD}, "DigitalAlly",  DetectionType::AXON,       Confidence::MED_CONF},
+    {{0x00, 0x30, 0x44}, "Cradlepoint",  DetectionType::AXON,       Confidence::LOW_CONF},
+    {{0x00, 0xE0, 0x1C}, "Cradlepoint",  DetectionType::AXON,       Confidence::LOW_CONF},
+    {{0x00, 0xA0, 0xD5}, "AirLink",      DetectionType::AXON,       Confidence::LOW_CONF},
+    {{0x28, 0xA3, 0x31}, "AirLink",      DetectionType::AXON,       Confidence::LOW_CONF},
+    {{0x50, 0x13, 0x9D}, "AirLink",      DetectionType::AXON,       Confidence::LOW_CONF},
+    {{0x64, 0xCE, 0x6E}, "AirLink",      DetectionType::AXON,       Confidence::LOW_CONF},
+    {{0x84, 0xDB, 0x2F}, "AirLink",      DetectionType::AXON,       Confidence::LOW_CONF},
+    {{0xCC, 0x93, 0x4A}, "AirLink",      DetectionType::AXON,       Confidence::LOW_CONF},
+    {{0xD4, 0x11, 0xD6}, "ShotSpotter",  DetectionType::RAVEN,      Confidence::HIGH_CONF},
+    {{0x3C, 0xA0, 0x70}, "Blink",        DetectionType::CAMERA,     Confidence::MED_CONF},
+    {{0x70, 0xAD, 0x43}, "Blink",        DetectionType::CAMERA,     Confidence::MED_CONF},
+    {{0x74, 0x13, 0x48}, "Blink",        DetectionType::CAMERA,     Confidence::MED_CONF},
+    {{0x74, 0xAB, 0x93}, "Blink",        DetectionType::CAMERA,     Confidence::MED_CONF},
+    {{0xC8, 0x19, 0xD8}, "Blink",        DetectionType::CAMERA,     Confidence::MED_CONF},
+    {{0xF0, 0x74, 0xC1}, "Blink",        DetectionType::CAMERA,     Confidence::MED_CONF},
+    {{0xD4, 0x2D, 0xC5}, "i-PRO",        DetectionType::CAMERA,     Confidence::HIGH_CONF},
+    {{0x00, 0x25, 0x42}, "BlackVue",     DetectionType::CAMERA,     Confidence::HIGH_CONF},
+    {{0x44, 0x27, 0xF3}, "70mai",        DetectionType::CAMERA,     Confidence::HIGH_CONF},
+    {{0xB8, 0x59, 0xC8}, "70mai",        DetectionType::CAMERA,     Confidence::HIGH_CONF},
+    {{0x00, 0x1F, 0x4F}, "Thinkware",    DetectionType::CAMERA,     Confidence::HIGH_CONF},
+    {{0x00, 0x16, 0xB2}, "Lytx",         DetectionType::CAMERA,     Confidence::MED_CONF},   // registered as DriveCam Inc, Lytx's old name
+    {{0x2C, 0x42, 0x05}, "Lytx",         DetectionType::CAMERA,     Confidence::MED_CONF},
+    {{0x50, 0xDF, 0x95}, "Lytx",         DetectionType::CAMERA,     Confidence::MED_CONF},
+    {{0x70, 0xE4, 0x6E}, "Lytx",         DetectionType::CAMERA,     Confidence::MED_CONF},
+    {{0x58, 0xA7, 0x48}, "Lytx",         DetectionType::CAMERA,     Confidence::MED_CONF},
+    {{0xFC, 0xDB, 0x21}, "Samsara",      DetectionType::CAMERA,     Confidence::LOW_CONF},
+    {{0x28, 0xEA, 0x5B}, "Samsara",      DetectionType::CAMERA,     Confidence::LOW_CONF},
+    {{0x98, 0x59, 0x49}, "Luxottica",    DetectionType::META,       Confidence::MED_CONF},
+    {{0x28, 0xE8, 0x88}, "Rokid",        DetectionType::META,       Confidence::LOW_CONF},
+    {{0x98, 0xDA, 0x92}, "Vuzix",        DetectionType::META,       Confidence::LOW_CONF},
+    {{0x9C, 0x5A, 0x8A}, "DJI-BW",       DetectionType::DRONE,      Confidence::LOW_CONF},
+    {{0xEC, 0x72, 0xF7}, "DJI-BW",       DetectionType::DRONE,      Confidence::LOW_CONF},
+    {{0x34, 0x91, 0xF0}, "DJI-BW",       DetectionType::DRONE,      Confidence::LOW_CONF},
+    {{0xC8, 0xA1, 0x62}, "DJI-BW",       DetectionType::DRONE,      Confidence::LOW_CONF},
+    {{0x00,0x0E,0x58}, "Sonos",      DetectionType::LISTENER, Confidence::MED_CONF},
+    {{0x34,0x7E,0x5C}, "Sonos",      DetectionType::LISTENER, Confidence::MED_CONF},
+    {{0x38,0x42,0x0B}, "Sonos",      DetectionType::LISTENER, Confidence::MED_CONF},
+    {{0x48,0xA6,0xB8}, "Sonos",      DetectionType::LISTENER, Confidence::MED_CONF},
+    {{0x54,0x2A,0x1B}, "Sonos",      DetectionType::LISTENER, Confidence::MED_CONF},
+    {{0x5C,0xAA,0xFD}, "Sonos",      DetectionType::LISTENER, Confidence::MED_CONF},
+    {{0x60,0xF6,0x20}, "Sonos",      DetectionType::LISTENER, Confidence::MED_CONF},
+    {{0x74,0xCA,0x60}, "Sonos",      DetectionType::LISTENER, Confidence::MED_CONF},
+    {{0x78,0x28,0xCA}, "Sonos",      DetectionType::LISTENER, Confidence::MED_CONF},
+    {{0x80,0x4A,0xF2}, "Sonos",      DetectionType::LISTENER, Confidence::MED_CONF},
+    {{0x94,0x9F,0x3E}, "Sonos",      DetectionType::LISTENER, Confidence::MED_CONF},
+    {{0xB8,0xE9,0x37}, "Sonos",      DetectionType::LISTENER, Confidence::MED_CONF},
+    {{0xC4,0x38,0x75}, "Sonos",      DetectionType::LISTENER, Confidence::MED_CONF},
+    {{0xF0,0xF6,0xC1}, "Sonos",      DetectionType::LISTENER, Confidence::MED_CONF},
+    {{0xF8,0x5C,0x24}, "Sonos",      DetectionType::LISTENER, Confidence::MED_CONF},
 };
 const uint16_t kOuiCount = sizeof(kOuiTable) / sizeof(kOuiTable[0]);
 
@@ -253,6 +305,18 @@ const UuidEntry kUuidTable[] = {
     {0x3081, "Flipper",    DetectionType::HACKER},
     {0x3082, "Flipper",    DetectionType::HACKER},
     {0x3083, "Flipper",    DetectionType::HACKER},
+    // Upstream v1.50 missing signature entries; preserve fork-specific existing rules.
+    {0xFD84, "Tile",       DetectionType::TILE},      // Tile, Inc. — third SIG-assigned UUID
+    {0xFC81, "Axon",       DetectionType::AXON},
+    {0xFE6B, "Axon",       DetectionType::AXON},
+    {0xFE6C, "Axon",       DetectionType::AXON},
+    {0xFEB7, "Meta",       DetectionType::META},
+    {0xFEB8, "Meta",       DetectionType::META},
+    {0xFE45, "Snap",       DetectionType::META},
+    {0xFCB2, "Tracker",    DetectionType::GOOGLE_TAG},
+    {0xFE33, "Chipolo",    DetectionType::GOOGLE_TAG},
+    {0xFE65, "Chipolo",    DetectionType::GOOGLE_TAG},
+    {0xFE07, "Sonos",      DetectionType::LISTENER},
 };
 const uint16_t kUuidCount = sizeof(kUuidTable) / sizeof(kUuidTable[0]);
 
@@ -302,6 +366,27 @@ const SsidEntry kSsidPrefixes[] = {
     // suffix; MED at best, since somebody can also just name their home
     // network this as a joke.
     {"pwned",   "Deauther",     DetectionType::HACKER},
+    // Upstream v1.50 missing signature entries; preserve fork-specific existing rules.
+    {"Flock Camera", "Flock-Cam", DetectionType::FLOCK},
+    {"VIOFO_",     "Viofo",     DetectionType::CAMERA},
+    {"VIOFO-",     "Viofo",     DetectionType::CAMERA},
+    {"BlackVue",   "BlackVue",  DetectionType::CAMERA},
+    {"70mai_",     "70mai",     DetectionType::CAMERA},
+    {"thinkware",  "Thinkware", DetectionType::CAMERA},
+    {"NEXTBASE ",  "Nextbase",  DetectionType::CAMERA},
+    {"ROVE_R",     "Rove",      DetectionType::CAMERA},
+    {"REDTIGER_",  "Redtiger",  DetectionType::CAMERA},
+    {"AuxCamera_", "Lytx",      DetectionType::CAMERA},
+    {"DGK-",       "HDWifiCam", DetectionType::CAMERA},
+    {"ACCQ-",      "LookCam",   DetectionType::CAMERA},
+    {"BCCQ-",      "LookCam",   DetectionType::CAMERA},
+    {"XCCQ-",      "LookCam",   DetectionType::CAMERA},
+    {"HCAM-",      "TinyCam",   DetectionType::CAMERA},
+    {"CLOUDCAM_",  "YCC365",    DetectionType::CAMERA},
+    {"MEYE_",      "Sricam",    DetectionType::CAMERA},
+    {"GW_IPC",     "Yoosee",    DetectionType::CAMERA},
+    {"IPC_AP_",    "Zosi",      DetectionType::CAMERA},
+    {"GoogleHome", "Google speaker", DetectionType::LISTENER},
 };
 const uint16_t kSsidCount = sizeof(kSsidPrefixes) / sizeof(kSsidPrefixes[0]);
 
@@ -335,6 +420,11 @@ const MfgIdEntry kMfgIdTable[] = {
     // Technologies, who make headsets. Flipper is 0x0E29. Checked against
     // the SIG registry, the same way the OUI rows are checked against IEEE.
     {0x0E29, "Flipper",    DetectionType::HACKER},
+    // Upstream v1.50 missing signature entries; preserve fork-specific existing rules.
+    {0x060C, "Vuzix",      DetectionType::META},      // Vuzix smart glasses
+    {0x034D, "Axon",       DetectionType::AXON},
+    {0x08C3, "Chipolo",    DetectionType::GOOGLE_TAG},
+    {0x05A7, "Sonos",      DetectionType::LISTENER},
 };
 const uint16_t kMfgIdCount = sizeof(kMfgIdTable) / sizeof(kMfgIdTable[0]);
 
@@ -452,6 +542,19 @@ bool isBareSerialName(const char* name) {
     return name[10] == '\0';
 }
 
+// Flock accessory name with a bounded hexadecimal serial.
+bool isFlockFsName(const char* name) {
+    if (!name || strncmp(name, "FS-", 3) != 0) return false;
+    uint8_t count = 0;
+    for (const char* p = name + 3; *p; ++p, ++count) {
+        if (count >= 12) return false;
+        const char ch = *p;
+        if (!((ch >= '0' && ch <= '9') || (ch >= 'A' && ch <= 'F') ||
+              (ch >= 'a' && ch <= 'f'))) return false;
+    }
+    return count >= 4;
+}
+
 DetectionType lookupBtName(const char* name) {
     if (!name) return DetectionType::UNKNOWN;
     for (uint16_t i = 0; i < kBtClassicCount; i++) {
@@ -472,8 +575,10 @@ DetectionType lookupBtName(const char* name) {
     }
     // Production classifier and host tests share the exact-length predicate.
     if (isBareSerialName(name)) return DetectionType::FLOCK;
+    if (isFlockFsName(name)) return DetectionType::FLOCK;
     if (strcasestr(name, "Pigvision")) return DetectionType::FLOCK;
     if (strcasestr(name, "Axon"))     return DetectionType::AXON;
+    if (strcasestr(name, "BodyWorn")) return DetectionType::AXON;
     // A Flipper advertises "Flipper " followed by the unit's name. The
     // owner can change it, which is exactly why a name match is graded
     // down where it is used -- it is a string, not a signature. Left in
@@ -490,6 +595,39 @@ static bool isPineapplePagerSsid(const char* ssid) {
                     strcasecmp(ssid, "pager-open") == 0);
 }
 
+bool isP2pCamSsid(const char* ssid) {
+    if (!ssid) return false;
+    const char* p = ssid;
+    int n = 0;
+    while (*p >= 'A' && *p <= 'Z') { p++; n++; }
+    if (n < 3 || n > 4 || *p != '-') return false;
+    p++;
+    for (int i = 0; i < 6; i++, p++) if (*p < '0' || *p > '9') return false;
+    if (*p != '-') return false;
+    p++;
+    for (int i = 0; i < 5; i++, p++) if (*p < 'A' || *p > 'Z') return false;
+    return *p == '\0';
+}
+
+// V380's setup hotspot: "MV" and the camera's UID, six or more digits.
+static bool isV380Ssid(const char* ssid) {
+    if (!ssid || ssid[0] != 'M' || ssid[1] != 'V') return false;
+    const char* p = ssid + 2;
+    int n = 0;
+    while (*p >= '0' && *p <= '9') { p++; n++; }
+    return n >= 6 && *p == '\0';
+}
+
+// The names that are a shape rather than a prefix. Shared by lookupSsid()
+// and ssidVendorName() so the two never disagree.
+static const char* ssidPatternName(const char* ssid) {
+    if (!ssid) return nullptr;
+    if (isP2pCamSsid(ssid))             return "P2P-Cam";
+    if (isV380Ssid(ssid))               return "V380";
+    if (strcasestr(ssid, "_VANTRUE_"))  return "Vantrue";
+    return nullptr;
+}
+
 DetectionType lookupSsid(const char* ssid) {
     if (!ssid) return DetectionType::UNKNOWN;
     if (isPineapplePagerSsid(ssid)) return DetectionType::HACKER;
@@ -501,6 +639,7 @@ DetectionType lookupSsid(const char* ssid) {
             return kSsidPrefixes[i].type;
         }
     }
+    if (ssidPatternName(ssid)) return DetectionType::CAMERA;
     return DetectionType::UNKNOWN;
 }
 
@@ -525,7 +664,7 @@ const char* ssidVendorName(const char* ssid) {
             return kSsidPrefixes[i].name;
         }
     }
-    return nullptr;
+    return ssidPatternName(ssid);
 }
 
 DetectionType lookupMfgId(uint16_t mfgId) {
@@ -577,15 +716,120 @@ bool isSeparatedFindMyPayload(const uint8_t* payload, uint8_t len) {
     return false;
 }
 
+static bool isAirTagPairing(const uint8_t* p, uint8_t left) {
+    // p points at 4C; needs 4C 00 07 19 xx 00 55.
+    return left >= 7 && p[0] == 0x4C && p[1] == 0x00 && p[2] == 0x07 && p[3] == 0x19 &&
+           p[5] == 0x00 && p[6] == 0x55;
+}
+
 bool isAirTagPayload(const uint8_t* payload, uint8_t len) {
     if (!payload || len < 4) return false;
     for (uint8_t i = 0; i + 3 < len; i++) {
         if (payload[i] == 0x1E && payload[i + 1] == 0xFF &&
-            payload[i + 2] == 0x4C && payload[i + 3] == 0x00) return true;
-        if (payload[i] == 0x4C && payload[i + 1] == 0x00 &&
-            payload[i + 2] == 0x12 && payload[i + 3] == 0x19) return true;
+            payload[i + 2] == 0x4C && payload[i + 3] == 0x00) {
+            // A 30-byte Apple block whose type byte is 0x07 is Proximity
+            // Pairing: an AirTag not yet set up (model 00 55), or AirPods and
+            // the other headphones, which used to come up as AIRTAG here.
+            // 0x12 is the offline-finding block a set-up tag sends. Anything
+            // else keeps the old loose match.
+            if (i + 4 < len && payload[i + 4] == 0x07)
+                return isAirTagPairing(payload + i + 2, (uint8_t)(len - i - 2));
+            return true;
+        }
+        if (payload[i] == 0x4C && payload[i + 1] == 0x00 && payload[i + 2] == 0x12 &&
+            (payload[i + 3] == 0x19 || payload[i + 3] == 0x02)) return true;
+        if (isAirTagPairing(payload + i, (uint8_t)(len - i))) return true;
     }
     return false;
+}
+
+// Apple's Continuity "Hey Siri" message (furiousMAC/continuity, hey_siri.md):
+// type 0x08, length 7 -- a perceptual hash (2), SNR (1), confidence (1), the
+// device class (2), a random byte (1). Class 0x0007 is a HomePod, and nothing
+// else sends it. It goes out only when somebody near it says "Hey Siri", so
+// a HomePod shows up rarely, but when it does there is no doubt about it.
+// The class is read both ways round: the write-up gives it as a UINT16
+// without saying which end comes first.
+bool isHomePodSiri(const uint8_t* mfg, uint8_t len) {
+    if (!mfg || len < 4 || mfg[0] != 0x4C || mfg[1] != 0x00) return false;
+    for (uint8_t i = 2; i + 1 < len; ) {
+        const uint8_t type = mfg[i], l = mfg[i + 1];
+        if ((uint16_t)i + 2 + l > len) return false;
+        if (type == 0x08 && l == 7) {
+            const uint8_t* v = mfg + i + 2;
+            return (v[4] == 0x00 && v[5] == 0x07) || (v[4] == 0x07 && v[5] == 0x00);
+        }
+        i = (uint8_t)(i + 2 + l);
+    }
+    return false;
+}
+
+uint8_t airTagFrame(const uint8_t* payload, uint8_t len, uint8_t* status) {
+    if (!payload || len < 4) return 0;
+    for (uint8_t i = 0; i + 3 < len; i++) {
+        if (payload[i] == 0x4C && payload[i + 1] == 0x00 && payload[i + 2] == 0x12 &&
+            (payload[i + 3] == 0x19 || payload[i + 3] == 0x02)) {
+            if (status) *status = (i + 4 < len) ? payload[i + 4] : 0;
+            return payload[i + 3];
+        }
+        // Not set up with a phone yet: 0x07, with the pairing prefix byte
+        // where the status would be.
+        if (isAirTagPairing(payload + i, (uint8_t)(len - i))) {
+            if (status) *status = payload[i + 4];
+            return 0x07;
+        }
+    }
+    return 0;
+}
+
+// The offline-finding block's status byte, when the advert has one:
+// 4C 00 12 19 <status> <key...>. 0 when it is not there. Bits 7-6 are the
+// battery and bit 5 is set while the tag has been near its owner's phone
+// lately (the public Find My write-ups call it "maintained"); clear means
+// it has been apart from its owner, which is the state it beeps in and the
+// state worth knowing about. Read off real tags on the bench before the
+// card leans on it harder than a chip.
+uint8_t airTagStatusByte(const uint8_t* payload, uint8_t len) {
+    if (!payload || len < 5) return 0;
+    for (uint8_t i = 0; i + 4 < len; i++)
+        if (payload[i] == 0x4C && payload[i + 1] == 0x00 &&
+            payload[i + 2] == 0x12 && payload[i + 3] == 0x19) return payload[i + 4];
+    return 0;
+}
+
+
+// Google Find Hub service-data frames only. General Eddystone FEAA advertisements
+// are not enough to identify a tracker.
+// Axon body-camera activation tag in raw BLE advertising data.
+bool isAxonBwcPayload(const uint8_t* payload, uint8_t len) {
+    static const char word[] = "BWCDEVICE";
+    if (!payload || len < 9) return false;
+    for (uint8_t i = 0; i + 9 <= len; ++i) {
+        bool forward = true, reverse = true;
+        for (uint8_t j = 0; j < 9 && (forward || reverse); ++j) {
+            if (payload[i + j] != (uint8_t)word[j]) forward = false;
+            if (payload[i + j] != (uint8_t)word[8 - j]) reverse = false;
+        }
+        if (forward || reverse) return true;
+    }
+    return false;
+}
+
+uint8_t fmdnFrameType(const uint8_t* payload, uint8_t len) {
+    if (!payload) return 0;
+    for (uint8_t i = 0; i + 1 < len; ) {
+        const uint8_t n = payload[i];
+        if (n == 0 || (uint16_t)i + 1 + n > len) break;
+        if (n >= 4 && payload[i + 1] == 0x16 &&
+            payload[i + 2] == 0xAA && payload[i + 3] == 0xFE &&
+            (payload[i + 4] == 0x40 || payload[i + 4] == 0x41))
+            return payload[i + 4];
+        i = (uint8_t)(i + n + 1);
+    }
+    return 0;
+}
+bool isFmdnPayload(const uint8_t* payload, uint8_t len) {
+    return fmdnFrameType(payload, len) != 0;
 }
 
 Confidence confidenceFor(DetectionType t) {
