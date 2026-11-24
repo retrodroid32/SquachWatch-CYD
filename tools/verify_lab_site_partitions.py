@@ -18,16 +18,17 @@ ROOT = Path(__file__).resolve().parents[1]
 def digest(data):
     return hashlib.sha256(data).hexdigest()
 
-def verify(site: Path, build_dir: Path, margin: int, expect_size):
+def verify(site: Path, build_dir: Path, margin: int, expect_size, include_checkout_lab_profiles=True):
     matrix = json.loads((site / "boards.json").read_text())
-    # A LAB-only board cannot exist in the mirrored production boards.json.
-    # Include the source checkout's unlisted LAB profiles for verification.
-    checkout_matrix = json.loads((ROOT / "web-flasher/boards.json").read_text())
-    ids = {board["id"] for board in matrix["boards"]}
-    for board in checkout_matrix["boards"]:
-        if board.get("lab") and board["id"] not in ids:
-            matrix["boards"].append(board)
-            ids.add(board["id"])
+    if include_checkout_lab_profiles:
+        # A LAB-only board cannot exist in the mirrored production boards.json.
+        # Include the source checkout's unlisted LAB profiles for verification.
+        checkout_matrix = json.loads((ROOT / "web-flasher/boards.json").read_text())
+        ids = {board["id"] for board in matrix["boards"]}
+        for board in checkout_matrix["boards"]:
+            if board.get("lab") and board["id"] not in ids:
+                matrix["boards"].append(board)
+                ids.add(board["id"])
     verified = 0
     errors = []
     for board in matrix["boards"]:
