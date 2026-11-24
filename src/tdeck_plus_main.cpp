@@ -69,17 +69,14 @@ static bool getTouch(uint16_t& x,uint16_t& y) {
     return valid;
 }
 static void backlightOn() {
-    // T-Deck Plus has a pulse-step driver, not a PWM backlight.
+    // Match the LILYGO UnitTest::setBrightness(16) power-on sequence:
+    // LOW >=3ms resets the 16-step pulse chip; the first HIGH selects
+    // maximum brightness. Pulsing another 16 times is NOT the same.
     pinMode(Deck::BACKLIGHT,OUTPUT);
     digitalWrite(Deck::BACKLIGHT,LOW);
-    delay(5);
-    for(uint8_t i=0;i<16;++i) {
-        digitalWrite(Deck::BACKLIGHT,HIGH);
-        delayMicroseconds(10);
-        digitalWrite(Deck::BACKLIGHT,LOW);
-        delayMicroseconds(10);
-    }
+    delay(3);
     digitalWrite(Deck::BACKLIGHT,HIGH);
+    delayMicroseconds(30);
 }
 static void newPage(int step) {
     page=(uint8_t)((page+4+step)%4);
