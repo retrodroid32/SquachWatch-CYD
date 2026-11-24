@@ -19,7 +19,7 @@ If USB download fails, hold the trackball center (BOOT) while attaching USB, rel
 - SPI MOSI41/MISO38/SCLK40, LCD CS12/DC11; SD CS39 and radio CS9 held deselected.
 - GT911 touch probe 0x5D/0x14, shared I2C SDA18/SCL8.
 - Trackball directions, basic I2C keyboard event read 0x55.
-- Onboard GPS UART 38400, RX21/TX48 (manufacturer Plus example): NMEA status display.
+- Onboard GPS UART 9600, ESP32 RX44/TX43 (upstream T-Deck UnitTest utilities.h / GPSShield): NMEA status display.
 - Wi-Fi scans and detection matches using the fork's full v1.50 signature table.
 - Hardware status screen shows memory, PSRAM, GT911, and last keyboard character.
 
@@ -30,8 +30,11 @@ This is an experimental board bring-up firmware, **not the complete SquachWatch 
 1. Three cold boots without reset loops, screen working and backlight visible.
 2. Touch bottom left/right, all trackball directions, keyboard input.
 3. Wi-Fi scan and actual matched OUI/SSID devices.
-4. GPS reports real NMEA sentences in open sky.
+4. GPS reports real NMEA sentences in open sky; if silent check module baud and variant against official schematic.
 5. Verify 8MB PSRAM, heap and 5-minute idle soak.
 6. Then implement SD/LoRa shared-SPI arbitration and BLE/full UI in follow-on PRs.
 
 Reference: Official LILYGO T-Deck Plus Quick Start and LilyGoLib hardware pin map.
+
+## Official upstream cross-check (2026-11-24)
+LILYGO T-Deck repo UnitTest/utilities.h: POWERON10, TFT CS12/DC11, SPI 41/38/40, GT911 INT16 and I2C 18/8, keyboard address 0x55, keyboard INT46, backlight42, GPS RX44/TX43. UnitTest::setBrightness(16) uses GPIO42 LOW for 3ms, then HIGH for 30us to select maximum brightness. GPSShield starts at 9600 baud with optional detection/recovery; other documentation examples show different GPS UART mappings (21/48), so the real onboard GNSS UART must be confirmed on hardware. The R1 port follows upstream UnitTest and GPSShield pin definitions, not audio codec pins 21/48.
