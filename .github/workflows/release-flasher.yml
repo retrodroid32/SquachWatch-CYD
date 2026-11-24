@@ -304,6 +304,11 @@ jobs:
         run: |
           set -euo pipefail
           pio run $(python tools/board_matrix.py pio-args release)
+          # LAB-only optional ESP32-S3 T-Deck Plus; never enter production release matrix.
+          if [ "${{ steps.ver.outputs.is_lab }}" = "true" ]; then
+            pio run -e tdeck-plus
+            python3 tools/check_app_image_sizes.py tdeck-plus
+          fi
           # Compare FINAL ESP32 image bytes to the actual partition table.
           # The ELF estimate overlooked a 240-byte overflow and shipped black-screen LAB firmware.
           python3 tools/check_app_image_sizes.py $(python tools/board_matrix.py list release)
@@ -400,6 +405,11 @@ jobs:
           # same boot_app0.bin `pio run -t upload` has always written.
           cp "$HOME/.platformio/packages/framework-arduinoespressif32/tools/partitions/boot_app0.bin" esp32-otadata.bin
           test "$(stat -c%s esp32-otadata.bin)" -eq 8192
+          if [ "${{ steps.ver.outputs.is_lab }}" = "true" ]; then
+            cp .pio/build/tdeck-plus/bootloader.bin tdeck-plus-bootloader.bin
+            cp .pio/build/tdeck-plus/partitions.bin tdeck-plus-partitions.bin
+            cp .pio/build/tdeck-plus/firmware.bin tdeck-plus-firmware.bin
+          fi
           # The S3 watch shares none of that: its own chip, its own bootloader
           # and its own table. otadata is the same eight bytes of boot_app0.
           cp .pio/build/twatch-s3/bootloader.bin esp32s3-bootloader.bin
@@ -580,6 +590,16 @@ jobs:
           label = "${{ steps.ver.outputs.label }}"
           ver   = "${{ steps.ver.outputs.version }}"
           matrix = json.load(open("web-flasher/boards.json"))
+          # The live production index lacks this new LAB-only option.
+          # Add the path strictly inside the ?lab=1 list in the mirrored
+          # page without changing normal production board choices.
+          page = "_site/index.html"
+          html = open(page, encoding="utf-8").read()
+          needle = "'./manifest-lab-twatch-s3.json'].forEach(function (path)"
+          if needle not in html:
+              raise SystemExit("LAB board picker markup changed; refusing blind patch")
+          html = html.replace(needle, "'./manifest-lab-twatch-s3.json', './manifest-lab-tdeck-plus.json'].forEach(function (path)", 1)
+          open(page, "w", encoding="utf-8").write(html)
           # LAB firmware may require an updated OTA partition layout.
           # The mirrored production esp32-partitions.bin must remain
           # byte-for-byte unchanged. Serve THIS build's partition table
