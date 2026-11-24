@@ -5,6 +5,7 @@
 #if defined(FREENOVE35_N)
 #include <Arduino.h>
 #include <Wire.h>
+#include <string.h>
 #include <WiFi.h>
 #include <TFT_eSPI.h>
 #include "st77922_qspi.h"
@@ -60,8 +61,20 @@ static bool startTouch(){
   return St77922Touch::probe();
 }
 static bool pollTouch(){return touchOk&&St77922Touch::read(touchX,touchY);}
+static void applyPanelColors(){
+  static int previousInvert=-1, previousSwap=-1;
+  const int inv=Settings::inverted()?1:0;
+  const int swap=Settings::rgbSwapped()?1:0;
+  if(inv!=previousInvert){St77922::invert(inv!=0);previousInvert=inv;}
+  if(swap!=previousSwap){
+    const uint8_t madctl=swap?0x08:0x00;
+    St77922::writeReg(0x36,&madctl,1);
+    previousSwap=swap;
+  }
+}
 static bool present(){
   if(!screenOk||!view.getPointer()||!dmaFrameChunk)return false;
+  applyPanelColors();
   const uint16_t* src=(const uint16_t*)view.getPointer();
   // ONE whole-screen window. Upstream opens 0x2C as a register command,
   // then streams QSPI pixel chunks with 0x3C (continuation). Do not
@@ -73,7 +86,8 @@ static bool present(){
   while(remaining){
     size_t n=remaining<CHUNK_PX?remaining:CHUNK_PX;
     St77922::wait();  // bounce memory must be reusable before rewriting
-    for(size_t i=0;i<n;i++)dmaFrameChunk[i]=St77922::wire(src[offset+i]);
+    // TFT_eSprite 16-bit storage is already high-byte-first; do not swap twice.
+    memcpy(dmaFrameChunk,src+offset,n*sizeof(uint16_t));
     if(!St77922::queuePixels(dmaFrameChunk,n,first)){
       ++frameErrors;
       Serial.printf("[freenove35] upstream QSPI queue FAIL count=%lu\n",(unsigned long)frameErrors);
