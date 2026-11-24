@@ -22,6 +22,9 @@
 #include "detection.h"
 #include "squachy.h"
 #include "clock.h"
+#include "blackbox.h"
+#include "ui_desk.h"
+#include <esp_system.h>
 #include "notices.h"
 #include "bingo.h"
 #include "dex.h"
@@ -125,7 +128,7 @@ static bool present(){
 // modules as main.cpp. Only the hardware framebuffer and touch transfer are
 // board-specific. Avoid a second imitation dashboard.
 static DetectionEngine engine;
-enum class View : uint8_t { BOOT, CLEAR, SETTINGS, LOG, RAWSCAN };
+enum class View : uint8_t { BOOT, CLEAR, SETTINGS, LOG, RAWSCAN, DESK };
 static View activeView=View::BOOT;
 static uint32_t bootAt=0, lastTouchAt=0;
 static bool scanPicker=false, rawBleMode=true;
@@ -137,6 +140,7 @@ static void enterClear(){
   activeView=View::CLEAR;
   uiClearInit(view);
 }
+static void enterDesk(){activeView=View::DESK;uiDeskInit(view);}
 static void enterSettings(){
   activeView=View::SETTINGS;
   uiSettingsInit(view);
@@ -193,14 +197,14 @@ static void handleTouch(uint16_t x,uint16_t y){
       if(category!=DetectionType::UNKNOWN){enterLog(category);return;}
     }
     const ButtonId hit=Theme::hitTestButtonBar(x,y,HW::W,HW::H);
-    if(hit==ButtonId::LOG){Squachy::trigger(Squachy::Event::LOG_OPENED);enterLog();return;}
     if(scanPicker){
       if(hit==ButtonId::SCAN){scanPicker=false;enterRawScan(true);return;}
       if(hit==ButtonId::LOG){scanPicker=false;enterRawScan(false);return;}
       if(hit==ButtonId::CLR){scanPicker=false;return;}
     }
+    if(hit==ButtonId::LOG){Squachy::trigger(Squachy::Event::LOG_OPENED);enterLog();return;}
     if(hit==ButtonId::SCAN){scanPicker=true;return;}
-    if(hit==ButtonId::CLR){enterLog();return;}
+    if(hit==ButtonId::CLR){enterDesk();return;}
     if(!Settings::backgroundLocked()&&(x<HW::W/10||x>=HW::W-HW::W/10)){
       if(x<HW::W/10)Settings::cyclePrevBackground();
       else Settings::cycleBackground();
@@ -237,6 +241,10 @@ static void handleTouch(uint16_t x,uint16_t y){
         if(choice!=SettingsRow::NONE)Theme::showToast("FREENOVE LAB","PORT IN PROGRESS",Theme::AMBER);
         break;
     }
+  }else if(activeView==View::DESK){
+    if(uiDeskHitBack(x,y,HW::W,HW::H)){enterClear();return;}
+    if(uiDeskHitSettings(x,y,HW::W,HW::H)){enterSettings();uiSettingsOpenPage(SettingsPage::DESK);return;}
+    if(uiDeskHitTimer(x,y,HW::W,HW::H)){uiDeskTapTimer(now);return;}
   }else if(activeView==View::RAWSCAN){
     const RawScanTap hit=uiRawScanHitTest(x,y,HW::W,HW::H);
     if(hit==RawScanTap::BACK){enterClear();return;}
@@ -257,6 +265,7 @@ static void renderOriginal(uint32_t now){
   switch(activeView){
     case View::BOOT:uiBootTick(view,now,HW::W,HW::H,true);break;
     case View::CLEAR:uiClearTick(view,now,engine,true,scanPicker,HW::W,HW::H);break;
+    case View::DESK:uiDeskTick(view,now,engine,true);break;
     case View::SETTINGS:uiSettingsTick(view,now,engine,false,true);break;
     case View::LOG:
       uiLogTick(view,now,engine,0,false,nullptr,false,nullptr,nullptr,
@@ -291,6 +300,13 @@ void setup(){
   Settings::load();
   setRotation(Settings::rotation());
   Clock::begin();
+  if(BlackBox::begin()){
+    BlackBox::BootRecord br={};
+    br.reason=(uint8_t)esp_reset_reason();
+    br.epoch=Clock::trusted()?Clock::nowEpoch():0;
+    BlackBox::noteBoot(br);
+    Serial.println("[events] persistent flash ring ready");
+  }else Serial.println("[events] persistent flash ring FAILED");
   // No CYD SD mount; engine SD initialization is guarded for this board.
   // Onboard ESP32-S3 WiFi/BLE are started by the real detection engine.
   radioReady=engine.init();
@@ -317,7 +333,23 @@ void loop(){
   // GT911-style level handling is NOT used; ST77922 touch reports a
   // valid point while pressed. Only process the first press in a gesture.
   bool down=pollTouch();
-  if(down&&!touchHeld)handleTouch(touchX,touchY);
+  static bool settingsGesture=false,moved=false;
+  static uint16_t startX=0,startY=0;
+  static int lastY=0;
+  static uint32_t downAt=0;
+  if(down&&!touchHeld){
+    settingsGesture=activeView==View::SETTINGS;
+    if(settingsGesture){startX=touchX;startY=touchY;lastY=touchY;downAt=now;moved=false;}
+    else handleTouch(touchX,touchY);
+  }
+  if(down&&settingsGesture&&activeView==View::SETTINGS){
+    const int dy=(int)touchY-lastY;
+    if(abs(dy)>10){moved=true;uiSettingsScroll(dy>0?-1:1);lastY=touchY;}
+  }
+  if(!down&&touchHeld&&settingsGesture){
+    settingsGesture=false;
+    if(!moved&&now-downAt<700&&activeView==View::SETTINGS)handleTouch(startX,startY);
+  }
   touchHeld=down;
   if(activeView==View::BOOT&&now-bootAt>=3100)enterClear();
   // ST77922 QSPI: a complete 307KB frame costs much more than classic CYD.
