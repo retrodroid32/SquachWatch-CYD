@@ -1,2 +1,2 @@
-FREENOVE35-ST77922-R7-COLOR-CORRECTION-20261124
-PR #260: fix redundant TFT_eSprite RGB565 byte swap, apply saved inversion and RGB/BGR settings to panel, default non-inverted. Run exact-head host/emulator/firmware matrix and LAB-only firmware publication after PASS. Physical color and layout verification pending. No merge or production release.
+FREENOVE35-ST77922-R8-ROTATION-CATEGORY-TOUCH-20261124
+PR #260: preserve R7 color correction; connect rotation and detection category pill touch handlers, rotate framebuffer and transform capacitive coordinates consistently, retain rotation setting. Run exact-head host/emulator/firmware matrix and LAB-only publication after PASS. Physical validation pending; no merge or production release.
