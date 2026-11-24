@@ -1,2 +1,2 @@
-FREENOVE35-ST77922-R8-ROTATION-CATEGORY-TOUCH-20261124
-PR #260: preserve R7 color correction; connect rotation and detection category pill touch handlers, rotate framebuffer and transform capacitive coordinates consistently, retain rotation setting. Run exact-head host/emulator/firmware matrix and LAB-only publication after PASS. Physical validation pending; no merge or production release.
+FREENOVE35-ST77922-R9-SETTINGS-EVENTS-DESK-DMA-20261124
+PR #260: preserve R7/R8 color and touch changes; restore settings drag/release gestures; initialize persistent events with reserved 16MB flash ring; route Desk to shared desk UI; bound QSPI DMA waits and restart on completion timeout. Run exact-head host/emulator/firmware matrix and LAB-only publication after PASS. Physical validation and freeze root cause pending. No merge or production release.
