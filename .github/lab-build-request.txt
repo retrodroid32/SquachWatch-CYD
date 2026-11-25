@@ -1,2 +1,2 @@
-V150-R6.2-QUEUED-ALERT-DELIVERY
-Retain R6.1 integrated SDMMC and large-slot Trail. Publish each fresh detector opportunity directly to bounded alert FIFO during active alert, rather than poll latest row. Preserve eligibility gates, deduplication, privacy and OTA reserve. Full firmware, emulator and host build and LAB packaging requested.
+V150-R7.0-CLASSIC-RENDERER-SIZE
+Experimental classic CYD mascot renderer size optimization only; retain R6.2 alert delivery and Freenove SDMMC. Full CI, mandatory OTA reserve, linked symbol report and LAB packaging requested. Hardware animation regression pending; no production promotion.
