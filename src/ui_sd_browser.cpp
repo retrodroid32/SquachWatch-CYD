@@ -1,7 +1,7 @@
 #include "ui_sd_browser.h"
 #include "sd_log.h"
 #include "theme.h"
-#include <SD.h>
+#include "sd_card_backend.h"
 #include <Arduino.h>
 #include <stdio.h>
 #include <string.h>
@@ -53,7 +53,7 @@ bool list() {
     CardGuard guard(logger);
     if (!guard.locked) { error = true; return false; }
     if (!logger->ready()) return false;
-    File d = SD.open(folder);
+    File d = SQW_CARD.open(folder);
     if (!d || !d.isDirectory()) {
         if (d) d.close();
         logger->browseFault();
@@ -83,7 +83,7 @@ void loadPreview() {
     if (!logger || !logger->ready()) return;
     CardGuard guard(logger);
     if (!guard.locked) { error = true; return; }
-    File f = SD.open(chosen, FILE_READ);
+    File f = SQW_CARD.open(chosen, FILE_READ);
     if (!f || f.isDirectory()) {
         if (f) f.close(); error = true; logger->browseFault(); return;
     }
@@ -280,7 +280,7 @@ bool tap(int x, int y, int w, int h) {
             if (x >= w / 2 && chosen[0]) {
                 CardGuard guard(logger);
                 if (!guard.locked || !logger->ready()) error = true;
-                else if (!SD.remove(chosen)) { error = true; logger->browseFault(); }
+                else if (!SQW_CARD.remove(chosen)) { error = true; logger->browseFault(); }
                 else { preview = false; offset = 0; }
             }
             askDelete = false;
