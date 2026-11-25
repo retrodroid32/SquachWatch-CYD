@@ -144,6 +144,10 @@ enum class RawScanMode : uint8_t { NONE, BLE, WIFI, UPDATE, REST };
 static bool g_restBle = false;   // REST: is the BLE scan resting too?
 static RawScanMode g_rawMode        = RawScanMode::NONE;
 static uint32_t    g_rawBleStartMs  = 0;
+#if defined(FREENOVE35_N)
+static uint32_t s_fnWifiStartMs = 0;
+static constexpr uint32_t FN_WIFI_SCAN_TIMEOUT_MS = 12000u;
+#endif
 #if defined(GPS_SUPPORT) && defined(GPS_RX_PIN)
 // GPIO35 GPS firmware revealed raw WiFi and NimBLE competing for RF airtime.
 // Pause BLE on its host task before doing an active WiFi survey, with a
@@ -2413,6 +2417,12 @@ void DetectionEngine::startRawWifiScan() {
     requestRawBleScanMode();
 #else
     if (leavingRawBle) requestRawBleScanMode();
+#if defined(FREENOVE35_N)
+    // A transient WIFI_SCAN_FAILED can precede the asynchronous completion.
+    // Do not expose it as terminal while the scan's completion window is open.
+    WiFi.scanDelete();
+    s_fnWifiStartMs = millis();
+#endif
     WiFi.scanNetworks(true /* async */, true /* hidden */, true /* passive */, 150);
 #endif
 }
@@ -2502,7 +2512,14 @@ bool DetectionEngine::rawWifiScanFailed() const {
 #if defined(GPS_SUPPORT) && defined(GPS_RX_PIN)
     return g_rawMode == RawScanMode::WIFI && s_rawWifiFailed;
 #else
+#if defined(FREENOVE35_N)
+    if (g_rawMode != RawScanMode::WIFI) return false;
+    const int result = WiFi.scanComplete();
+    // Success always takes precedence; do not flash a failure during startup.
+    return result < 0 && (uint32_t)(millis() - s_fnWifiStartMs) >= FN_WIFI_SCAN_TIMEOUT_MS;
+#else
     return g_rawMode == RawScanMode::WIFI && WiFi.scanComplete() == -2;
+#endif
 #endif
 }
 
