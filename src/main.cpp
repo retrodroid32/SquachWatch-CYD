@@ -241,6 +241,7 @@ static void drawCrashCard(TFT_eSPI& t, int physicalW = 0, int physicalH = 0) {
 #include "ui_hunt.h"
 #include "ui_colorcheck.h"
 #include "alert_queue.h"
+#include "trail_history.h"
 #include "detection_info.h"
 #include "ui_diary.h"
 #include "ui_outfit.h"
@@ -505,7 +506,7 @@ static uint32_t fnNextHash[480];
 static bool fnRowDirty[480];
 static inline void pushFrame(int x, int y);
 static void fnBootStage(const char* stage, uint16_t color) {
-    Serial.printf("[FNK0104N R14.6] %s heap=%lu psram=%lu stack=%lu\n", stage,
+    Serial.printf("[FNK0104N R14.7-R6.2] %s heap=%lu psram=%lu stack=%lu\n", stage,
                   (unsigned long)ESP.getFreeHeap(), (unsigned long)ESP.getFreePsram(),
                   (unsigned long)uxTaskGetStackHighWaterMark(nullptr));
     St77922::fillRect(0,0,320,8,color);
@@ -1258,7 +1259,7 @@ static bool    s_alertIsBle = true;
 static DetectionType s_confirmType = DetectionType::UNKNOWN;
 static Detection     s_confirmDetection = {};
 
-enum class InfoPage : uint8_t { PRIMER = 0, EVIDENCE, EXPLAIN };
+enum class InfoPage : uint8_t { PRIMER = 0, EVIDENCE, TRAIL, EXPLAIN };
 
 // MORE INFO has three layers: the one-time RSSI/confidence primer, concrete
 // evidence for this exact sighting, then the longer device/type explanation.
@@ -1341,7 +1342,7 @@ void freenoveBootProgress(const char* stage) {
     frame.setTextColor(TFT_WHITE,TFT_BLACK);
     frame.setTextSize(2); frame.setCursor(12,24); frame.print("SquachWatch");
     frame.setTextSize(1); frame.setCursor(12,52); frame.print(stage);
-    frame.setCursor(12,102); frame.print("Freenove LAB R14.6");
+    frame.setCursor(12,102); frame.print("Freenove LAB R14.7 / v1.50 R6.2");
     frame.setCursor(12,70); frame.printf("Internal heap: %lu",(unsigned long)heap_caps_get_free_size(MALLOC_CAP_INTERNAL|MALLOC_CAP_8BIT));
     frame.setCursor(12,84); frame.printf("Largest block: %lu",(unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL|MALLOC_CAP_8BIT));
     pushFrame(0,0);
@@ -1387,8 +1388,6 @@ static void restoreFrameBuffer();
 // is dismissed, not to CLEAR. Set in enterAlert(), spent here.
 static bool s_backToDesk = false;
 static AlertQueue<DetectionType,4> s_alertQueue;
-static uint32_t s_queueLatestChange = 0;
-static bool s_queueLatestSeen = false;
 static void enterDesk();
 
 // The screens that run the raw scan, which switches detection off while it
@@ -1487,7 +1486,6 @@ static void twatchBuzz(Buzz kind);
 static void enterAlert(const Detection& d) {
     if (state != AppState::ALERT) {
         s_alertQueue.clear();
-        s_queueLatestSeen = false;
         s_backToDesk = (state == AppState::DESK);
     }
     s_firstLine[0] = '\0';
@@ -1562,14 +1560,10 @@ static void enterAlert(const Detection& d) {
 // Queue identities, not pointers into the mutable detection log. Admission is
 // side-effect-free; spend the existing cooldown/auto-snooze/spam gates only
 // when a waiting card actually takes the screen.
-static void collectQueuedAlert(uint32_t now) {
+static void collectQueuedAlert(const Detection& candidate) {
     if (Security::locked()) { s_alertQueue.clear(); return; }
-    const Detection* d = engine.latest();
-    if (!d || !freshAlertCandidate(*d, now)) return;
-    const uint32_t changed = engine.latestChangeMs();
-    if (s_queueLatestSeen && changed == s_queueLatestChange) return;
-    s_queueLatestSeen = true;
-    s_queueLatestChange = changed;
+    if (state != AppState::ALERT) return;
+    const Detection* d = &candidate;
     if (d->type == lastAlertType && memcmp(d->mac,s_alertMac,6)==0) return;
     const bool always = IgnoreList::alwaysAlert(d->mac);
     if (!always && (!Settings::alertEnabled(d->type) || IgnoreList::silenced(d->mac) ||
@@ -1582,7 +1576,7 @@ static bool nextQueuedAlert() {
     AlertQueue<DetectionType,4>::Entry q;
     while (s_alertQueue.pop(q)) {
         const Detection* d = engine.findDetection(q.mac,q.type);
-        if (!d || !d->active || !alertMayInterrupt(*d)) continue;
+        if (!d || !d->active || !Settings::typeEnabled(d->type) || !alertMayInterrupt(*d)) continue;
         const Detection copy = *d;
         uiAlertSetRedacted(false);
         enterAlert(copy);
@@ -3779,6 +3773,8 @@ void setup() {
     MeshTalk::begin();
 #endif
 #if defined(FREENOVE35_N)
+    freenoveBootProgress("Starting SDMMC worker...");
+    engine.sd().startMonitor(); // mount asynchronously after Mesh and radios
     freenoveBootProgress("Starting shared application...");
 #endif
 #if defined(CYD) && !defined(CYD32) && !defined(CYD35) && !defined(AWOK) && !defined(RLPHANTOM) && !defined(RLPHANTOM_R)
@@ -4045,7 +4041,7 @@ static inline void pushFrame(int x, int y) {
     }
     if(ok)memcpy(fnHash,next,sizeof fnHash);
     static bool firstFrameReported=false;
-    if(ok&&!firstFrameReported){Serial.println("[FNK0104N R14.6] first QSPI framebuffer transfer complete");firstFrameReported=true;}
+    if(ok&&!firstFrameReported){Serial.println("[FNK0104N R14.7-R6.2] first QSPI framebuffer transfer complete");firstFrameReported=true;}
     fnDirty=!ok;
     s_pushAccumUs+=micros()-t0;
 #else
@@ -4405,6 +4401,7 @@ void loop() {
         touchJustDown = false;
         touchJustUp = false;
     }
+    engine.setAlertOpportunitySink(state == AppState::ALERT ? collectQueuedAlert : nullptr);
     engine.loop();
 #if defined(GPS_SUPPORT) && defined(GPS_RX_PIN)
     GpsRuntime::tick(now);
@@ -5473,15 +5470,20 @@ void loop() {
             break;
         }
         case AppState::ALERT: {
-            collectQueuedAlert(now);
             uiAlertSetQueue(Security::locked() ? 0 : s_alertQueue.size());
             const char* alertInfoText =
                 s_infoPage == InfoPage::PRIMER ? DetectionInfo::rssiConfidencePrimer()
               : s_infoPage == InfoPage::EVIDENCE ? DetectionInfo::evidenceText(s_confirmDetection)
+#if SQW_TRAIL_ENABLED
+              : s_infoPage == InfoPage::TRAIL ? TrailHistory::describe(s_confirmDetection.mac,(uint8_t)s_confirmDetection.type,Settings::privacyMode() || Security::locked(),s_confirmDetection.restored)
+#endif
               : DetectionInfo::explainFor(s_confirmType, s_confirmVendor, privName(s_confirmName), engine);
             const char* alertInfoTypeName =
                 s_infoPage == InfoPage::PRIMER ? nullptr
               : s_infoPage == InfoPage::EVIDENCE ? "EVIDENCE"
+#if SQW_TRAIL_ENABLED
+              : s_infoPage == InfoPage::TRAIL ? "TRAIL"
+#endif
               : DetectionInfo::titleFor(s_confirmType, s_confirmVendor, privName(s_confirmName));
 #if defined(CYD35)
             if (frameBufferOk) {
@@ -5568,6 +5570,11 @@ void loop() {
                         s_infoPage = InfoPage::EVIDENCE;
                         s_infoArmed = false;
                     } else if (s_infoPage == InfoPage::EVIDENCE) {
+#if SQW_TRAIL_ENABLED
+                        s_infoPage = InfoPage::TRAIL;
+                        s_infoArmed = false;
+                    } else if (s_infoPage == InfoPage::TRAIL) {
+#endif
                         s_infoPage = InfoPage::EXPLAIN;
                         s_infoArmed = false;
                     } else {
@@ -5860,11 +5867,17 @@ void loop() {
             const char* infoText =
                 s_infoPage == InfoPage::PRIMER ? DetectionInfo::rssiConfidencePrimer()
               : s_infoPage == InfoPage::EVIDENCE ? DetectionInfo::evidenceText(s_confirmDetection)
+#if SQW_TRAIL_ENABLED
+              : s_infoPage == InfoPage::TRAIL ? TrailHistory::describe(s_confirmDetection.mac,(uint8_t)s_confirmDetection.type,Settings::privacyMode() || Security::locked(),s_confirmDetection.restored)
+#endif
               : DetectionInfo::explainFor(s_confirmType, s_confirmVendor, privName(s_confirmName), engine);
 
             const char* infoTypeName =
                 s_infoPage == InfoPage::PRIMER ? nullptr
               : s_infoPage == InfoPage::EVIDENCE ? "EVIDENCE"
+#if SQW_TRAIL_ENABLED
+              : s_infoPage == InfoPage::TRAIL ? "TRAIL"
+#endif
               : DetectionInfo::titleFor(s_confirmType, s_confirmVendor, privName(s_confirmName));
             // The shared background renderer advances only on the first
             // logical frame pass; this also fixes double-stepping on CYD32.
@@ -5894,6 +5907,11 @@ void loop() {
                         s_infoPage = InfoPage::EVIDENCE;
                         s_infoArmed = false;
                     } else if (s_infoPage == InfoPage::EVIDENCE) {
+#if SQW_TRAIL_ENABLED
+                        s_infoPage = InfoPage::TRAIL;
+                        s_infoArmed = false;
+                    } else if (s_infoPage == InfoPage::TRAIL) {
+#endif
                         s_infoPage = InfoPage::EXPLAIN;
                         s_infoArmed = false;
                     } else {

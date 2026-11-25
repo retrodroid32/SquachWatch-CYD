@@ -5,7 +5,7 @@
 #include "theme.h"
 #include "sd_io_policy.h"
 #include <time.h>
-#include <SD.h>
+#include "sd_card_backend.h"
 #include <sd_diskio.h>
 #include <ff.h> // defines FatFs BYTE/DWORD/UINT used by diskio.h
 #include <diskio.h>
@@ -50,7 +50,11 @@ extern TFT_eSPI tft;
 // contiguous allocation and has been demonstrated to fail on reinsert
 // even though one slot can be registered (R5 hardware diagnosis).
 // Do not increase without redesigning and verifying hot-insert allocation.
+#if defined(FREENOVE35_N)
+static const uint8_t SD_MAX_FILES = 2; // PSRAM board: directory + preview
+#else
 static const uint8_t SD_MAX_FILES = 1;
+#endif
 
 bool SdLog::begin() {
     if (_ready) return true;
@@ -79,7 +83,27 @@ bool SdLog::begin() {
     }
 #endif
     Serial.printf("[sd] mounting: heap %lu, largest block %lu\n", (unsigned long)ESP.getFreeHeap(), (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
-#if defined(CYD35)
+#if defined(FREENOVE35_N)
+    // SDMMC needs internal DMA memory even with PSRAM available.
+    const size_t internalFree=heap_caps_get_free_size(MALLOC_CAP_INTERNAL|MALLOC_CAP_8BIT);
+    const size_t internalLargest=heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL|MALLOC_CAP_8BIT);
+    if (internalFree<20000u || internalLargest<8192u) {
+        _statusDetail="SDMMC DEFERRED - LOW RAM";
+        Serial.printf("[sdmmc] deferred internal=%lu largest=%lu\n",(unsigned long)internalFree,(unsigned long)internalLargest);
+        return false;
+    }
+    // Upstream v1.50 FNK0104N schematic mapping. Never format on failure.
+    const bool pins4 = SD_MMC.setPins(5,4,6,7,2,3);
+    bool mounted = pins4 && SD_MMC.begin("/sd",false,false,SDMMC_FREQ_DEFAULT,SD_MAX_FILES);
+    if (!mounted) {
+        SD_MMC.end();
+        const bool pins1 = SD_MMC.setPins(5,4,6);
+        mounted = pins1 && SD_MMC.begin("/sd",true,false,SDMMC_FREQ_DEFAULT,SD_MAX_FILES);
+        if (mounted) Serial.println("[sdmmc] mounted in 1-bit fallback");
+    } else Serial.println("[sdmmc] mounted in 4-bit mode");
+    if (!mounted) {
+        SD_MMC.end();
+#elif defined(CYD35)
     // (The RL Phantom used to land here too, and its SD card never worked as
     // a result: the card is on 18/19/23, and the display's SPI engine never
     // clocked those pins. Its display now runs on HSPI -- see its user setup
@@ -140,7 +164,7 @@ bool SdLog::begin() {
                       (unsigned long)_mountAttempts, (int)_everMounted);
         return false;
     }
-    Serial.printf("[sd] card mounted: %llu MB\n", (unsigned long long)(SD.cardSize() >> 20));
+    Serial.printf("[sd] card mounted: %llu MB\n", (unsigned long long)(SQW_CARD.cardSize() >> 20));
 #if defined(CYD) && !defined(AWOK) && !defined(CYD35) && !defined(RLPHANTOM) && !defined(RLPHANTOM_R) && !defined(TWATCH_S3)
     // Capture the FATFS object SDFS already registered. Never create
     // another one on card removal: repeated malloc/free of this FAT/VFS
@@ -177,7 +201,7 @@ bool SdLog::begin() {
     return true;
 }
 
-// A removed card can make SD.open()/File.write()/File.close() wait for SPI
+// A removed card can make SQW_CARD.open()/File.write()/File.close() wait for SPI
 // timeouts. Repeated retry in the UI loop makes the whole device stutter.
 // A failed flush therefore latches logging off until reboot. There is no
 // reliable card-detect input on the supported CYDs; guessing that the card
@@ -356,6 +380,39 @@ static const char* sdDiagnosePostCmd0MountFailure(uint8_t* sector) {
 // unlike SD.cardType()/cardSize(), it is NOT a cached presence flag.
 void SdLog::monitorEntry(void* ctx) {
     SdLog* self = static_cast<SdLog*>(ctx);
+#if defined(FREENOVE35_N)
+    // Arduino 2.0.x SDMMC has no readRAW API. Check root directory access
+    // and let actual append/browser errors detect removal as well.
+    // Only this worker mounts/unmounts; no SPI probing or FAT VFS surgery.
+    for (;;) {
+        const uint32_t signalled=ulTaskNotifyTake(pdTRUE,pdMS_TO_TICKS(5000));
+        if (!self) continue;
+        const SemaphoreHandle_t m=static_cast<SemaphoreHandle_t>(self->_ioMutex);
+        if (!m || xSemaphoreTake(m,pdMS_TO_TICKS(150))!=pdTRUE) continue;
+        if (self->_ready && !self->_browsing) {
+            File root=SQW_CARD.open("/");
+            const bool ok=root && root.isDirectory();
+            if (root) root.close();
+            if (!ok) self->disableAfterIoFailure("SDMMC directory check");
+        }
+        if (!self->_ready) {
+            // First attempt immediately, then a slow retry cadence; RESCAN
+            // wakes the worker. Do not reserve storage memory before radios.
+            static uint32_t lastTry=0;
+            const uint32_t now=millis();
+            if (signalled || self->_requestRescan || !self->_mountAttempts ||
+                (uint32_t)(now-lastTry)>=15000u) {
+                lastTry=now;
+                self->_remounting=true;
+                SD_MMC.end();
+                self->begin();
+                self->_remounting=false;
+                self->_requestRescan=false;
+            }
+        }
+        xSemaphoreGive(m);
+    }
+#else
     uint8_t* sector = static_cast<uint8_t*>(malloc(512));
     // Avoid repeated full SDFS allocations after a failed *first*
     // mount. Re-arm only after a physical absence is observed.
@@ -547,10 +604,11 @@ void SdLog::monitorEntry(void* ctx) {
         }
         xSemaphoreGive(m);
     }
+#endif // FREENOVE35_N
 }
 
 void SdLog::startMonitor() {
-#if defined(CYD) && !defined(TWATCH_S3)
+#if (defined(CYD) && !defined(TWATCH_S3)) || defined(FREENOVE35_N)
     if (_monitorTask) return;
     if (!_ioMutex) _ioMutex = xSemaphoreCreateMutex();
     if (!_ioMutex) { Serial.println("[sd] monitor unavailable: no mutex"); return; }
@@ -559,6 +617,9 @@ void SdLog::startMonitor() {
                                 &task, 0) == pdPASS)
         _monitorTask = task;
     else Serial.println("[sd] monitor task allocation failed");
+#if defined(FREENOVE35_N)
+    if (_monitorTask) xTaskNotifyGive(static_cast<TaskHandle_t>(_monitorTask));
+#endif
 #endif
 }
 
@@ -589,7 +650,7 @@ bool SdLog::rescan() {
 }
 
 // File deletion deliberately replaces FAT formatting. It operates only on an
-// already mounted card, using the same SD.remove() path the browser verifies.
+// already mounted card, using the same SQW_CARD.remove() path the browser verifies.
 // It never touches the partition table, FAT geometry, NVS, or SPI registration.
 //
 // The parent uses a DIR iterator; openNextFile opens at most one FIL.
@@ -604,7 +665,7 @@ static bool sdEraseDirectory(const char* folder, unsigned depth,
         return false;
     }
     for (;;) {
-        File parent = SD.open(folder, FILE_READ);
+        File parent = SQW_CARD.open(folder, FILE_READ);
         if (!parent || !parent.isDirectory()) {
             if (parent) parent.close();
             snprintf(failure, failCap, "CANNOT OPEN FOLDER");
@@ -635,14 +696,14 @@ static bool sdEraseDirectory(const char* folder, unsigned depth,
         if (isDir) {
             if (!sdEraseDirectory(path, depth + 1, files, dirs, failure, failCap))
                 return false;
-            if (!SD.rmdir(path)) {
+            if (!SQW_CARD.rmdir(path)) {
                 snprintf(failure, failCap, "REMOVE FOLDER FAILED");
                 Serial.printf("[sd wipe] rmdir failed: %s\n", path);
                 return false;
             }
             ++dirs;
         } else {
-            if (!SD.remove(path)) {
+            if (!SQW_CARD.remove(path)) {
                 snprintf(failure, failCap, "DELETE FILE FAILED");
                 Serial.printf("[sd wipe] remove failed: %s\n", path);
                 return false;
@@ -656,7 +717,7 @@ static bool sdEraseDirectory(const char* folder, unsigned depth,
 }
 
 // Double-confirmed from the browser. A card with a broken/unmounted FAT
-// volume cannot be wiped by SD.remove(); request a computer reformat instead.
+// volume cannot be wiped by SQW_CARD.remove(); request a computer reformat instead.
 bool SdLog::wipeAllFiles() {
     const SemaphoreHandle_t m = static_cast<SemaphoreHandle_t>(_ioMutex);
     if (m && xSemaphoreTake(m, pdMS_TO_TICKS(500)) != pdTRUE) {
@@ -725,7 +786,7 @@ bool SdLog::flushPendingLocked() {
     // answering. A successful close() commits FatFS' cached sector metadata.
     _lastFlush = millis();
     const uint32_t ioStartedAt = _lastFlush;
-    File f = SD.open(_filename, FILE_APPEND);
+    File f = SQW_CARD.open(_filename, FILE_APPEND);
     if (!f) {
         disableAfterIoFailure("open");
         return false;
@@ -862,8 +923,8 @@ void SdLog::logTargetEvidence(const Detection& d, bool watched, bool hunted) {
     struct Unlock { SemaphoreHandle_t mutex; ~Unlock() { if (mutex) xSemaphoreGive(mutex); } } unlock{mutex};
     if (!_ready || _browsing) return;
     const uint32_t started = millis();
-    const bool existed = SD.exists(path);
-    File out = SD.open(path, FILE_APPEND);
+    const bool existed = SQW_CARD.exists(path);
+    File out = SQW_CARD.open(path, FILE_APPEND);
     if (!out) { disableAfterIoFailure("evidence open"); return; }
     bool ok = true;
     if (!existed) {
@@ -917,8 +978,8 @@ void SdLog::logWatchAdvertisement(const uint8_t mac[6], const uint8_t* bytes,
     struct Unlock { SemaphoreHandle_t mutex; ~Unlock() { if (mutex) xSemaphoreGive(mutex); } } unlock{mutex};
     if (!_ready || _browsing) return;
     const uint32_t started = millis();
-    const bool existed = SD.exists(path);
-    File out = SD.open(path, FILE_APPEND);
+    const bool existed = SQW_CARD.exists(path);
+    File out = SQW_CARD.open(path, FILE_APPEND);
     if (!out) { disableAfterIoFailure("watched BLE advert open"); return; }
     bool ok = true;
     if (!existed) {
@@ -962,7 +1023,7 @@ void SdLog::wipe() {
     // Walk the root and remove every file this firmware writes. Names are
     // /squachwatch-YYYYMMDD.log; matching on the prefix takes them all rather
     // than only today's, which is the whole point of a wipe.
-    File dir = SD.open("/");
+    File dir = SQW_CARD.open("/");
     if (!dir) return;
     dir.close();
 
@@ -972,7 +1033,7 @@ void SdLog::wipe() {
     for (;;) {
         char victims[16][40];
         int n = 0;
-        File pass = SD.open("/");
+        File pass = SQW_CARD.open("/");
         if (!pass) break;
         for (File f = pass.openNextFile(); f && n < 16; f = pass.openNextFile()) {
             const char* nm = f.name();
@@ -990,7 +1051,7 @@ void SdLog::wipe() {
         pass.close();
         if (!n) break;
         int removed = 0;
-        for (int i = 0; i < n; i++) if (SD.remove(victims[i])) removed++;
+        for (int i = 0; i < n; i++) if (SQW_CARD.remove(victims[i])) removed++;
         if (!removed) break;
     }
     _filename[0] = '\0';       // next buffered event rebuilds the daily path

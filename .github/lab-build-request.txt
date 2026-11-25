@@ -1,2 +1,2 @@
-V150-R5-BOUNDED-ALERT-QUEUE
-Port four-identity queued alert cards from upstream v1.50.0, preserving R14.6 and fork alert policy/security safeguards. Full firmware/emulator/host checks and LAB packaging requested. Physical validation pending.
+V150-R6.2-QUEUED-ALERT-DELIVERY
+Retain R6.1 integrated SDMMC and large-slot Trail. Publish each fresh detector opportunity directly to bounded alert FIFO during active alert, rather than poll latest row. Preserve eligibility gates, deduplication, privacy and OTA reserve. Full firmware, emulator and host build and LAB packaging requested.

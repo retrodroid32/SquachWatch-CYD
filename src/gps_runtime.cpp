@@ -2,6 +2,7 @@
 // Unlike LAB169 there is no fake Wi-Fi AP, WiGLE CSV or automatic SD export.
 #if defined(GPS_SUPPORT) && defined(GPS_RX_PIN)
 #include "gps_runtime.h"
+#include "trail_history.h"
 #include "clock.h"
 #include "theme.h"
 #include <Arduino.h>
@@ -65,6 +66,13 @@ void tick(uint32_t nowMs) {
     Theme::setGpsIconStatus(!gpsOnline ? Theme::GpsIconStatus::ABSENT :
                             Gnss::fresh(nowMs) ? Theme::GpsIconStatus::FIX :
                             Theme::GpsIconStatus::SEARCHING);
+#if SQW_TRAIL_ENABLED
+    static uint32_t lastTrailFixMs = 0;
+    if (Gnss::fresh(nowMs) && !Gnss::faked() && nowMs-lastTrailFixMs>=1000u) {
+        lastTrailFixMs=nowMs;
+        Places::noteFix(Gnss::fix().lat7,Gnss::fix().lon7,nowMs);
+    }
+#endif
     // PR136 follow-up: adopt real GPS UTC without a second parser or
     // allocating memory. Only a checksum-validated, CURRENT position/fix
     // may establish the clock. Do this once while time is untrusted.

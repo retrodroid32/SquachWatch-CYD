@@ -186,6 +186,8 @@ public:
     const Detection* logAt(uint8_t idx) const;     // 0 = newest
     const Detection* latest() const { return _latest; }
     uint32_t latestChangeMs() const { return _latestChangeMs; }
+    using AlertOpportunitySink = void (*)(const Detection&);
+    void setAlertOpportunitySink(AlertOpportunitySink sink) { _alertSink = sink; }
     // Current RAM row for a specific device/type. ALERT uses this to keep the
     // signal trend live while retaining its immutable alert snapshot for
     // identity and acknowledgement bookkeeping.
@@ -743,6 +745,12 @@ private:
     uint8_t    _logHead  = 0;            // next slot to write
     Detection* _latest   = nullptr;      // pointer into _log or null
     uint32_t   _latestChangeMs = 0;
+    AlertOpportunitySink _alertSink = nullptr;
+    void publishAlertOpportunity(Detection* d, uint32_t now) {
+        _latest = d;
+        _latestChangeMs = now;
+        if (_alertSink && !d->restored) _alertSink(*d);
+    }
     DetectionType _lastAlertType = DetectionType::UNKNOWN;
 
     // Fixed MAC+type index for hot-path log lookups. Bucket value 0 means

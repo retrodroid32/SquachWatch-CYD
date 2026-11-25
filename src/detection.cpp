@@ -1,5 +1,6 @@
 // SquachWatch-CYD — DetectionEngine implementation
 #include "detection.h"
+#include "trail_history.h"
 #include "hunt_signal.h"
 #include "serial_flush.h"
 #include "signatures.h"
@@ -1131,7 +1132,7 @@ bool DetectionEngine::init() {
 #else
     // FNK0104N shares LCD/SD resources differently from CYD. Never start
     // the classic SPI SD implementation on an unvalidated QSPI panel bus.
-    Serial.println("[freenove35] SD deferred until dedicated SDMMC driver");
+    Serial.println("[freenove35] SDMMC worker starts after Mesh initialization");
 #endif
     return true;
 }
@@ -1646,6 +1647,9 @@ void DetectionEngine::loop() {
     // First take ownership of anything NimBLE handed us. This runs before the
     // raw-scan early return so a result queued just before a mode change is not
     // stranded until that scan ends.
+#if SQW_TRAIL_ENABLED
+    Places::tick(millis());
+#endif
     processBleQ(bleBudgetUs, bleMax);
     rawWifiScanTick();
 #if defined(GPS_SUPPORT) && defined(GPS_RX_PIN)
@@ -1918,6 +1922,9 @@ void DetectionEngine::unindexLogSlot(uint8_t slot) {
 }
 
 void DetectionEngine::clearLog() {
+#if SQW_TRAIL_ENABLED
+    TrailHistory::clear();
+#endif
     _logCount = 0;
     _logHead  = 0;
     _latest   = nullptr;
@@ -2074,8 +2081,7 @@ void DetectionEngine::processDeauthQ() {
                 const bool ruleEvent = need <= 1 ||
                     (beforeRepeats < need && row.repeats >= need);
                 if (ruleEvent) {
-                    _latest = &row;
-                    _latestChangeMs = now;
+                    publishAlertOpportunity(&row, now);
                 }
                 queueBlackBox(row, true);
                 return;
@@ -2245,6 +2251,9 @@ void DetectionEngine::applyBle(Detection d) {
             const uint8_t beforeRepeats = _log[slot].repeats;
             if (_log[slot].repeats < 255) _log[slot].repeats++;
             detectionRssiSample(_log[slot], d.rssi, nowMs);
+#if SQW_TRAIL_ENABLED
+            TrailHistory::note(_log[slot].mac,(uint8_t)_log[slot].type,nowMs);
+#endif
             _log[slot].lastSeen = nowMs;
             if (_log[slot].evidence == EvidenceKind::UNKNOWN &&
                 d.evidence != EvidenceKind::UNKNOWN) {
@@ -2256,8 +2265,7 @@ void DetectionEngine::applyBle(Detection d) {
             Regulars::note(d.mac, d.type);
             const uint8_t need = Settings::alertMinRepeats(d.type);
             if (!reactivating && beforeRepeats < need && _log[slot].repeats >= need) {
-                _latest = &_log[slot];
-                _latestChangeMs = nowMs;
+                publishAlertOpportunity(&_log[slot], nowMs);
             }
             if (reactivating) {
                 _log[slot].hits++;
@@ -2267,8 +2275,7 @@ void DetectionEngine::applyBle(Detection d) {
                 _log[slot].repeats = 1;
                 detectionRssiInit(_log[slot], d.rssi, nowMs);
                 _typeCounts[(uint8_t)d.type]++;
-                _latest = &_log[slot];
-                _latestChangeMs = nowMs;
+                publishAlertOpportunity(&_log[slot], nowMs);
                 queueBlackBox(_log[slot], true);
             }
         return;
@@ -3259,6 +3266,10 @@ void DetectionEngine::processWiFiQ(uint32_t budgetUs, uint8_t maxItems) {
         // (beacon), same offsets postWiFi() was already called with.
         checkWatchWifi(e.mac, e.rssi);
         checkHuntWifi(e.mac, e.rssi, e.channel);
+#if SQW_TRAIL_ENABLED
+        if (e.ssid[0] && !e.pwnagotchi && !e.remoteId && e.channel>=1 && e.channel<=13)
+            Places::noteBssid(e.mac,e.rssi,e.ssid,millis());
+#endif
         // Every captured frame feeds the spectrum-waterfall's channel
         // activity level, whether or not it ends up matching anything
         // below — this is meant to reflect real ambient RF traffic,
@@ -3364,6 +3375,9 @@ void DetectionEngine::processWiFiQ(uint32_t budgetUs, uint8_t maxItems) {
             const uint8_t beforeRepeats = _log[slot].repeats;
             if (_log[slot].repeats < 255) _log[slot].repeats++;
             detectionRssiSample(_log[slot], e.rssi, nowMs);
+#if SQW_TRAIL_ENABLED
+            TrailHistory::note(_log[slot].mac,(uint8_t)_log[slot].type,nowMs);
+#endif
             _log[slot].lastSeen = nowMs;
             _log[slot].channel = e.channel;
             // A field-prefix sighting may arrive before the camera's
@@ -3379,8 +3393,7 @@ void DetectionEngine::processWiFiQ(uint32_t budgetUs, uint8_t maxItems) {
                 _log[slot].evidence = evidence;
             const uint8_t need = Settings::alertMinRepeats(t);
             if (!reactivating && beforeRepeats < need && _log[slot].repeats >= need) {
-                _latest = &_log[slot];
-                _latestChangeMs = nowMs;
+                publishAlertOpportunity(&_log[slot], nowMs);
             }
             if (reactivating) {
                 _log[slot].active = true;
@@ -3389,8 +3402,7 @@ void DetectionEngine::processWiFiQ(uint32_t budgetUs, uint8_t maxItems) {
                 _log[slot].repeats = 1;
                 detectionRssiInit(_log[slot], e.rssi, nowMs);
                 _typeCounts[(uint8_t)t]++;
-                _latest = &_log[slot];
-                _latestChangeMs = nowMs;
+                publishAlertOpportunity(&_log[slot], nowMs);
                 queueBlackBox(_log[slot], true);
             }
             continue;
@@ -3451,14 +3463,16 @@ void DetectionEngine::pushLog(const Detection& d) {
     const uint8_t slot = _logHead;
     if (_logCount == LOG_CAP) unindexLogSlot(slot);
     _log[slot] = d;
+#if SQW_TRAIL_ENABLED
+    if (!d.restored) TrailHistory::note(d.mac,(uint8_t)d.type,millis());
+#endif
     if (_log[slot].repeats == 0) _log[slot].repeats = 1;
     if (_log[slot].rssiHistCount == 0)
         detectionRssiInit(_log[slot], d.rssi, millis());
     indexLogSlot(slot);
     _logHead = (_logHead + 1) % LOG_CAP;
     if (_logCount < LOG_CAP) _logCount++;
-    _latest = &_log[slot];
-    _latestChangeMs = millis();
+    publishAlertOpportunity(&_log[slot], millis());
     const uint8_t typeIx = (uint8_t)d.type;
     if (typeIx < (uint8_t)DetectionType::COUNT) _typeCounts[typeIx]++;
     // channel 0 is BLE in the live detector. Count only brand-new eligible
