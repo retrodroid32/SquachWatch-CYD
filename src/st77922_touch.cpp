@@ -69,13 +69,17 @@ bool read(uint16_t& x, uint16_t& y) {
     static uint16_t s_x = 0, s_y = 0;
     static uint32_t s_seenAt = 0;
     const uint32_t now = millis();
-    if ((int32_t)(now - s_nextTry) < 0) return s_down;
+    if ((int32_t)(now - s_nextTry) < 0) {
+        if (s_down && now - s_seenAt > 150) s_down = false;
+        x = s_x; y = s_y;
+        return s_down;
+    }
     // Freenove's sequence: TOUCH_INFO first, and the points only when its
     // bit 3 says there is a new report. Between reports the finger is where
     // the last one put it -- for a moment; a report that stops coming means
     // the finger has gone.
     uint8_t info = 0;
-    if (!readRegs(REG_TOUCH_INFO, &info, 1)) { s_nextTry = now + 50; return false; }
+    if (!readRegs(REG_TOUCH_INFO, &info, 1)) { s_nextTry = now + 50; if (s_down && now - s_seenAt > 150) s_down = false; x = s_x; y = s_y; return s_down; }
     if (info & 0x08) {
         // The whole report, every point, as Freenove's driver reads it: the
         // chip only clears its new-report flag once all of it has been read.
@@ -83,7 +87,7 @@ bool read(uint16_t& x, uint16_t& y) {
         // (seen on the board 2026-10-09: one tap, then "down" for a minute).
         uint8_t all[7 * 10];
         const size_t n = (size_t)7 * (s_maxPoints ? s_maxPoints : 1);
-        if (!readRegs(REG_POINT0, all, n)) { s_nextTry = now + 50; return false; }
+        if (!readRegs(REG_POINT0, all, n)) { s_nextTry = now + 50; if (s_down && now - s_seenAt > 150) s_down = false; x = s_x; y = s_y; return s_down; }
         const uint8_t* p = all;
         s_seenAt = now;
         const bool down = (p[0] & 0x80) != 0;
