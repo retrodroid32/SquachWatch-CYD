@@ -1,2 +1,2 @@
-FREENOVE35-R14-SHARED-CYD-APPLICATION
-Compile the original src/main.cpp for FNK0104N with native ST77922 QSPI and TDDI adapters, PSRAM framebuffer, physical row hashing and shared application states. Exclude legacy freenove35_main.cpp. Run complete board matrix, host tests and LAB publication. No production merge. SDMMC, battery and physical validation remain open.
+FREENOVE35-R14.1-SHARED-CYD-COMPILE-FIX
+Compile original shared src/main.cpp with mutually exclusive native Freenove QSPI and classic TFT pushFrame paths. Run complete board matrix, host tests and LAB publication. No production merge. SDMMC, battery and physical validation remain open.
