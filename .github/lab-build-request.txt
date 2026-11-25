@@ -1,2 +1,2 @@
-FREENOVE35-R14.6-SHARED-CYD-COLOR-WIFI-STATUS
-Retain hardware-validated R14.5 boot and application. Board-only software RGB565 red/blue calibration, single capacitive color-check toggle per press, and bounded raw WiFi pending status before failure. Full build and LAB publication requested; verify colors and scan status on hardware.
+V150-R5-BOUNDED-ALERT-QUEUE
+Port four-identity queued alert cards from upstream v1.50.0, preserving R14.6 and fork alert policy/security safeguards. Full firmware/emulator/host checks and LAB packaging requested. Physical validation pending.

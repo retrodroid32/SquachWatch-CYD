@@ -240,6 +240,7 @@ static void drawCrashCard(TFT_eSPI& t, int physicalW = 0, int physicalH = 0) {
 #include "ui_diagnostics.h"
 #include "ui_hunt.h"
 #include "ui_colorcheck.h"
+#include "alert_queue.h"
 #include "detection_info.h"
 #include "ui_diary.h"
 #include "ui_outfit.h"
@@ -1385,6 +1386,9 @@ static void restoreFrameBuffer();
 // An ALERT opened from the desk's small card goes back to the desk when it
 // is dismissed, not to CLEAR. Set in enterAlert(), spent here.
 static bool s_backToDesk = false;
+static AlertQueue<DetectionType,4> s_alertQueue;
+static uint32_t s_queueLatestChange = 0;
+static bool s_queueLatestSeen = false;
 static void enterDesk();
 
 // The screens that run the raw scan, which switches detection off while it
@@ -1399,6 +1403,7 @@ static bool onRawScanScreen() {
 }
 // Adaptive framebuffer recovery uses the band count declared above enterBoot().
 static void enterClear() {
+    s_alertQueue.clear();
     if (Security::locked()) { enterLocked(); return; }
     restoreFrameBuffer();   // lent to a download that did not end in a restart
     if (s_backToDesk) { s_backToDesk = false; enterDesk(); return; }
@@ -1480,7 +1485,12 @@ enum class Buzz : uint8_t { ALERT, WATCH, SAMPLE };
 static void twatchBuzz(Buzz kind);
 #endif
 static void enterAlert(const Detection& d) {
-    s_backToDesk = (state == AppState::DESK);
+    if (state != AppState::ALERT) {
+        s_alertQueue.clear();
+        s_queueLatestSeen = false;
+        s_backToDesk = (state == AppState::DESK);
+    }
+    s_firstLine[0] = '\0';
     state = AppState::ALERT;
 #if defined(TWATCH_S3)
     twatchBuzz(Buzz::ALERT);
@@ -1492,6 +1502,7 @@ static void enterAlert(const Detection& d) {
     // worked, which is presumably why nobody noticed the banner was missing.
     s_infoPending = false;
     uiAlertInit(*canvas, d);
+    uiAlertSetQueue(s_alertQueue.size());
     // The lifetime count for the type includes this one, so one means first.
     {
         const bool first = engine.lifetimeTypeCount(d.type) == 1;
@@ -1501,6 +1512,7 @@ static void enterAlert(const Detection& d) {
         const bool night = Clock::night();
         uiAlertSetNight(night);
         uiAlertSetLastFree(s_alertLastFree);
+        s_alertLastFree = false;
         // Spent here so manually opened cards can never inherit the banner
         // from the last automatic tracker-flood announcement.
         uiAlertSetSpam(s_alertSpam, engine.spam().fakes(d.type));
@@ -1547,7 +1559,44 @@ static void enterAlert(const Detection& d) {
 #endif
 }
 
+// Queue identities, not pointers into the mutable detection log. Admission is
+// side-effect-free; spend the existing cooldown/auto-snooze/spam gates only
+// when a waiting card actually takes the screen.
+static void collectQueuedAlert(uint32_t now) {
+    if (Security::locked()) { s_alertQueue.clear(); return; }
+    const Detection* d = engine.latest();
+    if (!d || !freshAlertCandidate(*d, now)) return;
+    const uint32_t changed = engine.latestChangeMs();
+    if (s_queueLatestSeen && changed == s_queueLatestChange) return;
+    s_queueLatestSeen = true;
+    s_queueLatestChange = changed;
+    if (d->type == lastAlertType && memcmp(d->mac,s_alertMac,6)==0) return;
+    const bool always = IgnoreList::alwaysAlert(d->mac);
+    if (!always && (!Settings::alertEnabled(d->type) || IgnoreList::silenced(d->mac) ||
+                    d->conf < Settings::alertMinConfidence(d->type) ||
+                    d->repeats < Settings::alertMinRepeats(d->type))) return;
+    s_alertQueue.push(d->mac,d->type);
+}
+static bool nextQueuedAlert() {
+    if (Security::locked()) { s_alertQueue.clear(); return false; }
+    AlertQueue<DetectionType,4>::Entry q;
+    while (s_alertQueue.pop(q)) {
+        const Detection* d = engine.findDetection(q.mac,q.type);
+        if (!d || !d->active || !alertMayInterrupt(*d)) continue;
+        const Detection copy = *d;
+        uiAlertSetRedacted(false);
+        enterAlert(copy);
+        return true;
+    }
+    return false;
+}
+static void acknowledgeAlert() {
+    squachyCatch(lastAlertType, s_alertMac, lastAlertHits, lastAlertRssi, lastAlertConf);
+    if (!nextQueuedAlert()) enterClear();
+}
+
 static void enterWatchAlert(bool fromRoster = false) {
+    s_alertQueue.clear();
     s_watchAlertFromRoster = fromRoster;
     state = AppState::WATCH_ALERT;
 #if defined(TWATCH_S3)
@@ -2202,6 +2251,7 @@ static void startPinFlow(PinFlow f, const char* prompt = nullptr) {
 }
 
 static void enterLocked() {
+    s_alertQueue.clear();
     Settings::deskActive(false);
     state = AppState::LOCKED;
     transitionStart = millis();
@@ -5423,6 +5473,8 @@ void loop() {
             break;
         }
         case AppState::ALERT: {
+            collectQueuedAlert(now);
+            uiAlertSetQueue(Security::locked() ? 0 : s_alertQueue.size());
             const char* alertInfoText =
                 s_infoPage == InfoPage::PRIMER ? DetectionInfo::rssiConfidencePrimer()
               : s_infoPage == InfoPage::EVIDENCE ? DetectionInfo::evidenceText(s_confirmDetection)
@@ -5496,8 +5548,7 @@ void loop() {
                         Theme::showToast(step == 6u ? "SNOOZE OFF" : "SNOOZED",
                             step == 5u ? "Until you unsnooze" :
                             step == 6u ? "Alerts restored" : "Expires automatically", Theme::AMBER);
-                        squachyCatch(lastAlertType, s_alertMac, lastAlertHits, lastAlertRssi, lastAlertConf);
-                        enterClear();
+                        acknowledgeAlert();
                     } else {
                         Theme::showToast("SNOOZE FAILED", "List full or save failed", Theme::RED);
                         uiAlertSetSnoozePrompt(false);
@@ -5523,8 +5574,7 @@ void loop() {
                         // GOT IT on the final explanation acknowledges the
                         // alert and returns home.
                         s_infoPending = false;
-                        squachyCatch(lastAlertType, s_alertMac, lastAlertHits, lastAlertRssi, lastAlertConf);
-                        enterClear();
+                        acknowledgeAlert();
                     }
                 }
                 break;
@@ -5561,8 +5611,7 @@ void loop() {
                     lastTouch = now;
                     if (IgnoreList::contains(s_alertMac)) IgnoreList::remove(s_alertMac);
                     else                                  IgnoreList::add(s_alertMac, lastAlertType);
-                    squachyCatch(lastAlertType, s_alertMac, lastAlertHits, lastAlertRssi, lastAlertConf);
-                    enterClear();
+                    acknowledgeAlert();
                 } else if (uiAlertHitSnooze(tp.x, tp.y, tft.width(), tft.height())) {
                     // First tap selects 10 minutes; further distinct taps cycle
                     // 30m, 1h, 4h, ALWAYS and OFF before idle commit.
@@ -5581,8 +5630,7 @@ void loop() {
                         Theme::showToast("ALREADY WATCHING", s_alertLabel, Theme::CYAN);
                     else
                         Theme::showToast("WATCH LIST FULL", "Maximum 8 targets", Theme::AMBER);
-                    squachyCatch(lastAlertType, s_alertMac, lastAlertHits, lastAlertRssi, lastAlertConf);
-                    enterClear();
+                    acknowledgeAlert();
                 } else if (uiAlertHitHunt(tp.x, tp.y, tft.width(), tft.height())) {
                     // Same call pair LOG's confirm panel makes. The
                     // DETECTION trigger fires here too: leaving via HUNT
@@ -5594,14 +5642,13 @@ void loop() {
                     if (s_alertIsBle) engine.huntBle(s_alertMac, s_alertLabel);
                     else              engine.huntWifi(s_alertMac, s_alertLabel);
                     squachyCatch(lastAlertType, s_alertMac, lastAlertHits, lastAlertRssi, lastAlertConf);
+                    s_alertQueue.clear(); // explicit HUNT owns the next screen
                     enterHunt();
                 } else {
-                    squachyCatch(lastAlertType, s_alertMac, lastAlertHits, lastAlertRssi, lastAlertConf);
-                    enterClear();
+                    acknowledgeAlert();
                 }
             } else if ((now - alertStart) > ALERT_AUTO_DISMISS_MS) {
-                squachyCatch(lastAlertType, s_alertMac, lastAlertHits, lastAlertRssi, lastAlertConf);
-                enterClear();
+                acknowledgeAlert();
             }
             break;
         }

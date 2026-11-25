@@ -35,6 +35,8 @@ static uint16_t snoozeProgress(uint32_t now) {
     return (uint16_t)(1000u - elapsed * 1000u / 3000u);
 }
 static bool s_redacted = false;
+static uint8_t s_queueCount = 0;
+void uiAlertSetQueue(uint8_t count) { s_queueCount = count; }
 void uiAlertSetRedacted(bool r) { s_redacted = r; }
 
 // Six saturated stops blended pairwise. The same construction the CLEAR
@@ -587,28 +589,29 @@ void uiAlertTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng,
     // One line of context above the plate. A tracker flood beats FIRST /
     // AT NIGHT because it explains why later matching identities will stay
     // quiet; FIRST / NIGHT still win over ordinary AUTO SNOOZE housekeeping.
+    char context[44] = "";
+    uint16_t contextColor = Theme::CYAN;
     if (s_spam) {
-        char fl[36];
-        snprintf(fl, sizeof fl, "* SPAM: %u TRACKER IDS *", (unsigned)s_spamIdentities);
-        t.setTextSize(1);
-        t.setTextColor(Theme::RED, Theme::BG);
-        t.setCursor(PLATE_X + (PLATE_W - t.textWidth(fl)) / 2, stripHOf(w) + 2);
-        t.print(fl);
+        snprintf(context, sizeof context, "SPAM: %u TRACKER IDS", (unsigned)s_spamIdentities);
+        contextColor = Theme::RED;
     } else if (s_first || s_night) {
-        const char* fl = (s_first && s_night) ? "* FIRST, AND AT NIGHT *"
-                       : s_first ? "* FIRST OF ITS KIND *" : "* AT NIGHT *";
-        t.setTextSize(1);
-        t.setTextColor(Theme::VAPOR_YELLOW, Theme::BG);
-        t.setCursor(PLATE_X + (PLATE_W - t.textWidth(fl)) / 2, stripHOf(w) + 2);
-        t.print(fl);
+        snprintf(context, sizeof context, "%s", (s_first && s_night) ? "FIRST, AND AT NIGHT"
+                       : s_first ? "FIRST OF ITS KIND" : "AT NIGHT");
+        contextColor = Theme::VAPOR_YELLOW;
     } else if (s_lastFree) {
-        // Shares the line, and loses it to FIRST or AT NIGHT, both of which
-        // are about the catch itself. This one is housekeeping.
-        const char* fl = "* QUIET UNLESS IT NEARS *";
+        snprintf(context, sizeof context, "%s", "QUIET UNLESS IT NEARS");
+    }
+    if (s_queueCount && !s_redacted) {
+        const size_t used = strlen(context);
+        snprintf(context + used, sizeof context - used, "%s+%u WAITING",
+                 used ? " | " : "", (unsigned)s_queueCount);
+    }
+    if (context[0]) {
         t.setTextSize(1);
-        t.setTextColor(Theme::CYAN, Theme::BG);
-        t.setCursor(PLATE_X + (PLATE_W - t.textWidth(fl)) / 2, stripHOf(w) + 2);
-        t.print(fl);
+        t.setTextColor(contextColor, Theme::BG);
+        const int tw = t.textWidth(context);
+        t.setCursor(tw <= w - 12 ? (w - tw) / 2 : 6, stripHOf(w) + 2);
+        t.print(context);
     }
 
     // ---- the gauge -----------------------------------------------------
