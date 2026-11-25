@@ -37,6 +37,10 @@
 #include <string.h>
 #include <SD.h>
 
+#if defined(FREENOVE35_N)
+extern void freenoveBootProgress(const char* stage);
+#endif
+
 // -------- global engine instance (referenced by callbacks) --------
 static DetectionEngine* g_engine = nullptr;
 
@@ -879,6 +883,9 @@ bool DetectionEngine::init() {
 #else
     static const bool SLIM_WIFI = true;    // A/B on the bench: 45 frames/40 s slim, 20/45 s stock
 #endif
+#if defined(FREENOVE35_N)
+    freenoveBootProgress("Starting Wi-Fi...");
+#endif
     Serial.println("[boot] starting WiFi");
     serialFlush();
     Serial.printf("[boot] heap before WiFi: %lu free, %lu largest\n", (unsigned long)ESP.getFreeHeap(), (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
@@ -893,6 +900,9 @@ bool DetectionEngine::init() {
     // network interface stays; it is re-attached to the new driver so an
     // update over WiFi still gets an address.
     if (SLIM_WIFI) {
+#if defined(FREENOVE35_N)
+        freenoveBootProgress("Configuring Wi-Fi memory...");
+#endif
         esp_wifi_stop();
         esp_wifi_deinit();
         wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
@@ -1038,9 +1048,15 @@ bool DetectionEngine::init() {
     s_bootHeap.wifiLargest = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
     Serial.printf("[boot] heap with WiFi up: %lu free, %lu largest\n",
                   (unsigned long)s_bootHeap.wifiFree, (unsigned long)s_bootHeap.wifiLargest);
+#if defined(FREENOVE35_N)
+    freenoveBootProgress("Starting Bluetooth...");
+#endif
     Serial.println("[boot] starting Bluetooth");
     serialFlush();
     NimBLEDevice::init("");
+#if defined(FREENOVE35_N)
+    freenoveBootProgress("Starting BLE scan...");
+#endif
     NimBLEScan* scan = NimBLEDevice::getScan();
     // Passive to start, whatever the room: the first second of an active
     // scan in a crowded building is what killed a user's board. Active
