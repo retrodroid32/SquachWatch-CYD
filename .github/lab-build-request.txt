@@ -1,2 +1,2 @@
-FREENOVE35-R14.5-SHARED-CYD-RADIO-STARTUP-POLARITY
-Retain R14.4 nonblocking USB and radio heap safeguards. Restore earlier native panel polarity baseline following inverted physical startup report; preserve saved inversion setting. Identify every visible startup stage as R14.5, including first framebuffer presentation. Full matrix and LAB publication requested; physical confirmation pending.
+FREENOVE35-R14.6-SHARED-CYD-COLOR-WIFI-STATUS
+Retain hardware-validated R14.5 boot and application. Board-only software RGB565 red/blue calibration, single capacitive color-check toggle per press, and bounded raw WiFi pending status before failure. Full build and LAB publication requested; verify colors and scan status on hardware.
