@@ -1,2 +1,2 @@
-FREENOVE35-ST77922-R13-PET-OUTFIT-GESTURES-20261124
-PR #260: retain R12 hardening; restore CYD background easter egg dispatch, companion unlock and reward card, outfit reward queue, four-second Desk hold unlock, pet grab/drag/release, mascot hold/stroke/flick, onboarding and replay intro. Build exact-head matrix and publish LAB only after PASS. Full shared application migration and other audit findings remain outstanding. No production merge.
+FREENOVE35-R14-SHARED-CYD-APPLICATION
+Compile the original src/main.cpp for FNK0104N with native ST77922 QSPI and TDDI adapters, PSRAM framebuffer, physical row hashing and shared application states. Exclude legacy freenove35_main.cpp. Run complete board matrix, host tests and LAB publication. No production merge. SDMMC, battery and physical validation remain open.
