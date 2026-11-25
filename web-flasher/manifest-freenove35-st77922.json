@@ -1,7 +1,7 @@
 {
   "name": "SquachWatch Freenove FNK0104N 3.5-inch ST77922 (experimental)",
   "version": "0.0.0",
-  "new_install_prompt_erase": false,
+  "new_install_prompt_erase": true,
   "builds": [
     {
       "chipFamily": "ESP32-S3",
