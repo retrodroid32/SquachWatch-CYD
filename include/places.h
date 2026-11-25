@@ -38,6 +38,7 @@ void tick(uint32_t nowMs);
 
 // The place the board is at now: 1, 2, 3... (0 before anything was heard).
 uint8_t  current();
+bool exists(uint8_t id);             // distinguishes a valid stop at boot minute zero
 uint32_t startMs(uint8_t id);        // when the board arrived there (0 if forgotten)
 bool     isHome(uint8_t id);
 bool     hasPos(uint8_t id);
