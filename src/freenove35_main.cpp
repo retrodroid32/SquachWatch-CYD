@@ -147,8 +147,9 @@ static void enterSettings(){
 }
 static void enterLog(DetectionType category=DetectionType::UNKNOWN){
   activeView=View::LOG;
-  uiLogSetCategory(category);
   uiLogInit(view);
+  // uiLogInit resets category to UNKNOWN; select the roster afterwards.
+  uiLogSetCategory(category);
 }
 static void enterRawScan(bool ble){
   rawBleMode=ble;
@@ -251,7 +252,11 @@ static void handleTouch(uint16_t x,uint16_t y){
     if(hit==RawScanTap::SWITCH){engine.stopRawScan();enterRawScan(!rawBleMode);return;}
     uiRawScanScroll(y>HW::H/2?1:-1);
   }else if(activeView==View::LOG){
-    if(uiLogCategoryHitBack(x,y,HW::W,HW::H)){enterClear();return;}
+    if(uiLogCategory()!=DetectionType::UNKNOWN){
+      if(uiLogCategoryHitBack(x,y,HW::W,HW::H)){enterClear();return;}
+      uiLogScroll(y>HW::H/2?1:-1);
+      return;
+    }
     if(y>HW::H-65){enterClear();return;}
     const LogViewTap v=uiLogHitView(x,y,HW::W,HW::H);
     if(v==LogViewTap::DEVICES)uiLogSetView(LogView::DEVICES);
