@@ -114,7 +114,7 @@ void DetectionEngine::resetLifetime() {
 
 void DetectionEngine::pushLog(const Detection& d) {
     _log[_logHead] = d;
-    _latest = &_log[_logHead];
+    publishAlertOpportunity(&_log[_logHead], millis());
     _logHead = (uint8_t)((_logHead + 1) % LOG_CAP);
     if (_logCount < LOG_CAP) _logCount++;
     if ((uint8_t)d.type < (uint8_t)DetectionType::COUNT) {
