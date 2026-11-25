@@ -405,7 +405,10 @@ static void drawCrashCard(TFT_eSPI& t, int physicalW = 0, int physicalH = 0) {
 // relative to it. File-scope (not local to setup()) so the Settings >
 // INVERT row handler in loop() can use the same XOR instead of
 // clobbering this baseline with an absolute call.
-#if defined(FREENOVE_S3)
+#if defined(FREENOVE35_N)
+// ST77922 vendor initialization uses INVON (0x21).
+constexpr bool PANEL_NEEDS_INVERSION = true;
+#elif defined(FREENOVE_S3)
 // Freenove's ILI9341 setup specifies inversion on.
 constexpr bool PANEL_NEEDS_INVERSION = true;
 #elif defined(TWATCH_S3)
@@ -489,6 +492,16 @@ static uint16_t* fnDma=nullptr;
 static constexpr size_t FN_CHUNK=8192;
 static uint32_t fnHash[480]={};
 static bool fnDirty=true;
+static uint32_t fnNextHash[480];
+static bool fnRowDirty[480];
+static inline void pushFrame(int x, int y);
+static void fnBootStage(const char* stage, uint16_t color) {
+    Serial.printf("[FNK0104N R14.2] %s heap=%lu psram=%lu stack=%lu\n", stage,
+                  (unsigned long)ESP.getFreeHeap(), (unsigned long)ESP.getFreePsram(),
+                  (unsigned long)uxTaskGetStackHighWaterMark(nullptr));
+    St77922::fillRect(0,0,320,8,color);
+    fnDirty=true;
+}
 static void fnMap(uint8_t r,int px,int py,int& x,int& y) {
     switch(r&3){case 1:x=py;y=319-px;break;case 2:x=319-px;y=479-py;break;case 3:x=479-py;y=px;break;default:x=px;y=py;break;}
 }
@@ -3151,10 +3164,13 @@ void setup() {
 #endif
 
 #if defined(FREENOVE35_N)
-    if(!St77922::begin()){Serial.println("[fatal] ST77922 init");while(true)delay(1000);}
+    if(!St77922::begin()){Serial.println("[fatal] ST77922 init");digitalWrite(St77922::IO_BL,HIGH);while(true)delay(1000);}
+    digitalWrite(St77922::IO_BL,HIGH);
+    fnBootStage("panel ready",0x001F);
     fnDma=(uint16_t*)heap_caps_malloc(FN_CHUNK*2,MALLOC_CAP_DMA|MALLOC_CAP_INTERNAL);
-    if(!fnDma){Serial.println("[fatal] QSPI DMA allocation");while(true)delay(1000);}
+    if(!fnDma){fnBootStage("FATAL QSPI DMA allocation",0xF800);while(true)delay(1000);}
     St77922Touch::begin(38,39,48,47);St77922::reinit();
+    fnBootStage("touch init complete",0x07FF);
 #else
     tft.init();
 #endif
@@ -3199,6 +3215,9 @@ void setup() {
     tft.invertDisplay(PANEL_NEEDS_INVERSION != Settings::inverted());
     applyColorOrder();
     tft.fillScreen(Theme::BG);
+#if defined(FREENOVE35_N)
+    fnBootStage("settings and security loaded",0x07FF);
+#endif
 
     // Hand the digitalWrite(HIGH) backlight pins above off to LEDC PWM
     // so the settings-menu brightness slider can dim them — same
@@ -3411,6 +3430,7 @@ void setup() {
     if (!frame.createSprite(tft.width(), tft.height() / s_recoveryBands)) {
         Serial.println("ERROR: frame buffer allocation failed (low memory)");
 #if defined(FREENOVE35_N)
+        fnBootStage("FATAL RGB565 sprite allocation",0xF800);
         while(true)delay(1000);
 #endif
     #if HAVE_NVS_ERASE
@@ -3435,6 +3455,19 @@ void setup() {
                       (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
     }
 #endif
+#endif
+
+ #if defined(FREENOVE35_N)
+    // Confirm the sprite geometry before any renderer or physical row reader uses it.
+    if (!frame.created() || !frame.getPointer() || frame.bufW()!=tft.width() || frame.bufH()!=tft.height()) {
+        fnBootStage("FATAL sprite geometry",0xF800); while(true)delay(1000);
+    }
+    frame.fillSprite(TFT_BLACK);
+    frame.setTextColor(TFT_WHITE,TFT_BLACK);
+    frame.setTextSize(2); frame.setCursor(12,24); frame.print("SquachWatch");
+    frame.setTextSize(1); frame.setCursor(12,52); frame.print("Initializing radios...");
+    fnBootStage("RGB565 sprite ready",0x07E0);
+    pushFrame(0,0);
 #endif
 
     // Builds a 512-byte lookup table and nothing else; it touches no bus
@@ -3648,7 +3681,13 @@ void setup() {
         Serial.printf("[boot] %s\n", g_bootRadioLine);
     }
 #endif
+ #if defined(FREENOVE35_N)
+    fnBootStage("starting detector",0xFFE0);
+#endif
     engine.init();
+#if defined(FREENOVE35_N)
+    fnBootStage("detector init returned",0x07E0);
+#endif
     // After the engine: the card leans on the lifetime counts to pick which
     // type sits out, and those are read in init().
     Bingo::begin(engine);
@@ -3660,6 +3699,9 @@ void setup() {
     // ready: this is where the crypto self-test runs, on the real cipher,
     // against a frame built by an independent implementation.
     MeshTalk::begin();
+#endif
+#if defined(FREENOVE35_N)
+    fnBootStage("mesh init returned",0x07E0);
 #endif
 #if defined(CYD) && !defined(CYD32) && !defined(CYD35) && !defined(AWOK) && !defined(RLPHANTOM) && !defined(RLPHANTOM_R)
     // Only create the optional 4 KB SD presence task when enough heap
@@ -3896,7 +3938,12 @@ static inline void pushFrame(int x, int y) {
     const bool full=fnDirty;
     bool ok=true;
     // Hash physical rows, transfer contiguous changed spans. Sprite bytes are already wire order.
-    uint32_t next[480];bool dirty[480];
+    // Keep row scratch off the Arduino loop task stack.
+    uint32_t* next=fnNextHash; bool* dirty=fnRowDirty;
+    const int h=frame.bufH();
+    if(w!=((screenRotation&1)?480:320)||h!=((screenRotation&1)?320:480)) {
+        fnBootStage("invalid frame geometry",0xF800); return;
+    }
     for(int py=0;py<480;py++){
         uint32_t h=2166136261u;
         for(int px=0;px<320;px++){int sx,sy;fnMap(screenRotation,px,py,sx,sy);h=(h^src[(size_t)sy*w+sx])*16777619u;}
@@ -3918,6 +3965,8 @@ static inline void pushFrame(int x, int y) {
         St77922::wait();first=end;
     }
     if(ok)memcpy(fnHash,next,sizeof fnHash);
+    static bool firstFrameReported=false;
+    if(ok&&!firstFrameReported){Serial.println("[FNK0104N R14.2] first QSPI framebuffer transfer complete");firstFrameReported=true;}
     fnDirty=!ok;
     s_pushAccumUs+=micros()-t0;
 #else
