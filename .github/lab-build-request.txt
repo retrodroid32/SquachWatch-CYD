@@ -1,2 +1,2 @@
-FREENOVE35-ST77922-R12-AUDIT-HARDENING-20261124
-PR #260: retain R7-R11 changes; restore optional erase prompt; fix touch retry coordinates; reshape sprite in place; nonblocking USB logging; PWM brightness; desk lifecycle; first-boot color check; toast rendering; horizontal gesture rejection. Run exact-head matrix and LAB-only publication after PASS. Shared main application migration and other parity findings remain open. No production merge.
+FREENOVE35-ST77922-R13-PET-OUTFIT-GESTURES-20261124
+PR #260: retain R12 hardening; restore CYD background easter egg dispatch, companion unlock and reward card, outfit reward queue, four-second Desk hold unlock, pet grab/drag/release, mascot hold/stroke/flick, onboarding and replay intro. Build exact-head matrix and publish LAB only after PASS. Full shared application migration and other audit findings remain outstanding. No production merge.
