@@ -1,2 +1,2 @@
-FREENOVE35-R14.4-SHARED-CYD-RADIO-STARTUP
-Avoid blocking native USB serial flush, reserve 12 KiB internal DMA heap for radios, and show exact event log/Wi-Fi/BLE/mesh startup stages and internal heap. Preserve shared application and all detector behavior. Full build and LAB publication requested; hardware confirmation pending.
+FREENOVE35-R14.5-SHARED-CYD-RADIO-STARTUP-POLARITY
+Retain R14.4 nonblocking USB and radio heap safeguards. Restore earlier native panel polarity baseline following inverted physical startup report; preserve saved inversion setting. Identify every visible startup stage as R14.5, including first framebuffer presentation. Full matrix and LAB publication requested; physical confirmation pending.
