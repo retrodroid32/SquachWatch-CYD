@@ -1,2 +1,2 @@
-V150-R6.1-TRAIL-SDMMC-OTA-SAFE
-Integrate hardware-confirmed R14.7 SDMMC into R6. Correct emulator Places linkage. Enable Trail on large-slot S3 targets and host, temporarily exclude new Trail code from constrained classic targets pending flash-budget recovery. Preserve existing features and strict OTA size gate. Full firmware and LAB checks requested.
+V150-R6.2-QUEUED-ALERT-DELIVERY
+Retain R6.1 integrated SDMMC and large-slot Trail. Publish each fresh detector opportunity directly to bounded alert FIFO during active alert, rather than poll latest row. Preserve eligibility gates, deduplication, privacy and OTA reserve. Full firmware, emulator and host build and LAB packaging requested.
