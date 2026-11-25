@@ -1,2 +1,2 @@
-FREENOVE35-ST77922-R11-SETTINGS-ACTIONS-20261124
-PR #260: retain R7-R10 changes; connect shared settings actions and detection filter, alert rules, outfit, bingo, dex, diary, color check, ignored devices and diagnostics screens; extend swipe/release navigation. Run exact-head matrix and LAB-only publication after PASS. Remaining hardware-specific and security/OTA paths are not complete. No production merge.
+FREENOVE35-ST77922-R12-AUDIT-HARDENING-20261124
+PR #260: retain R7-R11 changes; restore optional erase prompt; fix touch retry coordinates; reshape sprite in place; nonblocking USB logging; PWM brightness; desk lifecycle; first-boot color check; toast rendering; horizontal gesture rejection. Run exact-head matrix and LAB-only publication after PASS. Shared main application migration and other parity findings remain open. No production merge.
