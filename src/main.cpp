@@ -5479,12 +5479,16 @@ void loop() {
             const char* alertInfoText =
                 s_infoPage == InfoPage::PRIMER ? DetectionInfo::rssiConfidencePrimer()
               : s_infoPage == InfoPage::EVIDENCE ? DetectionInfo::evidenceText(s_confirmDetection)
+#if SQW_TRAIL_ENABLED
               : s_infoPage == InfoPage::TRAIL ? TrailHistory::describe(s_confirmDetection.mac,(uint8_t)s_confirmDetection.type,Settings::privacyMode() || Security::locked(),s_confirmDetection.restored)
+#endif
               : DetectionInfo::explainFor(s_confirmType, s_confirmVendor, privName(s_confirmName), engine);
             const char* alertInfoTypeName =
                 s_infoPage == InfoPage::PRIMER ? nullptr
               : s_infoPage == InfoPage::EVIDENCE ? "EVIDENCE"
+#if SQW_TRAIL_ENABLED
               : s_infoPage == InfoPage::TRAIL ? "TRAIL"
+#endif
               : DetectionInfo::titleFor(s_confirmType, s_confirmVendor, privName(s_confirmName));
 #if defined(CYD35)
             if (frameBufferOk) {
@@ -5571,9 +5575,11 @@ void loop() {
                         s_infoPage = InfoPage::EVIDENCE;
                         s_infoArmed = false;
                     } else if (s_infoPage == InfoPage::EVIDENCE) {
+#if SQW_TRAIL_ENABLED
                         s_infoPage = InfoPage::TRAIL;
                         s_infoArmed = false;
                     } else if (s_infoPage == InfoPage::TRAIL) {
+#endif
                         s_infoPage = InfoPage::EXPLAIN;
                         s_infoArmed = false;
                     } else {
@@ -5866,13 +5872,17 @@ void loop() {
             const char* infoText =
                 s_infoPage == InfoPage::PRIMER ? DetectionInfo::rssiConfidencePrimer()
               : s_infoPage == InfoPage::EVIDENCE ? DetectionInfo::evidenceText(s_confirmDetection)
+#if SQW_TRAIL_ENABLED
               : s_infoPage == InfoPage::TRAIL ? TrailHistory::describe(s_confirmDetection.mac,(uint8_t)s_confirmDetection.type,Settings::privacyMode() || Security::locked(),s_confirmDetection.restored)
+#endif
               : DetectionInfo::explainFor(s_confirmType, s_confirmVendor, privName(s_confirmName), engine);
 
             const char* infoTypeName =
                 s_infoPage == InfoPage::PRIMER ? nullptr
               : s_infoPage == InfoPage::EVIDENCE ? "EVIDENCE"
+#if SQW_TRAIL_ENABLED
               : s_infoPage == InfoPage::TRAIL ? "TRAIL"
+#endif
               : DetectionInfo::titleFor(s_confirmType, s_confirmVendor, privName(s_confirmName));
             // The shared background renderer advances only on the first
             // logical frame pass; this also fixes double-stepping on CYD32.
@@ -5902,9 +5912,11 @@ void loop() {
                         s_infoPage = InfoPage::EVIDENCE;
                         s_infoArmed = false;
                     } else if (s_infoPage == InfoPage::EVIDENCE) {
+#if SQW_TRAIL_ENABLED
                         s_infoPage = InfoPage::TRAIL;
                         s_infoArmed = false;
                     } else if (s_infoPage == InfoPage::TRAIL) {
+#endif
                         s_infoPage = InfoPage::EXPLAIN;
                         s_infoArmed = false;
                     } else {
