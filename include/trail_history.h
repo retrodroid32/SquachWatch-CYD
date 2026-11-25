@@ -4,6 +4,14 @@
 #include <stdio.h>
 #include "places.h"
 
+// Classic 4 MB OTA images are at the partition limit; retain existing behavior.
+// Enable on S3 boards with large app slots, and host emulator builds.
+#if defined(FREENOVE35_N) || defined(TWATCH_S3) || defined(TDECK_PLUS) || !defined(ARDUINO_ARCH_ESP32)
+#define SQW_TRAIL_ENABLED 1
+#else
+#define SQW_TRAIL_ENABLED 0
+#endif
+
 // Loop-task only. No flash writes, no per-detection growth or heap allocation.
 // Unlike upstream's full per-row history, eight recently observed identities
 // share a compact cache to preserve classic CYD's contiguous heap reserve.
