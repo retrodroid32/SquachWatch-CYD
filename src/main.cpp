@@ -489,7 +489,7 @@ public:
 };
 FreenoveGeometry tft;
 static uint16_t* fnDma=nullptr;
-static constexpr size_t FN_CHUNK=8192;
+static constexpr size_t FN_CHUNK=2048; // reserve 12 KiB more internal DMA heap for radio startup
 static uint32_t fnHash[480]={};
 static bool fnDirty=true;
 static uint32_t fnNextHash[480];
@@ -1320,6 +1320,20 @@ static void runTouchCalibration() {
 // Shared by the boot splash and home-screen adaptive multi-band renderer.
 // Must be declared before enterBoot() in CYD32 GNSS builds.
 static uint8_t s_recoveryBands = 1;
+#if defined(FREENOVE35_N)
+// Only called synchronously by setup()/DetectionEngine::init() on the loop task.
+void freenoveBootProgress(const char* stage) {
+    fnBootStage(stage,0xFFE0);
+    if (!frame.created() || !fnDma) return;
+    frame.fillSprite(TFT_BLACK);
+    frame.setTextColor(TFT_WHITE,TFT_BLACK);
+    frame.setTextSize(2); frame.setCursor(12,24); frame.print("SquachWatch");
+    frame.setTextSize(1); frame.setCursor(12,52); frame.print(stage);
+    frame.setCursor(12,70); frame.printf("Internal heap: %lu",(unsigned long)heap_caps_get_free_size(MALLOC_CAP_INTERNAL|MALLOC_CAP_8BIT));
+    frame.setCursor(12,84); frame.printf("Largest block: %lu",(unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL|MALLOC_CAP_8BIT));
+    pushFrame(0,0);
+}
+#endif
 static void enterBoot() {
     state = AppState::BOOT;
     bootStart = millis();
@@ -3644,6 +3658,9 @@ void setup() {
     // in it when there was one -- then the log as the last boot left it, so
     // nothing live has landed in the log yet. After the boot check, so the
     // record has the time when there is a network to ask.
+#if defined(FREENOVE35_N)
+    freenoveBootProgress("Opening persistent event log...");
+#endif
     if (BlackBox::begin()) {
         BlackBox::BootRecord br;
         memset(&br, 0, sizeof br);
@@ -3682,11 +3699,11 @@ void setup() {
     }
 #endif
  #if defined(FREENOVE35_N)
-    fnBootStage("starting detector",0xFFE0);
+    freenoveBootProgress("Starting detection engine...");
 #endif
     engine.init();
 #if defined(FREENOVE35_N)
-    fnBootStage("detector init returned",0x07E0);
+    freenoveBootProgress("Loading detection statistics...");
 #endif
     // After the engine: the card leans on the lifetime counts to pick which
     // type sits out, and those are read in init().
@@ -3698,10 +3715,13 @@ void setup() {
     // After the radio is up and before anything can ask whether messages are
     // ready: this is where the crypto self-test runs, on the real cipher,
     // against a frame built by an independent implementation.
+#if defined(FREENOVE35_N)
+    freenoveBootProgress("Initializing SquachMesh...");
+#endif
     MeshTalk::begin();
 #endif
 #if defined(FREENOVE35_N)
-    fnBootStage("mesh init returned",0x07E0);
+    freenoveBootProgress("Starting shared application...");
 #endif
 #if defined(CYD) && !defined(CYD32) && !defined(CYD35) && !defined(AWOK) && !defined(RLPHANTOM) && !defined(RLPHANTOM_R)
     // Only create the optional 4 KB SD presence task when enough heap
