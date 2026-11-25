@@ -1,2 +1,2 @@
-FREENOVE35-R14.6-SHARED-CYD-COLOR-WIFI-STATUS
-Retain hardware-validated R14.5 boot and application. Board-only software RGB565 red/blue calibration, single capacitive color-check toggle per press, and bounded raw WiFi pending status before failure. Full build and LAB publication requested; verify colors and scan status on hardware.
+FREENOVE35-R14.7-NATIVE-SDMMC
+Native 4-bit SDMMC with 1-bit fallback, shared logging and browser, post-radio mount worker and no-format policy. Preserve R14.6 hardware baseline. Full build and LAB packaging requested.
