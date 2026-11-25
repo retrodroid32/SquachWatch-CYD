@@ -57,7 +57,7 @@ inline const char* describe(const uint8_t* mac,uint8_t type,bool hidden,bool res
     if (!e) return "No recent stop history for this device. Wait for more sightings.";
     unsigned n=0;
     for (uint8_t i=0;i<e->count;i++)
-        if (Places::startMs(e->stop[i]) || Places::current()==e->stop[i]) ++n;
+        if (Places::exists(e->stop[i])) ++n;
     if (!n) return "Recent stops are no longer in memory.";
     snprintf(out,sizeof out,"Observed at %u recent stop%s over %lu min of cached sightings. Stops use nearby WiFi fingerprints or fresh GPS. Approximate observations, not proof of following. RAM only; cleared on reboot or log clear.",
         n,n==1?"":"s",(unsigned long)((e->lastMs-e->firstMs)/60000u));
