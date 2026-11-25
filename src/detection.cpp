@@ -1132,7 +1132,7 @@ bool DetectionEngine::init() {
 #else
     // FNK0104N shares LCD/SD resources differently from CYD. Never start
     // the classic SPI SD implementation on an unvalidated QSPI panel bus.
-    Serial.println("[freenove35] SD deferred until dedicated SDMMC driver");
+    Serial.println("[freenove35] SDMMC worker starts after Mesh initialization");
 #endif
     return true;
 }
