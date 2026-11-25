@@ -99,6 +99,7 @@ UI_SRCS  := $(SRC)/theme.cpp \
             $(SRC)/status_light.cpp \
             $(SRC)/pet.cpp \
             $(SRC)/ui_log.cpp \
+            $(SRC)/places.cpp \
             $(SRC)/ui_alert.cpp \
             $(SRC)/ui_settings.cpp \
             $(SRC)/ui_boot.cpp \
