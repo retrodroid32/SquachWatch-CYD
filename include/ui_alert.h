@@ -37,6 +37,7 @@ enum class AlertSnoozeChoice : uint8_t { NONE, MIN_10, MIN_30, HOUR_1, ALWAYS, C
 AlertSnoozeChoice uiAlertHitSnoozeChoice(int x, int y, int screenW, int screenH);
 // While the device is locked with ALERTS WHEN LOCKED at TYPE ONLY: the type
 // and the signal still show, the device's name, label and address do not.
+void uiAlertSetQueue(uint8_t count);
 void uiAlertSetRedacted(bool redacted);
 // infoPending/infoTypeName/infoText: drawn on top of the normal ALERT
 // screen (which keeps rendering underneath, same as LOG's confirm/info
