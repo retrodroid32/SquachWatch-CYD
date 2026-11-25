@@ -3,7 +3,8 @@
 from pathlib import Path
 root = Path(__file__).resolve().parents[1]
 src = (root/"src/main.cpp").read_text(encoding="utf-8")
-push = src[src.index("static inline void pushFrame("):src.index("// Draw a whole screen",src.index("static inline void pushFrame("))]
+push_start = src.index("static inline void pushFrame(int x, int y) {")
+push = src[push_start:src.index("// Draw a whole screen", push_start)]
 rot = src[src.index("if (g_consoleRotate ||"):src.index("#endif  // !AWOK",src.index("if (g_consoleRotate ||"))]
 checks = {
  "3.2 diagnostic explicitly uses TFT_eSPI's native full/band push":
