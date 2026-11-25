@@ -40,7 +40,7 @@ with tempfile.TemporaryDirectory() as td:
                     "-o", str(p / "queue")], check=True)
     subprocess.run([str(p / "queue")], check=True)
 s = (root / "src/main.cpp").read_text()
-admit = s.split("static void collectQueuedAlert(uint32_t now) {",1)[1].split("static bool nextQueuedAlert()",1)[0]
+admit = s.split("static void collectQueuedAlert(const Detection& candidate) {",1)[1].split("static bool nextQueuedAlert()",1)[0]
 pop = s.split("static bool nextQueuedAlert() {",1)[1].split("static void acknowledgeAlert()",1)[0]
 assert "alertMayInterrupt(" not in admit
 assert "IgnoreList::silenced" in admit
@@ -49,4 +49,11 @@ assert "alertMayInterrupt(*d)" in pop and "engine.findDetection(q.mac,q.type)" i
 assert "s_alertQueue.clear(); // explicit HUNT owns the next screen" in s
 assert "s_alertQueue.clear();" in s.split("static void enterLocked() {",1)[1]
 assert "uiAlertSetQueue(Security::locked() ? 0 : s_alertQueue.size())" in s
-print("Alert queue FIFO, deduplication, capacity and policy integration PASS")
+d=(root/"src/detection.cpp").read_text()
+h=(root/"include/detection.h").read_text()
+assert d.count("publishAlertOpportunity(")==6
+assert "if (_alertSink && !d->restored) _alertSink(*d);" in h
+assert "engine.setAlertOpportunitySink(state == AppState::ALERT ? collectQueuedAlert : nullptr);" in s
+assert "engine.latest()" not in admit
+assert "freshAlertCandidate(" not in admit
+print("Alert queue FIFO, deduplication, capacity and per-opportunity policy integration PASS")
