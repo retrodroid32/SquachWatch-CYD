@@ -1,2 +1,2 @@
-FREENOVE35-ST77922-R10-CATEGORY-ROSTER-20261124
-PR #260: retain R7-R9 fixes; initialize LOG before selecting category, use focused roster back control, add initialization-order regression guard. Run exact-head host/emulator/firmware matrix and LAB-only publication after PASS. Physical validation pending. No merge or production release.
+FREENOVE35-ST77922-R11-SETTINGS-ACTIONS-20261124
+PR #260: retain R7-R10 changes; connect shared settings actions and detection filter, alert rules, outfit, bingo, dex, diary, color check, ignored devices and diagnostics screens; extend swipe/release navigation. Run exact-head matrix and LAB-only publication after PASS. Remaining hardware-specific and security/OTA paths are not complete. No production merge.
