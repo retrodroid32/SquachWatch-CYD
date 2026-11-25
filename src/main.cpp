@@ -406,8 +406,9 @@ static void drawCrashCard(TFT_eSPI& t, int physicalW = 0, int physicalH = 0) {
 // INVERT row handler in loop() can use the same XOR instead of
 // clobbering this baseline with an absolute call.
 #if defined(FREENOVE35_N)
-// ST77922 vendor initialization uses INVON (0x21).
-constexpr bool PANEL_NEEDS_INVERSION = true;
+// FNK0104N LAB hardware showed inverted black/white after R14.2 used INVON.
+// Restore the earlier native port's INVOFF default; retain the user's toggle.
+constexpr bool PANEL_NEEDS_INVERSION = false;
 #elif defined(FREENOVE_S3)
 // Freenove's ILI9341 setup specifies inversion on.
 constexpr bool PANEL_NEEDS_INVERSION = true;
@@ -496,7 +497,7 @@ static uint32_t fnNextHash[480];
 static bool fnRowDirty[480];
 static inline void pushFrame(int x, int y);
 static void fnBootStage(const char* stage, uint16_t color) {
-    Serial.printf("[FNK0104N R14.2] %s heap=%lu psram=%lu stack=%lu\n", stage,
+    Serial.printf("[FNK0104N R14.5] %s heap=%lu psram=%lu stack=%lu\n", stage,
                   (unsigned long)ESP.getFreeHeap(), (unsigned long)ESP.getFreePsram(),
                   (unsigned long)uxTaskGetStackHighWaterMark(nullptr));
     St77922::fillRect(0,0,320,8,color);
@@ -1329,6 +1330,7 @@ void freenoveBootProgress(const char* stage) {
     frame.setTextColor(TFT_WHITE,TFT_BLACK);
     frame.setTextSize(2); frame.setCursor(12,24); frame.print("SquachWatch");
     frame.setTextSize(1); frame.setCursor(12,52); frame.print(stage);
+    frame.setCursor(12,102); frame.print("Freenove LAB R14.5");
     frame.setCursor(12,70); frame.printf("Internal heap: %lu",(unsigned long)heap_caps_get_free_size(MALLOC_CAP_INTERNAL|MALLOC_CAP_8BIT));
     frame.setCursor(12,84); frame.printf("Largest block: %lu",(unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL|MALLOC_CAP_8BIT));
     pushFrame(0,0);
@@ -3476,12 +3478,8 @@ void setup() {
     if (!frame.created() || !frame.getPointer() || frame.bufW()!=tft.width() || frame.bufH()!=tft.height()) {
         fnBootStage("FATAL sprite geometry",0xF800); while(true)delay(1000);
     }
-    frame.fillSprite(TFT_BLACK);
-    frame.setTextColor(TFT_WHITE,TFT_BLACK);
-    frame.setTextSize(2); frame.setCursor(12,24); frame.print("SquachWatch");
-    frame.setTextSize(1); frame.setCursor(12,52); frame.print("Initializing radios...");
-    fnBootStage("RGB565 sprite ready",0x07E0);
-    pushFrame(0,0);
+    Serial.printf("[FNK0104N] inversion baseline=%d saved toggle=%d\n", (int)PANEL_NEEDS_INVERSION, (int)Settings::inverted());
+    freenoveBootProgress("Framebuffer ready");
 #endif
 
     // Builds a 512-byte lookup table and nothing else; it touches no bus
@@ -3986,7 +3984,7 @@ static inline void pushFrame(int x, int y) {
     }
     if(ok)memcpy(fnHash,next,sizeof fnHash);
     static bool firstFrameReported=false;
-    if(ok&&!firstFrameReported){Serial.println("[FNK0104N R14.2] first QSPI framebuffer transfer complete");firstFrameReported=true;}
+    if(ok&&!firstFrameReported){Serial.println("[FNK0104N R14.5] first QSPI framebuffer transfer complete");firstFrameReported=true;}
     fnDirty=!ok;
     s_pushAccumUs+=micros()-t0;
 #else
