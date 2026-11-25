@@ -28,6 +28,8 @@
 #include "ui_alertrules.h"
 #include "ui_beaconwarn.h"
 #include "ui_outfit.h"
+#include "pet.h"
+#include "ui_outfit_unlock.h"
 #include "ui_bingo.h"
 #include "ui_dex.h"
 #include "ui_diary.h"
@@ -148,18 +150,41 @@ static bool present(){
 // modules as main.cpp. Only the hardware framebuffer and touch transfer are
 // board-specific. Avoid a second imitation dashboard.
 static DetectionEngine engine;
-enum class View : uint8_t { BOOT, CLEAR, SETTINGS, LOG, RAWSCAN, DESK, FILTER, RULES, BEACON, OUTFIT, BINGO, DEX, DIARY, COLORS, IGNORE, DIAG };
+enum class View : uint8_t { BOOT, CLEAR, SETTINGS, LOG, RAWSCAN, DESK, FILTER, RULES, BEACON, OUTFIT, BINGO, DEX, DIARY, COLORS, IGNORE, DIAG, UNLOCK };
 static View activeView=View::BOOT;
-static uint32_t bootAt=0, lastTouchAt=0;
+static uint32_t bootAt=0, lastTouchAt=0, unlockAt=0;
+static bool petGrip=false, mascotGrip=false, mascotHeld=false, mascotMoved=false, deskGrip=false, deskUnlocked=false;
+static int gripX=0,gripY=0,gripDx=0;
+static uint32_t gripAt=0;
 static bool scanPicker=false, rawBleMode=true;
 static bool touchHeld=false, radioReady=false;
 static uint32_t lastUITick=0, lastRuntimeTick=0;
 static void enterClear(){
+  Pet::reset();
   Settings::deskActive(false);
   if(activeView==View::RAWSCAN)engine.stopRawScan();
   scanPicker=false;
   activeView=View::CLEAR;
   uiClearInit(view);
+}
+static bool maybeUnlock(){
+  uint8_t idx=0;
+  if(Squachy::consumeOutfitUnlock(idx)){activeView=View::UNLOCK;unlockAt=millis();uiOutfitUnlockInit(view,idx);return true;}
+  if(Squachy::consumePetUnlockCard()){activeView=View::UNLOCK;unlockAt=millis();uiPetUnlockInit(view);return true;}
+  return false;
+}
+static void consumeSceneRewards(){
+  if(Theme::consumeWerewolfSummon())Squachy::unlockWolfPelt();
+  if(Theme::consumeToasterCatch())Squachy::unlockChromeWing();
+  if(Theme::consumeEyeCatch())Squachy::unlockVoidEye();
+  if(Theme::consumeLodgeKnock())Squachy::unlockParka();
+  if(Theme::consumeOwlReek())Squachy::unlockShambler();
+  if(Theme::consumeRedGlyph())Squachy::unlockTh3();
+  if(Theme::consumeSharkCatch())Squachy::unlockShark();
+  if(uint8_t said=Theme::consumeXyzzy())Squachy::magicWord(said);
+  if(Theme::consumePetUnlock())Squachy::unlockPet();
+  Theme::setOwlAsks(!Squachy::shamblerUnlocked());
+  Theme::setRedGlyph(!Squachy::th3Unlocked());
 }
 static void enterDesk(){Settings::deskActive(true);activeView=View::DESK;uiDeskInit(view);}
 static void enterSettings(){
@@ -195,6 +220,7 @@ static void handleTouch(uint16_t x,uint16_t y){
   const uint32_t now=millis();
   if((uint32_t)(now-lastTouchAt)<180)return;
   lastTouchAt=now;
+  if(activeView==View::UNLOCK){if(uiOutfitUnlockDismissable(now)&&!maybeUnlock())enterClear();return;}
   if(activeView==View::BOOT){enterClear();return;}
   if(!Settings::rotationLocked()&&Theme::rotateButtonHit(x,y,HW::W)){
     setRotation((HW::rotation+1)&3);return;
@@ -220,13 +246,15 @@ static void handleTouch(uint16_t x,uint16_t y){
     if(hit==ButtonId::LOG){Squachy::trigger(Squachy::Event::LOG_OPENED);enterLog();return;}
     if(hit==ButtonId::SCAN){scanPicker=true;return;}
     if(hit==ButtonId::CLR){enterDesk();return;}
+    if(Theme::backgroundTap(x,y,now)){consumeSceneRewards();return;}
     if(!Settings::backgroundLocked()&&(x<HW::W/10||x>=HW::W-HW::W/10)){
       if(x<HW::W/10)Settings::cyclePrevBackground();
       else Settings::cycleBackground();
       return;
     }
-    if(Squachy::hitTest(x,y)){Squachy::trigger(Squachy::Event::PETTED);return;}
+    if(Settings::boringMode()&&y>=20&&!Settings::backgroundLocked())Settings::cycleBackground();
   }else if(activeView==View::SETTINGS){
+    if(uiSettingsConfirmRow()!=SettingsRow::NONE){auto hit=uiSettingsHitConfirm(x,y,HW::W,HW::H);if(hit==SettingsConfirmTap::CONFIRM){auto row=uiSettingsConfirmRow();uiSettingsSetConfirm(SettingsRow::NONE);if(row==SettingsRow::REPLAY_INTRO){Squachy::replayIntro();enterClear();}}else if(hit==SettingsConfirmTap::CANCEL)uiSettingsSetConfirm(SettingsRow::NONE);return;}
     if(uiSettingsTapPinnedOk(x,y,HW::W,HW::H)){enterClear();return;}
     if(uiSettingsTapPinnedBack(view,x,y,HW::W,HW::H)){
       if(uiSettingsCurrentPage()==SettingsPage::MAIN)enterClear();
@@ -247,6 +275,7 @@ static void handleTouch(uint16_t x,uint16_t y){
       case SettingsRow::BANTER:Settings::cycleBanter();break;
       case SettingsRow::AURA:Settings::toggleAura();break;
       case SettingsRow::PET:if(!Squachy::jailed())Squachy::cyclePet();break;
+      case SettingsRow::REPLAY_INTRO:uiSettingsSetConfirm(choice);break;
       case SettingsRow::SHOW_OFF:Squachy::startShowOff();enterClear();break;
       case SettingsRow::DESK_OPEN:enterDesk();break;
       case SettingsRow::DESK_BACKGROUND:if(x<HW::W/2)Settings::cyclePrevDeskBackground();else Settings::cycleDeskBackground();break;
@@ -358,6 +387,7 @@ static void renderOriginal(uint32_t now){
   // Source-accurate UI. All drawing goes to the PSRAM-backed TFT_eSprite;
   // the ST77922 QSPI push is the only board-specific rendering layer.
   switch(activeView){
+    case View::UNLOCK:uiOutfitUnlockTick(view,now,engine);break;
     case View::BOOT:uiBootTick(view,now,HW::W,HW::H,true);break;
     case View::CLEAR:uiClearTick(view,now,engine,true,scanPicker,HW::W,HW::H);break;
     case View::FILTER:uiDetFilterTick(view,now,engine);break;
@@ -451,7 +481,17 @@ void loop(){
   if(down&&!touchHeld){
     settingsGesture=activeView==View::SETTINGS||activeView==View::FILTER||activeView==View::RULES||activeView==View::IGNORE||activeView==View::DIAG;
     if(settingsGesture){startX=touchX;startY=touchY;lastY=touchY;downAt=now;moved=false;}
-    else handleTouch(touchX,touchY);
+    else if(activeView==View::CLEAR){
+      gripX=touchX;gripY=touchY;gripDx=0;gripAt=now;mascotHeld=mascotMoved=deskUnlocked=false;
+      const bool boring=Settings::boringMode();
+      if(Squachy::showOffActive()){Squachy::stopShowOff();}
+      else if(!boring&&Squachy::onboardingActive()&&Squachy::onboardingTapAdvance(touchX,touchY)){}
+      else if(!boring&&!Squachy::onboardingActive()&&(petGrip=Pet::grab(touchX,touchY,now))){}
+      else if(!scanPicker&&Theme::hitTestButtonBar(touchX,touchY,HW::W,HW::H)==ButtonId::CLR){deskGrip=true;}
+      else if(Theme::backgroundTap(touchX,touchY,now)){consumeSceneRewards();}
+      else if(!boring&&!scanPicker&&!Theme::settingsButtonHit(touchX,touchY)&&!Theme::rotateButtonHit(touchX,touchY,HW::W)&&uiClearCategoryHit(touchX,touchY,HW::W,HW::H)==DetectionType::UNKNOWN&&Squachy::hitTest(touchX,touchY)){mascotGrip=true;}
+      else handleTouch(touchX,touchY);
+    }else handleTouch(touchX,touchY);
   }
   if(down&&settingsGesture){
     const int dy=(int)touchY-lastY;
@@ -462,6 +502,29 @@ void loop(){
     settingsGesture=false;
     if(!moved)handleTouch(startX,startY);
   }
+  if(activeView==View::CLEAR){
+    if(down&&petGrip)Pet::drag(touchX,touchY,now);
+    if(down&&mascotGrip){
+      int dx=(int)touchX-gripX,dy=(int)touchY-gripY;gripDx=dx;
+      if(!mascotHeld&&dx*dx+dy*dy>100)mascotMoved=true;
+      if(mascotHeld)Squachy::grabTo(touchX,touchY);
+      else if(mascotMoved)Squachy::trigger(Squachy::Event::PETTING);
+      else if(now-gripAt>=600){mascotHeld=true;Squachy::trigger(Squachy::Event::HELD);}
+    }
+    if(down&&deskGrip&&!deskUnlocked&&now-gripAt>=4000){deskUnlocked=true;Squachy::unlockAllOutfits();}
+    if(!down&&touchHeld){
+      if(petGrip){Pet::release(now);petGrip=false;}
+      if(mascotGrip){if(mascotHeld)Squachy::release();else if(!mascotMoved){Squachy::noteTapAt(gripX,gripY);Squachy::trigger(Squachy::Event::PETTED);}else if(now-gripAt<320&&abs(gripDx)>48)Squachy::flick(gripDx>0?1:-1);mascotGrip=false;}
+      if(deskGrip){deskGrip=false;if(!deskUnlocked)enterDesk();}
+    }
+    consumeSceneRewards();
+    if(activeView==View::CLEAR&&!down&&!Squachy::onboardingActive())maybeUnlock();
+  }else{
+    if(petGrip){Pet::cancel(now);petGrip=false;}
+    if(mascotGrip&&mascotHeld)Squachy::release();
+    mascotGrip=deskGrip=false;
+  }
+  if(activeView==View::UNLOCK&&now-unlockAt>12000&&!maybeUnlock())enterClear();
   touchHeld=down;
   if(activeView==View::BOOT&&now-bootAt>=3100){if(!Settings::colorChecked()){activeView=View::COLORS;uiColorCheckInit(view);}else if(Settings::deskWanted())enterDesk();else enterClear();}
   // ST77922 QSPI: a complete 307KB frame costs much more than classic CYD.
