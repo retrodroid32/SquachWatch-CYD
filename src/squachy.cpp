@@ -4286,6 +4286,9 @@ static void scouterTick(uint32_t now) {
 #include "shambler.inc"
 #include "th3_0n3.inc"
 
+#if defined(ARDUINO_ARCH_ESP32) && defined(CYD) && !defined(FREENOVE35_N)
+__attribute__((optimize("Os","no-inline-small-functions","no-ipa-cp-clone"), noinline))
+#endif
 static void drawOutfit(TFT_eSPI& t, int cx2, int hy, uint32_t now, Mood m, float scale, OutfitId outfit) {
     if (outfit == OutfitId::NONE) return;
     auto S = [scale](int v) { return (int)(v * scale); };
@@ -5779,6 +5782,9 @@ static void prisonStripes(TFT_eSPI& t, int cx2, int hy, float scale, uint16_t fu
     }
 }
 
+#if defined(ARDUINO_ARCH_ESP32) && defined(CYD) && !defined(FREENOVE35_N)
+__attribute__((optimize("Os","no-inline-small-functions","no-ipa-cp-clone"), noinline))
+#endif
 static void drawBody(TFT_eSPI& t, int cx, int hy, int headTopY, uint32_t now, Mood m, float scale,
                      bool forceTalking = false, bool ownsBubble = true) {
     auto S = [scale](int v) { return (int)(v * scale); };
