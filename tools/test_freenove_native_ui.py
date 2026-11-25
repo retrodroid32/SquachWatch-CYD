@@ -49,4 +49,11 @@ require("frameErrors" in source and "LCD frames=" in source,
         "Provide serial diagnostics for frozen/scrambled LCD reports")
 require("complete functional parity" in docs.lower(),
         "Do not claim that R2 means all existing fork features have shipped")
+log_entry = source.split("static void enterLog(", 1)[1].split("static void enterRawScan(", 1)[0]
+require("uiLogInit(view);" in log_entry and "uiLogSetCategory(category);" in log_entry,
+        "Freenove category navigation must initialize and select the roster")
+require(log_entry.index("uiLogInit(view);") < log_entry.index("uiLogSetCategory(category);"),
+        "uiLogInit resets the category; select the roster only AFTER initialization")
+require("enterLog(category)" in source and "uiLogCategoryHitBack(" in source,
+        "Category pills must open the focused roster with its own back control")
 print("Freenove native SquachWatch UI/source guard PASS")
