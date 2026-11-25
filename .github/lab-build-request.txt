@@ -1,2 +1,2 @@
-V150-R6.2-QUEUED-ALERT-DELIVERY
-Retain R6.1 integrated SDMMC and large-slot Trail. Publish each fresh detector opportunity directly to bounded alert FIFO during active alert, rather than poll latest row. Preserve eligibility gates, deduplication, privacy and OTA reserve. Full firmware, emulator and host build and LAB packaging requested.
+V150-R6.3-SKIMMER-ALERT-DELIVERY
+Collect bounded alert identities in CLEAR and ALERT, fix stale pre-engine timestamps, add privacy-safe SKIMMER serial diagnostics. Full CI and LAB publication requested; preserve OTA reserve, Freenove SDMMC, and R6.2 baseline. Hardware acceptance pending.
