@@ -2081,8 +2081,7 @@ void DetectionEngine::processDeauthQ() {
                 const bool ruleEvent = need <= 1 ||
                     (beforeRepeats < need && row.repeats >= need);
                 if (ruleEvent) {
-                    _latest = &row;
-                    _latestChangeMs = now;
+                    publishAlertOpportunity(&row, now);
                 }
                 queueBlackBox(row, true);
                 return;
@@ -2266,8 +2265,7 @@ void DetectionEngine::applyBle(Detection d) {
             Regulars::note(d.mac, d.type);
             const uint8_t need = Settings::alertMinRepeats(d.type);
             if (!reactivating && beforeRepeats < need && _log[slot].repeats >= need) {
-                _latest = &_log[slot];
-                _latestChangeMs = nowMs;
+                publishAlertOpportunity(&_log[slot], nowMs);
             }
             if (reactivating) {
                 _log[slot].hits++;
@@ -2277,8 +2275,7 @@ void DetectionEngine::applyBle(Detection d) {
                 _log[slot].repeats = 1;
                 detectionRssiInit(_log[slot], d.rssi, nowMs);
                 _typeCounts[(uint8_t)d.type]++;
-                _latest = &_log[slot];
-                _latestChangeMs = nowMs;
+                publishAlertOpportunity(&_log[slot], nowMs);
                 queueBlackBox(_log[slot], true);
             }
         return;
@@ -3396,8 +3393,7 @@ void DetectionEngine::processWiFiQ(uint32_t budgetUs, uint8_t maxItems) {
                 _log[slot].evidence = evidence;
             const uint8_t need = Settings::alertMinRepeats(t);
             if (!reactivating && beforeRepeats < need && _log[slot].repeats >= need) {
-                _latest = &_log[slot];
-                _latestChangeMs = nowMs;
+                publishAlertOpportunity(&_log[slot], nowMs);
             }
             if (reactivating) {
                 _log[slot].active = true;
@@ -3406,8 +3402,7 @@ void DetectionEngine::processWiFiQ(uint32_t budgetUs, uint8_t maxItems) {
                 _log[slot].repeats = 1;
                 detectionRssiInit(_log[slot], e.rssi, nowMs);
                 _typeCounts[(uint8_t)t]++;
-                _latest = &_log[slot];
-                _latestChangeMs = nowMs;
+                publishAlertOpportunity(&_log[slot], nowMs);
                 queueBlackBox(_log[slot], true);
             }
             continue;
@@ -3477,8 +3472,7 @@ void DetectionEngine::pushLog(const Detection& d) {
     indexLogSlot(slot);
     _logHead = (_logHead + 1) % LOG_CAP;
     if (_logCount < LOG_CAP) _logCount++;
-    _latest = &_log[slot];
-    _latestChangeMs = millis();
+    publishAlertOpportunity(&_log[slot], millis());
     const uint8_t typeIx = (uint8_t)d.type;
     if (typeIx < (uint8_t)DetectionType::COUNT) _typeCounts[typeIx]++;
     // channel 0 is BLE in the live detector. Count only brand-new eligible
