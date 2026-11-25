@@ -24,6 +24,17 @@
 #include "clock.h"
 #include "blackbox.h"
 #include "ui_desk.h"
+#include "ui_detfilter.h"
+#include "ui_alertrules.h"
+#include "ui_beaconwarn.h"
+#include "ui_outfit.h"
+#include "ui_bingo.h"
+#include "ui_dex.h"
+#include "ui_diary.h"
+#include "ui_colorcheck.h"
+#include "ui_ignorelist.h"
+#include "ignore_list.h"
+#include "ui_diagnostics.h"
 #include <esp_system.h>
 #include "notices.h"
 #include "bingo.h"
@@ -128,7 +139,7 @@ static bool present(){
 // modules as main.cpp. Only the hardware framebuffer and touch transfer are
 // board-specific. Avoid a second imitation dashboard.
 static DetectionEngine engine;
-enum class View : uint8_t { BOOT, CLEAR, SETTINGS, LOG, RAWSCAN, DESK };
+enum class View : uint8_t { BOOT, CLEAR, SETTINGS, LOG, RAWSCAN, DESK, FILTER, RULES, BEACON, OUTFIT, BINGO, DEX, DIARY, COLORS, IGNORE, DIAG };
 static View activeView=View::BOOT;
 static uint32_t bootAt=0, lastTouchAt=0;
 static bool scanPicker=false, rawBleMode=true;
@@ -213,13 +224,53 @@ static void handleTouch(uint16_t x,uint16_t y){
     }
     if(Squachy::hitTest(x,y)){Squachy::trigger(Squachy::Event::PETTED);return;}
   }else if(activeView==View::SETTINGS){
+    if(uiSettingsTapPinnedOk(x,y,HW::W,HW::H)){enterClear();return;}
     if(uiSettingsTapPinnedBack(view,x,y,HW::W,HW::H)){
       if(uiSettingsCurrentPage()==SettingsPage::MAIN)enterClear();
       else uiSettingsOpenPage(uiSettingsParentPage());
       return;
     }
     const SettingsRow choice=uiSettingsHitTest(view,x,y,HW::W,HW::H);
+    Serial.printf("[settings] page=%u row=%u x=%u y=%u\n",(unsigned)uiSettingsCurrentPage(),(unsigned)choice,x,y);
+    if(uiSettingsRowIsOff(choice)){Theme::showToast("BORING MODE IS ON",nullptr,Theme::CYAN);return;}
     switch(choice){
+      case SettingsRow::CONFIDENCE:Settings::cycleMinConfidence();break;
+      case SettingsRow::AUTO_QUIET:Settings::cycleAutoQuiet();break;
+      case SettingsRow::UPDATE_CHECK:Settings::toggleUpdateCheck();break;
+      case SettingsRow::TIME_ZONE:Settings::stepTimeZone(uiSettingsTimeZoneStepForTap(view,x,HW::W,HW::H));Settings::markTimeZoneChosen();break;
+      case SettingsRow::SQUACHY_SIZE:Settings::cycleSquachySize();break;
+      case SettingsRow::SHADES_COLOR:Squachy::cycleShadesColor();break;
+      case SettingsRow::BANTER:Settings::cycleBanter();break;
+      case SettingsRow::AURA:Settings::toggleAura();break;
+      case SettingsRow::PET:if(!Squachy::jailed())Squachy::cyclePet();break;
+      case SettingsRow::SHOW_OFF:Squachy::startShowOff();enterClear();break;
+      case SettingsRow::DESK_OPEN:enterDesk();break;
+      case SettingsRow::DESK_BACKGROUND:if(x<HW::W/2)Settings::cyclePrevDeskBackground();else Settings::cycleDeskBackground();break;
+      case SettingsRow::CLOCK_FONT:Settings::cycleClockFont();break;
+      case SettingsRow::CLOCK_SIZE:Settings::cycleClockSize();break;
+      case SettingsRow::CLOCK_BACKDROP:Settings::cycleClockBackdrop();break;
+      case SettingsRow::CLOCK_FORMAT:Settings::toggleClock24Hour();break;
+      case SettingsRow::DESK_SQUAD:Settings::toggleDeskSquad();break;
+      case SettingsRow::DESK_CROWD:Settings::cycleDeskCrowd();break;
+      case SettingsRow::DESK_VISIT:Settings::toggleDeskFullVisit();break;
+      case SettingsRow::FONT_MENUS:case SettingsRow::FONT_TEXT:case SettingsRow::FONT_BUTTONS:
+      case SettingsRow::FONT_BUBBLES:case SettingsRow::FONT_PETS:case SettingsRow::FONT_XP:
+        uiSettingsFontTap(view,x,y,HW::W,HW::H);break;
+      case SettingsRow::DETECTION_FILTER:activeView=View::FILTER;uiDetFilterInit(view);break;
+      case SettingsRow::ALERT_RULES:activeView=View::RULES;uiAlertRulesInit(view);break;
+      case SettingsRow::OUTFIT:if(!Squachy::jailed()){activeView=View::OUTFIT;uiOutfitInit(view);}break;
+      case SettingsRow::BINGO:activeView=View::BINGO;uiBingoInit(view);break;
+      case SettingsRow::DEX:activeView=View::DEX;uiDexInit(view);break;
+      case SettingsRow::VIEW_DIARY:activeView=View::DIARY;uiDiaryInit(view);break;
+      case SettingsRow::CHECK_COLORS:activeView=View::COLORS;uiColorCheckInit(view);break;
+      case SettingsRow::DIAGNOSTICS:activeView=View::DIAG;uiDiagnosticsInit(view);break;
+      case SettingsRow::IGNORED_DEVICES:activeView=View::IGNORE;uiIgnoreListInit(view);break;
+      case SettingsRow::SNOOZE_MANAGER:uiSettingsOpenPage(SettingsPage::SNOOZES);break;
+      case SettingsRow::SNOOZE_ENTRY:{
+        int i=uiSettingsSnoozeIndexAt(view,x,y,HW::W,HW::H);uint8_t mac[6];uint32_t ms=0;bool always=false;
+        if(i>=0&&IgnoreList::snoozeInfo(i,mac,ms,always))IgnoreList::unsnooze(mac);break;}
+      case SettingsRow::WATCH_TARGET:engine.clearWatches();break;
+      case SettingsRow::HUNT_TARGET:engine.clearHunts();break;
       case SettingsRow::APPEARANCE:uiSettingsOpenPage(SettingsPage::APPEARANCE);break;
       case SettingsRow::SYSTEM:uiSettingsOpenPage(SettingsPage::SYSTEM);break;
       case SettingsRow::DESK_MODE:uiSettingsOpenPage(SettingsPage::DESK);break;
@@ -242,6 +293,41 @@ static void handleTouch(uint16_t x,uint16_t y){
         if(choice!=SettingsRow::NONE)Theme::showToast("FREENOVE LAB","PORT IN PROGRESS",Theme::AMBER);
         break;
     }
+  }else if(activeView==View::FILTER){
+    if(Theme::pinnedBackHit(x,y,HW::W,HW::H)){enterSettings();return;}
+    const auto hit=uiDetFilterHitTest(view,x,y,HW::W,HW::H);
+    if(hit==DetectionType::IBEACON&&!Settings::typeEnabled(hit)){activeView=View::BEACON;uiBeaconWarnInit(view);}
+    else if(hit!=DetectionType::COUNT)Settings::toggleType(hit);
+  }else if(activeView==View::BEACON){
+    const auto hit=uiBeaconWarnHitTest(view,x,y);
+    if(hit!=BeaconWarnHit::NONE){if(hit==BeaconWarnHit::ENABLE&&!Settings::typeEnabled(DetectionType::IBEACON))Settings::toggleType(DetectionType::IBEACON);activeView=View::FILTER;uiDetFilterInit(view,true);}
+  }else if(activeView==View::RULES){
+    const auto hit=uiAlertRulesHitTest(view,x,y,HW::W,HW::H);const auto ty=uiAlertRulesSelected();
+    switch(hit){
+      case AlertRuleHit::BACK:if(uiAlertRulesInDetail())uiAlertRulesBackToList();else enterSettings();break;
+      case AlertRuleHit::ENABLED:Settings::toggleAlertEnabled(ty);break;
+      case AlertRuleHit::CONFIDENCE:Settings::cycleAlertMinConfidence(ty);break;
+      case AlertRuleHit::REPEATS:Settings::cycleAlertMinRepeats(ty);break;
+      case AlertRuleHit::COOLDOWN:Settings::cycleAlertCooldown(ty);break;
+      case AlertRuleHit::WAKE:Settings::toggleAlertWakeScreen(ty);break;
+      default:break;}
+  }else if(activeView==View::IGNORE){
+    if(Theme::pinnedBackHit(x,y,HW::W,HW::H)){enterSettings();return;}
+    uint8_t i=uiIgnoreListHitPolicy(view,x,y,HW::W,HW::H);const uint8_t* m=IgnoreList::macAt(i);
+    if(i!=0xff&&m){uint8_t mac[6];memcpy(mac,m,6);auto p=IgnoreList::policyAt(i);
+      IgnoreList::setPolicy(mac,IgnoreList::typeAt(i),(IgnoreList::Policy)(((unsigned)p+1)%4));}
+  }else if(activeView==View::OUTFIT){if(!uiOutfitTapArrow(x,y,HW::W,HW::H))enterClear();
+  }else if(activeView==View::BINGO){if(uiBingoHitTest(view,x,y,HW::W,HW::H)==BingoTap::BACK)enterSettings();
+  }else if(activeView==View::DEX){if(uiDexHitTest(view,x,y,HW::W,HW::H)==DexTap::BACK)enterSettings();
+  }else if(activeView==View::DIARY){enterClear();
+  }else if(activeView==View::COLORS){
+    switch(uiColorCheckHitTest(x,y,HW::W,HW::H)){
+      case ColorCheckTap::INVERT:Settings::toggleInvert();break;
+      case ColorCheckTap::ORDER:Settings::toggleRgbSwap();break;
+      case ColorCheckTap::DONE:Settings::markColorChecked();enterSettings();break;
+      default:break;}
+  }else if(activeView==View::DIAG){
+    if(uiDiagnosticsHitBack(x,y,HW::W,HW::H))enterSettings();else {int p=uiDiagnosticsHitPage(x,y,HW::W,HW::H);if(p)uiDiagnosticsPage(p);}
   }else if(activeView==View::DESK){
     if(uiDeskHitBack(x,y,HW::W,HW::H)){enterClear();return;}
     if(uiDeskHitSettings(x,y,HW::W,HW::H)){enterSettings();uiSettingsOpenPage(SettingsPage::DESK);return;}
@@ -270,6 +356,17 @@ static void renderOriginal(uint32_t now){
   switch(activeView){
     case View::BOOT:uiBootTick(view,now,HW::W,HW::H,true);break;
     case View::CLEAR:uiClearTick(view,now,engine,true,scanPicker,HW::W,HW::H);break;
+    case View::FILTER:uiDetFilterTick(view,now,engine);break;
+    case View::RULES:uiAlertRulesTick(view,now);break;
+    case View::BEACON:uiBeaconWarnTick(view,now,engine,true);break;
+    case View::OUTFIT:uiOutfitTick(view,now,engine,true);break;
+    case View::BINGO:uiBingoTick(view,now,engine,true);break;
+    case View::DEX:uiDexTick(view,now,engine,true);break;
+    case View::DIARY:uiDiaryTick(view,now,engine);break;
+    case View::COLORS:uiColorCheckTick(view,now);break;
+    case View::IGNORE:uiIgnoreListTick(view,now);break;
+    case View::DIAG:{
+      DiagnosticsInfo d={};d.hasRaw=touchOk;d.rawTouching=touchHeld;d.touchValid=touchHeld;d.mappedX=touchX;d.mappedY=touchY;d.calSource="ST77922";d.freeHeap=ESP.getFreeHeap();d.largestBlock=heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL|MALLOC_CAP_8BIT);d.boardName="FNK0104N";d.resetReason="See serial";d.usingCapTouch=true;d.bbReady=BlackBox::ready();d.bbKept=BlackBox::detectionsKept();uiDiagnosticsTick(view,now,engine,d);break;}
     case View::DESK:uiDeskTick(view,now,engine,true);break;
     case View::SETTINGS:uiSettingsTick(view,now,engine,false,true);break;
     case View::LOG:
@@ -303,6 +400,7 @@ void setup(){
   if(!screenOk)return;
   randomSeed(esp_random());
   Settings::load();
+  IgnoreList::begin();
   setRotation(Settings::rotation());
   Clock::begin();
   if(BlackBox::begin()){
@@ -343,17 +441,17 @@ void loop(){
   static int lastY=0;
   static uint32_t downAt=0;
   if(down&&!touchHeld){
-    settingsGesture=activeView==View::SETTINGS;
+    settingsGesture=activeView==View::SETTINGS||activeView==View::FILTER||activeView==View::RULES||activeView==View::IGNORE||activeView==View::DIAG;
     if(settingsGesture){startX=touchX;startY=touchY;lastY=touchY;downAt=now;moved=false;}
     else handleTouch(touchX,touchY);
   }
-  if(down&&settingsGesture&&activeView==View::SETTINGS){
+  if(down&&settingsGesture){
     const int dy=(int)touchY-lastY;
-    if(abs(dy)>10){moved=true;uiSettingsScroll(dy>0?-1:1);lastY=touchY;}
+    if(abs(dy)>10){moved=true;int step=dy>0?-1:1;switch(activeView){case View::SETTINGS:uiSettingsScroll(step);break;case View::FILTER:uiDetFilterScroll(step);break;case View::RULES:if(!uiAlertRulesInDetail())uiAlertRulesScroll(step);break;case View::IGNORE:uiIgnoreListScroll(step);break;case View::DIAG:uiDiagnosticsScroll(step);break;default:break;}lastY=touchY;}
   }
   if(!down&&touchHeld&&settingsGesture){
     settingsGesture=false;
-    if(!moved&&now-downAt<700&&activeView==View::SETTINGS)handleTouch(startX,startY);
+    if(!moved)handleTouch(startX,startY);
   }
   touchHeld=down;
   if(activeView==View::BOOT&&now-bootAt>=3100)enterClear();
