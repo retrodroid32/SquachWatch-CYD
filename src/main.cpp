@@ -493,11 +493,18 @@ static uint16_t* fnDma=nullptr;
 static constexpr size_t FN_CHUNK=2048; // reserve 12 KiB more internal DMA heap for radio startup
 static uint32_t fnHash[480]={};
 static bool fnDirty=true;
+static bool fnSwapRedBlue=false;
+// RGB565 sprite storage is high-byte-first. Convert only at the QSPI boundary.
+static inline uint16_t fnSwapWireRB(uint16_t wire) {
+    const uint16_t rgb=(uint16_t)((wire<<8)|(wire>>8));
+    const uint16_t swapped=(uint16_t)((rgb&0x07E0u)|((rgb&0xF800u)>>11)|((rgb&0x001Fu)<<11));
+    return (uint16_t)((swapped<<8)|(swapped>>8));
+}
 static uint32_t fnNextHash[480];
 static bool fnRowDirty[480];
 static inline void pushFrame(int x, int y);
 static void fnBootStage(const char* stage, uint16_t color) {
-    Serial.printf("[FNK0104N R14.5] %s heap=%lu psram=%lu stack=%lu\n", stage,
+    Serial.printf("[FNK0104N R14.6] %s heap=%lu psram=%lu stack=%lu\n", stage,
                   (unsigned long)ESP.getFreeHeap(), (unsigned long)ESP.getFreePsram(),
                   (unsigned long)uxTaskGetStackHighWaterMark(nullptr));
     St77922::fillRect(0,0,320,8,color);
@@ -645,8 +652,11 @@ static uint8_t madctlRotationBits(uint8_t rotation) {
 // reissued alongside it either way.
 static void applyColorOrder() {
 #if defined(FREENOVE35_N)
-    const uint8_t b=Settings::rgbSwapped()?8:0;
-    St77922::writeReg(0x36,&b,1);fnDirty=true;
+    // Keep native panel geometry and RGB register fixed. The user ORDER
+    // toggle is applied in software so it works even if MADCTL BGR is ignored.
+    const uint8_t b=0;
+    St77922::writeReg(0x36,&b,1);
+    fnSwapRedBlue=Settings::rgbSwapped();fnDirty=true;
     return;
 #endif
 #ifdef TFT_RGB_ORDER
@@ -1330,7 +1340,7 @@ void freenoveBootProgress(const char* stage) {
     frame.setTextColor(TFT_WHITE,TFT_BLACK);
     frame.setTextSize(2); frame.setCursor(12,24); frame.print("SquachWatch");
     frame.setTextSize(1); frame.setCursor(12,52); frame.print(stage);
-    frame.setCursor(12,102); frame.print("Freenove LAB R14.5");
+    frame.setCursor(12,102); frame.print("Freenove LAB R14.6");
     frame.setCursor(12,70); frame.printf("Internal heap: %lu",(unsigned long)heap_caps_get_free_size(MALLOC_CAP_INTERNAL|MALLOC_CAP_8BIT));
     frame.setCursor(12,84); frame.printf("Largest block: %lu",(unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL|MALLOC_CAP_8BIT));
     pushFrame(0,0);
@@ -3977,6 +3987,7 @@ static inline void pushFrame(int x, int y) {
             size_t n=left<FN_CHUNK?left:FN_CHUNK;
             St77922::wait();
             for(size_t i=0;i<n;i++){int sx,sy;size_t p=off+i;fnMap(screenRotation,p%320,p/320,sx,sy);fnDma[i]=src[(size_t)sy*w+sx];}
+            if(fnSwapRedBlue)for(size_t i=0;i<n;i++)fnDma[i]=fnSwapWireRB(fnDma[i]);
             if(!St77922::queuePixels(fnDma,n,initial)){ok=false;break;}
             initial=false;off+=n;left-=n;
         }
@@ -3984,7 +3995,7 @@ static inline void pushFrame(int x, int y) {
     }
     if(ok)memcpy(fnHash,next,sizeof fnHash);
     static bool firstFrameReported=false;
-    if(ok&&!firstFrameReported){Serial.println("[FNK0104N R14.5] first QSPI framebuffer transfer complete");firstFrameReported=true;}
+    if(ok&&!firstFrameReported){Serial.println("[FNK0104N R14.6] first QSPI framebuffer transfer complete");firstFrameReported=true;}
     fnDirty=!ok;
     s_pushAccumUs+=micros()-t0;
 #else
@@ -7862,7 +7873,12 @@ void loop() {
         }
         case AppState::COLOR_CHECK: {
             drawTwoBand([&](TFT_eSPI& t, bool) { uiColorCheckTick(t, now); });
+#if defined(FREENOVE35_N)
+            // A held capacitive tap must not toggle the calibration repeatedly.
+            if (touchJustDown && (now - lastTouch) > TOUCH_DEBOUNCE_MS) {
+#else
             if (tp.valid && (now - lastTouch) > TOUCH_DEBOUNCE_MS) {
+#endif
                 ColorCheckTap ctap = uiColorCheckHitTest(tp.x, tp.y, tft.width(), tft.height());
                 if (ctap == ColorCheckTap::INVERT) {
                     lastTouch = now;
