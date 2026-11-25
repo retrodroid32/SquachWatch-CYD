@@ -1,2 +1,2 @@
-V150-R6-BOUNDED-TRAIL-HISTORY
-Stack on R5 queued alerts and Freenove R14.6. Add upstream Places model and memory-bounded Trail MORE INFO history. Full build, host tests, emulator and LAB packaging requested. Physical validation pending.
+V150-R6.1-TRAIL-SDMMC-OTA-SAFE
+Integrate hardware-confirmed R14.7 SDMMC into R6. Correct emulator Places linkage. Enable Trail on large-slot S3 targets and host, temporarily exclude new Trail code from constrained classic targets pending flash-budget recovery. Preserve existing features and strict OTA size gate. Full firmware and LAB checks requested.
