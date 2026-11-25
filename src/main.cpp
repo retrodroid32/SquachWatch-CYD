@@ -506,7 +506,7 @@ static uint32_t fnNextHash[480];
 static bool fnRowDirty[480];
 static inline void pushFrame(int x, int y);
 static void fnBootStage(const char* stage, uint16_t color) {
-    Serial.printf("[FNK0104N R14.6] %s heap=%lu psram=%lu stack=%lu\n", stage,
+    Serial.printf("[FNK0104N R14.7-R6.1] %s heap=%lu psram=%lu stack=%lu\n", stage,
                   (unsigned long)ESP.getFreeHeap(), (unsigned long)ESP.getFreePsram(),
                   (unsigned long)uxTaskGetStackHighWaterMark(nullptr));
     St77922::fillRect(0,0,320,8,color);
@@ -1342,7 +1342,7 @@ void freenoveBootProgress(const char* stage) {
     frame.setTextColor(TFT_WHITE,TFT_BLACK);
     frame.setTextSize(2); frame.setCursor(12,24); frame.print("SquachWatch");
     frame.setTextSize(1); frame.setCursor(12,52); frame.print(stage);
-    frame.setCursor(12,102); frame.print("Freenove LAB R14.6");
+    frame.setCursor(12,102); frame.print("Freenove LAB R14.7 / v1.50 R6.1");
     frame.setCursor(12,70); frame.printf("Internal heap: %lu",(unsigned long)heap_caps_get_free_size(MALLOC_CAP_INTERNAL|MALLOC_CAP_8BIT));
     frame.setCursor(12,84); frame.printf("Largest block: %lu",(unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL|MALLOC_CAP_8BIT));
     pushFrame(0,0);
@@ -3780,6 +3780,8 @@ void setup() {
     MeshTalk::begin();
 #endif
 #if defined(FREENOVE35_N)
+    freenoveBootProgress("Starting SDMMC worker...");
+    engine.sd().startMonitor(); // mount asynchronously after Mesh and radios
     freenoveBootProgress("Starting shared application...");
 #endif
 #if defined(CYD) && !defined(CYD32) && !defined(CYD35) && !defined(AWOK) && !defined(RLPHANTOM) && !defined(RLPHANTOM_R)
@@ -4046,7 +4048,7 @@ static inline void pushFrame(int x, int y) {
     }
     if(ok)memcpy(fnHash,next,sizeof fnHash);
     static bool firstFrameReported=false;
-    if(ok&&!firstFrameReported){Serial.println("[FNK0104N R14.6] first QSPI framebuffer transfer complete");firstFrameReported=true;}
+    if(ok&&!firstFrameReported){Serial.println("[FNK0104N R14.7-R6.1] first QSPI framebuffer transfer complete");firstFrameReported=true;}
     fnDirty=!ok;
     s_pushAccumUs+=micros()-t0;
 #else
