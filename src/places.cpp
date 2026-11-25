@@ -166,6 +166,7 @@ void tick(uint32_t nowMs) {
 }
 
 uint8_t current() { const Place* p = cur(); return p ? p->id : 0; }
+bool exists(uint8_t id) { return id && find(id); }
 uint32_t startMs(uint8_t id) { const Place* p = find(id); return p ? p->startMs : 0; }
 bool isHome(uint8_t id) { const Place* p = find(id); return p && p->home; }
 bool hasPos(uint8_t id) { const Place* p = find(id); return p && p->hasPos; }
