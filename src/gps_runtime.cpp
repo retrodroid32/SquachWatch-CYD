@@ -66,8 +66,11 @@ void tick(uint32_t nowMs) {
     Theme::setGpsIconStatus(!gpsOnline ? Theme::GpsIconStatus::ABSENT :
                             Gnss::fresh(nowMs) ? Theme::GpsIconStatus::FIX :
                             Theme::GpsIconStatus::SEARCHING);
-    if (Gnss::fresh(nowMs) && !Gnss::faked())
+    static uint32_t lastTrailFixMs = 0;
+    if (Gnss::fresh(nowMs) && !Gnss::faked() && nowMs-lastTrailFixMs>=1000u) {
+        lastTrailFixMs=nowMs;
         Places::noteFix(Gnss::fix().lat7,Gnss::fix().lon7,nowMs);
+    }
     // PR136 follow-up: adopt real GPS UTC without a second parser or
     // allocating memory. Only a checksum-validated, CURRENT position/fix
     // may establish the clock. Do this once while time is untrusted.
