@@ -55,7 +55,16 @@ static void panelToUI(uint16_t px,uint16_t py,uint16_t& x,uint16_t& y){
   }
 }
 static TFT_eSPI dummy;
-static TFT_eSprite view(&dummy);
+class FreenoveSprite : public TFT_eSprite {
+public:
+  explicit FreenoveSprite(TFT_eSPI* t):TFT_eSprite(t){}
+  void reshape(int16_t w,int16_t h){
+    _iwidth=_dwidth=_bitwidth=w;_iheight=_dheight=h;
+    cursor_x=cursor_y=0;_sx=_sy=0;_sw=w;_sh=h;rotation=0;
+    setViewport(0,0,w,h);setPivot(w/2,h/2);
+  }
+};
+static FreenoveSprite view(&dummy);
 static bool screenOk=false,touchOk=false;
 static uint8_t touchVersion=0;
 static uint16_t touchX=0,touchY=0;
@@ -146,12 +155,13 @@ static bool scanPicker=false, rawBleMode=true;
 static bool touchHeld=false, radioReady=false;
 static uint32_t lastUITick=0, lastRuntimeTick=0;
 static void enterClear(){
+  Settings::deskActive(false);
   if(activeView==View::RAWSCAN)engine.stopRawScan();
   scanPicker=false;
   activeView=View::CLEAR;
   uiClearInit(view);
 }
-static void enterDesk(){activeView=View::DESK;uiDeskInit(view);}
+static void enterDesk(){Settings::deskActive(true);activeView=View::DESK;uiDeskInit(view);}
 static void enterSettings(){
   activeView=View::SETTINGS;
   uiSettingsInit(view);
@@ -173,17 +183,10 @@ static bool setRotation(uint8_t next){
   const uint8_t old=HW::rotation;
   next&=3;
   if(next==old)return true;
-  view.deleteSprite();
   HW::rotation=next;
   HW::W=(next&1)?HW::PH:HW::PW;
   HW::H=(next&1)?HW::PW:HW::PH;
-  if(!view.createSprite(HW::W,HW::H)){
-    HW::rotation=old;
-    HW::W=(old&1)?HW::PH:HW::PW;
-    HW::H=(old&1)?HW::PW:HW::PH;
-    if(!view.createSprite(HW::W,HW::H))screenOk=false;
-    return false;
-  }
+  view.reshape(HW::W,HW::H);
   Settings::saveRotation(next);
   Squachy::trigger(Squachy::Event::ROTATED);
   return true;
@@ -234,6 +237,7 @@ static void handleTouch(uint16_t x,uint16_t y){
     Serial.printf("[settings] page=%u row=%u x=%u y=%u\n",(unsigned)uiSettingsCurrentPage(),(unsigned)choice,x,y);
     if(uiSettingsRowIsOff(choice)){Theme::showToast("BORING MODE IS ON",nullptr,Theme::CYAN);return;}
     switch(choice){
+      case SettingsRow::BRIGHTNESS:Settings::adjustBrightness(uiSettingsBrightnessDeltaForTap(view,x,HW::W,HW::H));ledcWrite(0,Settings::brightness());break;
       case SettingsRow::CONFIDENCE:Settings::cycleMinConfidence();break;
       case SettingsRow::AUTO_QUIET:Settings::cycleAutoQuiet();break;
       case SettingsRow::UPDATE_CHECK:Settings::toggleUpdateCheck();break;
@@ -379,11 +383,13 @@ static void renderOriginal(uint32_t now){
         false,nullptr,false,false,false,true);
       break;
   }
+  Theme::drawToast(view,now);
   if(!present())Serial.println("[freenove35] ST77922 transfer failed");
   lastDraw=now;
 }
 void setup(){
   Serial.begin(115200);
+  Serial.setTxTimeoutMs(0);
   delay(200);
   Serial.println("\n[SQUACHWATCH] FNK0104N native SquachWatch UI + detection R2");
   Serial.printf("[boot] PSRAM %s (%lu MB)\n",psramFound()?"yes":"NO",
@@ -393,6 +399,7 @@ void setup(){
   Serial.printf("[hw] ST77922=%d touch 0x55=%d fw=%u\n",
                 (int)screenOk,(int)touchOk,(unsigned)touchVersion);
   view.setColorDepth(16);
+  view.setAttribute(PSRAM_ENABLE,true);
   if(!view.createSprite(HW::W,HW::H)){
     Serial.println("[fatal] No PSRAM-backed native 320x480 RGB565 frame");
     screenOk=false;
@@ -400,6 +407,7 @@ void setup(){
   if(!screenOk)return;
   randomSeed(esp_random());
   Settings::load();
+  ledcSetup(0,5000,8);ledcAttachPin(St77922::IO_BL,0);ledcWrite(0,Settings::brightness());
   IgnoreList::begin();
   setRotation(Settings::rotation());
   Clock::begin();
@@ -447,6 +455,7 @@ void loop(){
   }
   if(down&&settingsGesture){
     const int dy=(int)touchY-lastY;
+    if(abs((int)touchX-(int)startX)>16)moved=true;
     if(abs(dy)>10){moved=true;int step=dy>0?-1:1;switch(activeView){case View::SETTINGS:uiSettingsScroll(step);break;case View::FILTER:uiDetFilterScroll(step);break;case View::RULES:if(!uiAlertRulesInDetail())uiAlertRulesScroll(step);break;case View::IGNORE:uiIgnoreListScroll(step);break;case View::DIAG:uiDiagnosticsScroll(step);break;default:break;}lastY=touchY;}
   }
   if(!down&&touchHeld&&settingsGesture){
@@ -454,7 +463,7 @@ void loop(){
     if(!moved)handleTouch(startX,startY);
   }
   touchHeld=down;
-  if(activeView==View::BOOT&&now-bootAt>=3100)enterClear();
+  if(activeView==View::BOOT&&now-bootAt>=3100){if(!Settings::colorChecked()){activeView=View::COLORS;uiColorCheckInit(view);}else if(Settings::deskWanted())enterDesk();else enterClear();}
   // ST77922 QSPI: a complete 307KB frame costs much more than classic CYD.
   // Cap physical push rate; all UI timing uses actual millis().
   if(now-lastUITick>=120){
