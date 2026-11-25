@@ -1,2 +1,2 @@
-FREENOVE35-R14.3-SHARED-CYD-BLACK-SCREEN-RECOVERY
-Retain R14.2 firmware corrections. Fix CYD32 regression test scope to inspect pushFrame definition rather than forward declaration; preserve every original assertion. Full matrix and LAB publication requested. Physical validation pending.
+FREENOVE35-R14.4-SHARED-CYD-RADIO-STARTUP
+Avoid blocking native USB serial flush, reserve 12 KiB internal DMA heap for radios, and show exact event log/Wi-Fi/BLE/mesh startup stages and internal heap. Preserve shared application and all detector behavior. Full build and LAB publication requested; hardware confirmation pending.
