@@ -1647,7 +1647,9 @@ void DetectionEngine::loop() {
     // First take ownership of anything NimBLE handed us. This runs before the
     // raw-scan early return so a result queued just before a mode change is not
     // stranded until that scan ends.
+#if SQW_TRAIL_ENABLED
     Places::tick(millis());
+#endif
     processBleQ(bleBudgetUs, bleMax);
     rawWifiScanTick();
 #if defined(GPS_SUPPORT) && defined(GPS_RX_PIN)
@@ -1920,7 +1922,9 @@ void DetectionEngine::unindexLogSlot(uint8_t slot) {
 }
 
 void DetectionEngine::clearLog() {
+#if SQW_TRAIL_ENABLED
     TrailHistory::clear();
+#endif
     _logCount = 0;
     _logHead  = 0;
     _latest   = nullptr;
@@ -2248,7 +2252,9 @@ void DetectionEngine::applyBle(Detection d) {
             const uint8_t beforeRepeats = _log[slot].repeats;
             if (_log[slot].repeats < 255) _log[slot].repeats++;
             detectionRssiSample(_log[slot], d.rssi, nowMs);
+#if SQW_TRAIL_ENABLED
             TrailHistory::note(_log[slot].mac,(uint8_t)_log[slot].type,nowMs);
+#endif
             _log[slot].lastSeen = nowMs;
             if (_log[slot].evidence == EvidenceKind::UNKNOWN &&
                 d.evidence != EvidenceKind::UNKNOWN) {
@@ -3263,8 +3269,10 @@ void DetectionEngine::processWiFiQ(uint32_t budgetUs, uint8_t maxItems) {
         // (beacon), same offsets postWiFi() was already called with.
         checkWatchWifi(e.mac, e.rssi);
         checkHuntWifi(e.mac, e.rssi, e.channel);
+#if SQW_TRAIL_ENABLED
         if (e.ssid[0] && !e.pwnagotchi && !e.remoteId && e.channel>=1 && e.channel<=13)
             Places::noteBssid(e.mac,e.rssi,e.ssid,millis());
+#endif
         // Every captured frame feeds the spectrum-waterfall's channel
         // activity level, whether or not it ends up matching anything
         // below — this is meant to reflect real ambient RF traffic,
@@ -3370,7 +3378,9 @@ void DetectionEngine::processWiFiQ(uint32_t budgetUs, uint8_t maxItems) {
             const uint8_t beforeRepeats = _log[slot].repeats;
             if (_log[slot].repeats < 255) _log[slot].repeats++;
             detectionRssiSample(_log[slot], e.rssi, nowMs);
+#if SQW_TRAIL_ENABLED
             TrailHistory::note(_log[slot].mac,(uint8_t)_log[slot].type,nowMs);
+#endif
             _log[slot].lastSeen = nowMs;
             _log[slot].channel = e.channel;
             // A field-prefix sighting may arrive before the camera's
@@ -3458,7 +3468,9 @@ void DetectionEngine::pushLog(const Detection& d) {
     const uint8_t slot = _logHead;
     if (_logCount == LOG_CAP) unindexLogSlot(slot);
     _log[slot] = d;
+#if SQW_TRAIL_ENABLED
     if (!d.restored) TrailHistory::note(d.mac,(uint8_t)d.type,millis());
+#endif
     if (_log[slot].repeats == 0) _log[slot].repeats = 1;
     if (_log[slot].rssiHistCount == 0)
         detectionRssiInit(_log[slot], d.rssi, millis());
