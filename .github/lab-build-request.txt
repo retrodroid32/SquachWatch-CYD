@@ -1,2 +1,2 @@
-V150-R5-BOUNDED-ALERT-QUEUE
-Port four-identity queued alert cards from upstream v1.50.0, preserving R14.6 and fork alert policy/security safeguards. Full firmware/emulator/host checks and LAB packaging requested. Physical validation pending.
+V150-R6-BOUNDED-TRAIL-HISTORY
+Stack on R5 queued alerts and Freenove R14.6. Add upstream Places model and memory-bounded Trail MORE INFO history. Full build, host tests, emulator and LAB packaging requested. Physical validation pending.
