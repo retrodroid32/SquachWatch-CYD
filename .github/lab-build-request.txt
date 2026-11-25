@@ -1,2 +1,2 @@
-FREENOVE35-R14.2-SHARED-CYD-BLACK-SCREEN-RECOVERY
-Native panel inversion, early RGB565 framebuffer presentation, visible boot-stage diagnostics and geometry/stack safeguards; disable unsupported classic status-light hardware. Build full matrix and publish LAB only. Hardware root cause remains unconfirmed.
+FREENOVE35-R14.3-SHARED-CYD-BLACK-SCREEN-RECOVERY
+Retain R14.2 firmware corrections. Fix CYD32 regression test scope to inspect pushFrame definition rather than forward declaration; preserve every original assertion. Full matrix and LAB publication requested. Physical validation pending.
