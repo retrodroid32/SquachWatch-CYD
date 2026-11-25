@@ -3920,8 +3920,7 @@ static inline void pushFrame(int x, int y) {
     if(ok)memcpy(fnHash,next,sizeof fnHash);
     fnDirty=!ok;
     s_pushAccumUs+=micros()-t0;
-    return;
-#endif
+#else
 #if defined(TWATCH_S3)
     if (s_panelAsleep) return;   // nothing to show it to; see applyBrightness()
 #endif
@@ -3969,6 +3968,7 @@ static inline void pushFrame(int x, int y) {
 #endif
     }
     s_pushAccumUs += micros() - t0;
+#endif  // FREENOVE35_N
 }
 
 // Draw a whole screen the way the 3.5" has to: into the half-height sprite
