@@ -471,7 +471,30 @@ public:
 };
 
 // ---- Globals ----
+#if defined(FREENOVE35_N)
+#include "st77922_qspi.h"
+#include "st77922_touch.h"
+// Logical geometry/font metrics only. No TFT_eSPI SPI initialization on QSPI.
+class FreenoveGeometry : public TFT_eSPI {
+public:
+    void setRotation(uint8_t r) {
+        rotation=r&3; _width=(r&1)?480:320; _height=(r&1)?320:480;
+        resetViewport();
+    }
+    void invertDisplay(bool on) { St77922::invert(on); }
+    void fillScreen(uint32_t c) { St77922::fillRect(0,0,320,480,(uint16_t)c); }
+};
+FreenoveGeometry tft;
+static uint16_t* fnDma=nullptr;
+static constexpr size_t FN_CHUNK=8192;
+static uint32_t fnHash[480]={};
+static bool fnDirty=true;
+static void fnMap(uint8_t r,int px,int py,int& x,int& y) {
+    switch(r&3){case 1:x=py;y=319-px;break;case 2:x=319-px;y=479-py;break;case 3:x=479-py;y=px;break;default:x=px;y=py;break;}
+}
+#else
 TFT_eSPI            tft = TFT_eSPI();
+#endif
 // All screens draw into this off-screen buffer, pushed to the physical
 // display in one shot at the end of each loop(). Without it, every
 // screen's erase-then-redraw sequence is briefly visible on real
@@ -607,6 +630,11 @@ static uint8_t madctlRotationBits(uint8_t rotation) {
 // setRotation(), since the rotation-dependent bits above have to be
 // reissued alongside it either way.
 static void applyColorOrder() {
+#if defined(FREENOVE35_N)
+    const uint8_t b=Settings::rgbSwapped()?8:0;
+    St77922::writeReg(0x36,&b,1);fnDirty=true;
+    return;
+#endif
 #ifdef TFT_RGB_ORDER
     bool baselineBgr = (TFT_RGB_ORDER != TFT_RGB);
 #else
@@ -748,6 +776,12 @@ static bool readTouchRaw(int16_t& a, int16_t& b);
 // in the panel's native (rotation 0) frame, and the rotation step turns it
 // into this rotation's coordinates. No board has its own maths any more.
 static TouchPoint pollTouch() {
+#if defined(FREENOVE35_N)
+    uint16_t px=0,py=0;TouchPoint native={false,0,0};
+    native.valid=St77922Touch::read(px,py);
+    if(native.valid)fnMap(screenRotation,px,py,native.x,native.y);
+    return native;
+#endif
     TouchPoint tp = { false, 0, 0 };
     int16_t a, b;
     if (!readTouchRaw(a, b)) return tp;
@@ -777,6 +811,9 @@ static TouchPoint pollTouch() {
 
 // ---- Raw readers ----
 static bool rawReadCap(int16_t& a, int16_t& b) {
+#if defined(FREENOVE35_N)
+    uint16_t x=0,y=0;if(!St77922Touch::read(x,y))return false;a=x;b=y;return true;
+#endif
     uint16_t nx, ny;
     if (!CapTouch::read(nx, ny)) return false;
     a = (int16_t)nx;
@@ -1230,7 +1267,7 @@ static bool    s_confirmArmed = false;
 // The compiled-in ranges are a 2.8" board's. Anywhere else -- the digitisers
 // on the display's own bus -- they put taps nowhere near the finger, so a
 // board with nothing better has no SKIP to offer.
-#if defined(TOUCH_SHARES_DISPLAY_BUS) || defined(CYD35) || defined(TWATCH_S3) || defined(FREENOVE_S3)
+#if defined(TOUCH_SHARES_DISPLAY_BUS) || defined(CYD35) || defined(TWATCH_S3) || defined(FREENOVE_S3) || defined(FREENOVE35_N)
 static const bool DEFAULT_TOUCH_USABLE = false;
 #else
 static const bool DEFAULT_TOUCH_USABLE = true;
@@ -1238,6 +1275,10 @@ static const bool DEFAULT_TOUCH_USABLE = true;
 
 static bool s_calRanThisBoot = false;   // for the RADIO report on the watch
 static void runTouchCalibration() {
+#if defined(FREENOVE35_N)
+    // Native TDDI reports panel pixels; resistive affine calibration is inapplicable.
+    Theme::showToast("NATIVE CAPACITIVE TOUCH",nullptr,Theme::CYAN);return;
+#endif
     s_calRanThisBoot = true;
     TouchFit::Fit fit;
 #if defined(TWATCH_S3)
@@ -1776,6 +1817,10 @@ static void autoUpdateTick(uint32_t now) {
 // it. Afterwards the screens draw straight to the panel, the fallback a
 // failed rotate already uses.
 static void releaseFrameBuffer(const char* who, bool clearPanel = true) {
+#if defined(FREENOVE35_N)
+    // PSRAM sprite is the only drawable surface; it does not compete with TLS internal heap.
+    (void)who;(void)clearPanel;return;
+#endif
 #if !defined(CYD35)
     if (!frameBufferOk) return;
     frame.deleteSprite();
@@ -1827,6 +1872,9 @@ static bool s_frameLent = false;
 // with the smallest power-of-two band count that fits: 2, 4, 8, or 16.
 // Every supported 240x320 / 320x240 rotation divides evenly by those counts.
 static void lendFrameToDownload(bool preservePanel) {
+#if defined(FREENOVE35_N)
+    (void)preservePanel;return;
+#endif
     if (!frameBufferOk) return;
     releaseFrameBuffer(preservePanel ? "wifi-use" : "ota", !preservePanel);
     s_recoveryBands = 1;
@@ -3048,7 +3096,7 @@ void setup() {
     // while it is still the previous life's, not this one's.
     crashReportInit();
     Serial.begin(SERIAL_BAUD);
-#if defined(TWATCH_S3) || defined(FREENOVE_S3)
+#if defined(TWATCH_S3) || defined(FREENOVE_S3) || defined(FREENOVE35_N)
     // Native USB: with nothing reading the port, every print would otherwise
     // wait its full timeout for a host, and after the chatty first-boot
     // calibration the loop crawled so slowly the screen looked frozen black.
@@ -3085,12 +3133,16 @@ void setup() {
 // Not on AWOK (TOUCH_CS there) and not on either RL Phantom, where GPIO21 is
 // the capacitive controller's INTERRUPT line. Driving it high at boot is the
 // same mistake as the LEDC attach further down, just earlier.
-#if !defined(AWOK) && !defined(RLPHANTOM) && !defined(RLPHANTOM_R) && !defined(TWATCH_S3) && !defined(FREENOVE_S3)
+#if !defined(AWOK) && !defined(RLPHANTOM) && !defined(RLPHANTOM_R) && !defined(TWATCH_S3) && !defined(FREENOVE_S3) && !defined(FREENOVE35_N)
     pinMode(21, OUTPUT); digitalWrite(21, HIGH);
 #endif
-#if defined(TWATCH_S3) || defined(FREENOVE_S3)
+#if defined(TWATCH_S3) || defined(FREENOVE_S3) || defined(FREENOVE35_N)
     // S3 board: use its dedicated GPIO45 backlight and leave legacy CYD pins alone.
+#if defined(FREENOVE35_N)
+    pinMode(St77922::IO_BL,OUTPUT);digitalWrite(St77922::IO_BL,LOW);
+#else
     pinMode(45, OUTPUT); digitalWrite(45, HIGH);
+#endif
 #else
     pinMode(27, OUTPUT); digitalWrite(27, HIGH);
 #if !defined(FREENOVE32)
@@ -3098,7 +3150,14 @@ void setup() {
 #endif
 #endif
 
+#if defined(FREENOVE35_N)
+    if(!St77922::begin()){Serial.println("[fatal] ST77922 init");while(true)delay(1000);}
+    fnDma=(uint16_t*)heap_caps_malloc(FN_CHUNK*2,MALLOC_CAP_DMA|MALLOC_CAP_INTERNAL);
+    if(!fnDma){Serial.println("[fatal] QSPI DMA allocation");while(true)delay(1000);}
+    St77922Touch::begin(38,39,48,47);St77922::reinit();
+#else
     tft.init();
+#endif
 
     // Load persisted settings before the first real pixel is drawn, so
     // boot itself already reflects the saved theme/invert choice
@@ -3152,11 +3211,15 @@ void setup() {
 // TOUCH_CS on AWOK, and the capacitive controller's INTERRUPT line on the RL
 // Phantom. Driving a 5 kHz PWM onto either is the kind of fault that looks
 // like dead touch, which is exactly how it presented on the Phantom.
-#if defined(TWATCH_S3) || defined(FREENOVE_S3)
+#if defined(TWATCH_S3) || defined(FREENOVE_S3) || defined(FREENOVE35_N)
     // One backlight, GPIO45, on the first channel. The CYD pins below are
     // flash/PSRAM lines and the power chip's interrupt on an S3.
     ledcSetup(BL_CH_ORIG, 5000, 8);
+#if defined(FREENOVE35_N)
+    ledcAttachPin(St77922::IO_BL,BL_CH_ORIG);
+#else
     ledcAttachPin(BL_PIN_TWATCH, BL_CH_ORIG);
+#endif
 #else
 #if !defined(AWOK) && !defined(RLPHANTOM) && !defined(RLPHANTOM_R)
     ledcSetup(BL_CH_ORIG, 5000, 8);
@@ -3177,8 +3240,10 @@ void setup() {
     // reverts to 240 MHz on every reboot and looks like it never took.
     applyCpuClock();
     // The light on the back, and its half-second sweep during the splash.
+#if !defined(FREENOVE35_N)
     StatusLight::begin();
     StatusLight::boot(millis());
+#endif
 
     // The boot check: a few seconds on the saved WiFi asking the site whether
     // there is a newer release, and only ever HERE, before Bluetooth exists.
@@ -3201,6 +3266,7 @@ void setup() {
         ledcWrite(BL_CH_ORIG, 24);
         ledcWrite(BL_CH_CAP,  24);
         ledcWrite(BL_CH_AWOK, 24);
+#if !defined(FREENOVE35_N)
         tft.fillScreen(Theme::BG);
         tft.setTextSize(1);
         tft.setTextWrap(false);
@@ -3208,6 +3274,7 @@ void setup() {
         const char* m = "CHECKING FOR UPDATES...";
         tft.setCursor((tft.width() - tft.textWidth(m)) / 2, tft.height() / 2 - 4);
         tft.print(m);
+#endif
         OtaWifi::bootCheck(9000);
         tft.fillScreen(Theme::BG);
     }
@@ -3238,7 +3305,12 @@ void setup() {
     // 8-bit (palette) mode: 320x240 needs ~75KB instead of ~150KB at
     // 16-bit — the full 16-bit buffer didn't fit in the available
     // contiguous heap on this board.
+#if defined(FREENOVE35_N)
+    frame.setColorDepth(16);
+    frame.setAttribute(PSRAM_ENABLE,true);
+#else
     frame.setColorDepth(8);
+#endif
 #if defined(TWATCH_S3)
     // 57.6 KB fits in internal RAM with room to spare, and a sprite in
     // PSRAM pushes slower and cannot go by DMA. Keep it inside.
@@ -3338,6 +3410,9 @@ void setup() {
     // Other boards retain their original allocation and recovery policy.
     if (!frame.createSprite(tft.width(), tft.height() / s_recoveryBands)) {
         Serial.println("ERROR: frame buffer allocation failed (low memory)");
+#if defined(FREENOVE35_N)
+        while(true)delay(1000);
+#endif
     #if HAVE_NVS_ERASE
         if (bootCheckRan) {
             g_bootCheckSkip = CHKSKIP_MAGIC;
@@ -3364,7 +3439,9 @@ void setup() {
 
     // Builds a 512-byte lookup table and nothing else; it touches no bus
     // and can go anywhere after the display is up.
+#if !defined(FREENOVE35_N)
     FramePush::begin();
+#endif
 
 #if defined(CYD35)
     // The standalone XPT2046_Touchscreen library (own SPIClass, own
@@ -3396,6 +3473,8 @@ void setup() {
     usingCapTouch = CapTouch::probe();
     Serial.println(usingCapTouch ? "T-Watch S3 -- FT6336 capacitive touch answered."
                                  : "T-Watch S3 -- FT6336 did not answer; no touch.");
+#elif defined(FREENOVE35_N)
+    usingCapTouch=St77922Touch::probe();
 #elif defined(FREENOVE_S3)
     // FNK0104B: FT6336 at 0x38 on SDA16/SCL15 with reset on GPIO18.
     // FNK0104A has no touch controller and safely continues without touch.
@@ -3438,6 +3517,7 @@ void setup() {
     }
 #endif
 
+#if !defined(FREENOVE35_N)
     // Recovery escape hatch: hold touch ANYWHERE for ~1s right here to
     // wipe a saved calibration back to defaults. A bad calibration can
     // make touch too inaccurate to reliably re-tap a "recalibrate"
@@ -3503,8 +3583,9 @@ void setup() {
     }
 #endif
 
+#endif
     // Seed the PRNG so the digital rain starts in a fresh-looking state.
-#if defined(FREENOVE_S3)
+#if defined(FREENOVE_S3) || defined(FREENOVE35_N)
     // Avoid guessing which S3 pins are safe ADC inputs around OPI PSRAM.
     randomSeed(esp_random());
 #else
@@ -3807,6 +3888,40 @@ static uint8_t  s_rosterPushesThisLoop = 0;
 static uint32_t s_rosterPushDiagAt = 0;
 
 static inline void pushFrame(int x, int y) {
+#if defined(FREENOVE35_N)
+    const uint32_t t0=micros();
+    if(!frame.created()||!fnDma||x||y)return;
+    const uint16_t* src=(const uint16_t*)frame.getPointer();
+    const int w=frame.bufW();
+    const bool full=fnDirty;
+    bool ok=true;
+    // Hash physical rows, transfer contiguous changed spans. Sprite bytes are already wire order.
+    uint32_t next[480];bool dirty[480];
+    for(int py=0;py<480;py++){
+        uint32_t h=2166136261u;
+        for(int px=0;px<320;px++){int sx,sy;fnMap(screenRotation,px,py,sx,sy);h=(h^src[(size_t)sy*w+sx])*16777619u;}
+        next[py]=h;dirty[py]=full||h!=fnHash[py];
+    }
+    for(int first=0;first<480&&ok;){
+        if(!dirty[first]){++first;continue;}
+        int end=first+1;while(end<480&&dirty[end])++end;
+        St77922::setWindow(0,first,319,end-1);
+        size_t off=(size_t)first*320,left=(size_t)(end-first)*320;
+        bool initial=true;
+        while(left){
+            size_t n=left<FN_CHUNK?left:FN_CHUNK;
+            St77922::wait();
+            for(size_t i=0;i<n;i++){int sx,sy;size_t p=off+i;fnMap(screenRotation,p%320,p/320,sx,sy);fnDma[i]=src[(size_t)sy*w+sx];}
+            if(!St77922::queuePixels(fnDma,n,initial)){ok=false;break;}
+            initial=false;off+=n;left-=n;
+        }
+        St77922::wait();first=end;
+    }
+    if(ok)memcpy(fnHash,next,sizeof fnHash);
+    fnDirty=!ok;
+    s_pushAccumUs+=micros()-t0;
+    return;
+#endif
 #if defined(TWATCH_S3)
     if (s_panelAsleep) return;   // nothing to show it to; see applyBrightness()
 #endif
@@ -7525,7 +7640,9 @@ void loop() {
                 info.calB0 = (int16_t)lroundf(b0); info.calB1 = (int16_t)lroundf(b1);
             }
             info.usingCapTouch = usingCapTouch;
-#if defined(FREENOVE_S3)
+#if defined(FREENOVE35_N)
+            info.boardName="Freenove FNK0104N 3.5";
+#elif defined(FREENOVE_S3)
             info.boardName = "Freenove S3 2.8";
 #elif defined(FREENOVE32)
             info.boardName = "Freenove 3.2";
