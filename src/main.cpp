@@ -1167,6 +1167,17 @@ static bool twatchStill();
 // crossed a per-type repeat threshold. The engine publishes both through its
 // existing _latest/_latestChangeMs pair, so no timestamp is added to every
 // Detection just for Stage B.
+static AlertQueue<DetectionType,4> s_alertQueue;
+static __attribute__((noinline)) void alertTrace(const char* event, DetectionType type, const uint8_t* mac, const char* reason = "-") {
+    if (type != DetectionType::SKIMMER) return;
+    if (Settings::privacyMode() || Security::locked()) return;
+    Serial.printf("[alert] %s type=%u mac=%02X:%02X:%02X:%02X:%02X:%02X q=%u reason=%s\n",
+        event, (unsigned)type, mac[0],mac[1],mac[2],mac[3],mac[4],mac[5],s_alertQueue.size(),reason);
+}
+static bool alertSuppressed(const Detection& d, const char* why) {
+    alertTrace("ALERT_SUPPRESSED",d.type,d.mac,why);
+    return false;
+}
 static bool freshAlertCandidate(const Detection& d, uint32_t now) {
     if (IgnoreList::alwaysAlert(d.mac)) {
         // ALWAYS ALERT fires on the fresh visit itself, not again when the
@@ -1189,17 +1200,17 @@ static bool alertMayInterrupt(const Detection& d) {
     s_alertSpam = false;
 
     if (!always) {
-        if (!Settings::alertEnabled(d.type)) return false;      // LOG ONLY
-        if (IgnoreList::silenced(d.mac)) return false;
-        if (d.conf < Settings::alertMinConfidence(d.type)) return false;
-        if (d.repeats < Settings::alertMinRepeats(d.type)) return false;
+        if (!Settings::alertEnabled(d.type)) return alertSuppressed(d,"LOG_ONLY");
+        if (IgnoreList::silenced(d.mac)) return alertSuppressed(d,"SNOOZE");
+        if (d.conf < Settings::alertMinConfidence(d.type)) return alertSuppressed(d,"CONFIDENCE");
+        if (d.repeats < Settings::alertMinRepeats(d.type)) return alertSuppressed(d,"REPEATS");
     }
 
     const uint32_t now = millis();
     if (!always &&
         !engine.alertCooldownReady(d.mac, d.type,
                                    Settings::alertCooldownSec(d.type), now))
-        return false;
+        return alertSuppressed(d,"COOLDOWN");
 
     // If this flood already spent its one explanatory alert, stop here --
     // before alertGate() mutates AUTO SNOOZE counters for an interruption
@@ -1208,7 +1219,7 @@ static bool alertMayInterrupt(const Detection& d) {
     const bool spamActive =
         !watched && !always && engine.spam().active(d.type, now);
     if (spamActive && !engine.spam().announcementPending(d.type))
-        return false;
+        return alertSuppressed(d,"SPAM");
 
 #if defined(TWATCH_S3)
     const bool still = twatchStill();
@@ -1222,7 +1233,7 @@ static bool alertMayInterrupt(const Detection& d) {
         Serial.printf("[snooze] %02x:%02x held, watch %s\n",
                       d.mac[4], d.mac[5], still ? "still" : "moving");
 #endif
-    if (g == DetectionEngine::AlertGate::HOLD) return false;
+    if (g == DetectionEngine::AlertGate::HOLD) return alertSuppressed(d,"AUTO_SNOOZE");
 
     s_alertLastFree = (g == DetectionEngine::AlertGate::ALLOW_LAST);
 
@@ -1239,6 +1250,7 @@ static bool alertMayInterrupt(const Detection& d) {
     }
 
     engine.noteAlertRaised(d.mac, d.type, now);
+    alertTrace("ALERT_ELIGIBLE",d.type,d.mac);
     return true;
 }
 
@@ -1387,7 +1399,6 @@ static void restoreFrameBuffer();
 // An ALERT opened from the desk's small card goes back to the desk when it
 // is dismissed, not to CLEAR. Set in enterAlert(), spent here.
 static bool s_backToDesk = false;
-static AlertQueue<DetectionType,4> s_alertQueue;
 static void enterDesk();
 
 // The screens that run the raw scan, which switches detection off while it
@@ -1483,9 +1494,9 @@ static void squachyCatch(DetectionType type, const uint8_t* mac, uint32_t hits, 
 enum class Buzz : uint8_t { ALERT, WATCH, SAMPLE };
 static void twatchBuzz(Buzz kind);
 #endif
-static void enterAlert(const Detection& d) {
+static void enterAlert(const Detection& d, bool preserveQueue = false) {
     if (state != AppState::ALERT) {
-        s_alertQueue.clear();
+        if (!preserveQueue) s_alertQueue.clear();
         s_backToDesk = (state == AppState::DESK);
     }
     s_firstLine[0] = '\0';
@@ -1546,6 +1557,7 @@ static void enterAlert(const Detection& d) {
     // buffer that keeps being written while the alert is up, so the
     // entry this came from can be overwritten before HUNT is tapped.
     memcpy(s_alertMac, d.mac, 6);
+    alertTrace("POPUP_OPENED",d.type,d.mac);
     s_alertIsBle = (d.channel == 0);   // same discriminator LOG's long-press uses
     {
         const char* lbl = d.name[0] ? d.name : vendorText(d);
@@ -1562,29 +1574,45 @@ static void enterAlert(const Detection& d) {
 // when a waiting card actually takes the screen.
 static void collectQueuedAlert(const Detection& candidate) {
     if (Security::locked()) { s_alertQueue.clear(); return; }
-    if (state != AppState::ALERT) return;
+    if (state != AppState::ALERT && state != AppState::CLEAR) return;
     const Detection* d = &candidate;
-    if (d->type == lastAlertType && memcmp(d->mac,s_alertMac,6)==0) return;
+    alertTrace("DETECTION_REGISTERED",d->type,d->mac);
+    if (state == AppState::ALERT && d->type == lastAlertType && memcmp(d->mac,s_alertMac,6)==0) {
+        alertSuppressed(*d,"ACTIVE_ID"); return;
+    }
     const bool always = IgnoreList::alwaysAlert(d->mac);
-    if (!always && (!Settings::alertEnabled(d->type) || IgnoreList::silenced(d->mac) ||
-                    d->conf < Settings::alertMinConfidence(d->type) ||
-                    d->repeats < Settings::alertMinRepeats(d->type))) return;
-    s_alertQueue.push(d->mac,d->type);
+    if (!Settings::typeEnabled(d->type)) { alertSuppressed(*d,"TYPE_OFF"); return; }
+    if (always && state == AppState::CLEAR && (uint32_t)(millis()-d->firstSeen)>=250u) {
+        alertSuppressed(*d,"OLD_VISIT"); return;
+    }
+    if (!always) {
+        if (!Settings::alertEnabled(d->type)) { alertSuppressed(*d,"LOG_ONLY"); return; }
+        if (IgnoreList::silenced(d->mac)) { alertSuppressed(*d,"SNOOZE"); return; }
+        if (d->conf < Settings::alertMinConfidence(d->type)) { alertSuppressed(*d,"CONFIDENCE"); return; }
+        if (d->repeats < Settings::alertMinRepeats(d->type)) { alertSuppressed(*d,"REPEATS"); return; }
+    }
+    if (s_alertQueue.push(d->mac,d->type))
+        alertTrace("ALERT_QUEUED",d->type,d->mac);
+    else alertSuppressed(*d,"DUP_OR_FULL");
 }
 static bool nextQueuedAlert() {
     if (Security::locked()) { s_alertQueue.clear(); return false; }
     AlertQueue<DetectionType,4>::Entry q;
     while (s_alertQueue.pop(q)) {
         const Detection* d = engine.findDetection(q.mac,q.type);
-        if (!d || !d->active || !Settings::typeEnabled(d->type) || !alertMayInterrupt(*d)) continue;
+        if (!d || !d->active || !Settings::typeEnabled(d->type)) {
+            alertTrace("ALERT_SUPPRESSED",q.type,q.mac,"STALE_OR_OFF"); continue;
+        }
+        if (!alertMayInterrupt(*d)) continue;
         const Detection copy = *d;
         uiAlertSetRedacted(false);
-        enterAlert(copy);
+        enterAlert(copy,true);
         return true;
     }
     return false;
 }
 static void acknowledgeAlert() {
+    alertTrace("POPUP_DISMISSED",lastAlertType,s_alertMac);
     squachyCatch(lastAlertType, s_alertMac, lastAlertHits, lastAlertRssi, lastAlertConf);
     if (!nextQueuedAlert()) enterClear();
 }
@@ -4401,8 +4429,12 @@ void loop() {
         touchJustDown = false;
         touchJustUp = false;
     }
-    engine.setAlertOpportunitySink(state == AppState::ALERT ? collectQueuedAlert : nullptr);
+    // CLEAR collects opportunities from this scan pass, not a mutable latest row.
+    // Never carry a candidate across a user-owned screen or onboarding.
+    if (state != AppState::ALERT) s_alertQueue.clear();
+    engine.setAlertOpportunitySink((state == AppState::ALERT || state == AppState::CLEAR) ? collectQueuedAlert : nullptr);
     engine.loop();
+    const uint32_t alertPollNow = millis();
 #if defined(GPS_SUPPORT) && defined(GPS_RX_PIN)
     GpsRuntime::tick(now);
 #endif
@@ -4919,7 +4951,7 @@ void loop() {
             // Do not consume the pending WATCH hit until the user leaves.
             if (!s_sysPropsFromSettings) {
                 const Detection* latest = engine.latest();
-                if (latest && freshAlertCandidate(*latest, now) &&
+                if (latest && freshAlertCandidate(*latest, alertPollNow) &&
                     alertMayInterrupt(*latest)) {
                     uiAlertSetRedacted(false);
                     enterAlert(*latest);
@@ -5120,12 +5152,7 @@ void loop() {
             } else if (engine.watchHitPending()) {
                 enterWatchAlert();
             } else {
-                const Detection* latest = engine.latest();
-                if (latest && freshAlertCandidate(*latest, now) &&
-                    alertMayInterrupt(*latest)) {
-                    uiAlertSetRedacted(false);
-                    enterAlert(*latest);
-                }
+                nextQueuedAlert();
             }
             // First-boot walkthrough: tapping its bubble advances (or
             // ends) it. Checked before everything else below so it eats
@@ -5648,6 +5675,7 @@ void loop() {
                     // on the info panel) both fire it.
                     if (s_alertIsBle) engine.huntBle(s_alertMac, s_alertLabel);
                     else              engine.huntWifi(s_alertMac, s_alertLabel);
+                    alertTrace("POPUP_DISMISSED",lastAlertType,s_alertMac,"HUNT");
                     squachyCatch(lastAlertType, s_alertMac, lastAlertHits, lastAlertRssi, lastAlertConf);
                     s_alertQueue.clear(); // explicit HUNT owns the next screen
                     enterHunt();
@@ -7470,7 +7498,7 @@ void loop() {
                 const Security::LockAlerts la = Security::lockAlerts();
                 const Detection* latest = engine.latest();
                 if (la != Security::LockAlerts::NONE && latest &&
-                    freshAlertCandidate(*latest, now) && alertMayInterrupt(*latest)) {
+                    freshAlertCandidate(*latest, alertPollNow) && alertMayInterrupt(*latest)) {
                     uiAlertSetRedacted(la == Security::LockAlerts::TYPE_ONLY);
                     enterAlert(*latest);
                     break;
@@ -7639,7 +7667,7 @@ void loop() {
             // beside the clock, and Squachy's reaction, not a new screen.
             {
                 const Detection* latest = engine.latest();
-                if (latest && freshAlertCandidate(*latest, now) &&
+                if (latest && freshAlertCandidate(*latest, alertPollNow) &&
                     alertMayInterrupt(*latest)) {
                     uiDeskAlert(*latest, now);
                     if (s_alertSpam) {
