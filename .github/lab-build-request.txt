@@ -1,2 +1,2 @@
-FREENOVE35-R14.1-SHARED-CYD-COMPILE-FIX
-Compile original shared src/main.cpp with mutually exclusive native Freenove QSPI and classic TFT pushFrame paths. Run complete board matrix, host tests and LAB publication. No production merge. SDMMC, battery and physical validation remain open.
+FREENOVE35-R14.2-SHARED-CYD-BLACK-SCREEN-RECOVERY
+Native panel inversion, early RGB565 framebuffer presentation, visible boot-stage diagnostics and geometry/stack safeguards; disable unsupported classic status-light hardware. Build full matrix and publish LAB only. Hardware root cause remains unconfirmed.
