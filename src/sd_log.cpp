@@ -84,6 +84,14 @@ bool SdLog::begin() {
 #endif
     Serial.printf("[sd] mounting: heap %lu, largest block %lu\n", (unsigned long)ESP.getFreeHeap(), (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
 #if defined(FREENOVE35_N)
+    // SDMMC needs internal DMA memory even with PSRAM available.
+    const size_t internalFree=heap_caps_get_free_size(MALLOC_CAP_INTERNAL|MALLOC_CAP_8BIT);
+    const size_t internalLargest=heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL|MALLOC_CAP_8BIT);
+    if (internalFree<20000u || internalLargest<8192u) {
+        _statusDetail="SDMMC DEFERRED - LOW RAM";
+        Serial.printf("[sdmmc] deferred internal=%lu largest=%lu\n",(unsigned long)internalFree,(unsigned long)internalLargest);
+        return false;
+    }
     // Upstream v1.50 FNK0104N schematic mapping. Never format on failure.
     const bool pins4 = SD_MMC.setPins(5,4,6,7,2,3);
     bool mounted = pins4 && SD_MMC.begin("/sd",false,false,SDMMC_FREQ_DEFAULT,SD_MAX_FILES);
