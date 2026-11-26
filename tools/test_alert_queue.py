@@ -43,7 +43,10 @@ s = (root / "src/main.cpp").read_text()
 admit = s.split("static void collectQueuedAlert(const Detection& candidate) {",1)[1].split("static bool nextQueuedAlert()",1)[0]
 pop = s.split("static bool nextQueuedAlert() {",1)[1].split("static void acknowledgeAlert()",1)[0]
 assert "alertMayInterrupt(" not in admit
-assert "IgnoreList::silenced" in admit
+policy = s.split("bool alertPolicyReady(",1)[1].split("bool alertMayInterrupt(",1)[0]
+assert "IgnoreList::silenced" in policy
+assert "alertPolicyReady(*d,always)" in admit
+assert "alertPolicyReady(d,always)" in s
 assert "Security::locked()" in admit and "Security::locked()" in pop
 assert "alertMayInterrupt(*d)" in pop and "engine.findDetection(q.mac,q.type)" in pop
 assert "s_alertQueue.clear(); // explicit HUNT owns the next screen" in s
