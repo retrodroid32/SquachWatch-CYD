@@ -464,7 +464,13 @@ void pollSerial() {
     static char line[48];
     static uint8_t len = 0;
 
+#if defined(FREENOVE35_N)
+    // Keep the USB command pump bounded even under continuous host input.
+    unsigned rxBudget = 128;
+    while (rxBudget-- && Serial.available() > 0) {
+#else
     while (Serial.available() > 0) {
+#endif
         const int c = Serial.read();
         if (c < 0) break;
         if (c == '\r') continue;
