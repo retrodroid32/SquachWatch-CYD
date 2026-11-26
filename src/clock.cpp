@@ -466,6 +466,7 @@ void pollSerial() {
 
 #if defined(FREENOVE35_N)
     // Keep the USB command pump bounded even under continuous host input.
+    static uint32_t lastRx = 0;
     unsigned rxBudget = 128;
     while (rxBudget-- && Serial.available() > 0) {
 #else
@@ -474,6 +475,7 @@ void pollSerial() {
         const int c = Serial.read();
         if (c < 0) break;
 #if defined(FREENOVE35_N)
+        lastRx = millis();
         // Accept CR, LF and CRLF. A terminal using CR alone previously
         // left the command buffered forever. Empty second terminator is ignored.
         if (c != '\r' && c != '\n') {
@@ -756,6 +758,16 @@ void pollSerial() {
                           "ZONE <name> the zone.\n");
         }
     }
+#if defined(FREENOVE35_N)
+    // A host may send the bare three-byte command without a terminator.
+    // Wait for a short idle gap so a fragmented longer command isn't split.
+    if (len == 3 && Serial.available() == 0 && (uint32_t)(millis()-lastRx) >= 80u &&
+        strncasecmp(line,"LOG",3) == 0) {
+        len = 0;
+        if (!Security::locked()) logDump();
+        else Serial.println("[security] locked -- unlock it on the screen first.");
+    }
+#endif
 }
 
 }  // namespace Clock
