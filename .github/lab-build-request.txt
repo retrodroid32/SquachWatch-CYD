@@ -1,2 +1,2 @@
-V150-R6.3-SKIMMER-ALERT-DELIVERY
-Collect bounded alert identities in CLEAR and ALERT, fix stale pre-engine timestamps, add privacy-safe SKIMMER serial diagnostics. Full CI and LAB publication requested; preserve OTA reserve, Freenove SDMMC, and R6.2 baseline. Hardware acceptance pending.
+V150-R6.3.1-SKIMMER-ALERT-OTA-SIZE
+Build #1190 compiled but failed mandatory OTA reserve by up to 464 bytes. Share non-mutating alert policy, prevent repeated gate expansion; retain SKIMMER lifecycle traces, CLEAR FIFO repair and Freenove SDMMC. Full CI and LAB requested; no partition or reserve changes.
