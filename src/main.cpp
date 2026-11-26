@@ -3148,6 +3148,10 @@ static void twatchCrownTick(uint32_t now) {
 #define FIRMWARE_VERSION "unknown"
 #endif
 static void printBootBanner() {
+    // Compact serial greeting on space-constrained boards; retain full version/reset.
+#if defined(CYD) && !defined(FREENOVE35_N) && !defined(FREENOVE_S3)
+    Serial.printf("SQUACHWATCH %s | last reset: %s\n", FIRMWARE_VERSION, resetReasonName());
+#else
     Serial.println("╔══════════════════════════════════════════════════╗");
     Serial.println("║   .-\"\"\"-.                                        ║");
     Serial.println("║  /  ^ ^  \\     ███ S Q U A C H W A T C H ███     ║");
@@ -3168,6 +3172,8 @@ static void printBootBanner() {
     Serial.println("║   )     (      2.4 GHz  .  ESP32  .  CYD         ║");
     Serial.println("║  /_/   \\_\\                                       ║");
     Serial.println("╚══════════════════════════════════════════════════╝");
+
+#endif
 
     // A panic, a watchdog or a brownout is worth shouting about rather than
     // leaving as one word inside a box. The crash itself is already sitting
