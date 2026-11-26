@@ -3212,6 +3212,12 @@ void setup() {
     // Before anything else can allocate: the breadcrumb has to be read out
     // while it is still the previous life's, not this one's.
     crashReportInit();
+#if defined(FREENOVE35_N)
+    // HWCDC buffers must be sized before begin(). A complete command and
+    // several rows can survive concurrent startup/background console prints.
+    Serial.setRxBufferSize(512);
+    Serial.setTxBufferSize(2048);
+#endif
     Serial.begin(SERIAL_BAUD);
 #if defined(TWATCH_S3) || defined(FREENOVE_S3) || defined(FREENOVE35_N)
     // Native USB: with nothing reading the port, every print would otherwise
