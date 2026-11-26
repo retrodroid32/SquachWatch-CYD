@@ -1,2 +1,2 @@
-V150-R6.3.2-SKIMMER-COMPACT-BOOT
-Build #1192 failed OTA reserve by up to 416 bytes. Compact decorative serial greeting on classic CYD, preserve full version/reset, crash diagnostics, display intro and all six skimmer trace events. Full CI and LAB requested; no partition or reserve changes.
+FREENOVE35-R14.8-STRUCTURED-LOG
+Shared live detection LOG CSV snapshot in PSRAM, bounded native USB CDC drain with retries, zero TX timeout preserved, PIN lock abort, no change to classic UART output. Full CI and Freenove LAB publication requested. Workbench Poll LOG, exact-MAC CAMERA and suite physical verification pending.
