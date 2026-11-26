@@ -3555,6 +3555,93 @@ void DetectionEngine::drainBlackBox(uint32_t now) {
 
 // LOG on the console. Here rather than in clock.cpp because the ring is the
 // engine's, and g_engine is the only handle on the live one.
+#if defined(FREENOVE35_N)
+// Native HWCDC uses a 256-byte TX ring and zero timeout. Snapshot complete
+// lines from the real ring on the loop task, then send only when space exists.
+// No internal-heap fallback, no radio callback, no flush, no waiting for host.
+namespace {
+constexpr size_t LOG_LINE_BYTES = 96;
+constexpr uint8_t LOG_LINES = 66; // 64 live rows plus the two protocol lines
+char (*s_logLines)[LOG_LINE_BYTES] = nullptr;
+uint8_t s_logLine = 0, s_logCount = 0;
+size_t s_logOffset = 0;
+uint32_t s_logProgress = 0;
+bool s_logAgain = false;
+void resetLogTx() {
+    if (s_logLines) heap_caps_free(s_logLines);
+    s_logLines = nullptr;
+    s_logLine = s_logCount = 0;
+    s_logOffset = 0;
+    s_logAgain = false;
+}
+}
+void logDump() {
+    if (s_logLines) { s_logAgain = true; return; }
+    s_logLines = static_cast<char (*)[LOG_LINE_BYTES]>(
+        heap_caps_malloc(LOG_LINES * LOG_LINE_BYTES, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+    if (!s_logLines) { Serial.println("[log] insufficient PSRAM"); return; }
+    s_logLine = 0;
+    s_logOffset = 0;
+    s_logProgress = millis();
+    if (!g_engine) {
+        snprintf(s_logLines[0], LOG_LINE_BYTES, "[log] no engine\r\n");
+        s_logCount = 1;
+        return;
+    }
+    const uint8_t n = g_engine->logCount();
+    snprintf(s_logLines[0], LOG_LINE_BYTES, "[log] %u rows, newest first\n", (unsigned)n);
+    snprintf(s_logLines[1], LOG_LINE_BYTES, "row,type,mac,rssi,hits,state,when\r\n");
+    s_logCount = 2;
+    for (uint8_t i = 0; i < n && s_logCount < LOG_LINES; ++i) {
+        const Detection* d = g_engine->logAt(i);
+        if (!d) break;
+        char when[16];
+        if (d->restored) Clock::formatEpochStamp(d->firstSeen, when, sizeof when);
+        else             Clock::formatStamp(d->firstSeen, when, sizeof when);
+        const int len = snprintf(s_logLines[s_logCount], LOG_LINE_BYTES,
+                      "%u,%s,%02x:%02x:%02x:%02x:%02x:%02x,%d,%u,%s,%s\n",
+                      (unsigned)i, detectionTypeName(d->type),
+                      d->mac[0], d->mac[1], d->mac[2], d->mac[3], d->mac[4], d->mac[5],
+                      (int)d->rssi, (unsigned)d->hits,
+                      d->restored ? "KEPT" : (d->active ? "here" : "gone"), when);
+        if (len < 0 || len >= (int)LOG_LINE_BYTES) {
+            resetLogTx();
+            Serial.println("[log] row formatting failed");
+            return;
+        }
+        ++s_logCount;
+    }
+    // Advertise the actual snapshot count, not a changing live ring count.
+    snprintf(s_logLines[0], LOG_LINE_BYTES, "[log] %u rows, newest first\n", (unsigned)(s_logCount - 2));
+}
+void logDumpTick(bool locked) {
+    if (!s_logLines) return;
+    if (locked || (uint32_t)(millis() - s_logProgress) >= 10000u) {
+        resetLogTx();
+        return;
+    }
+    // Bounded work per loop. Never start a line unless the complete remaining
+    // bytes fit; a rare short write advances only by the reported byte count.
+    for (uint8_t budget = 0; budget < 4 && s_logLine < s_logCount; ++budget) {
+        const char* line = s_logLines[s_logLine];
+        const size_t remaining = strlen(line) - s_logOffset;
+        const int room = Serial.availableForWrite();
+        if (room < (int)remaining) break;
+        const size_t sent = Serial.write(reinterpret_cast<const uint8_t*>(line + s_logOffset), remaining);
+        if (!sent) break;
+        s_logOffset += sent;
+        s_logProgress = millis();
+        if (s_logOffset < strlen(line)) break;
+        s_logOffset = 0;
+        ++s_logLine;
+    }
+    if (s_logLine == s_logCount) {
+        const bool again = s_logAgain;
+        resetLogTx();
+        if (again) logDump();
+    }
+}
+#else
 void logDump() {
     if (!g_engine) { Serial.println("[log] no engine"); return; }
     const uint8_t n = g_engine->logCount();
@@ -3574,6 +3661,8 @@ void logDump() {
     }
 }
 
+
+#endif
 
 // The lifetime tally, to flash: at most once every five seconds while it
 // has changed. Five seconds of counting is what a power cut can lose.
