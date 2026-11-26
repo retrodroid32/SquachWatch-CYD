@@ -1174,11 +1174,11 @@ static __attribute__((noinline)) void alertTrace(const char* event, DetectionTyp
     Serial.printf("[alert] %s type=%u mac=%02X:%02X:%02X:%02X:%02X:%02X q=%u reason=%s\n",
         event, (unsigned)type, mac[0],mac[1],mac[2],mac[3],mac[4],mac[5],s_alertQueue.size(),reason);
 }
-static bool alertSuppressed(const Detection& d, const char* why) {
+static __attribute__((noinline)) bool alertSuppressed(const Detection& d, const char* why) {
     alertTrace("ALERT_SUPPRESSED",d.type,d.mac,why);
     return false;
 }
-static bool freshAlertCandidate(const Detection& d, uint32_t now) {
+static __attribute__((noinline)) bool freshAlertCandidate(const Detection& d, uint32_t now) {
     if (IgnoreList::alwaysAlert(d.mac)) {
         // ALWAYS ALERT fires on the fresh visit itself, not again when the
         // ordinary per-type repeat threshold is crossed a few packets later.
@@ -1190,7 +1190,17 @@ static bool freshAlertCandidate(const Detection& d, uint32_t now) {
            d.repeats >= Settings::alertMinRepeats(d.type);
 }
 
-static bool alertMayInterrupt(const Detection& d) {
+// Shared, non-mutating policy checks for admission and delivery.
+static __attribute__((noinline)) bool alertPolicyReady(const Detection& d, bool always) {
+    if (!Settings::typeEnabled(d.type)) return alertSuppressed(d,"TYPE_OFF");
+    if (always) return true;
+    const char* why = !Settings::alertEnabled(d.type) ? "LOG_ONLY" :
+        IgnoreList::silenced(d.mac) ? "SNOOZE" :
+        d.conf < Settings::alertMinConfidence(d.type) ? "CONFIDENCE" :
+        d.repeats < Settings::alertMinRepeats(d.type) ? "REPEATS" : nullptr;
+    return !why || alertSuppressed(d,why);
+}
+static __attribute__((noinline)) bool alertMayInterrupt(const Detection& d) {
     // WATCH keeps its v1.20.1 meaning: it bypasses AUTO SNOOZE only. ALWAYS
     // ALERT is stronger direct per-device intent: it bypasses per-type alert
     // rules, confidence/repeats/cooldown and device snooze, but still cannot
@@ -1199,12 +1209,7 @@ static bool alertMayInterrupt(const Detection& d) {
     const bool always  = IgnoreList::alwaysAlert(d.mac);
     s_alertSpam = false;
 
-    if (!always) {
-        if (!Settings::alertEnabled(d.type)) return alertSuppressed(d,"LOG_ONLY");
-        if (IgnoreList::silenced(d.mac)) return alertSuppressed(d,"SNOOZE");
-        if (d.conf < Settings::alertMinConfidence(d.type)) return alertSuppressed(d,"CONFIDENCE");
-        if (d.repeats < Settings::alertMinRepeats(d.type)) return alertSuppressed(d,"REPEATS");
-    }
+    if (!alertPolicyReady(d,always)) return false;
 
     const uint32_t now = millis();
     if (!always &&
@@ -1581,16 +1586,10 @@ static void collectQueuedAlert(const Detection& candidate) {
         alertSuppressed(*d,"ACTIVE_ID"); return;
     }
     const bool always = IgnoreList::alwaysAlert(d->mac);
-    if (!Settings::typeEnabled(d->type)) { alertSuppressed(*d,"TYPE_OFF"); return; }
     if (always && state == AppState::CLEAR && (uint32_t)(millis()-d->firstSeen)>=250u) {
         alertSuppressed(*d,"OLD_VISIT"); return;
     }
-    if (!always) {
-        if (!Settings::alertEnabled(d->type)) { alertSuppressed(*d,"LOG_ONLY"); return; }
-        if (IgnoreList::silenced(d->mac)) { alertSuppressed(*d,"SNOOZE"); return; }
-        if (d->conf < Settings::alertMinConfidence(d->type)) { alertSuppressed(*d,"CONFIDENCE"); return; }
-        if (d->repeats < Settings::alertMinRepeats(d->type)) { alertSuppressed(*d,"REPEATS"); return; }
-    }
+    if (!alertPolicyReady(*d,always)) return;
     if (s_alertQueue.push(d->mac,d->type))
         alertTrace("ALERT_QUEUED",d->type,d->mac);
     else alertSuppressed(*d,"DUP_OR_FULL");
@@ -1611,6 +1610,7 @@ static bool nextQueuedAlert() {
     }
     return false;
 }
+static void acknowledgeAlert() __attribute__((noinline));
 static void acknowledgeAlert() {
     alertTrace("POPUP_DISMISSED",lastAlertType,s_alertMac);
     squachyCatch(lastAlertType, s_alertMac, lastAlertHits, lastAlertRssi, lastAlertConf);
