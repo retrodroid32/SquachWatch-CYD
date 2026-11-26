@@ -1,2 +1,2 @@
-FREENOVE35-R14.8-STRUCTURED-LOG
-Shared live detection LOG CSV snapshot in PSRAM, bounded native USB CDC drain with retries, zero TX timeout preserved, PIN lock abort, no change to classic UART output. Full CI and Freenove LAB publication requested. Workbench Poll LOG, exact-MAC CAMERA and suite physical verification pending.
+FREENOVE35-R14.9-LOG-RX-TX
+R14.8 hardware LOG poll failed. Accept CR/LF/CRLF and bare LOG after idle gap, enlarge native USB buffers before begin, preserve bounded CSV output and zero timeout. Workbench framing not independently confirmed. Full CI and LAB requested.
