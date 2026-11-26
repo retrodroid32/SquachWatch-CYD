@@ -28,3 +28,9 @@ assert "rxBudget = 128" in clock
 assert "logDump();" in clock and 'strncasecmp(line, "LOG", 3)' in clock
 assert "Serial.setTxTimeoutMs(0);" in source
 print("Freenove LOG protocol, real-record snapshot, bounded USB output and security guards PASS")
+
+assert "if (c != '\\r' && c != '\\n')" in clock
+assert 'strncasecmp(line,"LOG",3) == 0' in clock
+assert "millis()-lastRx" in clock
+assert source.index("Serial.setTxBufferSize(2048)") < source.index("Serial.begin(SERIAL_BAUD)")
+assert source.index("Serial.setRxBufferSize(512)") < source.index("Serial.begin(SERIAL_BAUD)")
