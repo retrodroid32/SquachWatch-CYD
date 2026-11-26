@@ -176,6 +176,9 @@ uint32_t advertsDropped();   // adverts the seatbelt refused for want of heap
 // LOG on the console: the RAM log as the LOG screen reads it, newest first,
 // with KEPT on the rows the black box brought back from an earlier boot.
 void     logDump();
+#if defined(FREENOVE35_N)
+void     logDumpTick(bool locked);
+#endif
 
 class DetectionEngine {
 public:
