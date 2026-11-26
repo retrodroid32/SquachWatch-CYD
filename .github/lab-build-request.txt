@@ -1,2 +1,2 @@
-V150-R6.3.1-SKIMMER-ALERT-OTA-SIZE
-Build #1190 compiled but failed mandatory OTA reserve by up to 464 bytes. Share non-mutating alert policy, prevent repeated gate expansion; retain SKIMMER lifecycle traces, CLEAR FIFO repair and Freenove SDMMC. Full CI and LAB requested; no partition or reserve changes.
+V150-R6.3.2-SKIMMER-COMPACT-BOOT
+Build #1192 failed OTA reserve by up to 416 bytes. Compact decorative serial greeting on classic CYD, preserve full version/reset, crash diagnostics, display intro and all six skimmer trace events. Full CI and LAB requested; no partition or reserve changes.
