@@ -35,13 +35,17 @@ static void bottomButtonRects(int screenW, int screenH,
 // scan finishing) instead of every single frame.
 static uint8_t g_lastBleCount = 0;
 static bool    g_reportedDone = false;
+#if !defined(CYD) || defined(CYD32) || defined(FREENOVE32)
 static void feedReset();
+#endif
 
 void uiRawScanInit(TFT_eSPI& t, bool isBle) {
     g_scroll = 0;
     g_lastBleCount = 0;
     g_reportedDone = false;
+#if !defined(CYD) || defined(CYD32) || defined(FREENOVE32)
     feedReset();
+#endif
     t.fillRect(0, 0, t.width(), t.height(), Theme::BG);
     Squachy::scanReaction(Squachy::ScanMoment::STARTED);
 }
@@ -200,6 +204,7 @@ static void drawTargetFlags(TFT_eSPI& t, int x, int y,
     if (ignored) flag("IGNORE", Theme::AMBER);
 }
 
+#if !defined(CYD) || defined(CYD32) || defined(FREENOVE32)
 // ---- The wait: SCAN.LOG ------------------------------------------------------
 // What the screen shows while a scan listens, instead of a pulsing
 // SCANNING...: a log window that prints each device as it is heard. Picked
@@ -569,6 +574,8 @@ static void feedReset() {
     feed::rssiSum = 0;
 }
 
+#endif
+
 // Row index (0 = topmost visible, adjusted for current scroll) a tap
 // at (x,y) falls within, or -1 if it's outside the list entirely (the
 // Squachy strip, the button bar, or past the last row). Used to
@@ -679,12 +686,39 @@ switch (Settings::background()) {
     // mini cameos already do.
     Squachy::tick(t, w / 2, sqTop, sqH, now, advance, 0.8f, !done);
 
+#if !defined(CYD) || defined(CYD32) || defined(FREENOVE32)
     if (!done) {
         drawFeed(t, now, eng, isBle, false, bodyTop - 2, bodyBottom, w);
         drawBottomBar(t, w, h, isBle);
         if (confirmPending) drawConfirmPanel(t, w, h, confirmLabel, confirmWatched, confirmHunted, confirmIgnored);
         return;
     }
+#else
+    if (!done) {
+        float pulse = 0.55f + 0.45f * sinf((float)(now % 2000) / 2000.0f * 6.2831853f);
+        uint16_t col = Theme::blend(Theme::GREEN, Theme::CYAN, (uint16_t)(pulse * 200.0f));
+        t.setTextSize(3);
+        t.setTextColor(col, Theme::BG);
+        const char* msg = "SCANNING...";
+        int mw = t.textWidth(msg);
+        t.setCursor((w - mw) / 2, bodyTop + bodyH / 3);
+        t.print(msg);
+
+        if (isBle) {
+            char sub[24];
+            snprintf(sub, sizeof(sub), "%u found so far", (unsigned)eng.rawBleCount());
+            t.setTextSize(1);
+            t.setTextColor(Theme::CYAN, Theme::BG);
+            int sw = t.textWidth(sub);
+            t.setCursor((w - sw) / 2, bodyTop + bodyH / 3 + 35);
+            t.print(sub);
+        }
+
+        drawBottomBar(t, w, h, isBle);
+        if (confirmPending) drawConfirmPanel(t, w, h, confirmLabel, confirmWatched, confirmHunted, confirmIgnored);
+        return;
+    }
+#endif
 
     uint8_t count = isBle ? eng.rawBleCount() : eng.rawWifiCount();
 
