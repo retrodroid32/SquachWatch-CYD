@@ -299,7 +299,7 @@ switch (Settings::background()) {
     }
     Theme::restorePalette(saved);
     char title[32];
-    snprintf(title, sizeof(title), ">> %s SCAN <<", isBle ? "BLE" : "WIFI");
+    snprintf(title, sizeof(title), "%s %s", done ? "RESULTS.LOG" : "SCAN.LOG", isBle ? "BLE" : "WIFI");
     Theme::drawTitleBar(t, title);
 
     // No viewport needed now that the background above already covers
