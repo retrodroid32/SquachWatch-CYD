@@ -21,7 +21,7 @@ for token in ('[log] %u rows, newest first', 'row,type,mac,rssi,hits,state,when'
     assert token in usb and token in uart, token
 assert "MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT" in usb
 assert "Serial.availableForWrite()" in usb and "s_logOffset += sent" in usb
-assert "budget < 4" in usb and ">= 10000u" in usb
+assert "budget < 16" in usb and ">= 10000u" in usb
 assert "Serial.flush(" not in usb and "delay(" not in usb
 assert "logDumpTick(Security::locked());" in source
 assert "rxBudget = 128" in clock
