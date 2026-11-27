@@ -1,2 +1,2 @@
-FREENOVE35-R16.0-LOG-DRAIN
-Increase bounded LOG drain from 4 to 16 lines per loop, retain zero timeout and actual snapshot records, preserve R15.0.1 classification guard and upstream device information updates. Full CI and LAB requested. Physical observation-window validation pending.
+R16.1.2-SCAN-RESULTS
+Publish LAB firmware for PR #267: live scanner, Freenove 3.5 terminal results, preserved tracking and privacy, classic CYD OTA reserve. Source implementation 59cd1fb54e3dce4cc026812c78370322e8d39de4 passed Build #1209. Request full matching CI and LAB Pages publication; no production tag or release.
