@@ -171,7 +171,7 @@ static void rowLayout(TFT_eSPI& t, int w, int h, int& bodyTop, int& bodyBottom, 
     Theme::ButtonBarGeom bar = Theme::computeButtonBar(w, h);
     bodyTop    = RS_TITLE_BOTTOM + RS_SQ_H;
     bodyBottom = bar.y - 4;
-#if defined(FREENOVE35_N) || defined(FREENOVE_S3_35) || defined(CYD32)
+#if defined(FREENOVE35_N) || defined(FREENOVE_S3_35)
     bodyTop += 14;
     bodyBottom -= 14;
     rowH = 21;
@@ -197,6 +197,17 @@ static void rowLayout(TFT_eSPI& t, int w, int h, int& bodyTop, int& bodyBottom, 
 // Persistent per-row target state. Keep these as separate coloured words
 // rather than folding them into the MAC/channel string: that is the same
 // visual treatment IGNORE already uses, and it lets WATCH/HUNT coexist.
+#if defined(CYD32)
+static void drawCompactSignal(TFT_eSPI& t, int x, int y, int rssi) {
+    const int level = rssi > -62 ? 3 : rssi > -74 ? 2 : 1;
+    for (int k = 0; k < 3; ++k) {
+        const int h = 2 + k * 2;
+        t.fillRect(x + k * 3, y + 6 - h, 2, h,
+                   k < level ? Theme::GREEN : Theme::PURPLE);
+    }
+}
+#endif
+
 static void drawTargetFlags(TFT_eSPI& t, int x, int y,
                             bool watched, bool hunted, bool ignored) {
     auto flag = [&](const char* label, uint16_t color) {
@@ -594,14 +605,14 @@ int uiRawScanRowAt(TFT_eSPI& t, int x, int y, int screenW, int screenH) {
     if (feed::holding) return -1;
 #endif
     if (y < bodyTop || y >= bodyBottom) return -1;
-#if defined(FREENOVE35_N) || defined(FREENOVE_S3_35) || defined(CYD32)
+#if defined(FREENOVE35_N) || defined(FREENOVE_S3_35)
     const int right = screenW - 8 >= 290 ? screenW - 96 : screenW - 7;
     if (x < 8 || x > right || (y - bodyTop) / rowH >= (bodyBottom - bodyTop) / rowH) return -1;
 #endif
     return g_scroll + (y - bodyTop) / rowH;
 }
 
-#if defined(FREENOVE35_N) || defined(FREENOVE_S3_35) || defined(CYD32)
+#if defined(FREENOVE35_N) || defined(FREENOVE_S3_35)
 // ---- The results: RESULTS.LOG ------------------------------------------------
 // Once the scan is done the same green window stays up and becomes the list
 // (asked for 2026-11-22: "make the list view look as good"). Two lines a
@@ -953,7 +964,7 @@ switch (Settings::background()) {
     }
 #endif
 
-#if defined(FREENOVE35_N) || defined(FREENOVE_S3_35) || defined(CYD32)
+#if defined(FREENOVE35_N) || defined(FREENOVE_S3_35)
     drawList(t, eng, isBle, w, h, bodyTop, bodyBottom, rowH);
     drawBottomBar(t, w, h, isBle);
     if (confirmPending) drawConfirmPanel(t, w, h, confirmLabel, confirmWatched, confirmHunted, confirmIgnored);
@@ -1012,7 +1023,11 @@ switch (Settings::background()) {
             UiFit::fitMid(fittedName, sizeof fittedName, r->name[0] ? Privacy::name(r->name, pv, sizeof pv) : "(unnamed)",
                           UiFit::chars(ax - 6, 2));
             t.setTextSize(2);
+            #if defined(CYD32)
+            t.setTextColor(Theme::GREEN, Theme::BG);
+#else
             t.setTextColor(Theme::CYAN, Theme::BG);
+#endif
             t.setCursor(4, y + topPad);
             t.print(fittedName);
 
@@ -1031,6 +1046,9 @@ switch (Settings::background()) {
             t.setTextColor(Theme::VAPOR_PURPLE, Theme::BG);
             t.setCursor(w - rw - 14, y + topPad);
             t.print(rssi);
+#if defined(CYD32)
+            drawCompactSignal(t, w - 12, y + topPad, r->rssi);
+#endif
             // Closer or further since the last reading: an arrow beside the
             // number, green up for nearer, red down for further, nothing for
             // a wobble of under four dB, which is what a still device does.
@@ -1050,7 +1068,11 @@ switch (Settings::background()) {
             UiFit::fitMid(fittedSsid, sizeof fittedSsid, Privacy::name(eng.rawWifiSsid(idx), pv, sizeof pv),
                           UiFit::chars(w - wifiRw - 20, 2));
             t.setTextSize(2);
+            #if defined(CYD32)
+            t.setTextColor(Theme::GREEN, Theme::BG);
+#else
             t.setTextColor(Theme::CYAN, Theme::BG);
+#endif
             t.setCursor(4, y + topPad);
             t.print(fittedSsid);
 
@@ -1074,6 +1096,9 @@ switch (Settings::background()) {
             t.setTextColor(Theme::VAPOR_PURPLE, Theme::BG);
             t.setCursor(w - wifiRw - 14, y + topPad);
             t.print(wifiRssi);
+#if defined(CYD32)
+            drawCompactSignal(t, w - 12, y + topPad, eng.rawWifiRssi(idx));
+#endif
         }
 
         y += rowH;

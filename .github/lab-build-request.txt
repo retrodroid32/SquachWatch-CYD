@@ -1,2 +1,2 @@
-R16.1.4-CYD32-RESULTS
-Extend terminal RESULTS.LOG to CYD 3.2; restore post-scan feed transition and real Wi-Fi results animation. Preserve compact CYD 2.8, tracking, privacy and OTA reserve. Full CI and LAB publication requested.
+R16.1.5-CYD32-FLASH
+Correct R16.1.4 OTA reserve failure using compact CYD32 results with RSSI bars and terminal colors; preserve animated scan completion, Freenove full results, tracking and privacy. Full CI and LAB publication requested.
