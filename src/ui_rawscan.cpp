@@ -171,6 +171,12 @@ static void rowLayout(TFT_eSPI& t, int w, int h, int& bodyTop, int& bodyBottom, 
     Theme::ButtonBarGeom bar = Theme::computeButtonBar(w, h);
     bodyTop    = RS_TITLE_BOTTOM + RS_SQ_H;
     bodyBottom = bar.y - 4;
+#if defined(FREENOVE35_N) || defined(FREENOVE_S3_35)
+    bodyTop += 14;
+    bodyBottom -= 14;
+    rowH = 21;
+    return;
+#endif
 
     // fontHeight() with NO argument -- fontHeight(int) takes a font
     // INDEX (2 means "built-in font #2", not "current font at size
@@ -585,8 +591,218 @@ int uiRawScanRowAt(TFT_eSPI& t, int x, int y, int screenW, int screenH) {
     int bodyTop, bodyBottom, rowH;
     rowLayout(t, screenW, screenH, bodyTop, bodyBottom, rowH);
     if (y < bodyTop || y >= bodyBottom) return -1;
+#if defined(FREENOVE35_N) || defined(FREENOVE_S3_35)
+    const int right = screenW - 8 >= 290 ? screenW - 96 : screenW - 7;
+    if (x < 8 || x > right || (y - bodyTop) / rowH >= (bodyBottom - bodyTop) / rowH) return -1;
+#endif
     return g_scroll + (y - bodyTop) / rowH;
 }
+
+#if defined(FREENOVE35_N) || defined(FREENOVE_S3_35)
+// ---- The results: RESULTS.LOG ------------------------------------------------
+// Once the scan is done the same green window stays up and becomes the list
+// (asked for 2026-11-22: "make the list view look as good"). Two lines a
+// device: its icon, name, dBm and bars, then its address (or channel and
+// lock) with its flags. Rows are where rowLayout() says, which is what the
+// taps and the cursor use. On a wide enough screen the side panel sums the
+// scan up: how many of each kind, or how many open and locked networks.
+namespace feed {
+void frame(TFT_eSPI& t, int x0, int y0, int ww, int wh, const char* title, const char* right) {
+    t.fillRect(x0 + 2, y0 + 2, ww, wh, Theme::BLACK);
+    t.fillRect(x0, y0, ww, wh, Theme::BLACK);
+    for (int y = y0 + 12; y < y0 + wh - 1; y += 2) t.drawFastHLine(x0 + 1, y, ww - 2, STRIPE);
+    t.drawRect(x0, y0, ww, wh, Theme::PURPLE);
+    t.fillRect(x0 + 1, y0 + 1, ww - 2, 11, Theme::PURPLE);
+    t.setTextFont(1);
+    t.setTextSize(1);
+    t.setTextWrap(false);
+    txt(t, title, x0 + 4, y0 + 3, Theme::BG);
+    if (right && x0 + ww - 4 - t.textWidth(right) > x0 + 8 + t.textWidth(title)) txtR(t, right, x0 + ww - 4, y0 + 3, Theme::BG);
+}
+void bars3(TFT_eSPI& t, int x, int base, int rssi) {
+    const int lv = rssi > -62 ? 3 : rssi > -74 ? 2 : 1;
+    for (int k = 0; k < 3; k++) { const int hh = 2 + k * 2; t.fillRect(x + k * 3, base - hh, 2, hh, k < lv ? ON : STRIP); }
+}
+// One line of the summary: an icon (or none), a word, a number on the right.
+void sumRow(TFT_eSPI& t, int x, int xr, int y, const uint8_t* ic, uint16_t icC, const char* what, unsigned n, uint16_t c) {
+    if (ic) icon(t, x, y, ic, n ? icC : DIM);
+    txt(t, what, x + (ic ? 10 : 0), y, n ? c : DIM);
+    char b[8];
+    snprintf(b, sizeof b, "%u", n);
+    txtR(t, b, xr, y, n ? TEXT : DIM);
+}
+}  // namespace feed
+
+static void drawList(TFT_eSPI& t, const DetectionEngine& eng, bool isBle,
+                     int w, int h, int listTop, int listBottom, int rowH) {
+    using namespace feed;
+    const uint8_t count = isBle ? eng.rawBleCount() : eng.rawWifiCount();
+    const int barY = Theme::computeButtonBar(w, h).y;
+    const int x0 = 4, y0 = listTop - 13, ww = w - 8, wh = (barY - 5) - y0;
+    char b[40];
+    if (isBle) snprintf(b, sizeof b, "BLE  %u FOUND", (unsigned)count);
+    else       snprintf(b, sizeof b, "WIFI  %u NETS", (unsigned)count);
+    frame(t, x0, y0, ww, wh, "RESULTS.LOG", b);
+
+    const int ix0 = x0 + 3, ix1 = x0 + ww - 3;
+    const bool side = ww >= 290;
+    const int px = ix1 - 84;
+    const int fx0 = ix0 + 1, fx1 = side ? px - 5 : ix1;
+    const bool footer = listBottom < barY - 10;
+
+    if (count == 0) {
+        t.setTextSize(2);
+        txtC(t, (!isBle && eng.rawWifiScanFailed()) ? "SCAN FAILED" : "NOTHING HEARD", (fx0 + fx1) / 2, listTop + (listBottom - listTop) / 2 - 12, ON);
+        t.setTextSize(1);
+        txtC(t, isBle ? "TRY AGAIN, OR TRY WIFI" : "TRY AGAIN, OR TRY BLE", (fx0 + fx1) / 2, listTop + (listBottom - listTop) / 2 + 8, LABEL);
+    }
+
+    // The rows.
+    const int bodyH = listBottom - listTop;
+    uiClampScroll(g_scroll, count, bodyH, rowH);
+    const int max = bodyH / rowH;
+    const bool scrolls = count > max;
+    const int rr = fx1 - (scrolls ? 6 : 2);           // the rows' right edge, clear of the scrollbar
+    for (int i = 0; i < max && g_scroll + i < count; i++) {
+        const int idx = g_scroll + i;
+        const int ry = listTop + i * rowH, l2 = ry + 10;
+        if (i + 1 < max && idx + 1 < count) t.drawFastHLine(fx0, ry + rowH - 2, rr - fx0, STRIP);
+        const uint8_t* ic; uint16_t icC; int rssi; const uint8_t* addr; bool tracker = false;
+        char name[40], line2[28];
+        char pv[40];
+        int arrow = 0;
+        if (isBle) {
+            const RawBleResult* r = eng.rawBleAt((uint8_t)idx);
+            if (!r) break;
+            tracker = isTracker(eng, r->mac);
+            ic = bleIcon(r, tracker, icC);
+            rssi = r->rssi; addr = r->mac;
+            snprintf(name, sizeof name, "%s", r->name[0] ? Privacy::name(r->name, pv, sizeof pv) : "(unnamed)");
+            Privacy::mac(line2, sizeof line2, r->mac);
+            const int d = (int)r->rssi - (int)r->prev;
+            arrow = d >= 4 ? 1 : d <= -4 ? -1 : 0;
+        } else {
+            ic = I_NET; icC = ON;
+            rssi = eng.rawWifiRssi((uint8_t)idx); addr = eng.rawWifiBssid((uint8_t)idx);
+            const char* nm = Privacy::name(eng.rawWifiSsid((uint8_t)idx), pv, sizeof pv);
+            snprintf(name, sizeof name, "%s", nm[0] ? nm : "(hidden)");
+            const unsigned ch = eng.rawWifiChannel((uint8_t)idx);
+            snprintf(line2, sizeof line2, "%sCH%u  %s", ch > 14 ? "5G " : "", ch, eng.rawWifiOpen((uint8_t)idx) ? "OPEN" : "LOCKED");
+        }
+        // Line one: icon, name, dBm and bars.
+        icon(t, fx0 + 2, ry + 1, ic, icC);
+        bars3(t, rr - 9, ry + 8, rssi);
+        snprintf(b, sizeof b, "%d", rssi);
+        txtR(t, b, rr - 13, ry + 1, TEXT);
+        fit(t, name, rr - 13 - t.textWidth("-100") - 4 - (fx0 + 12));
+        txt(t, name, fx0 + 12, ry + 1, rssi > -60 ? HOT : ON);
+        // Line two: the address or channel, the flags, nearer or further.
+        txt(t, line2, fx0 + 12, l2, LABEL);
+        int fx = fx0 + 12 + t.textWidth(line2) + 6;
+        auto flag = [&](const char* s, uint16_t c) {
+            if (fx + t.textWidth(s) > rr - 10) return;
+            txt(t, s, fx, l2, c);
+            fx += t.textWidth(s) + 5;
+        };
+        if (tracker) flag("TRACKER", HOT);
+        if (addr && eng.isHunted(addr, isBle))  flag("HUNT", Theme::VAPOR_PINK);
+        if (addr && eng.isWatched(addr, isBle)) flag("WATCH", BLUE);
+        if (addr && IgnoreList::contains(addr)) flag("IGNORE", Theme::AMBER);
+        if (arrow) {
+            const int ax = rr - 7, ay = l2 + 1;
+            if (arrow > 0) t.fillTriangle(ax, ay + 6, ax + 6, ay + 6, ax + 3, ay, ON);
+            else           t.fillTriangle(ax, ay, ax + 6, ay, ax + 3, ay + 6, Theme::RED);
+        }
+    }
+    // The scrollbar, in the list's own colours.
+    if (scrolls) {
+        const int sx = fx1 - 3;
+        t.fillRect(sx, listTop, 2, bodyH, STRIP);
+        const int th = bodyH * max / count < 6 ? 6 : bodyH * max / count;
+        const int ty = listTop + (bodyH - th) * g_scroll / (count - max);
+        t.fillRect(sx, ty, 2, th, ON);
+    }
+
+    // The summary.
+    if (side && listBottom - listTop >= 65) {
+        const int py = listTop - 1, base = barY - 8;
+        t.drawFastVLine(px - 3, py - 1, base - py + 2, STRIP);
+        int yy = py;
+        if (isBle) {
+            unsigned named = 0, unknown = 0, trackers = 0;
+            int loud = 0; int8_t loudR = -128;
+            for (uint8_t i = 0; i < count; i++) {
+                const RawBleResult* r = eng.rawBleAt(i);
+                if (!r) continue;
+                if (r->rssi > loudR) { loudR = r->rssi; loud = i; }
+                if (isTracker(eng, r->mac)) { trackers++; continue; }
+                if (r->name[0]) named++;
+                else unknown++;
+            }
+            txt(t, "BY KIND", px, yy, LABEL); yy += 11;
+            sumRow(t, px, ix1 - 2, yy, I_BT,  ON,    "NAMED",    named,    TEXT); yy += 10;
+            sumRow(t, px, ix1 - 2, yy, I_UNK, LABEL, "UNKNOWN",  unknown,  TEXT); yy += 10;
+            sumRow(t, px, ix1 - 2, yy, I_TAG, HOT,   "TRACKERS", trackers, HOT);  yy += 13;
+            if (count && yy + 18 <= base) {
+                const RawBleResult* r = eng.rawBleAt((uint8_t)loud);
+                char pv[40], nm[24];
+                txt(t, "LOUDEST", px, yy, LABEL);
+                snprintf(b, sizeof b, "%d", r->rssi); txtR(t, b, ix1 - 2, yy, HOT);
+                snprintf(nm, sizeof nm, "%s", r->name[0] ? Privacy::name(r->name, pv, sizeof pv) : "(unnamed)");
+                fit(t, nm, 82);
+                txt(t, nm, px, yy + 10, TEXT);
+            }
+        } else {
+            unsigned open = 0, g24 = 0, g5 = 0;
+            uint8_t perCh[15] = { 0 };
+            int loud = 0; int8_t loudR = -128;
+            for (uint8_t i = 0; i < count; i++) {
+                if (eng.rawWifiOpen(i)) open++;
+                const uint8_t ch = eng.rawWifiChannel(i);
+                if (ch > 14) g5++; else { g24++; if (ch) perCh[ch]++; }
+                if (eng.rawWifiRssi(i) > loudR) { loudR = eng.rawWifiRssi(i); loud = i; }
+            }
+            uint8_t busy = 0;
+            for (uint8_t ch = 1; ch <= 14; ch++) if (perCh[ch] > perCh[busy]) busy = ch;
+            txt(t, "SUMMARY", px, yy, LABEL); yy += 11;
+            sumRow(t, px, ix1 - 2, yy, nullptr, 0, "OPEN",    open,         HOT);  yy += 10;
+            sumRow(t, px, ix1 - 2, yy, nullptr, 0, "LOCKED",  count - open, TEXT); yy += 10;
+            sumRow(t, px, ix1 - 2, yy, nullptr, 0, "2.4 GHZ", g24,          TEXT); yy += 10;
+#if SQW_WIFI_5G
+            sumRow(t, px, ix1 - 2, yy, nullptr, 0, "5 GHZ",   g5,           TEXT); yy += 10;
+#else
+            (void)g5;
+#endif
+            if (busy) {
+                txt(t, "BUSIEST", px, yy, TEXT);
+                snprintf(b, sizeof b, "CH %u", (unsigned)busy); txtR(t, b, ix1 - 2, yy, ON);
+                yy += 10;
+            }
+            yy += 3;
+            if (count && yy + 18 <= base) {
+                char pv[40], nm[24];
+                txt(t, "LOUDEST", px, yy, LABEL);
+                snprintf(b, sizeof b, "%d", eng.rawWifiRssi((uint8_t)loud)); txtR(t, b, ix1 - 2, yy, HOT);
+                const char* s = Privacy::name(eng.rawWifiSsid((uint8_t)loud), pv, sizeof pv);
+                snprintf(nm, sizeof nm, "%s", s[0] ? s : "(hidden)");
+                fit(t, nm, 82);
+                txt(t, nm, px, yy + 10, TEXT);
+            }
+        }
+    }
+
+    // The footer: how to pick one, and where the list is.
+    if (footer && count) {
+        const int fy = listBottom + 3;
+        t.drawFastHLine(ix0, fy - 2, ix1 - ix0, STRIP);
+        txt(t, "HOLD ROW TO TRACK", fx0 + 2, fy + 1, LABEL);
+        const int last = g_scroll + max < count ? g_scroll + max : count;
+        snprintf(b, sizeof b, "%d-%d OF %u", g_scroll + 1, last, (unsigned)count);
+        if (fx0 + 2 + t.textWidth("HOLD ROW TO TRACK") + 8 + t.textWidth(b) < ix1 - 2) txtR(t, b, ix1 - 2, fy + 1, ON);
+    }
+}
+
+#endif
 
 void uiRawScanTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool isBle, bool done,
                     bool confirmPending, const char* confirmLabel, bool confirmWatched,
@@ -718,6 +934,13 @@ switch (Settings::background()) {
         if (confirmPending) drawConfirmPanel(t, w, h, confirmLabel, confirmWatched, confirmHunted, confirmIgnored);
         return;
     }
+#endif
+
+#if defined(FREENOVE35_N) || defined(FREENOVE_S3_35)
+    drawList(t, eng, isBle, w, h, bodyTop, bodyBottom, rowH);
+    drawBottomBar(t, w, h, isBle);
+    if (confirmPending) drawConfirmPanel(t, w, h, confirmLabel, confirmWatched, confirmHunted, confirmIgnored);
+    return;
 #endif
 
     uint8_t count = isBle ? eng.rawBleCount() : eng.rawWifiCount();
