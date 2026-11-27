@@ -293,7 +293,7 @@ const UuidEntry kUuidTable[] = {
     {0x3300, "Raven",      DetectionType::RAVEN},
     {0x3400, "Raven",      DetectionType::RAVEN},
     {0x3500, "Raven",      DetectionType::RAVEN},
-    {0xFFFA, "DroneID",    DetectionType::DRONE},     // OpenDroneID
+    // OpenDroneID 0xFFFA requires validated service-data framing; not a UUID-only signature.
     {0xFD5A, "SmartTag",   DetectionType::SAMSUNG_TAG}, // Samsung's own SIG-assigned UUID for SmartTag discovery
     // Generic Eddystone 0xFEAA is NOT proof of a Google Find My tracker.
 
