@@ -1,2 +1,2 @@
-FREENOVE35-R14.9-LOG-RX-TX
-R14.8 hardware LOG poll failed. Accept CR/LF/CRLF and bare LOG after idle gap, enlarge native USB buffers before begin, preserve bounded CSV output and zero timeout. Workbench framing not independently confirmed. Full CI and LAB requested.
+FREENOVE35-R15.0-DRONE-UUID-GUARD
+Remove bare OpenDroneID 0xFFFA UUID from generic signatures, exclude payload-only UUIDs in both list types, retain framed Remote ID and Autel MA-M. Regression guards and full CI/LAB requested. Hardware negative control and 85 unverified positives pending.
