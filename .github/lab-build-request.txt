@@ -1,2 +1,2 @@
-FREENOVE35-R15.0-DRONE-UUID-GUARD
-Remove bare OpenDroneID 0xFFFA UUID from generic signatures, exclude payload-only UUIDs in both list types, retain framed Remote ID and Autel MA-M. Regression guards and full CI/LAB requested. Hardware negative control and 85 unverified positives pending.
+FREENOVE35-R15.0.1-DRONE-UUID-REGRESSION
+Build 1201 firmware and emulator passed; obsolete host vector expected bare UUID to classify as DRONE. Correct vector, test bare and truncated frames, valid framed Remote ID and preserved Autel MA-M. Full CI and LAB requested.
