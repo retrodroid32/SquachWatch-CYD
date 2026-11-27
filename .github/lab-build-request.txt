@@ -1,2 +1,2 @@
-FREENOVE35-R15.0.1-DRONE-UUID-REGRESSION
-Build 1201 firmware and emulator passed; obsolete host vector expected bare UUID to classify as DRONE. Correct vector, test bare and truncated frames, valid framed Remote ID and preserved Autel MA-M. Full CI and LAB requested.
+FREENOVE35-R16.0-LOG-DRAIN
+Increase bounded LOG drain from 4 to 16 lines per loop, retain zero timeout and actual snapshot records, preserve R15.0.1 classification guard and upstream device information updates. Full CI and LAB requested. Physical observation-window validation pending.
