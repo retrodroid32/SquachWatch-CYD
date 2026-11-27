@@ -52,3 +52,10 @@ assert '{0xFEAA,' not in uuid_table, "Generic Eddystone UUID falsely classified"
 assert "R12: CYD32 SD-in cold boot recovery" in main
 assert "CYD32 DIRECT PANEL" in main
 print("PASS: v1.50 cameras, routers, smart speakers, enhanced tag payloads and R12 recovery")
+
+# UUID-list and short service-data frames must not classify as Remote ID.
+assert '{0xFFFA,' not in uuid_table
+assert det.count("if (uuid == 0xFEAA || uuid == 0xFFFA) continue;") == 2
+assert "RemoteId::isBluetoothLegacy(payload.data()" in det
+assert '{{0xEC, 0x5B, 0xCD}, 0xE, "Autel"' in sig
+print("PASS: bare Remote ID UUID excluded; valid transport and Autel MA-M preserved")
