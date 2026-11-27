@@ -1,5 +1,6 @@
 // Representative WiFi/BLE capture/signature vectors.
 #include "signatures.h"
+#include "remote_id.h"
 #include "test_util.h"
 
 static DetectionType oui(uint8_t a,uint8_t b,uint8_t c,Confidence* conf=nullptr) {
@@ -21,12 +22,20 @@ int main() {
     ck("Ray-Ban Meta UUID", lookupUuid(0xFD5F)==DetectionType::META);
     ck("Tile UUID", lookupUuid(0xFEED)==DetectionType::TILE);
     ck("Samsung SmartTag UUID", lookupUuid(0xFD5A)==DetectionType::SAMSUNG_TAG);
-    ck("Remote ID UUID", lookupUuid(0xFFFA)==DetectionType::DRONE);
+    ck("Bare Remote ID UUID is not a drone", lookupUuid(0xFFFA)==DetectionType::UNKNOWN);
     ck("Flipper company ID", lookupMfgId(0x0E29)==DetectionType::HACKER);
     ck("Flock setup name", lookupBtName("Flock_Setup")==DetectionType::FLOCK);
     ck("HC-05 name", lookupBtName("HC-05")==DetectionType::SKIMMER);
 
     suite("Raw payload vectors");
+    const uint8_t bareRid[] = {3, 0x03, 0xFA, 0xFF};
+    const uint8_t shortRid[] = {5, 0x16, 0xFA, 0xFF, 0x0D, 0};
+    const uint8_t framedRid[31] = {30, 0x16, 0xFA, 0xFF, 0x0D, 0, 0x02, 0x12, 0x41};
+    ck("Bare UUID rejected by Remote ID parser", !RemoteId::isBluetoothLegacy(bareRid,sizeof bareRid));
+    ck("Short Remote ID service data rejected", !RemoteId::isBluetoothLegacy(shortRid,sizeof shortRid));
+    ck("Framed Remote ID accepted", RemoteId::isBluetoothLegacy(framedRid,sizeof framedRid));
+    const uint8_t autel[] = {0xEC,0x5B,0xCD,0xE1,0x22,0x33};
+    ck("Autel MA-M remains DRONE", lookupOui(autel)==DetectionType::DRONE);
     const uint8_t findMy[]={0x02,0x01,0x06,0x1E,0xFF,0x4C,0x00,0x12,0x19,0,1,2,3,4,5,6,7};
     ck("Find My manufacturer structure", isAirTagPayload(findMy,sizeof findMy));
     ck("separated Find My subtype is stronger evidence",

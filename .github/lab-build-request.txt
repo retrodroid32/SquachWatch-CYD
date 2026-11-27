@@ -1,2 +1,2 @@
-V150-R6.3.2-SKIMMER-COMPACT-BOOT
-Build #1192 failed OTA reserve by up to 416 bytes. Compact decorative serial greeting on classic CYD, preserve full version/reset, crash diagnostics, display intro and all six skimmer trace events. Full CI and LAB requested; no partition or reserve changes.
+FREENOVE35-R16.0-LOG-DRAIN
+Increase bounded LOG drain from 4 to 16 lines per loop, retain zero timeout and actual snapshot records, preserve R15.0.1 classification guard and upstream device information updates. Full CI and LAB requested. Physical observation-window validation pending.

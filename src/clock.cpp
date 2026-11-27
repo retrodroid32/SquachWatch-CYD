@@ -464,17 +464,44 @@ void pollSerial() {
     static char line[48];
     static uint8_t len = 0;
 
+#if defined(FREENOVE35_N)
+    // Keep the USB command pump bounded even under continuous host input.
+    static uint32_t lastRx = 0;
+    unsigned rxBudget = 128;
+    while (rxBudget-- && Serial.available() > 0) {
+#else
     while (Serial.available() > 0) {
+#endif
         const int c = Serial.read();
         if (c < 0) break;
+#if defined(FREENOVE35_N)
+        lastRx = millis();
+        // Accept CR, LF and CRLF. A terminal using CR alone previously
+        // left the command buffered forever. Empty second terminator is ignored.
+        if (c != '\r' && c != '\n') {
+#else
         if (c == '\r') continue;
         if (c != '\n') {
+#endif
             if (len < sizeof(line) - 1) line[len++] = (char)c;
             continue;   // keep reading; an over-long line is truncated, not split
         }
         line[len] = '\0';
         len = 0;
         if (line[0] == '\0') continue;
+#if defined(FREENOVE35_N)
+        // Recognize LOG before the general console dispatch. Exact command
+        // only; tolerate terminal whitespace without changing other commands.
+        char* cmd = line;
+        while (*cmd == ' ' || *cmd == '\t') ++cmd;
+        size_t end = strlen(cmd);
+        while (end && (cmd[end-1] == ' ' || cmd[end-1] == '\t')) cmd[--end] = 0;
+        if (strcasecmp(cmd, "LOG") == 0) {
+            if (!Security::locked()) logDump();
+            else Serial.println("[security] locked -- unlock it on the screen first.");
+            continue;
+        }
+#endif
         // Locked means locked here too -- otherwise the lock screen is a door
         // with a USB cable propped against it.
         if (Security::locked()) {
@@ -731,6 +758,16 @@ void pollSerial() {
                           "ZONE <name> the zone.\n");
         }
     }
+#if defined(FREENOVE35_N)
+    // A host may send the bare three-byte command without a terminator.
+    // Wait for a short idle gap so a fragmented longer command isn't split.
+    if (len == 3 && Serial.available() == 0 && (uint32_t)(millis()-lastRx) >= 80u &&
+        strncasecmp(line,"LOG",3) == 0) {
+        len = 0;
+        if (!Security::locked()) logDump();
+        else Serial.println("[security] locked -- unlock it on the screen first.");
+    }
+#endif
 }
 
 }  // namespace Clock
