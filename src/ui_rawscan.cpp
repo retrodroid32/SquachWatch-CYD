@@ -171,7 +171,7 @@ static void rowLayout(TFT_eSPI& t, int w, int h, int& bodyTop, int& bodyBottom, 
     Theme::ButtonBarGeom bar = Theme::computeButtonBar(w, h);
     bodyTop    = RS_TITLE_BOTTOM + RS_SQ_H;
     bodyBottom = bar.y - 4;
-#if defined(FREENOVE35_N) || defined(FREENOVE_S3_35)
+#if defined(FREENOVE35_N) || defined(FREENOVE_S3_35) || defined(CYD32)
     bodyTop += 14;
     bodyBottom -= 14;
     rowH = 21;
@@ -333,7 +333,7 @@ static void drawFeed(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool
     const uint32_t el = now - startAt;
     const uint8_t nNet = (!isBle && done) ? eng.rawWifiCount() : 0;
     const uint32_t sinceDone = done && doneAt ? now - doneAt : 0;
-    const uint8_t chNow = done ? 13 : 0;
+    const uint8_t chNow = 0; // actual scan results only; no inferred channel sweep
 
     // The window: shadow, black body striped every other row, purple frame
     // and title bar.
@@ -384,7 +384,7 @@ static void drawFeed(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool
             if (nBle) snprintf(p[2], 16, "LOUD %d", loud); else snprintf(p[2], 16, "LOUD --"); pc[2] = ON;
             snprintf(p[3], 16, "TRACKERS %u", (unsigned)trackers);                pc[3] = trackers ? HOT : LABEL;
         } else {
-            if (done) snprintf(p[1], 16, "CH ALL"); else snprintf(p[1], 16, "LISTENING"); pc[1] = ON;
+            if (done) snprintf(p[1], 16, "DONE"); else snprintf(p[1], 16, "LISTENING"); pc[1] = ON;
             if (done) snprintf(p[2], 16, "COMPLETE"); else snprintf(p[2], 16, "PASSIVE"); pc[2] = LABEL;
             if (done) snprintf(p[3], 16, "NETS %u", (unsigned)nNet); else snprintf(p[3], 16, "NETS --"); pc[3] = ON;
         }
@@ -416,7 +416,7 @@ static void drawFeed(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool
         int total = 0;
         if (isBle) total = nBle < CAP ? nBle : CAP;
         else {
-            total = chNow;
+            total = 0;
             for (uint8_t k = 0; k < nOrd; k++) if (sinceDone >= 60 + (uint32_t)k * 90) total++;
         }
         const int first = total > maxRows ? total - maxRows : 0;
@@ -425,13 +425,12 @@ static void drawFeed(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool
             const int rank = total - 1 - li;
             uint32_t age;
             if (isBle) age = now - arrive[li];
-            else if (li < 13) age = done ? 100000 : el - (uint32_t)li * CH_MS;
-            else age = sinceDone - (60 + (uint32_t)(li - 13) * 90);
+            else age = sinceDone - (60 + (uint32_t)li * 90);
             if (!isBle && li < 13 && li == chNow - 1 && !done) age = 0;
             if (age < 200)      t.fillRect(fx0 - 1, ry - 1, fx1 - fx0 + 1, lh, DIM);
             else if (age < 600) t.fillRect(fx0 - 1, ry - 1, fx1 - fx0 + 1, lh, STRIP);
 
-            if (!isBle && li < 13) {
+            if (!isBle && li < chNow) {
                 const bool live = !done && li == chNow - 1;
                 snprintf(b, sizeof b, "CH %2u  %u", (unsigned)(li + 1), 2412u + 5u * li);
                 txt(t, b, fx0 + 2, ry, live ? TEXT : fade(LABEL, rank));
@@ -458,7 +457,7 @@ static void drawFeed(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool
                     snprintf(label, sizeof label, "%.*s", (int)(chars < 39 ? chars : 39), nm);
                 }
             } else {
-                const uint8_t i = ord[li - 13];
+                const uint8_t i = ord[li];
                 ic = I_NET; icC = ON;
                 rssi = eng.rawWifiRssi(i); addr = eng.rawWifiBssid(i);
                 char pv[40];
@@ -474,7 +473,7 @@ static void drawFeed(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool
             if (tracker)                                                 { flag = "TRACKER"; flagC = HOT; }
             else if (addr && eng.isHunted(addr, isBle))                  { flag = "HUNT";    flagC = Theme::VAPOR_PINK; }
             else if (addr && eng.isWatched(addr, isBle))                 { flag = "WATCH";   flagC = BLUE; }
-            else if (!isBle) { snprintf(b, sizeof b, "CH%u", (unsigned)eng.rawWifiChannel(ord[li - 13])); flag = b; flagC = LABEL; }
+            else if (!isBle) { snprintf(b, sizeof b, "CH%u", (unsigned)eng.rawWifiChannel(ord[li])); flag = b; flagC = LABEL; }
             int nameR = rxR - rw - 4;
             if (flag) { txtR(t, flag, nameR, ry, rank <= 4 ? flagC : DIM); nameR -= t.textWidth(flag) + 5; }
             fit(t, label, nameR - (fx0 + 12));
@@ -578,6 +577,7 @@ static void feedReset() {
     feed::known = 0;
     feed::doneAt = feed::rxAt = 0;
     feed::rssiSum = 0;
+    feed::holding = true;
 }
 
 #endif
@@ -590,15 +590,18 @@ static void feedReset() {
 int uiRawScanRowAt(TFT_eSPI& t, int x, int y, int screenW, int screenH) {
     int bodyTop, bodyBottom, rowH;
     rowLayout(t, screenW, screenH, bodyTop, bodyBottom, rowH);
+#if !defined(CYD) || defined(CYD32) || defined(FREENOVE32)
+    if (feed::holding) return -1;
+#endif
     if (y < bodyTop || y >= bodyBottom) return -1;
-#if defined(FREENOVE35_N) || defined(FREENOVE_S3_35)
+#if defined(FREENOVE35_N) || defined(FREENOVE_S3_35) || defined(CYD32)
     const int right = screenW - 8 >= 290 ? screenW - 96 : screenW - 7;
     if (x < 8 || x > right || (y - bodyTop) / rowH >= (bodyBottom - bodyTop) / rowH) return -1;
 #endif
     return g_scroll + (y - bodyTop) / rowH;
 }
 
-#if defined(FREENOVE35_N) || defined(FREENOVE_S3_35)
+#if defined(FREENOVE35_N) || defined(FREENOVE_S3_35) || defined(CYD32)
 // ---- The results: RESULTS.LOG ------------------------------------------------
 // Once the scan is done the same green window stays up and becomes the list
 // (asked for 2026-11-22: "make the list view look as good"). Two lines a
@@ -903,8 +906,15 @@ switch (Settings::background()) {
     Squachy::tick(t, w / 2, sqTop, sqH, now, advance, 0.8f, !done);
 
 #if !defined(CYD) || defined(CYD32) || defined(FREENOVE32)
-    if (!done) {
-        drawFeed(t, now, eng, isBle, false, bodyTop - 2, bodyBottom, w);
+    // Keep the live feed briefly after completion so Wi-Fi names can
+    // actually appear. Do not display synthetic channel progress.
+    if (!done) feed::doneAt = 0;
+    else if (!feed::doneAt) feed::doneAt = now ? now : 1;
+    const bool hold = done && (isBle || !eng.rawWifiScanFailed()) &&
+        now - feed::doneAt < feed::holdMs(isBle, eng);
+    feed::holding = !done || hold;
+    if (!done || hold) {
+        drawFeed(t, now, eng, isBle, done, sqTop + sqH - 2, Theme::computeButtonBar(w, h).y - 4, w);
         drawBottomBar(t, w, h, isBle);
         if (confirmPending) drawConfirmPanel(t, w, h, confirmLabel, confirmWatched, confirmHunted, confirmIgnored);
         return;
@@ -943,7 +953,7 @@ switch (Settings::background()) {
     }
 #endif
 
-#if defined(FREENOVE35_N) || defined(FREENOVE_S3_35)
+#if defined(FREENOVE35_N) || defined(FREENOVE_S3_35) || defined(CYD32)
     drawList(t, eng, isBle, w, h, bodyTop, bodyBottom, rowH);
     drawBottomBar(t, w, h, isBle);
     if (confirmPending) drawConfirmPanel(t, w, h, confirmLabel, confirmWatched, confirmHunted, confirmIgnored);

@@ -1,2 +1,2 @@
-R16.1.3-CYD-SCAN
-Compact live BLE feed and terminal results background for classic CYD; retain expanded scanner on larger targets. Full matching CI and LAB publication required; preserve 8192-byte OTA reserve.
+R16.1.4-CYD32-RESULTS
+Extend terminal RESULTS.LOG to CYD 3.2; restore post-scan feed transition and real Wi-Fi results animation. Preserve compact CYD 2.8, tracking, privacy and OTA reserve. Full CI and LAB publication requested.
