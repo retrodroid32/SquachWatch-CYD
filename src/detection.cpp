@@ -3557,7 +3557,7 @@ void DetectionEngine::drainBlackBox(uint32_t now) {
 // LOG on the console. Here rather than in clock.cpp because the ring is the
 // engine's, and g_engine is the only handle on the live one.
 #if defined(FREENOVE35_N)
-// Native HWCDC uses a 256-byte TX ring and zero timeout. Snapshot complete
+// Native HWCDC uses a 2048-byte TX ring and zero timeout. Snapshot complete
 // lines from the real ring on the loop task, then send only when space exists.
 // No internal-heap fallback, no radio callback, no flush, no waiting for host.
 namespace {
@@ -3621,9 +3621,10 @@ void logDumpTick(bool locked) {
         resetLogTx();
         return;
     }
+    // Drain up to 16 rows per loop to reduce observation-window latency.
     // Bounded work per loop. Never start a line unless the complete remaining
     // bytes fit; a rare short write advances only by the reported byte count.
-    for (uint8_t budget = 0; budget < 4 && s_logLine < s_logCount; ++budget) {
+    for (uint8_t budget = 0; budget < 16 && s_logLine < s_logCount; ++budget) {
         const char* line = s_logLines[s_logLine];
         const size_t remaining = strlen(line) - s_logOffset;
         const int room = Serial.availableForWrite();
