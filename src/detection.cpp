@@ -233,6 +233,7 @@ static bool matchKnownServiceUuid16(const std::vector<uint8_t>& payload,
             for (uint8_t off = 0; (uint16_t)off + 1u < field.len; off = (uint8_t)(off + 2)) {
                 const uint16_t uuid = (uint16_t)field.data[off] |
                                       ((uint16_t)field.data[off + 1] << 8);
+                if (uuid == 0xFEAA || uuid == 0xFFFA) continue;
                 const DetectionType matched = lookupUuid(uuid);
                 if (matched != DetectionType::UNKNOWN) {
                     type = matched;
