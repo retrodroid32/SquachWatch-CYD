@@ -24,7 +24,7 @@ const Device kDevices[] = {
     { DetectionType::HACKER, "PINEAPPLE", "Pineapple|PinePager", nullptr,
       "A Hak5 WiFi Pineapple, spotted by its setup network. It pretends to be WiFi your phone already trusts and watches whatever joins. Security testers carry them; so do people up to no good." },
     { DetectionType::HACKER, "DEAUTHER", "Deauther", nullptr,
-      "An ESP8266 or ESP32 deauther, spotted by its default control network, pwned. It kicks devices off WiFi on command. Popular with hobbyists -- or it is just somebody's joke network name." },
+      "An ESP8266 or ESP32 deauther, spotted by its default network name, \"pwned\". It kicks devices off WiFi on command. Popular with hobbyists -- or it is just somebody's joke network name." },
     { DetectionType::HACKER, "HAK5 ADDRESS", "Hak5-LA", nullptr,
       "A made-up MAC address Hak5 gear likes to use. Anyone can set one, so it is a hint rather than an ID: maybe a Pineapple, maybe a coincidence. Graded low on purpose." },
 
@@ -34,7 +34,7 @@ const Device kDevices[] = {
     { DetectionType::FLOCK, "FLOCK SETUP", "Flock-Setup", "Flock_Setup",
       "A Flock camera's setup network, used while an installer configures it. Near a new pole it usually means a camera going in, or one being serviced." },
     { DetectionType::FLOCK, "FLOCK CAMERA", "Flock-MA-L", nullptr,
-      "A radio on Flock Safety's own registered block: one of their plate-reader cameras, which photograph every passing car and feed a database police search across towns." },
+      "A Flock Safety camera, on Flock's own radio block. Sold as a plate reader, but reporting found it spots people too, and police use it to search for and follow specific people." },
     { DetectionType::FLOCK, "FLOCK BLE", "Flock-BLE", nullptr,
       "A Bluetooth radio from XUNTONG, the supplier behind Flock's Bluetooth parts. Flock reportedly turns Bluetooth off on newer units, and XUNTONG sells to others -- a lead." },
     { DetectionType::FLOCK, "FLOCK FIELD", "Flock-Field", nullptr,
@@ -67,7 +67,7 @@ const Device kDevices[] = {
     { DetectionType::ALPR, "MOTOROLA", "ALPR-Mtrla", nullptr,
       "A radio on a Motorola Solutions block. Motorola owns Vigilant, a big plate-reader maker, but also makes police radios and much else: a possible plate reader, not a sure one." },
     { DetectionType::ALPR, "GENETEC", "ALPR-Gentec", nullptr,
-      "A radio on a Genetec block. Genetec's AutoVu reads licence plates for police and parking enforcement, often from cameras mounted on patrol cars." },
+      "A radio on a Genetec block. Genetec's AutoVu reads license plates for police and parking enforcement, often from cameras mounted on patrol cars." },
 
     // ---- SKIMMER: names first -- over Bluetooth the label is just "BLE" -------
     { DetectionType::SKIMMER, "HC-05 MODULE", nullptr, "HC-0",
@@ -91,7 +91,7 @@ const Device kDevices[] = {
     { DetectionType::CAMERA, "AMAZON", "Amazon", nullptr,
       "A radio on an Amazon block. Could be a Blink camera or a Ring device -- or an Echo, Fire TV or Kindle. Amazon's range is wide, so this is a medium guess." },
     { DetectionType::CAMERA, "HIKVISION", "Hikvision", nullptr,
-      "A Hikvision camera: the world's biggest CCTV maker, barred from US government use over security and human-rights concerns, and common in shops and flats." },
+      "A Hikvision camera: the world's biggest CCTV maker, barred from US government use over security and human-rights concerns, and common in shops and apartments." },
     { DetectionType::CAMERA, "REALTEK", "Realtek", nullptr,
       "A Realtek WiFi chip. Plenty of cheap IP cameras use one -- so do routers, TVs and laptops. A weak camera guess." },
     { DetectionType::CAMERA, "ARLO", "Arlo", nullptr,
