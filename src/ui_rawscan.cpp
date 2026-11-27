@@ -911,25 +911,32 @@ switch (Settings::background()) {
     }
 #else
     if (!done) {
-        float pulse = 0.55f + 0.45f * sinf((float)(now % 2000) / 2000.0f * 6.2831853f);
-        uint16_t col = Theme::blend(Theme::GREEN, Theme::CYAN, (uint16_t)(pulse * 200.0f));
-        t.setTextSize(3);
-        t.setTextColor(col, Theme::BG);
-        const char* msg = "SCANNING...";
-        int mw = t.textWidth(msg);
-        t.setCursor((w - mw) / 2, bodyTop + bodyH / 3);
-        t.print(msg);
-
-        if (isBle) {
-            char sub[24];
-            snprintf(sub, sizeof(sub), "%u found so far", (unsigned)eng.rawBleCount());
-            t.setTextSize(1);
-            t.setTextColor(Theme::CYAN, Theme::BG);
-            int sw = t.textWidth(sub);
-            t.setCursor((w - sw) / 2, bodyTop + bodyH / 3 + 35);
-            t.print(sub);
+        // Compact live feed for classic CYD: reuse the existing row font
+        // and privacy helpers rather than linking the large terminal UI.
+        t.setTextFont(1);
+        t.setTextSize(1);
+        t.setTextWrap(false);
+        t.fillRect(4, bodyTop, w - 8, bodyH, Theme::BG);
+        t.drawRect(4, bodyTop, w - 8, bodyH, Theme::PURPLE);
+        t.setTextColor(Theme::GREEN, Theme::BG);
+        t.setCursor(8, bodyTop + 4);
+        t.print(isBle ? "BLE LIVE" : "WIFI LISTENING");
+        const int n = isBle ? eng.rawBleCount() : 0;
+        const int rows = (bodyH - 22) / 10;
+        const int first = n > rows ? n - rows : 0;
+        for (int i = first; i < n && rows > 0; ++i) {
+            const RawBleResult* r = eng.rawBleAt(i);
+            if (!r) continue;
+            char label[40], pv[40];
+            if (r->name[0] && ((now / 800) & 1))
+                UiFit::fitMid(label, sizeof label, Privacy::name(r->name, pv, sizeof pv), UiFit::chars(w - 68, 1));
+            else Privacy::mac(label, sizeof label, r->mac);
+            const int y = bodyTop + 16 + (i - first) * 10;
+            t.setCursor(8, y);
+            t.print(label);
+            t.setCursor(w - 48, y);
+            t.print((int)r->rssi);
         }
-
         drawBottomBar(t, w, h, isBle);
         if (confirmPending) drawConfirmPanel(t, w, h, confirmLabel, confirmWatched, confirmHunted, confirmIgnored);
         return;
@@ -958,6 +965,10 @@ switch (Settings::background()) {
         return;
     }
 
+#if defined(CYD)
+    // Compact terminal results: retain existing row geometry and controls.
+    t.fillRect(0, bodyTop, w, bodyH, Theme::BG);
+#endif
     const int topPad = 1;
     t.setTextSize(2);
     int detailY = topPad + t.fontHeight();

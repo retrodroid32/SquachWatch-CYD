@@ -1,2 +1,2 @@
-R16.1.2-SCAN-RESULTS
-Publish LAB firmware for PR #267: live scanner, Freenove 3.5 terminal results, preserved tracking and privacy, classic CYD OTA reserve. Source implementation 59cd1fb54e3dce4cc026812c78370322e8d39de4 passed Build #1209. Request full matching CI and LAB Pages publication; no production tag or release.
+R16.1.3-CYD-SCAN
+Compact live BLE feed and terminal results background for classic CYD; retain expanded scanner on larger targets. Full matching CI and LAB publication required; preserve 8192-byte OTA reserve.
