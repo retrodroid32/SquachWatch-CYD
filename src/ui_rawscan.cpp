@@ -324,7 +324,7 @@ uint16_t fade(uint16_t full, int rank) { return rank <= 2 ? full : rank <= 4 ? L
 void bar(TFT_eSPI& t, int x, int y, int w, int h, uint32_t num, uint32_t den) {
     t.drawRect(x, y, w, h, LABEL);
     const int n = (w - 4) / 4;
-    const int on = den ? (int)((uint64_t)n * (num > den ? den : num) / den) : n;
+    const int on = !den || num >= den ? n : (int)(((uint32_t)n * num) / den); // callers use bounded millisecond durations
     for (int i = 0; i < n; i++) t.fillRect(x + 2 + i * 4, y + 2, 3, h - 4, i < on ? ON : STRIP);
 }
 }  // namespace feed
@@ -523,6 +523,7 @@ static void drawFeed(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool
                 cells = cells < 1 ? 1 : cells > 12 ? 12 : cells;
                 for (int c = 0; c < 12; c++) t.fillRect(px + c * 7, yy + 9, 6, 3, c < cells ? (c > 8 ? HOT : ON) : STRIP);
             }
+#if !defined(CYD32)
             if (base - 34 > py + 11 + 3 * 15) {
                 txt(t, "PER SECOND", px, base - 34, LABEL);
                 const uint32_t secNow = el / 1000;
@@ -535,7 +536,9 @@ static void drawFeed(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool
                     t.fillRect(px + (int)s * 10, base - bh, 8, bh, s <= secNow ? (cur ? HOT : ON) : STRIP);
                 }
             }
+#endif
         } else {
+#if !defined(CYD32)
             txt(t, "CHANNELS", px, py, LABEL);
             for (uint8_t ch = 1; ch <= 13; ch++) {
                 const int cx = px + ((ch - 1) % 2) * 42, cy = py + 11 + ((ch - 1) / 2) * 10;
@@ -550,6 +553,10 @@ static void drawFeed(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool
                 if (now_)       t.fillRect(cx + 15, cy + 1, 22, 6, (now / 100) % 2 ? HOT : ON);
                 else if (heard) t.fillRect(cx + 15, cy + 1, bw, 6, done ? (nets ? ON : DIM) : DIM);
             }
+#else
+            // Wi-Fi results already show their actual channels in the feed.
+            txt(t, done ? "DONE" : "LISTEN", px, py, LABEL);
+#endif
         }
     }
 
@@ -564,6 +571,7 @@ static void drawFeed(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool
     else snprintf(b, sizeof b, "LISTENING");
     txtR(t, b, ix1 - 2, footY + 1, ON);
 
+#if !defined(CYD32)
     // SCAN COMPLETE, once the WiFi names are in.
     if (done && (isBle || sinceDone >= wifiCascadeMs(nNet))) {
         const int bw2 = ww - 20 < 200 ? ww - 20 : 200, bh = 52;
@@ -580,6 +588,12 @@ static void drawFeed(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool
         t.setTextSize(1);
         txtC(t, (now / 330) % 2 ? "OPENING LIST_" : "OPENING LIST ", bx + bw2 / 2, by + 39, LABEL);
     }
+#else
+    // Reuse footer status instead of the large decorative modal.
+    if (done && (isBle || sinceDone >= wifiCascadeMs(nNet))) {
+        txtC(t, "SCAN COMPLETE", w / 2, y0 + 3, Theme::BG);
+    }
+#endif
 }
 
 

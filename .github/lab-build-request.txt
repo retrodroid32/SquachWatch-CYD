@@ -1,2 +1,2 @@
-R16.1.5-CYD32-FLASH
-Correct R16.1.4 OTA reserve failure using compact CYD32 results with RSSI bars and terminal colors; preserve animated scan completion, Freenove full results, tracking and privacy. Full CI and LAB publication requested.
+R16.1.6-CYD32-HEADROOM
+Recover CYD32 flash headroom by removing optional arrival histogram, decorative completion modal and channel side panel only on CYD32; retain strongest BLE signals, actual Wi-Fi result typing, RSSI bars and tracking/privacy. Keep OTA gate at 8192 bytes. Full matching CI and LAB publication requested.
