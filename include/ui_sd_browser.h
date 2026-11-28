@@ -7,6 +7,8 @@ namespace SdBrowser {
     void begin(SdLog& sd);
     void end();
     bool reloadMountedCard(); // clear stale directory/preview and reload root
-    void draw(TFT_eSPI& t);
+    // Physical geometry is optional: short CYD28 framebuffer stripes must use
+    // rotated LCD coordinates without drawing directly to the LCD.
+    void draw(TFT_eSPI& t, int physicalW = 0, int physicalH = 0);
     bool tap(int x, int y, int screenW, int screenH); // true => leave screen
 }

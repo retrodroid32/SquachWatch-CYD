@@ -117,9 +117,11 @@ void smallLine(TFT_eSPI& t, int x, int y, const char* s, uint16_t c) {
     t.setTextWrap(true);
 }
 void line(TFT_eSPI& t, int x, int y, const char* s, uint16_t color) {
-    t.setTextFont(1); t.setTextSize(2);
+    t.setTextFont(1); t.setTextSize(2); t.setTextWrap(false);
     t.setTextColor(color, Theme::BG);
     t.setCursor(x, y); t.print(s);
+    // Do not wrap text across the narrow sprite's logical rows.
+    t.setTextWrap(true);
 }
 // Include the full 30-pixel BACK button and a small margin above it.
 // Other action buttons end at h-36 or higher, so h-33 cannot steal them.
@@ -145,9 +147,15 @@ bool reloadMountedCard() {
     return list();
 }
 
-void draw(TFT_eSPI& t) {
-    const int w = t.width(), h = t.height();
-    t.fillScreen(Theme::BG);
+void draw(TFT_eSPI& t, int physicalW, int physicalH) {
+    // R7: R1's SD FILES drew into a 15/30/40-pixel buffered stripe,
+    // then used that stripe's tiny height to position the bottom buttons.
+    // R2 worked around that by drawing the whole menu straight at the LCD,
+    // mixing direct and buffered writers across transitions. Use physical
+    // coordinates but paint *only into the stripe sprite* again.
+    const int w = physicalW > 0 ? physicalW : t.width();
+    const int h = physicalH > 0 ? physicalH : t.height();
+    t.fillRect(0, 0, w, h, Theme::BG);
     Theme::drawTitleBar(t, "SD FILES");
     line(t, 7, 26, wipeStage ? "WIPE SD" : preview ? "FILE VIEW" : "SD FILES", Theme::CYAN);
     if (wipeResult) {
@@ -211,9 +219,14 @@ void draw(TFT_eSPI& t) {
     } else {
         line(t, 8, 48, folder, Theme::AMBER);
         const int rows = (h - 116) / 22 < 5 ? (h - 116) / 22 : 5;
+        // Match the rotated *panel* width. Long SD names must never
+        // wrap into later physical rows while one band is rendering.
+        const int fit = (w - 16) / 12 - 2;
+        const int nameChars = fit < 1 ? 1 : (fit > 31 ? 31 : fit);
         for (int i = 0; i < rows && i < count; i++) {
             char label[41];
-            snprintf(label, sizeof label, "%s %.31s", entries[i].dir ? ">" : "-", entries[i].name);
+            snprintf(label, sizeof label, "%c %.*s",
+                     entries[i].dir ? '>' : '-', nameChars, entries[i].name);
             line(t, 8, 70 + 22 * i, label, entries[i].dir ? Theme::CYAN : Theme::WHITE);
         }
         if (error) line(t, 8, 73, "READ ERROR", Theme::RED);
