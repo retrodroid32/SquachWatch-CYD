@@ -1,2 +1,2 @@
-R16.1.10-INFO-CARDS
-Freenove category info cards, real evidence confidence, paginated descriptions, bounded trail tiles, tracker owner fact and classified scan card return. Keep unknown scan tracking and classic CYD OTA gate; full CI/LAB requested.
+R16.1.11-CUMULATIVE-SCAN
+Keep R16.1.10 cumulative scanner and cards. Add CI and LAB source guards; preserve alert context with owner state, distinguish manual inspection from automatic catch, use measured channels only. Full CI and LAB requested.

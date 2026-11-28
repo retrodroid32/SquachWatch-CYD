@@ -594,7 +594,11 @@ void uiAlertTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng,
     // One line of context above the plate. A tracker flood beats FIRST /
     // AT NIGHT because it explains why later matching identities will stay
     // quiet; FIRST / NIGHT still win over ordinary AUTO SNOOZE housekeeping.
+#if defined(FREENOVE35_N)
+    char context[64] = "";
+#else
     char context[44] = "";
+#endif
     uint16_t contextColor = Theme::CYAN;
     if (s_spam) {
         snprintf(context, sizeof context, "SPAM: %u TRACKER IDS", (unsigned)s_spamIdentities);
@@ -610,9 +614,10 @@ void uiAlertTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng,
     if (!s_redacted && !Settings::privacyMode() &&
         (signalDet.type==DetectionType::AIRTAG || signalDet.type==DetectionType::GOOGLE_TAG ||
          signalDet.type==DetectionType::SAMSUNG_TAG || signalDet.type==DetectionType::TILE)) {
-        const char* owner=signalDet.owner==OWNER_WITH?"WITH OWNER":signalDet.owner==OWNER_AWAY?"AWAY FROM OWNER":"OWNER UNKNOWN";
-        snprintf(context,sizeof context,"%s",owner);
-        contextColor=signalDet.owner==OWNER_AWAY?Theme::AMBER:Theme::CYAN;
+        const char* owner=signalDet.owner==OWNER_WITH?"WITH OWNER":signalDet.owner==OWNER_AWAY?"OWNER AWAY":"OWNER ?";
+        const size_t used=strlen(context);
+        snprintf(context+used,sizeof context-used,"%s%s",used?" | ":"",owner);
+        if (!used) contextColor=signalDet.owner==OWNER_AWAY?Theme::AMBER:Theme::CYAN;
     }
 #endif
     if (s_queueCount && !s_redacted) {

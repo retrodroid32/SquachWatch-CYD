@@ -344,7 +344,6 @@ static void drawFeed(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool
     const uint32_t el = now - startAt;
     const uint8_t nNet = (!isBle && done) ? eng.rawWifiCount() : 0;
     const uint32_t sinceDone = done && doneAt ? now - doneAt : 0;
-    const uint8_t chNow = 0; // actual scan results only; no inferred channel sweep
 
     // The window: shadow, black body striped every other row, purple frame
     // and title bar.
@@ -437,18 +436,9 @@ static void drawFeed(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool
             uint32_t age;
             if (isBle) age = now - arrive[li];
             else age = sinceDone - (60 + (uint32_t)li * 90);
-            if (!isBle && li < 13 && li == chNow - 1 && !done) age = 0;
             if (age < 200)      t.fillRect(fx0 - 1, ry - 1, fx1 - fx0 + 1, lh, DIM);
             else if (age < 600) t.fillRect(fx0 - 1, ry - 1, fx1 - fx0 + 1, lh, STRIP);
 
-            if (!isBle && li < chNow) {
-                const bool live = !done && li == chNow - 1;
-                snprintf(b, sizeof b, "CH %2u  %u", (unsigned)(li + 1), 2412u + 5u * li);
-                txt(t, b, fx0 + 2, ry, live ? TEXT : fade(LABEL, rank));
-                if (live) { const int d = 1 + (int)(now / 125) % 3; snprintf(b, sizeof b, "%.*s", d, "..."); txtR(t, b, fx1 - 2, ry, ON); }
-                else txtR(t, "HEARD", fx1 - 2, ry, fade(DIM, rank));
-                continue;
-            }
             // A device or a network: icon, address-then-name, flag, dBm.
             const uint8_t* ic; uint16_t icC; int rssi; const uint8_t* addr; bool tracker = false;
             char label[40];
@@ -543,15 +533,14 @@ static void drawFeed(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool
             for (uint8_t ch = 1; ch <= 13; ch++) {
                 const int cx = px + ((ch - 1) % 2) * 42, cy = py + 11 + ((ch - 1) / 2) * 10;
                 if (cy + 8 > base) break;
-                const bool now_ = !done && ch == chNow, heard = done || ch < chNow;
+                const bool heard = done;
                 snprintf(b, sizeof b, "%2u", (unsigned)ch);
-                txt(t, b, cx, cy, now_ ? HOT : heard ? TEXT : DIM);
+                txt(t, b, cx, cy, heard ? TEXT : DIM);
                 uint8_t nets = 0;
                 if (done) for (uint8_t i = 0; i < nNet; i++) if (eng.rawWifiChannel(i) == ch) nets++;
                 const int bw = done ? (nets ? (nets * 7 > 22 ? 22 : nets * 7) : 2) : 22;
                 t.fillRect(cx + 15, cy + 1, 22, 6, STRIP);
-                if (now_)       t.fillRect(cx + 15, cy + 1, 22, 6, (now / 100) % 2 ? HOT : ON);
-                else if (heard) t.fillRect(cx + 15, cy + 1, bw, 6, done ? (nets ? ON : DIM) : DIM);
+                if (heard) t.fillRect(cx + 15, cy + 1, bw, 6, nets ? ON : DIM);
             }
 #else
             // Wi-Fi results already show their actual channels in the feed.

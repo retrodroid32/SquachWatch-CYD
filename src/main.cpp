@@ -1507,7 +1507,14 @@ static void squachyCatch(DetectionType type, const uint8_t* mac, uint32_t hits, 
 enum class Buzz : uint8_t { ALERT, WATCH, SAMPLE };
 static void twatchBuzz(Buzz kind);
 #endif
-static void enterAlert(const Detection& d, bool preserveQueue = false) {
+static void enterAlert(const Detection& d, bool preserveQueue = false
+#if SQW_INFO_CARD
+                       , bool manualScan = false
+#endif
+                       ) {
+#if SQW_INFO_CARD
+    s_alertFromScan=manualScan;
+#endif
     if (state != AppState::ALERT) {
         if (!preserveQueue) s_alertQueue.clear();
         s_backToDesk = (state == AppState::DESK);
@@ -1570,7 +1577,10 @@ static void enterAlert(const Detection& d, bool preserveQueue = false) {
     // buffer that keeps being written while the alert is up, so the
     // entry this came from can be overwritten before HUNT is tapped.
     memcpy(s_alertMac, d.mac, 6);
-    alertTrace("POPUP_OPENED",d.type,d.mac);
+#if SQW_INFO_CARD
+    if (!s_alertFromScan)
+#endif
+        alertTrace("POPUP_OPENED",d.type,d.mac);
     s_alertIsBle = (d.channel == 0);   // same discriminator LOG's long-press uses
     {
         const char* lbl = d.name[0] ? d.name : vendorText(d);
@@ -1586,6 +1596,10 @@ static void enterAlert(const Detection& d, bool preserveQueue = false) {
 // side-effect-free; spend the existing cooldown/auto-snooze/spam gates only
 // when a waiting card actually takes the screen.
 static void collectQueuedAlert(const Detection& candidate) {
+#if SQW_INFO_CARD
+    // Manual inspection is not an automatic catch screen.
+    if (s_alertFromScan && state == AppState::ALERT) return;
+#endif
     if (Security::locked()) { s_alertQueue.clear(); return; }
     if (state != AppState::ALERT && state != AppState::CLEAR) return;
     const Detection* d = &candidate;
@@ -6343,9 +6357,11 @@ void loop() {
                                 const Detection copy=*d;
                                 engine.stopRawScan();
                                 uiAlertSetRedacted(false);
-                                enterAlert(copy);
-                                s_alertFromScan=true;s_alertScanBle=s_rawScanIsBle;
-                                uiAlertSetFirst(false);uiAlertSetNight(false);s_firstLine[0]=0;
+                                s_alertScanBle=s_rawScanIsBle;
+                                enterAlert(copy,false,true);
+                                uiAlertSetFirst(false);uiAlertSetNight(false);
+                                uiAlertSetLastFree(false);uiAlertSetSpam(false,0);
+                                s_firstLine[0]=0;
                                 break;
                             }
                             if(s_alertFromScan)break;

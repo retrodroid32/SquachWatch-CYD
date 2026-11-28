@@ -124,6 +124,7 @@ jobs:
           python3 tools/test_trail_history.py
           python3 tools/test_freenove_native_ui.py
           python3 tools/test_freenove_sdmmc.py
+          python3 tools/test_r161_cumulative.py
           python3 tools/test_mirror_pages_release_fallback.py
           for guard in \
             tools/test_v141_arlo_oui.py \
