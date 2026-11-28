@@ -529,9 +529,13 @@ void uiAlertTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng,
         char pv[40];
         const char* nm = Privacy::name(s_last.name, pv, sizeof pv);
         const int maxChars = (PLATE_W - 12) / (6 * readSz);
-        const int n = strnlen(nm, maxChars);
-        t.setCursor(PLATE_X + (PLATE_W - n * 6 * readSz) / 2, PLATE_Y + NAME_DY);
-        for (int i = 0; i < n; ++i) t.print(nm[i]);
+        char clipped[40];
+        const int limit = maxChars < (int)sizeof(clipped) - 1 ? maxChars : (int)sizeof(clipped) - 1;
+        const size_t n = strnlen(nm, limit > 0 ? limit : 0);
+        memcpy(clipped, nm, n);
+        clipped[n] = '\0';
+        t.setCursor(PLATE_X + (PLATE_W - t.textWidth(clipped)) / 2, PLATE_Y + NAME_DY);
+        t.print(clipped);
     }
 
     char mac[24];

@@ -1,2 +1,2 @@
-R16.1.8-ALERT-FLASH
-Recover classic CYD flash by replacing floating point alert rainbow phase with fixed-point arithmetic and simplifying device-name clipping. Preserve alert navigation, lock safety, scanner features and 8192-byte OTA gate. Full CI and LAB publication requested.
+R16.1.9-ALERT-COMPAT
+Fix emulator char-to-const-char-pointer error with bounded null-terminated device name and common string print API. Retain fixed-point RGB optimization, MORE INFO navigation and OTA reserve. Full CI and LAB publication requested.
