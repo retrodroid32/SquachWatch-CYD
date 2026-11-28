@@ -43,15 +43,14 @@ void uiAlertSetRedacted(bool r) { s_redacted = r; }
 // headline's rainbow uses, and for the same reason: RGB332 has 8 levels of
 // red and green but only FOUR of blue, so a computed HSV sweep bands badly
 // while a walk between colours known to survive the downconvert does not.
-static uint16_t hue6(float pos) {
+static uint16_t hue6(uint32_t pos) {
     static const uint16_t STOPS[6] = {
         Theme::RED, Theme::AMBER, Theme::GREEN,
         Theme::CYAN, Theme::VAPOR_PURPLE, Theme::PINK
     };
-    pos = fmodf(pos, 6.0f);
-    if (pos < 0) pos += 6.0f;
-    const int i0 = (int)pos, i1 = (i0 + 1) % 6;
-    return Theme::blend(STOPS[i0], STOPS[i1], (uint16_t)((pos - i0) * 255));
+    pos %= 1536u;
+    const unsigned i = pos >> 8;
+    return Theme::blend(STOPS[i], STOPS[i == 5 ? 0 : i + 1], pos & 255u);
 }
 
 static uint16_t lighten(uint16_t c, uint16_t amt) { return Theme::blend(c, Theme::WHITE, amt); }
@@ -67,21 +66,21 @@ static uint16_t darken (uint16_t c, uint16_t amt) { return Theme::blend(c, Theme
 // step paints BORDER_W pixels inward, which means the four corners are
 // painted twice -- they agree, because both visits carry the same d.
 static const int   BORDER_W  = 2;
-static const float BORDER_MS = 400.0f;  // ms per sixth of the spectrum
-
+// 400 ms per colour stop; fixed-point phase wraps every 2.4 seconds.
 static void drawRgbBorder(TFT_eSPI& t, int w, int h, uint32_t now) {
-    const float P = (float)(2 * (w + h));
-    const float phase = (float)now / BORDER_MS;
-    for (int x = 0; x < w; x++) {
-        t.drawFastVLine(x, 0, BORDER_W, hue6((float)x / P * 6.0f + phase));
+    const uint32_t perimeter = 2u * (w + h);
+    if (!perimeter) return;
+    const uint32_t phase = (now % 2400u) * 16u / 25u;
+    for (int x = 0; x < w; ++x) {
+        t.drawFastVLine(x, 0, BORDER_W, hue6(phase + (uint32_t)x * 1536u / perimeter));
         t.drawFastVLine(x, h - BORDER_W, BORDER_W,
-                        hue6((float)(w + h + (w - 1 - x)) / P * 6.0f + phase));
+                       hue6(phase + (uint32_t)(2 * w + h - 1 - x) * 1536u / perimeter));
     }
-    for (int y = 0; y < h; y++) {
+    for (int y = 0; y < h; ++y) {
         t.drawFastHLine(w - BORDER_W, y, BORDER_W,
-                        hue6((float)(w + y) / P * 6.0f + phase));
+                       hue6(phase + (uint32_t)(w + y) * 1536u / perimeter));
         t.drawFastHLine(0, y, BORDER_W,
-                        hue6((float)(2 * w + h + (h - 1 - y)) / P * 6.0f + phase));
+                       hue6(phase + (uint32_t)(2 * w + 2 * h - 1 - y) * 1536u / perimeter));
     }
 }
 
@@ -529,8 +528,14 @@ void uiAlertTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng,
     if (s_last.name[0] && !s_redacted) {
         char pv[40];
         const char* nm = Privacy::name(s_last.name, pv, sizeof pv);
-        t.setCursor(PLATE_X + (PLATE_W - t.textWidth(nm)) / 2, PLATE_Y + NAME_DY);
-        t.print(nm);
+        const int maxChars = (PLATE_W - 12) / (6 * readSz);
+        char clipped[40];
+        const int limit = maxChars < (int)sizeof(clipped) - 1 ? maxChars : (int)sizeof(clipped) - 1;
+        const size_t n = strnlen(nm, limit > 0 ? limit : 0);
+        memcpy(clipped, nm, n);
+        clipped[n] = '\0';
+        t.setCursor(PLATE_X + (PLATE_W - t.textWidth(clipped)) / 2, PLATE_Y + NAME_DY);
+        t.print(clipped);
     }
 
     char mac[24];
@@ -589,7 +594,11 @@ void uiAlertTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng,
     // One line of context above the plate. A tracker flood beats FIRST /
     // AT NIGHT because it explains why later matching identities will stay
     // quiet; FIRST / NIGHT still win over ordinary AUTO SNOOZE housekeeping.
+#if defined(FREENOVE35_N)
+    char context[64] = "";
+#else
     char context[44] = "";
+#endif
     uint16_t contextColor = Theme::CYAN;
     if (s_spam) {
         snprintf(context, sizeof context, "SPAM: %u TRACKER IDS", (unsigned)s_spamIdentities);
@@ -601,6 +610,16 @@ void uiAlertTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng,
     } else if (s_lastFree) {
         snprintf(context, sizeof context, "%s", "QUIET UNLESS IT NEARS");
     }
+#if defined(FREENOVE35_N)
+    if (!s_redacted && !Settings::privacyMode() &&
+        (signalDet.type==DetectionType::AIRTAG || signalDet.type==DetectionType::GOOGLE_TAG ||
+         signalDet.type==DetectionType::SAMSUNG_TAG || signalDet.type==DetectionType::TILE)) {
+        const char* owner=signalDet.owner==OWNER_WITH?"WITH OWNER":signalDet.owner==OWNER_AWAY?"OWNER AWAY":"OWNER ?";
+        const size_t used=strlen(context);
+        snprintf(context+used,sizeof context-used,"%s%s",used?" | ":"",owner);
+        if (!used) contextColor=signalDet.owner==OWNER_AWAY?Theme::AMBER:Theme::CYAN;
+    }
+#endif
     if (s_queueCount && !s_redacted) {
         const size_t used = strlen(context);
         snprintf(context + used, sizeof context - used, "%s+%u WAITING",

@@ -45,6 +45,7 @@
 #include "theme.h"            // the crash card on the splash
 #include "privacy.h"
 #include "clock.h"
+#include "info_card.h"
 #if defined(GPS_SUPPORT) && defined(GPS_RX_PIN)
 #include "gps_runtime.h"
 #endif
@@ -1404,6 +1405,10 @@ static void restoreFrameBuffer();
 // An ALERT opened from the desk's small card goes back to the desk when it
 // is dismissed, not to CLEAR. Set in enterAlert(), spent here.
 static bool s_backToDesk = false;
+#if SQW_INFO_CARD
+static bool s_alertFromScan=false, s_alertScanBle=false;
+static void enterRawScanCached(bool isBle);
+#endif
 static void enterDesk();
 
 // The screens that run the raw scan, which switches detection off while it
@@ -1418,6 +1423,9 @@ static bool onRawScanScreen() {
 }
 // Adaptive framebuffer recovery uses the band count declared above enterBoot().
 static void enterClear() {
+#if SQW_INFO_CARD
+    s_alertFromScan=false; InfoCard::clear();
+#endif
     s_alertQueue.clear();
     if (Security::locked()) { enterLocked(); return; }
     restoreFrameBuffer();   // lent to a download that did not end in a restart
@@ -1499,7 +1507,14 @@ static void squachyCatch(DetectionType type, const uint8_t* mac, uint32_t hits, 
 enum class Buzz : uint8_t { ALERT, WATCH, SAMPLE };
 static void twatchBuzz(Buzz kind);
 #endif
-static void enterAlert(const Detection& d, bool preserveQueue = false) {
+static void enterAlert(const Detection& d, bool preserveQueue = false
+#if SQW_INFO_CARD
+                       , bool manualScan = false
+#endif
+                       ) {
+#if SQW_INFO_CARD
+    s_alertFromScan=manualScan;
+#endif
     if (state != AppState::ALERT) {
         if (!preserveQueue) s_alertQueue.clear();
         s_backToDesk = (state == AppState::DESK);
@@ -1562,7 +1577,10 @@ static void enterAlert(const Detection& d, bool preserveQueue = false) {
     // buffer that keeps being written while the alert is up, so the
     // entry this came from can be overwritten before HUNT is tapped.
     memcpy(s_alertMac, d.mac, 6);
-    alertTrace("POPUP_OPENED",d.type,d.mac);
+#if SQW_INFO_CARD
+    if (!s_alertFromScan)
+#endif
+        alertTrace("POPUP_OPENED",d.type,d.mac);
     s_alertIsBle = (d.channel == 0);   // same discriminator LOG's long-press uses
     {
         const char* lbl = d.name[0] ? d.name : vendorText(d);
@@ -1578,6 +1596,10 @@ static void enterAlert(const Detection& d, bool preserveQueue = false) {
 // side-effect-free; spend the existing cooldown/auto-snooze/spam gates only
 // when a waiting card actually takes the screen.
 static void collectQueuedAlert(const Detection& candidate) {
+#if SQW_INFO_CARD
+    // Manual inspection is not an automatic catch screen.
+    if (s_alertFromScan && state == AppState::ALERT) return;
+#endif
     if (Security::locked()) { s_alertQueue.clear(); return; }
     if (state != AppState::ALERT && state != AppState::CLEAR) return;
     const Detection* d = &candidate;
@@ -1612,6 +1634,9 @@ static bool nextQueuedAlert() {
 }
 static void acknowledgeAlert() __attribute__((noinline));
 static void acknowledgeAlert() {
+#if SQW_INFO_CARD
+    if(s_alertFromScan){s_alertFromScan=false;s_infoPending=false;InfoCard::clear();if(Security::locked())enterClear();else enterRawScanCached(s_alertScanBle);return;}
+#endif
     alertTrace("POPUP_DISMISSED",lastAlertType,s_alertMac);
     squachyCatch(lastAlertType, s_alertMac, lastAlertHits, lastAlertRssi, lastAlertConf);
     if (!nextQueuedAlert()) enterClear();
@@ -2273,6 +2298,9 @@ static void startPinFlow(PinFlow f, const char* prompt = nullptr) {
 }
 
 static void enterLocked() {
+#if SQW_INFO_CARD
+    s_alertFromScan=false; InfoCard::clear();
+#endif
     s_alertQueue.clear();
     Settings::deskActive(false);
     state = AppState::LOCKED;
@@ -5513,20 +5541,27 @@ void loop() {
         }
         case AppState::ALERT: {
             uiAlertSetQueue(Security::locked() ? 0 : s_alertQueue.size());
-            const char* alertInfoText =
+            // A modal must never outlive the unlocked session that opened it.
+            if (Security::locked()) s_infoPending = false;
+            const char* alertInfoText = !s_infoPending ? nullptr :
                 s_infoPage == InfoPage::PRIMER ? DetectionInfo::rssiConfidencePrimer()
               : s_infoPage == InfoPage::EVIDENCE ? DetectionInfo::evidenceText(s_confirmDetection)
 #if SQW_TRAIL_ENABLED
               : s_infoPage == InfoPage::TRAIL ? TrailHistory::describe(s_confirmDetection.mac,(uint8_t)s_confirmDetection.type,Settings::privacyMode() || Security::locked(),s_confirmDetection.restored)
 #endif
               : DetectionInfo::explainFor(s_confirmType, s_confirmVendor, privName(s_confirmName), engine);
-            const char* alertInfoTypeName =
+            const char* alertInfoTypeName = !s_infoPending ? nullptr :
                 s_infoPage == InfoPage::PRIMER ? nullptr
               : s_infoPage == InfoPage::EVIDENCE ? "EVIDENCE"
 #if SQW_TRAIL_ENABLED
               : s_infoPage == InfoPage::TRAIL ? "TRAIL"
 #endif
               : DetectionInfo::titleFor(s_confirmType, s_confirmVendor, privName(s_confirmName));
+#if SQW_INFO_CARD
+            if (s_infoPending && s_infoPage == InfoPage::EXPLAIN && !Security::locked())
+                InfoCard::feed(s_confirmDetection,alertInfoTypeName,alertInfoText,Settings::privacyMode(),now);
+            else InfoCard::clear();
+#endif
 #if defined(CYD35)
             if (frameBufferOk) {
                 // Same two-pass half-height `frame` trick CLEAR/BOOT
@@ -5605,7 +5640,14 @@ void loop() {
                 if (!s_infoArmed) {
                     if (!tp.valid) s_infoArmed = true;
                 } else if (tp.valid && (now - lastTouch) > TOUCH_DEBOUNCE_MS &&
-                           Theme::infoPanelHitDismiss(tp.x, tp.y, tft.width(), tft.height())) {
+#if SQW_INFO_CARD
+                           (s_infoPage == InfoPage::EXPLAIN ? (touchJustDown && InfoCard::tapCloses(tp.x,tp.y,tft.width(),tft.height())) :
+#endif
+                           Theme::infoPanelHitDismiss(tp.x, tp.y, tft.width(), tft.height())
+#if SQW_INFO_CARD
+                           )
+#endif
+                           ) {
                     lastTouch = now;
                     if (s_infoPage == InfoPage::PRIMER) {
                         Settings::markInfoPrimerShown();
@@ -5620,10 +5662,11 @@ void loop() {
                         s_infoPage = InfoPage::EXPLAIN;
                         s_infoArmed = false;
                     } else {
-                        // GOT IT on the final explanation acknowledges the
-                        // alert and returns home.
+                        // Return to the original alert card. A held finger
+                        // cannot trigger WATCH/HUNT or acknowledge it.
                         s_infoPending = false;
-                        acknowledgeAlert();
+                        s_alertArmed = false;
+                        alertStart = now;
                     }
                 }
                 break;
@@ -5691,6 +5734,9 @@ void loop() {
                     if (s_alertIsBle) engine.huntBle(s_alertMac, s_alertLabel);
                     else              engine.huntWifi(s_alertMac, s_alertLabel);
                     alertTrace("POPUP_DISMISSED",lastAlertType,s_alertMac,"HUNT");
+#if SQW_INFO_CARD
+                    if(s_alertFromScan){s_alertFromScan=false;s_alertQueue.clear();enterHunt(s_alertScanBle?HuntReturn::RAWSCAN_BLE:HuntReturn::RAWSCAN_WIFI);break;}
+#endif
                     squachyCatch(lastAlertType, s_alertMac, lastAlertHits, lastAlertRssi, lastAlertConf);
                     s_alertQueue.clear(); // explicit HUNT owns the next screen
                     enterHunt();
@@ -5922,6 +5968,11 @@ void loop() {
               : s_infoPage == InfoPage::TRAIL ? "TRAIL"
 #endif
               : DetectionInfo::titleFor(s_confirmType, s_confirmVendor, privName(s_confirmName));
+#if SQW_INFO_CARD
+            if (s_infoPending && s_infoPage == InfoPage::EXPLAIN && !Security::locked())
+                InfoCard::feed(s_confirmDetection,infoTypeName,infoText,Settings::privacyMode(),now);
+            else InfoCard::clear();
+#endif
             // The shared background renderer advances only on the first
             // logical frame pass; this also fixes double-stepping on CYD32.
             drawTwoBand([&](TFT_eSPI& t, bool advance) {
@@ -5943,7 +5994,14 @@ void loop() {
                 if (!s_infoArmed) {
                     if (!tp.valid) s_infoArmed = true;
                 } else if (tp.valid && (now - lastTouch) > TOUCH_DEBOUNCE_MS &&
-                           Theme::infoPanelHitDismiss(tp.x, tp.y, tft.width(), tft.height())) {
+#if SQW_INFO_CARD
+                           (s_infoPage == InfoPage::EXPLAIN ? (touchJustDown && InfoCard::tapCloses(tp.x,tp.y,tft.width(),tft.height())) :
+#endif
+                           Theme::infoPanelHitDismiss(tp.x, tp.y, tft.width(), tft.height())
+#if SQW_INFO_CARD
+                           )
+#endif
+                           ) {
                     lastTouch = now;
                     if (s_infoPage == InfoPage::PRIMER) {
                         Settings::markInfoPrimerShown();
@@ -6290,6 +6348,24 @@ void loop() {
                         }
                         if (haveTarget) {
                             s_confirmLabel[sizeof(s_confirmLabel) - 1] = 0;
+#if SQW_INFO_CARD
+                            // Open only a real classified log record matching this radio and MAC.
+                            // Unknown scan rows retain the existing tracking menu.
+                            for(uint8_t i=0;i<engine.logCount();++i){
+                                const Detection* d=engine.logAt(i);
+                                if(!d || d->type==DetectionType::UNKNOWN || (d->channel==0)!=s_rawScanIsBle || memcmp(d->mac,s_confirmMac,6))continue;
+                                const Detection copy=*d;
+                                engine.stopRawScan();
+                                uiAlertSetRedacted(false);
+                                s_alertScanBle=s_rawScanIsBle;
+                                enterAlert(copy,false,true);
+                                uiAlertSetFirst(false);uiAlertSetNight(false);
+                                uiAlertSetLastFree(false);uiAlertSetSpam(false,0);
+                                s_firstLine[0]=0;
+                                break;
+                            }
+                            if(s_alertFromScan)break;
+#endif
                             s_confirmPending = true;
                             s_confirmArmed   = false;
                         }

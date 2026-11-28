@@ -1,2 +1,2 @@
-FREENOVE35-R16.0-LOG-DRAIN
-Increase bounded LOG drain from 4 to 16 lines per loop, retain zero timeout and actual snapshot records, preserve R15.0.1 classification guard and upstream device information updates. Full CI and LAB requested. Physical observation-window validation pending.
+R16.1.11-CUMULATIVE-SCAN
+Keep R16.1.10 cumulative scanner and cards. Add CI and LAB source guards; preserve alert context with owner state, distinguish manual inspection from automatic catch, use measured channels only. Full CI and LAB requested.

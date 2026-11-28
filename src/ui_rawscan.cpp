@@ -35,11 +35,17 @@ static void bottomButtonRects(int screenW, int screenH,
 // scan finishing) instead of every single frame.
 static uint8_t g_lastBleCount = 0;
 static bool    g_reportedDone = false;
+#if !defined(CYD) || defined(CYD32) || defined(FREENOVE32)
+static void feedReset();
+#endif
 
 void uiRawScanInit(TFT_eSPI& t, bool isBle) {
     g_scroll = 0;
     g_lastBleCount = 0;
     g_reportedDone = false;
+#if !defined(CYD) || defined(CYD32) || defined(FREENOVE32)
+    feedReset();
+#endif
     t.fillRect(0, 0, t.width(), t.height(), Theme::BG);
     Squachy::scanReaction(Squachy::ScanMoment::STARTED);
 }
@@ -165,6 +171,12 @@ static void rowLayout(TFT_eSPI& t, int w, int h, int& bodyTop, int& bodyBottom, 
     Theme::ButtonBarGeom bar = Theme::computeButtonBar(w, h);
     bodyTop    = RS_TITLE_BOTTOM + RS_SQ_H;
     bodyBottom = bar.y - 4;
+#if defined(FREENOVE35_N) || defined(FREENOVE_S3_35)
+    bodyTop += 14;
+    bodyBottom -= 14;
+    rowH = 21;
+    return;
+#endif
 
     // fontHeight() with NO argument -- fontHeight(int) takes a font
     // INDEX (2 means "built-in font #2", not "current font at size
@@ -185,6 +197,17 @@ static void rowLayout(TFT_eSPI& t, int w, int h, int& bodyTop, int& bodyBottom, 
 // Persistent per-row target state. Keep these as separate coloured words
 // rather than folding them into the MAC/channel string: that is the same
 // visual treatment IGNORE already uses, and it lets WATCH/HUNT coexist.
+#if defined(CYD32)
+static void drawCompactSignal(TFT_eSPI& t, int x, int y, int rssi) {
+    const int level = rssi > -62 ? 3 : rssi > -74 ? 2 : 1;
+    for (int k = 0; k < 3; ++k) {
+        const int h = 2 + k * 2;
+        t.fillRect(x + k * 3, y + 6 - h, 2, h,
+                   k < level ? Theme::GREEN : Theme::PURPLE);
+    }
+}
+#endif
+
 static void drawTargetFlags(TFT_eSPI& t, int x, int y,
                             bool watched, bool hunted, bool ignored) {
     auto flag = [&](const char* label, uint16_t color) {
@@ -198,6 +221,381 @@ static void drawTargetFlags(TFT_eSPI& t, int x, int y,
     if (ignored) flag("IGNORE", Theme::AMBER);
 }
 
+#if !defined(CYD) || defined(CYD32) || defined(FREENOVE32)
+// ---- The wait: SCAN.LOG ------------------------------------------------------
+// What the screen shows while a scan listens, instead of a pulsing
+// SCANNING...: a log window that prints each device as it is heard. Picked
+// from the Live Feed lab as pass C5 (2026-11-22): a green screen with
+// scanlines, a status strip, each address unscrambling before its name types
+// in, kind icons, TRACKER / HUNT / WATCH flags, a side panel (the loudest
+// three and how many came in each second; for WiFi, the 13 channels), and a
+// SCAN COMPLETE card held for a moment before the list opens.
+//
+// BLE: devices arrive live (rawBleCount grows). WiFi: the radio listens
+// 150 ms per channel in order and names nothing until the end, so the
+// channel shown while it runs is reckoned from the clock, and the networks
+// are typed in one after another once it is done.
+namespace feed {
+// The phosphor, as RGB565 that lands on a green level on the 8-bit frames.
+const uint16_t STRIPE = 0x0943;   // #0b2a1b, every other row of the window
+const uint16_t STRIP  = 0x09C4;   // #0f3a25, the status strip and rules
+const uint16_t TEXT   = 0xCFFB;   // #c8ffd9
+const uint16_t ON     = 0x37F3;   // #33ff99
+const uint16_t LABEL  = 0x1CEB;   // #1f9e5f
+const uint16_t DIM    = 0x1348;   // #146b40
+const uint16_t HOT    = 0xFD80;   // #ffb000, loud, and trackers
+const uint16_t BLUE   = 0x7EBF;   // #7fd4ff, phones, WATCH
+const uint16_t ROSE   = 0xFC5B;   // #ff8adf, audio
+
+const uint32_t BLE_MS = 8000;     // RAW_BLE_SCAN_MS in detection.cpp
+const uint32_t CH_MS  = 150;      // startRawWifiScan's dwell per channel
+const uint32_t HOLD_MS = 1300;    // the SCAN COMPLETE card
+const uint32_t NAME_AT = 750;     // a new line: 0.45 s of scramble, the address, then its name
+const uint8_t  CAP = 32;
+
+uint32_t startAt = 0, doneAt = 0, rxAt = 0;
+uint8_t  known = 0;
+uint32_t arrive[CAP];
+int32_t  rssiSum = 0;
+bool     holding = false;   // the feed is up (see feedHolding)
+
+// 7x7 icons, a row a byte, bit 6 the left column.
+const uint8_t I_AUD[7] = { 0x1C, 0x22, 0x41, 0x41, 0x63, 0x63, 0x00 };
+const uint8_t I_PH[7]  = { 0x3E, 0x22, 0x22, 0x22, 0x22, 0x36, 0x3E };
+const uint8_t I_TAG[7] = { 0x1C, 0x22, 0x49, 0x5D, 0x49, 0x22, 0x1C };
+const uint8_t I_BT[7]  = { 0x08, 0x0C, 0x2A, 0x1C, 0x2A, 0x0C, 0x08 };
+const uint8_t I_APL[7] = { 0x08, 0x10, 0x36, 0x7F, 0x7E, 0x7F, 0x36 };
+const uint8_t I_NET[7] = { 0x3E, 0x41, 0x1C, 0x22, 0x08, 0x00, 0x08 };
+const uint8_t I_UNK[7] = { 0x1C, 0x22, 0x04, 0x08, 0x08, 0x00, 0x08 };
+
+void icon(TFT_eSPI& t, int x, int y, const uint8_t* rows, uint16_t c) {
+    for (int j = 0; j < 7; j++)
+        for (int i = 0; i < 7; i++)
+            if (rows[j] & (0x40 >> i)) t.drawPixel(x + i, y + j, c);
+}
+void txt(TFT_eSPI& t, const char* s, int x, int y, uint16_t c) {
+    t.setTextColor(c);
+    t.setCursor(x, y);
+    t.print(s);
+}
+void txtR(TFT_eSPI& t, const char* s, int xr, int y, uint16_t c) { txt(t, s, xr - t.textWidth(s), y, c); }
+void txtC(TFT_eSPI& t, const char* s, int xc, int y, uint16_t c) { txt(t, s, xc - t.textWidth(s) / 2, y, c); }
+// Cut to fit maxW pixels, in place.
+void fit(TFT_eSPI& t, char* s, int maxW) {
+    size_t n = strlen(s);
+    while (n > 1 && t.textWidth(s) > maxW) s[--n] = 0;
+}
+
+bool isTracker(const DetectionEngine& eng, const uint8_t* mac) {
+    for (uint8_t i = 0; i < eng.logCount(); i++) {
+        const Detection* d = eng.logAt(i);
+        if (!d || d->channel != 0 || memcmp(d->mac, mac, 6)) continue;
+        if (d->type == DetectionType::AIRTAG || d->type == DetectionType::SAMSUNG_TAG ||
+            d->type == DetectionType::GOOGLE_TAG || d->type == DetectionType::TILE) return true;
+    }
+    return false;
+}
+const uint8_t* bleIcon(const RawBleResult* r, bool tracker, uint16_t& c) {
+    if (tracker) { c = HOT; return I_TAG; }
+    c = r->name[0] ? ON : LABEL; return r->name[0] ? I_BT : I_UNK;
+}
+
+uint32_t wifiCascadeMs(uint8_t nets) { return 60 + (uint32_t)(nets < 7 ? nets : 7) * 90 + 250; }
+uint32_t holdMs(bool isBle, const DetectionEngine& eng) {
+    return isBle ? HOLD_MS : wifiCascadeMs(eng.rawWifiCount()) + HOLD_MS;
+}
+
+// The address, still settling: hex digits left of the settled point churn.
+void scramble(char* s, uint32_t age, uint32_t seed) {
+    const size_t n = strlen(s);
+    static const char HEXC[] = "0123456789ABCDEF";
+    for (size_t k = 0; k < n; k++) {
+        if (s[k] == ':' || s[k] == 'X') continue;
+        if (age >= 450u * (uint32_t)(k + 1) / (uint32_t)n) continue;
+        const uint32_t v = (seed * 2654435761u) ^ ((uint32_t)k * 40503u) ^ ((age / 40) * 2246822519u);
+        s[k] = HEXC[(v >> 13) & 15];
+    }
+}
+
+// One line's colours by how far up the log it is: the newest three full,
+// the next two dimmer, the rest dim -- the old lines fade like phosphor.
+uint16_t fade(uint16_t full, int rank) { return rank <= 2 ? full : rank <= 4 ? LABEL : DIM; }
+
+void bar(TFT_eSPI& t, int x, int y, int w, int h, uint32_t num, uint32_t den) {
+    t.drawRect(x, y, w, h, LABEL);
+    const int n = (w - 4) / 4;
+    const int on = !den || num >= den ? n : (int)(((uint32_t)n * num) / den); // callers use bounded millisecond durations
+    for (int i = 0; i < n; i++) t.fillRect(x + 2 + i * 4, y + 2, 3, h - 4, i < on ? ON : STRIP);
+}
+}  // namespace feed
+
+static void drawFeed(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool isBle, bool done,
+                     int top, int bottom, int w) {
+    using namespace feed;
+    const uint8_t nBle = isBle ? eng.rawBleCount() : 0;
+    for (uint8_t i = known; i < nBle && i < CAP; i++) arrive[i] = now;
+    if (nBle > known) known = nBle;
+    // The RX lamp: lit whenever any reading changed, which is a packet heard.
+    if (isBle) {
+        int32_t sum = 0;
+        for (uint8_t i = 0; i < nBle; i++) { const RawBleResult* r = eng.rawBleAt(i); if (r) sum += (int32_t)r->rssi * (i + 3); }
+        if (sum != rssiSum) { rssiSum = sum; rxAt = now; }
+    }
+    const uint32_t el = now - startAt;
+    const uint8_t nNet = (!isBle && done) ? eng.rawWifiCount() : 0;
+    const uint32_t sinceDone = done && doneAt ? now - doneAt : 0;
+
+    // The window: shadow, black body striped every other row, purple frame
+    // and title bar.
+    const int x0 = 4, y0 = top + 3, ww = w - 8, wh = bottom - top - 4;
+    if (wh < 40) return;
+    t.fillRect(x0 + 2, y0 + 2, ww, wh, Theme::BLACK);
+    t.fillRect(x0, y0, ww, wh, Theme::BLACK);
+    for (int y = y0 + 12; y < y0 + wh - 1; y += 2) t.drawFastHLine(x0 + 1, y, ww - 2, STRIPE);
+    t.drawRect(x0, y0, ww, wh, Theme::PURPLE);
+    t.fillRect(x0 + 1, y0 + 1, ww - 2, 11, Theme::PURPLE);
+    t.setTextFont(1);
+    t.setTextSize(1);
+    t.setTextWrap(false);
+    txt(t, "SCAN.LOG", x0 + 4, y0 + 3, Theme::BG);
+    int tx = x0 + 4 + t.textWidth("SCAN.LOG") + 6;
+    if (!done) { const char sp[2] = { "|/-\\"[(now / 100) % 4], 0 }; txt(t, sp, tx, y0 + 3, Theme::BG); }
+    tx += 10;
+    const bool rx = isBle ? (now - rxAt < 120) : false;
+    t.drawRect(tx, y0 + 2, 7, 7, Theme::BG);
+    t.fillRect(tx + 1, y0 + 3, 5, 5, rx ? ON : Theme::PURPLE);
+    txt(t, "RX", tx + 10, y0 + 3, Theme::BG);
+    const char* rt = isBle ? "BLE 8000MS" : "WIFI PASSIVE";
+    if (x0 + ww - 4 - t.textWidth(rt) > tx + 26) txtR(t, rt, x0 + ww - 4, y0 + 3, Theme::BG);
+
+    const int ix0 = x0 + 3, ix1 = x0 + ww - 3;
+    const bool side = ww >= 290;
+    const int px = ix1 - 84;
+    const int fx0 = ix0 + 1, fx1 = side ? px - 5 : ix1;
+    const int footY = y0 + wh - 13;
+    char b[40];
+
+    // The status strip.
+    int y = y0 + 14;
+    t.fillRect(fx0 - 1, y, fx1 - fx0 + 1, 10, STRIP);
+    {
+        int loud = -127; uint8_t trackers = 0;
+        for (uint8_t i = 0; i < nBle; i++) {
+            const RawBleResult* r = eng.rawBleAt(i);
+            if (!r) continue;
+            if (r->rssi > loud) loud = r->rssi;
+            if (isTracker(eng, r->mac)) trackers++;
+        }
+        char p[4][16]; uint16_t pc[4];
+        const uint32_t shown = isBle ? (el < BLE_MS ? el : BLE_MS) : (done ? doneAt - startAt : el);
+        snprintf(p[0], 16, "%lu.%luS", (unsigned long)(shown / 1000), (unsigned long)(shown / 100 % 10)); pc[0] = TEXT;
+        if (isBle) {
+            snprintf(p[1], 16, "FOUND %u", (unsigned)nBle);                       pc[1] = ON;
+            if (nBle) snprintf(p[2], 16, "LOUD %d", loud); else snprintf(p[2], 16, "LOUD --"); pc[2] = ON;
+            snprintf(p[3], 16, "TRACKERS %u", (unsigned)trackers);                pc[3] = trackers ? HOT : LABEL;
+        } else {
+            if (done) snprintf(p[1], 16, "DONE"); else snprintf(p[1], 16, "LISTENING"); pc[1] = ON;
+            if (done) snprintf(p[2], 16, "COMPLETE"); else snprintf(p[2], 16, "PASSIVE"); pc[2] = LABEL;
+            if (done) snprintf(p[3], 16, "NETS %u", (unsigned)nNet); else snprintf(p[3], 16, "NETS --"); pc[3] = ON;
+        }
+        int x = fx0 + 3;
+        for (int k = 0; k < 4; k++) {
+            if (x + t.textWidth(p[k]) > fx1 - 2) break;
+            txt(t, p[k], x, y + 1, pc[k]);
+            x += t.textWidth(p[k]) + 9;
+        }
+    }
+    y += 12;
+
+    // The log itself.
+    const int lh = 10;
+    const int maxRows = (footY - 2 - y) / lh;
+    if (maxRows > 0) {
+        // Everything the log has to say, oldest first; it shows the newest maxRows.
+        // BLE: one line per device. WiFi: a line per channel listened to,
+        // then a line per network as they are typed in, loudest first.
+        uint8_t ord[CAP];
+        uint8_t nOrd = 0;
+        if (!isBle && done) {
+            for (uint8_t i = 0; i < nNet && nOrd < CAP; i++) ord[nOrd++] = i;
+            for (uint8_t i = 1; i < nOrd; i++)
+                for (uint8_t j = i; j > 0 && eng.rawWifiRssi(ord[j]) > eng.rawWifiRssi(ord[j - 1]); j--) {
+                    const uint8_t s = ord[j]; ord[j] = ord[j - 1]; ord[j - 1] = s;
+                }
+        }
+        int total = 0;
+        if (isBle) total = nBle < CAP ? nBle : CAP;
+        else {
+            total = 0;
+            for (uint8_t k = 0; k < nOrd; k++) if (sinceDone >= 60 + (uint32_t)k * 90) total++;
+        }
+        const int first = total > maxRows ? total - maxRows : 0;
+        for (int li = first; li < total; li++) {
+            const int ry = y + (li - first) * lh;
+            const int rank = total - 1 - li;
+            uint32_t age;
+            if (isBle) age = now - arrive[li];
+            else age = sinceDone - (60 + (uint32_t)li * 90);
+            if (age < 200)      t.fillRect(fx0 - 1, ry - 1, fx1 - fx0 + 1, lh, DIM);
+            else if (age < 600) t.fillRect(fx0 - 1, ry - 1, fx1 - fx0 + 1, lh, STRIP);
+
+            // A device or a network: icon, address-then-name, flag, dBm.
+            const uint8_t* ic; uint16_t icC; int rssi; const uint8_t* addr; bool tracker = false;
+            char label[40];
+            if (isBle) {
+                const RawBleResult* r = eng.rawBleAt((uint8_t)li);
+                if (!r) continue;
+                tracker = isTracker(eng, r->mac);
+                ic = bleIcon(r, tracker, icC);
+                rssi = r->rssi; addr = r->mac;
+                if (age < NAME_AT) {
+                    Privacy::mac(label, sizeof label, r->mac);
+                    if (age < 450) scramble(label, age, (uint32_t)li * 977u + r->mac[5]);
+                } else {
+                    char pv[40];
+                    const char* nm = r->name[0] ? Privacy::name(r->name, pv, sizeof pv) : "(unnamed)";
+                    const uint32_t chars = age > NAME_AT + 1000 ? 39 : (age - NAME_AT) * 42 / 1000;
+                    snprintf(label, sizeof label, "%.*s", (int)(chars < 39 ? chars : 39), nm);
+                }
+            } else {
+                const uint8_t i = ord[li];
+                ic = I_NET; icC = ON;
+                rssi = eng.rawWifiRssi(i); addr = eng.rawWifiBssid(i);
+                char pv[40];
+                const char* nm = Privacy::name(eng.rawWifiSsid(i), pv, sizeof pv);
+                const uint32_t chars = age * 42 / 1000;
+                snprintf(label, sizeof label, "%.*s", (int)(chars < 39 ? chars : 39), nm[0] ? nm : "(hidden)");
+            }
+            icon(t, fx0 + 2, ry, ic, rank <= 4 ? icC : DIM);
+            snprintf(b, sizeof b, "%d", rssi);
+            const int rxR = fx1 - 2, rw = t.textWidth("-100");
+            txtR(t, b, rxR, ry, fade(TEXT, rank));
+            const char* flag = nullptr; uint16_t flagC = 0;
+            if (tracker)                                                 { flag = "TRACKER"; flagC = HOT; }
+            else if (addr && eng.isHunted(addr, isBle))                  { flag = "HUNT";    flagC = Theme::VAPOR_PINK; }
+            else if (addr && eng.isWatched(addr, isBle))                 { flag = "WATCH";   flagC = BLUE; }
+            else if (!isBle) { snprintf(b, sizeof b, "CH%u", (unsigned)eng.rawWifiChannel(ord[li])); flag = b; flagC = LABEL; }
+            int nameR = rxR - rw - 4;
+            if (flag) { txtR(t, flag, nameR, ry, rank <= 4 ? flagC : DIM); nameR -= t.textWidth(flag) + 5; }
+            fit(t, label, nameR - (fx0 + 12));
+            const bool settling = isBle && age < NAME_AT;
+            txt(t, label, fx0 + 12, ry, settling ? LABEL : fade(rssi > -60 ? HOT : ON, rank));
+        }
+        // The cursor, under the last line while it listens.
+        const int shown = total - first;
+        if (!done && shown < maxRows && (now / 400) % 2 == 0) t.fillRect(fx0 + 2, y + shown * lh, 5, 7, ON);
+    }
+
+    // The side panel.
+    if (side) {
+        const int py = y0 + 14, base = footY - 3;
+        t.drawFastVLine(px - 3, py - 1, base - py + 2, STRIP);
+        if (isBle) {
+            txt(t, "LOUDEST", px, py, LABEL);
+            int8_t taken[3] = { -1, -1, -1 };
+            for (int k = 0; k < 3; k++) {
+                if (py + 11 + k * 15 + 12 > base) break;
+                int best = -1;
+                for (uint8_t i = 0; i < nBle; i++) {
+                    if (i == taken[0] || i == taken[1]) continue;
+                    const RawBleResult* r = eng.rawBleAt(i);
+                    if (r && (best < 0 || r->rssi > eng.rawBleAt((uint8_t)best)->rssi)) best = i;
+                }
+                if (best < 0) break;
+                taken[k] = (int8_t)best;
+                const RawBleResult* r = eng.rawBleAt((uint8_t)best);
+                const int yy = py + 11 + k * 15;
+                char pv[40], nm[24];
+                snprintf(nm, sizeof nm, "%s", r->name[0] ? Privacy::name(r->name, pv, sizeof pv) : "(unnamed)");
+                fit(t, nm, 82);
+                txt(t, nm, px, yy, TEXT);
+                int cells = (r->rssi + 95) * 12 / 45;
+                cells = cells < 1 ? 1 : cells > 12 ? 12 : cells;
+                for (int c = 0; c < 12; c++) t.fillRect(px + c * 7, yy + 9, 6, 3, c < cells ? (c > 8 ? HOT : ON) : STRIP);
+            }
+#if !defined(CYD32)
+            if (base - 34 > py + 11 + 3 * 15) {
+                txt(t, "PER SECOND", px, base - 34, LABEL);
+                const uint32_t secNow = el / 1000;
+                for (uint32_t s = 0; s < 8; s++) {
+                    int n = 0;
+                    for (uint8_t i = 0; i < nBle && i < CAP; i++) if ((arrive[i] - startAt) / 1000 == s) n++;
+                    int bh = 2 + n * 6;
+                    if (bh > 23) bh = 23;
+                    const bool cur = !done && s == secNow;
+                    t.fillRect(px + (int)s * 10, base - bh, 8, bh, s <= secNow ? (cur ? HOT : ON) : STRIP);
+                }
+            }
+#endif
+        } else {
+#if !defined(CYD32)
+            txt(t, "CHANNELS", px, py, LABEL);
+            for (uint8_t ch = 1; ch <= 13; ch++) {
+                const int cx = px + ((ch - 1) % 2) * 42, cy = py + 11 + ((ch - 1) / 2) * 10;
+                if (cy + 8 > base) break;
+                const bool heard = done;
+                snprintf(b, sizeof b, "%2u", (unsigned)ch);
+                txt(t, b, cx, cy, heard ? TEXT : DIM);
+                uint8_t nets = 0;
+                if (done) for (uint8_t i = 0; i < nNet; i++) if (eng.rawWifiChannel(i) == ch) nets++;
+                const int bw = done ? (nets ? (nets * 7 > 22 ? 22 : nets * 7) : 2) : 22;
+                t.fillRect(cx + 15, cy + 1, 22, 6, STRIP);
+                if (heard) t.fillRect(cx + 15, cy + 1, bw, 6, nets ? ON : DIM);
+            }
+#else
+            // Wi-Fi results already show their actual channels in the feed.
+            txt(t, done ? "DONE" : "LISTEN", px, py, LABEL);
+#endif
+        }
+    }
+
+    // The footer: elapsed against the whole scan, and the count.
+    t.drawFastHLine(ix0, footY - 2, ix1 - ix0, STRIP);
+    const int bw = (fx1 - fx0) / 2 > 150 ? 150 : (fx1 - fx0) / 2;
+    bar(t, fx0, footY, bw, 9, done ? 1 : el, done ? 1 : (isBle ? BLE_MS : 13 * CH_MS + 250));
+    if (done) snprintf(b, sizeof b, "DONE");
+    else { const uint32_t s = isBle && el > BLE_MS ? BLE_MS : el; snprintf(b, sizeof b, "%lu.%lu S", (unsigned long)(s / 1000), (unsigned long)(s / 100 % 10)); }
+    txt(t, b, fx0 + bw + 8, footY + 1, TEXT);
+    if (isBle || done) snprintf(b, sizeof b, "%u FOUND", (unsigned)(isBle ? nBle : nNet));
+    else snprintf(b, sizeof b, "LISTENING");
+    txtR(t, b, ix1 - 2, footY + 1, ON);
+
+#if !defined(CYD32)
+    // SCAN COMPLETE, once the WiFi names are in.
+    if (done && (isBle || sinceDone >= wifiCascadeMs(nNet))) {
+        const int bw2 = ww - 20 < 200 ? ww - 20 : 200, bh = 52;
+        const int bx = x0 + (ww - bw2) / 2, by = y0 + (wh - bh) / 2 + 4;
+        t.fillRect(bx + 3, by + 3, bw2, bh, Theme::BLACK);
+        t.fillRect(bx, by, bw2, bh, Theme::BLACK);
+        t.drawRect(bx, by, bw2, bh, ON);
+        t.drawRect(bx + 2, by + 2, bw2 - 4, bh - 4, DIM);
+        txtC(t, "SCAN COMPLETE", bx + bw2 / 2, by + 8, TEXT);
+        snprintf(b, sizeof b, "%u %s", (unsigned)(isBle ? nBle : nNet), isBle ? "DEVICES" : "NETWORKS");
+        t.setTextSize(2);
+        if (t.textWidth(b) > bw2 - 8) t.setTextSize(1);
+        txtC(t, b, bx + bw2 / 2, by + 20, ON);
+        t.setTextSize(1);
+        txtC(t, (now / 330) % 2 ? "OPENING LIST_" : "OPENING LIST ", bx + bw2 / 2, by + 39, LABEL);
+    }
+#else
+    // Reuse footer status instead of the large decorative modal.
+    if (done && (isBle || sinceDone >= wifiCascadeMs(nNet))) {
+        txtC(t, "SCAN COMPLETE", w / 2, y0 + 3, Theme::BG);
+    }
+#endif
+}
+
+
+static void feedReset() {
+    feed::startAt = millis();
+    feed::known = 0;
+    feed::doneAt = feed::rxAt = 0;
+    feed::rssiSum = 0;
+    feed::holding = true;
+}
+
+#endif
+
 // Row index (0 = topmost visible, adjusted for current scroll) a tap
 // at (x,y) falls within, or -1 if it's outside the list entirely (the
 // Squachy strip, the button bar, or past the last row). Used to
@@ -206,9 +604,222 @@ static void drawTargetFlags(TFT_eSPI& t, int x, int y,
 int uiRawScanRowAt(TFT_eSPI& t, int x, int y, int screenW, int screenH) {
     int bodyTop, bodyBottom, rowH;
     rowLayout(t, screenW, screenH, bodyTop, bodyBottom, rowH);
-    if (y < bodyTop || y >= bodyBottom) return -1;
+#if !defined(CYD) || defined(CYD32) || defined(FREENOVE32)
+    if (feed::holding) return -1;
+#endif
+    if (y < bodyTop || y >= bodyBottom || (y - bodyTop) / rowH >= (bodyBottom - bodyTop) / rowH) return -1;
+#if defined(FREENOVE35_N) || defined(FREENOVE_S3_35)
+    const int right = screenW - 8 >= 290 ? screenW - 96 : screenW - 7;
+    if (x < 8 || x > right || (y - bodyTop) / rowH >= (bodyBottom - bodyTop) / rowH) return -1;
+#endif
     return g_scroll + (y - bodyTop) / rowH;
 }
+
+#if defined(FREENOVE35_N) || defined(FREENOVE_S3_35)
+// ---- The results: RESULTS.LOG ------------------------------------------------
+// Once the scan is done the same green window stays up and becomes the list
+// (asked for 2026-11-22: "make the list view look as good"). Two lines a
+// device: its icon, name, dBm and bars, then its address (or channel and
+// lock) with its flags. Rows are where rowLayout() says, which is what the
+// taps and the cursor use. On a wide enough screen the side panel sums the
+// scan up: how many of each kind, or how many open and locked networks.
+namespace feed {
+void frame(TFT_eSPI& t, int x0, int y0, int ww, int wh, const char* title, const char* right) {
+    t.fillRect(x0 + 2, y0 + 2, ww, wh, Theme::BLACK);
+    t.fillRect(x0, y0, ww, wh, Theme::BLACK);
+    for (int y = y0 + 12; y < y0 + wh - 1; y += 2) t.drawFastHLine(x0 + 1, y, ww - 2, STRIPE);
+    t.drawRect(x0, y0, ww, wh, Theme::PURPLE);
+    t.fillRect(x0 + 1, y0 + 1, ww - 2, 11, Theme::PURPLE);
+    t.setTextFont(1);
+    t.setTextSize(1);
+    t.setTextWrap(false);
+    txt(t, title, x0 + 4, y0 + 3, Theme::BG);
+    if (right && x0 + ww - 4 - t.textWidth(right) > x0 + 8 + t.textWidth(title)) txtR(t, right, x0 + ww - 4, y0 + 3, Theme::BG);
+}
+void bars3(TFT_eSPI& t, int x, int base, int rssi) {
+    const int lv = rssi > -62 ? 3 : rssi > -74 ? 2 : 1;
+    for (int k = 0; k < 3; k++) { const int hh = 2 + k * 2; t.fillRect(x + k * 3, base - hh, 2, hh, k < lv ? ON : STRIP); }
+}
+// One line of the summary: an icon (or none), a word, a number on the right.
+void sumRow(TFT_eSPI& t, int x, int xr, int y, const uint8_t* ic, uint16_t icC, const char* what, unsigned n, uint16_t c) {
+    if (ic) icon(t, x, y, ic, n ? icC : DIM);
+    txt(t, what, x + (ic ? 10 : 0), y, n ? c : DIM);
+    char b[8];
+    snprintf(b, sizeof b, "%u", n);
+    txtR(t, b, xr, y, n ? TEXT : DIM);
+}
+}  // namespace feed
+
+static void drawList(TFT_eSPI& t, const DetectionEngine& eng, bool isBle,
+                     int w, int h, int listTop, int listBottom, int rowH) {
+    using namespace feed;
+    const uint8_t count = isBle ? eng.rawBleCount() : eng.rawWifiCount();
+    const int barY = Theme::computeButtonBar(w, h).y;
+    const int x0 = 4, y0 = listTop - 13, ww = w - 8, wh = (barY - 5) - y0;
+    char b[40];
+    if (isBle) snprintf(b, sizeof b, "BLE  %u FOUND", (unsigned)count);
+    else       snprintf(b, sizeof b, "WIFI  %u NETS", (unsigned)count);
+    frame(t, x0, y0, ww, wh, "RESULTS.LOG", b);
+
+    const int ix0 = x0 + 3, ix1 = x0 + ww - 3;
+    const bool side = ww >= 290;
+    const int px = ix1 - 84;
+    const int fx0 = ix0 + 1, fx1 = side ? px - 5 : ix1;
+    const bool footer = listBottom < barY - 10;
+
+    if (count == 0) {
+        t.setTextSize(2);
+        txtC(t, (!isBle && eng.rawWifiScanFailed()) ? "SCAN FAILED" : "NOTHING HEARD", (fx0 + fx1) / 2, listTop + (listBottom - listTop) / 2 - 12, ON);
+        t.setTextSize(1);
+        txtC(t, isBle ? "TRY AGAIN, OR TRY WIFI" : "TRY AGAIN, OR TRY BLE", (fx0 + fx1) / 2, listTop + (listBottom - listTop) / 2 + 8, LABEL);
+    }
+
+    // The rows.
+    const int bodyH = listBottom - listTop;
+    uiClampScroll(g_scroll, count, bodyH, rowH);
+    const int max = bodyH / rowH;
+    const bool scrolls = count > max;
+    const int rr = fx1 - (scrolls ? 6 : 2);           // the rows' right edge, clear of the scrollbar
+    for (int i = 0; i < max && g_scroll + i < count; i++) {
+        const int idx = g_scroll + i;
+        const int ry = listTop + i * rowH, l2 = ry + 10;
+        if (i + 1 < max && idx + 1 < count) t.drawFastHLine(fx0, ry + rowH - 2, rr - fx0, STRIP);
+        const uint8_t* ic; uint16_t icC; int rssi; const uint8_t* addr; bool tracker = false;
+        char name[40], line2[28];
+        char pv[40];
+        int arrow = 0;
+        if (isBle) {
+            const RawBleResult* r = eng.rawBleAt((uint8_t)idx);
+            if (!r) break;
+            tracker = isTracker(eng, r->mac);
+            ic = bleIcon(r, tracker, icC);
+            rssi = r->rssi; addr = r->mac;
+            snprintf(name, sizeof name, "%s", r->name[0] ? Privacy::name(r->name, pv, sizeof pv) : "(unnamed)");
+            Privacy::mac(line2, sizeof line2, r->mac);
+            const int d = (int)r->rssi - (int)r->prev;
+            arrow = d >= 4 ? 1 : d <= -4 ? -1 : 0;
+        } else {
+            ic = I_NET; icC = ON;
+            rssi = eng.rawWifiRssi((uint8_t)idx); addr = eng.rawWifiBssid((uint8_t)idx);
+            const char* nm = Privacy::name(eng.rawWifiSsid((uint8_t)idx), pv, sizeof pv);
+            snprintf(name, sizeof name, "%s", nm[0] ? nm : "(hidden)");
+            const unsigned ch = eng.rawWifiChannel((uint8_t)idx);
+            snprintf(line2, sizeof line2, "%sCH%u  %s", ch > 14 ? "5G " : "", ch, eng.rawWifiOpen((uint8_t)idx) ? "OPEN" : "LOCKED");
+        }
+        // Line one: icon, name, dBm and bars.
+        icon(t, fx0 + 2, ry + 1, ic, icC);
+        bars3(t, rr - 9, ry + 8, rssi);
+        snprintf(b, sizeof b, "%d", rssi);
+        txtR(t, b, rr - 13, ry + 1, TEXT);
+        fit(t, name, rr - 13 - t.textWidth("-100") - 4 - (fx0 + 12));
+        txt(t, name, fx0 + 12, ry + 1, rssi > -60 ? HOT : ON);
+        // Line two: the address or channel, the flags, nearer or further.
+        txt(t, line2, fx0 + 12, l2, LABEL);
+        int fx = fx0 + 12 + t.textWidth(line2) + 6;
+        auto flag = [&](const char* s, uint16_t c) {
+            if (fx + t.textWidth(s) > rr - 10) return;
+            txt(t, s, fx, l2, c);
+            fx += t.textWidth(s) + 5;
+        };
+        if (tracker) flag("TRACKER", HOT);
+        if (addr && eng.isHunted(addr, isBle))  flag("HUNT", Theme::VAPOR_PINK);
+        if (addr && eng.isWatched(addr, isBle)) flag("WATCH", BLUE);
+        if (addr && IgnoreList::contains(addr)) flag("IGNORE", Theme::AMBER);
+        if (arrow) {
+            const int ax = rr - 7, ay = l2 + 1;
+            if (arrow > 0) t.fillTriangle(ax, ay + 6, ax + 6, ay + 6, ax + 3, ay, ON);
+            else           t.fillTriangle(ax, ay, ax + 6, ay, ax + 3, ay + 6, Theme::RED);
+        }
+    }
+    // The scrollbar, in the list's own colours.
+    if (scrolls) {
+        const int sx = fx1 - 3;
+        t.fillRect(sx, listTop, 2, bodyH, STRIP);
+        const int th = bodyH * max / count < 6 ? 6 : bodyH * max / count;
+        const int ty = listTop + (bodyH - th) * g_scroll / (count - max);
+        t.fillRect(sx, ty, 2, th, ON);
+    }
+
+    // The summary.
+    if (side && listBottom - listTop >= 65) {
+        const int py = listTop - 1, base = barY - 8;
+        t.drawFastVLine(px - 3, py - 1, base - py + 2, STRIP);
+        int yy = py;
+        if (isBle) {
+            unsigned named = 0, unknown = 0, trackers = 0;
+            int loud = 0; int8_t loudR = -128;
+            for (uint8_t i = 0; i < count; i++) {
+                const RawBleResult* r = eng.rawBleAt(i);
+                if (!r) continue;
+                if (r->rssi > loudR) { loudR = r->rssi; loud = i; }
+                if (isTracker(eng, r->mac)) { trackers++; continue; }
+                if (r->name[0]) named++;
+                else unknown++;
+            }
+            txt(t, "BY KIND", px, yy, LABEL); yy += 11;
+            sumRow(t, px, ix1 - 2, yy, I_BT,  ON,    "NAMED",    named,    TEXT); yy += 10;
+            sumRow(t, px, ix1 - 2, yy, I_UNK, LABEL, "UNKNOWN",  unknown,  TEXT); yy += 10;
+            sumRow(t, px, ix1 - 2, yy, I_TAG, HOT,   "TRACKERS", trackers, HOT);  yy += 13;
+            if (count && yy + 18 <= base) {
+                const RawBleResult* r = eng.rawBleAt((uint8_t)loud);
+                char pv[40], nm[24];
+                txt(t, "LOUDEST", px, yy, LABEL);
+                snprintf(b, sizeof b, "%d", r->rssi); txtR(t, b, ix1 - 2, yy, HOT);
+                snprintf(nm, sizeof nm, "%s", r->name[0] ? Privacy::name(r->name, pv, sizeof pv) : "(unnamed)");
+                fit(t, nm, 82);
+                txt(t, nm, px, yy + 10, TEXT);
+            }
+        } else {
+            unsigned open = 0, g24 = 0, g5 = 0;
+            uint8_t perCh[15] = { 0 };
+            int loud = 0; int8_t loudR = -128;
+            for (uint8_t i = 0; i < count; i++) {
+                if (eng.rawWifiOpen(i)) open++;
+                const uint8_t ch = eng.rawWifiChannel(i);
+                if (ch > 14) g5++; else { g24++; if (ch) perCh[ch]++; }
+                if (eng.rawWifiRssi(i) > loudR) { loudR = eng.rawWifiRssi(i); loud = i; }
+            }
+            uint8_t busy = 0;
+            for (uint8_t ch = 1; ch <= 14; ch++) if (perCh[ch] > perCh[busy]) busy = ch;
+            txt(t, "SUMMARY", px, yy, LABEL); yy += 11;
+            sumRow(t, px, ix1 - 2, yy, nullptr, 0, "OPEN",    open,         HOT);  yy += 10;
+            sumRow(t, px, ix1 - 2, yy, nullptr, 0, "LOCKED",  count - open, TEXT); yy += 10;
+            sumRow(t, px, ix1 - 2, yy, nullptr, 0, "2.4 GHZ", g24,          TEXT); yy += 10;
+#if SQW_WIFI_5G
+            sumRow(t, px, ix1 - 2, yy, nullptr, 0, "5 GHZ",   g5,           TEXT); yy += 10;
+#else
+            (void)g5;
+#endif
+            if (busy) {
+                txt(t, "BUSIEST", px, yy, TEXT);
+                snprintf(b, sizeof b, "CH %u", (unsigned)busy); txtR(t, b, ix1 - 2, yy, ON);
+                yy += 10;
+            }
+            yy += 3;
+            if (count && yy + 18 <= base) {
+                char pv[40], nm[24];
+                txt(t, "LOUDEST", px, yy, LABEL);
+                snprintf(b, sizeof b, "%d", eng.rawWifiRssi((uint8_t)loud)); txtR(t, b, ix1 - 2, yy, HOT);
+                const char* s = Privacy::name(eng.rawWifiSsid((uint8_t)loud), pv, sizeof pv);
+                snprintf(nm, sizeof nm, "%s", s[0] ? s : "(hidden)");
+                fit(t, nm, 82);
+                txt(t, nm, px, yy + 10, TEXT);
+            }
+        }
+    }
+
+    // The footer: how to pick one, and where the list is.
+    if (footer && count) {
+        const int fy = listBottom + 3;
+        t.drawFastHLine(ix0, fy - 2, ix1 - ix0, STRIP);
+        txt(t, "HOLD ROW TO TRACK", fx0 + 2, fy + 1, LABEL);
+        const int last = g_scroll + max < count ? g_scroll + max : count;
+        snprintf(b, sizeof b, "%d-%d OF %u", g_scroll + 1, last, (unsigned)count);
+        if (fx0 + 2 + t.textWidth("HOLD ROW TO TRACK") + 8 + t.textWidth(b) < ix1 - 2) txtR(t, b, ix1 - 2, fy + 1, ON);
+    }
+}
+
+#endif
 
 void uiRawScanTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng, bool isBle, bool done,
                     bool confirmPending, const char* confirmLabel, bool confirmWatched,
@@ -299,7 +910,7 @@ switch (Settings::background()) {
     }
     Theme::restorePalette(saved);
     char title[32];
-    snprintf(title, sizeof(title), ">> %s SCAN <<", isBle ? "BLE" : "WIFI");
+    snprintf(title, sizeof(title), "%s %s", done ? "RESULTS.LOG" : "SCAN.LOG", isBle ? "BLE" : "WIFI");
     Theme::drawTitleBar(t, title);
 
     // No viewport needed now that the background above already covers
@@ -308,30 +919,60 @@ switch (Settings::background()) {
     // mini cameos already do.
     Squachy::tick(t, w / 2, sqTop, sqH, now, advance, 0.8f, !done);
 
-    if (!done) {
-        float pulse = 0.55f + 0.45f * sinf((float)(now % 2000) / 2000.0f * 6.2831853f);
-        uint16_t col = Theme::blend(Theme::GREEN, Theme::CYAN, (uint16_t)(pulse * 200.0f));
-        t.setTextSize(3);
-        t.setTextColor(col, Theme::BG);
-        const char* msg = "SCANNING...";
-        int mw = t.textWidth(msg);
-        t.setCursor((w - mw) / 2, bodyTop + bodyH / 3);
-        t.print(msg);
-
-        if (isBle) {
-            char sub[24];
-            snprintf(sub, sizeof(sub), "%u found so far", (unsigned)eng.rawBleCount());
-            t.setTextSize(1);
-            t.setTextColor(Theme::CYAN, Theme::BG);
-            int sw = t.textWidth(sub);
-            t.setCursor((w - sw) / 2, bodyTop + bodyH / 3 + 35);
-            t.print(sub);
-        }
-
+#if !defined(CYD) || defined(CYD32) || defined(FREENOVE32)
+    // Keep the live feed briefly after completion so Wi-Fi names can
+    // actually appear. Do not display synthetic channel progress.
+    if (!done) feed::doneAt = 0;
+    else if (!feed::doneAt) feed::doneAt = now ? now : 1;
+    const bool hold = done && (isBle || !eng.rawWifiScanFailed()) &&
+        now - feed::doneAt < feed::holdMs(isBle, eng);
+    feed::holding = !done || hold;
+    if (!done || hold) {
+        drawFeed(t, now, eng, isBle, done, sqTop + sqH - 2, Theme::computeButtonBar(w, h).y - 4, w);
         drawBottomBar(t, w, h, isBle);
         if (confirmPending) drawConfirmPanel(t, w, h, confirmLabel, confirmWatched, confirmHunted, confirmIgnored);
         return;
     }
+#else
+    if (!done) {
+        // Compact live feed for classic CYD: reuse the existing row font
+        // and privacy helpers rather than linking the large terminal UI.
+        t.setTextFont(1);
+        t.setTextSize(1);
+        t.setTextWrap(false);
+        t.fillRect(4, bodyTop, w - 8, bodyH, Theme::BG);
+        t.drawRect(4, bodyTop, w - 8, bodyH, Theme::PURPLE);
+        t.setTextColor(Theme::GREEN, Theme::BG);
+        t.setCursor(8, bodyTop + 4);
+        t.print(isBle ? "BLE LIVE" : "WIFI LISTENING");
+        const int n = isBle ? eng.rawBleCount() : 0;
+        const int rows = (bodyH - 22) / 10;
+        const int first = n > rows ? n - rows : 0;
+        for (int i = first; i < n && rows > 0; ++i) {
+            const RawBleResult* r = eng.rawBleAt(i);
+            if (!r) continue;
+            char label[40], pv[40];
+            if (r->name[0] && ((now / 800) & 1))
+                UiFit::fitMid(label, sizeof label, Privacy::name(r->name, pv, sizeof pv), UiFit::chars(w - 68, 1));
+            else Privacy::mac(label, sizeof label, r->mac);
+            const int y = bodyTop + 16 + (i - first) * 10;
+            t.setCursor(8, y);
+            t.print(label);
+            t.setCursor(w - 48, y);
+            t.print((int)r->rssi);
+        }
+        drawBottomBar(t, w, h, isBle);
+        if (confirmPending) drawConfirmPanel(t, w, h, confirmLabel, confirmWatched, confirmHunted, confirmIgnored);
+        return;
+    }
+#endif
+
+#if defined(FREENOVE35_N) || defined(FREENOVE_S3_35)
+    drawList(t, eng, isBle, w, h, bodyTop, bodyBottom, rowH);
+    drawBottomBar(t, w, h, isBle);
+    if (confirmPending) drawConfirmPanel(t, w, h, confirmLabel, confirmWatched, confirmHunted, confirmIgnored);
+    return;
+#endif
 
     uint8_t count = isBle ? eng.rawBleCount() : eng.rawWifiCount();
 
@@ -348,6 +989,10 @@ switch (Settings::background()) {
         return;
     }
 
+#if defined(CYD)
+    // Compact terminal results: retain existing row geometry and controls.
+    t.fillRect(0, bodyTop, w, bodyH, Theme::BG);
+#endif
     const int topPad = 1;
     t.setTextSize(2);
     int detailY = topPad + t.fontHeight();
@@ -381,7 +1026,11 @@ switch (Settings::background()) {
             UiFit::fitMid(fittedName, sizeof fittedName, r->name[0] ? Privacy::name(r->name, pv, sizeof pv) : "(unnamed)",
                           UiFit::chars(ax - 6, 2));
             t.setTextSize(2);
+            #if defined(CYD32)
+            t.setTextColor(Theme::GREEN, Theme::BG);
+#else
             t.setTextColor(Theme::CYAN, Theme::BG);
+#endif
             t.setCursor(4, y + topPad);
             t.print(fittedName);
 
@@ -400,6 +1049,9 @@ switch (Settings::background()) {
             t.setTextColor(Theme::VAPOR_PURPLE, Theme::BG);
             t.setCursor(w - rw - 14, y + topPad);
             t.print(rssi);
+#if defined(CYD32)
+            drawCompactSignal(t, w - 12, y + topPad, r->rssi);
+#endif
             // Closer or further since the last reading: an arrow beside the
             // number, green up for nearer, red down for further, nothing for
             // a wobble of under four dB, which is what a still device does.
@@ -417,9 +1069,13 @@ switch (Settings::background()) {
             char fittedSsid[40];
             char pv[40];
             UiFit::fitMid(fittedSsid, sizeof fittedSsid, Privacy::name(eng.rawWifiSsid(idx), pv, sizeof pv),
-                          UiFit::chars(w - wifiRw - 20, 2));
+                          UiFit::chars(w - wifiRw - 32, 2));
             t.setTextSize(2);
+            #if defined(CYD32)
+            t.setTextColor(Theme::GREEN, Theme::BG);
+#else
             t.setTextColor(Theme::CYAN, Theme::BG);
+#endif
             t.setCursor(4, y + topPad);
             t.print(fittedSsid);
 
@@ -443,6 +1099,9 @@ switch (Settings::background()) {
             t.setTextColor(Theme::VAPOR_PURPLE, Theme::BG);
             t.setCursor(w - wifiRw - 14, y + topPad);
             t.print(wifiRssi);
+#if defined(CYD32)
+            drawCompactSignal(t, w - 12, y + topPad, eng.rawWifiRssi(idx));
+#endif
         }
 
         y += rowH;
