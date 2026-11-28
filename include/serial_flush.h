@@ -8,7 +8,11 @@
 #pragma once
 #include <Arduino.h>
 static inline void serialFlush() {
-#if defined(TWATCH_S3)
+#if defined(FREENOVE35_N)
+    // Native USB CDC may block indefinitely even with TX timeout disabled.
+    // Startup diagnostics are best-effort; never wait for a USB host here.
+    return;
+#elif defined(TWATCH_S3)
     if (Serial) Serial.flush();
 #else
     Serial.flush();

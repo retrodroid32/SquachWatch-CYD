@@ -20,7 +20,7 @@ static_assert(sizeof(BlackBox::BattRecord) == 64, "BattRecord must be one 64-byt
 namespace BlackBox {
 namespace {
 
-#if defined(TWATCH_S3)
+#if defined(TWATCH_S3) || defined(FREENOVE35_N)
 const uint32_t BASE    = 0x810000;   // T-Watch layout unchanged
 const uint8_t  SECTORS = 32;
 #else

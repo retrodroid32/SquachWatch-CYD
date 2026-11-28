@@ -1,2 +1,2 @@
-TDECK-PLUS-R4-LAB-FLASHER-SAFE-TESTS
-PR #259 experimental LILYGO T-Deck Plus ESP32-S3 LAB-only web flasher. Compile full normal matrix and TDeck separately; exact-head PR CI required, then release CI and separate Pages. Publish unlisted manifest-lab-tdeck-plus.json with dedicated 16MB ESP32-S3 bootloader at 0x0, partition at 0x8000, otadata at 0xe000, firmware at 0x10000. Full site validation includes unlisted TDeck; synthetic partition host test bypasses added unrelated checkout LAB profiles only for fixture. No production changes, no master merge, no release/tag. Hardware boot testing pending.
+FREENOVE35-R14.6-SHARED-CYD-COLOR-WIFI-STATUS
+Retain hardware-validated R14.5 boot and application. Board-only software RGB565 red/blue calibration, single capacitive color-check toggle per press, and bounded raw WiFi pending status before failure. Full build and LAB publication requested; verify colors and scan status on hardware.

@@ -44,6 +44,7 @@ def verify(site: Path, build_dir: Path, margin: int, expect_size, include_checko
         expected_partition = (
             "lab-twatch-s3-partitions.bin" if env == "twatch-s3"
             else "lab-tdeck-plus-partitions.bin" if env == "tdeck-plus"
+            else "lab-freenove35-st77922-partitions.bin" if env == "freenove35-st77922"
             else "lab-esp32-partitions.bin"
         )
         for build in manifest.get("builds", []):
@@ -69,7 +70,7 @@ def verify(site: Path, build_dir: Path, margin: int, expect_size, include_checko
                 continue
             capacity = min(s[2] for s in slots)
             remaining = capacity - firmware.stat().st_size
-            if env not in ("twatch-s3", "tdeck-plus") and expect_size is not None and capacity != expect_size:
+            if env not in ("twatch-s3", "tdeck-plus", "freenove35-st77922") and expect_size is not None and capacity != expect_size:
                 errors.append(f"{env}: published app slot is {capacity:#x}, expected {expect_size:#x}")
             if remaining < margin:
                 errors.append(f"{env}: LAB firmware.bin is too large for its LAB partition "
