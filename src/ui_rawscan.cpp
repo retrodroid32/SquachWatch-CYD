@@ -618,7 +618,7 @@ int uiRawScanRowAt(TFT_eSPI& t, int x, int y, int screenW, int screenH) {
 #if !defined(CYD) || defined(CYD32) || defined(FREENOVE32)
     if (feed::holding) return -1;
 #endif
-    if (y < bodyTop || y >= bodyBottom) return -1;
+    if (y < bodyTop || y >= bodyBottom || (y - bodyTop) / rowH >= (bodyBottom - bodyTop) / rowH) return -1;
 #if defined(FREENOVE35_N) || defined(FREENOVE_S3_35)
     const int right = screenW - 8 >= 290 ? screenW - 96 : screenW - 7;
     if (x < 8 || x > right || (y - bodyTop) / rowH >= (bodyBottom - bodyTop) / rowH) return -1;
@@ -1080,7 +1080,7 @@ switch (Settings::background()) {
             char fittedSsid[40];
             char pv[40];
             UiFit::fitMid(fittedSsid, sizeof fittedSsid, Privacy::name(eng.rawWifiSsid(idx), pv, sizeof pv),
-                          UiFit::chars(w - wifiRw - 20, 2));
+                          UiFit::chars(w - wifiRw - 32, 2));
             t.setTextSize(2);
             #if defined(CYD32)
             t.setTextColor(Theme::GREEN, Theme::BG);

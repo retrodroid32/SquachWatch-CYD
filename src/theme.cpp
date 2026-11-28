@@ -12,6 +12,7 @@
 #include "security.h"
 #include "ota_wifi.h"
 #include "ui_fit.h"
+#include "info_card.h"
 
 namespace Theme {
 
@@ -10028,6 +10029,9 @@ bool infoPanelHitDismiss(int x, int y, int screenW, int screenH) {
 
 void drawInfoPanel(TFT_eSPI& t, int w, int h, uint32_t now,
                    const char* typeName, const char* text) {
+#if SQW_INFO_CARD
+    if (InfoCard::active(now)) { InfoCard::draw(t,w,h); return; }
+#endif
     int px, py, pw, ph, headingY, squachyCx, squachyBaseY, squachyWander, textTop, textMaxW, btnX, btnY, btnW, btnH;
     float squachyScale;
     infoRects(w, h, px, py, pw, ph, headingY, squachyCx, squachyBaseY, squachyScale, squachyWander,

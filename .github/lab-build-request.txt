@@ -1,2 +1,2 @@
-R16.1.9-ALERT-COMPAT
-Fix emulator char-to-const-char-pointer error with bounded null-terminated device name and common string print API. Retain fixed-point RGB optimization, MORE INFO navigation and OTA reserve. Full CI and LAB publication requested.
+R16.1.10-INFO-CARDS
+Freenove category info cards, real evidence confidence, paginated descriptions, bounded trail tiles, tracker owner fact and classified scan card return. Keep unknown scan tracking and classic CYD OTA gate; full CI/LAB requested.

@@ -606,6 +606,15 @@ void uiAlertTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng,
     } else if (s_lastFree) {
         snprintf(context, sizeof context, "%s", "QUIET UNLESS IT NEARS");
     }
+#if defined(FREENOVE35_N)
+    if (!s_redacted && !Settings::privacyMode() &&
+        (signalDet.type==DetectionType::AIRTAG || signalDet.type==DetectionType::GOOGLE_TAG ||
+         signalDet.type==DetectionType::SAMSUNG_TAG || signalDet.type==DetectionType::TILE)) {
+        const char* owner=signalDet.owner==OWNER_WITH?"WITH OWNER":signalDet.owner==OWNER_AWAY?"AWAY FROM OWNER":"OWNER UNKNOWN";
+        snprintf(context,sizeof context,"%s",owner);
+        contextColor=signalDet.owner==OWNER_AWAY?Theme::AMBER:Theme::CYAN;
+    }
+#endif
     if (s_queueCount && !s_redacted) {
         const size_t used = strlen(context);
         snprintf(context + used, sizeof context - used, "%s+%u WAITING",
