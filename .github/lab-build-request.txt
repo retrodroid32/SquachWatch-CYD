@@ -1,2 +1,2 @@
-R16.1.7-ALERT-INFO
-Return MORE INFO to alert card, prevent held touch actions, reset alert timer, close info on lock, skip unnecessary info rendering work and fit long names. All hardware; preserve OTA gate. Full matching CI and LAB publication requested.
+R16.1.8-ALERT-FLASH
+Recover classic CYD flash by replacing floating point alert rainbow phase with fixed-point arithmetic and simplifying device-name clipping. Preserve alert navigation, lock safety, scanner features and 8192-byte OTA gate. Full CI and LAB publication requested.
