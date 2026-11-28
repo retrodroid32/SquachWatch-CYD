@@ -57,6 +57,9 @@ jobs:
       # including the fast display variants and T-Watch beta, must compile
       # here. The known-boot-looping 3.5-inch development profile stays out
       # of both release and CI until its hardware fault is resolved.
+      - name: Test canonical LAB publication policy
+        run: python3 tools/test_lab_publication_policy.py
+
       - name: Validate board matrix and release metadata
         run: |
           python tools/board_matrix.py validate

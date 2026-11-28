@@ -41,7 +41,9 @@ concurrency:
 jobs:
   publish:
     if: >-
-      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') ||
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' &&
+       (github.event.workflow_run.head_branch == 'lab/v151-r161-scanner-20261127' ||
+        startsWith(github.event.workflow_run.head_branch, 'v'))) ||
       ((github.event_name == 'workflow_dispatch' || github.event_name == 'push') && github.ref == 'refs/heads/master')
     runs-on: ubuntu-latest
     environment:
@@ -49,9 +51,10 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
 
     steps:
-      - name: Checkout trusted master recovery validator
-        if: github.event_name == 'workflow_dispatch' || github.event_name == 'push'
+      - name: Checkout trusted master publication policy
         uses: actions/checkout@v7
+        with:
+          ref: master
 
       - name: Verify LAB Build, source SHA and isolated Pages-only failure
         if: github.event_name == 'workflow_dispatch' || github.event_name == 'push'
@@ -87,6 +90,21 @@ jobs:
             --run _lab_source_run.json --jobs _lab_source_jobs.json \
             --sha "$EXPECTED_SHA" --repo "$GITHUB_REPOSITORY"
           echo "VERIFIED_LAB_SOURCE_RUN_ID=$SOURCE_RUN_ID" >> "$GITHUB_ENV"
+
+      - name: Enforce authoritative LAB source and exact current head
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_RUN_ID: ${{ github.event.workflow_run.id }}
+          CANONICAL_BRANCH: lab/v151-r161-scanner-20261127
+        run: |
+          set -euo pipefail
+          SOURCE_RUN_ID="${VERIFIED_LAB_SOURCE_RUN_ID:-$EVENT_RUN_ID}"
+          [[ "$SOURCE_RUN_ID" =~ ^[0-9]+$ ]] || exit 1
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$SOURCE_RUN_ID" > _pages_source.json
+          CANONICAL_HEAD="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/$CANONICAL_BRANCH" --jq .object.sha)"
+          args=()
+          if [[ "$GITHUB_EVENT_NAME" != "workflow_run" ]]; then args+=(--recovery); fi
+          python3 tools/lab_publication_policy.py --run _pages_source.json --canonical-head "$CANONICAL_HEAD" --repo "$GITHUB_REPOSITORY" "${args[@]}"
 
       - name: Download exact validated site artifact
         env:
@@ -149,6 +167,21 @@ jobs:
           done
           echo "::error::Pages artifact not visible after bounded retry"
           exit 1
+
+      - name: Recheck authoritative head immediately before deploy
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_RUN_ID: ${{ github.event.workflow_run.id }}
+          CANONICAL_BRANCH: lab/v151-r161-scanner-20261127
+        run: |
+          set -euo pipefail
+          SOURCE_RUN_ID="${VERIFIED_LAB_SOURCE_RUN_ID:-$EVENT_RUN_ID}"
+          [[ "$SOURCE_RUN_ID" =~ ^[0-9]+$ ]] || exit 1
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$SOURCE_RUN_ID" > _pages_source.json
+          CANONICAL_HEAD="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/$CANONICAL_BRANCH" --jq .object.sha)"
+          args=()
+          if [[ "$GITHUB_EVENT_NAME" != "workflow_run" ]]; then args+=(--recovery); fi
+          python3 tools/lab_publication_policy.py --run _pages_source.json --canonical-head "$CANONICAL_HEAD" --repo "$GITHUB_REPOSITORY" "${args[@]}"
 
       # Use the same GitHub Pages API and OIDC token as deploy-pages, but
       # bypass its inconsistent internal artifact-name lookup. The artifact
