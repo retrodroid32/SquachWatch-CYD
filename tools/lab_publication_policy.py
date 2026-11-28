@@ -13,7 +13,7 @@ def allowed(run, canonical_head, repo, recovery=False):
     # A real production version tag is handled by the existing release pipeline;
     # no experimental lab tag, older branch or dispatch can publish the shared LAB.
     return (not recovery and run.get("event") == "push"
-            and bool(re.fullmatch(r"v[0-9]+\\.[0-9]+\\.[0-9]+", branch)))
+            and bool(re.fullmatch(r"v[0-9]+[.][0-9]+[.][0-9]+", branch)))
 
 if __name__ == "__main__":
     import argparse, json
