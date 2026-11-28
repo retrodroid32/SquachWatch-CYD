@@ -5513,14 +5513,16 @@ void loop() {
         }
         case AppState::ALERT: {
             uiAlertSetQueue(Security::locked() ? 0 : s_alertQueue.size());
-            const char* alertInfoText =
+            // A modal must never outlive the unlocked session that opened it.
+            if (Security::locked()) s_infoPending = false;
+            const char* alertInfoText = !s_infoPending ? nullptr :
                 s_infoPage == InfoPage::PRIMER ? DetectionInfo::rssiConfidencePrimer()
               : s_infoPage == InfoPage::EVIDENCE ? DetectionInfo::evidenceText(s_confirmDetection)
 #if SQW_TRAIL_ENABLED
               : s_infoPage == InfoPage::TRAIL ? TrailHistory::describe(s_confirmDetection.mac,(uint8_t)s_confirmDetection.type,Settings::privacyMode() || Security::locked(),s_confirmDetection.restored)
 #endif
               : DetectionInfo::explainFor(s_confirmType, s_confirmVendor, privName(s_confirmName), engine);
-            const char* alertInfoTypeName =
+            const char* alertInfoTypeName = !s_infoPending ? nullptr :
                 s_infoPage == InfoPage::PRIMER ? nullptr
               : s_infoPage == InfoPage::EVIDENCE ? "EVIDENCE"
 #if SQW_TRAIL_ENABLED
@@ -5620,10 +5622,11 @@ void loop() {
                         s_infoPage = InfoPage::EXPLAIN;
                         s_infoArmed = false;
                     } else {
-                        // GOT IT on the final explanation acknowledges the
-                        // alert and returns home.
+                        // Return to the original alert card. A held finger
+                        // cannot trigger WATCH/HUNT or acknowledge it.
                         s_infoPending = false;
-                        acknowledgeAlert();
+                        s_alertArmed = false;
+                        alertStart = now;
                     }
                 }
                 break;

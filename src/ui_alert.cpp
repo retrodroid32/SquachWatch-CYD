@@ -1,5 +1,6 @@
 // SquachWatch-CYD — ALERT screen implementation
 #include "ui_alert.h"
+#include "ui_fit.h"
 #include "theme.h"
 #include "settings.h"
 #include "privacy.h"
@@ -528,9 +529,11 @@ void uiAlertTick(TFT_eSPI& t, uint32_t now, const DetectionEngine& eng,
     t.setTextColor(Theme::WHITE, Theme::BG);
     if (s_last.name[0] && !s_redacted) {
         char pv[40];
-        const char* nm = Privacy::name(s_last.name, pv, sizeof pv);
-        t.setCursor(PLATE_X + (PLATE_W - t.textWidth(nm)) / 2, PLATE_Y + NAME_DY);
-        t.print(nm);
+        char fitted[40];
+        UiFit::fitMid(fitted, sizeof fitted, Privacy::name(s_last.name, pv, sizeof pv),
+                      UiFit::chars(PLATE_W - 12, readSz));
+        t.setCursor(PLATE_X + (PLATE_W - t.textWidth(fitted)) / 2, PLATE_Y + NAME_DY);
+        t.print(fitted);
     }
 
     char mac[24];
