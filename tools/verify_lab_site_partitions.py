@@ -18,8 +18,17 @@ ROOT = Path(__file__).resolve().parents[1]
 def digest(data):
     return hashlib.sha256(data).hexdigest()
 
-def verify(site: Path, build_dir: Path, margin: int, expect_size):
+def verify(site: Path, build_dir: Path, margin: int, expect_size, include_checkout_lab_profiles=True):
     matrix = json.loads((site / "boards.json").read_text())
+    if include_checkout_lab_profiles:
+        # A LAB-only board cannot exist in the mirrored production boards.json.
+        # Include the source checkout's unlisted LAB profiles for verification.
+        checkout_matrix = json.loads((ROOT / "web-flasher/boards.json").read_text())
+        ids = {board["id"] for board in matrix["boards"]}
+        for board in checkout_matrix["boards"]:
+            if board.get("lab") and board["id"] not in ids:
+                matrix["boards"].append(board)
+                ids.add(board["id"])
     verified = 0
     errors = []
     for board in matrix["boards"]:
@@ -34,6 +43,8 @@ def verify(site: Path, build_dir: Path, margin: int, expect_size):
         expected_firmware = "lab-" + env + "-firmware.bin"
         expected_partition = (
             "lab-twatch-s3-partitions.bin" if env == "twatch-s3"
+            else "lab-tdeck-plus-partitions.bin" if env == "tdeck-plus"
+            else "lab-freenove35-st77922-partitions.bin" if env == "freenove35-st77922"
             else "lab-esp32-partitions.bin"
         )
         for build in manifest.get("builds", []):
@@ -59,7 +70,7 @@ def verify(site: Path, build_dir: Path, margin: int, expect_size):
                 continue
             capacity = min(s[2] for s in slots)
             remaining = capacity - firmware.stat().st_size
-            if env != "twatch-s3" and expect_size is not None and capacity != expect_size:
+            if env not in ("twatch-s3", "tdeck-plus", "freenove35-st77922") and expect_size is not None and capacity != expect_size:
                 errors.append(f"{env}: published app slot is {capacity:#x}, expected {expect_size:#x}")
             if remaining < margin:
                 errors.append(f"{env}: LAB firmware.bin is too large for its LAB partition "

@@ -33,11 +33,11 @@ with tempfile.TemporaryDirectory() as tmp:
         {"offset":0x10000,"path":"lab-cyd-firmware.bin"}]}]}
     mp = site / "manifest-lab-cyd.json"
     mp.write_text(json.dumps(m))
-    verify(site, root / ".pio" / "build", 8192, slot)
+    verify(site, root / ".pio" / "build", 8192, slot, include_checkout_lab_profiles=False)
     m["builds"][0]["parts"][0]["path"]="esp32-partitions.bin"
     mp.write_text(json.dumps(m))
     try:
-        verify(site, root / ".pio" / "build", 8192, slot)
+        verify(site, root / ".pio" / "build", 8192, slot, include_checkout_lab_profiles=False)
     except SystemExit:
         pass
     else:

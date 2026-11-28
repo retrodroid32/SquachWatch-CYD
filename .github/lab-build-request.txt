@@ -1,4 +1,2 @@
-V150-R4-DETECTION-R10-LAB-PUBLICATION
-LAB-only publication retry after verified full PR #258 CI Build #1091: firmware + host tests + emulator PASS at adfd9881e74b5577f8fe2a3b2e2ef3cea9b3bebc.
-Force an exact-commit LAB release-flasher run via branch request-file filter. It must wait for the new matching PR Build, then run its own CI gate, compile the release board profiles and publish a LAB-only pages-site artifact. Never publish to production, create production tags, or merge master.
-Test targets: classic CYD 2.8 ST7789 and CYD 3.2 ST7798. Source is stacked on R12 memory-guarded framebuffer recovery; hardware SD-in cold boots and detection scans still pending.
+FREENOVE35-R14.6-SHARED-CYD-COLOR-WIFI-STATUS
+Retain hardware-validated R14.5 boot and application. Board-only software RGB565 red/blue calibration, single capacitive color-check toggle per press, and bounded raw WiFi pending status before failure. Full build and LAB publication requested; verify colors and scan status on hardware.

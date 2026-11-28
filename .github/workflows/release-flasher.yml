@@ -120,6 +120,7 @@ jobs:
           python3 tools/test_cyd32_r12_sd_boot_adaptive.py
           python3 tools/test_upstream_v150_signatures_r1.py
           python3 tools/test_upstream_v150_full_detection.py
+          python3 tools/test_freenove_native_ui.py
           python3 tools/test_mirror_pages_release_fallback.py
           for guard in \
             tools/test_v141_arlo_oui.py \
@@ -304,6 +305,13 @@ jobs:
         run: |
           set -euo pipefail
           pio run $(python tools/board_matrix.py pio-args release)
+          # LAB-only optional ESP32-S3 T-Deck Plus; never enter production release matrix.
+          if [ "${{ steps.ver.outputs.is_lab }}" = "true" ]; then
+            pio run -e tdeck-plus
+            python3 tools/check_app_image_sizes.py tdeck-plus
+            pio run -e freenove35-st77922
+            python3 tools/check_app_image_sizes.py freenove35-st77922
+          fi
           # Compare FINAL ESP32 image bytes to the actual partition table.
           # The ELF estimate overlooked a 240-byte overflow and shipped black-screen LAB firmware.
           python3 tools/check_app_image_sizes.py $(python tools/board_matrix.py list release)
@@ -400,6 +408,14 @@ jobs:
           # same boot_app0.bin `pio run -t upload` has always written.
           cp "$HOME/.platformio/packages/framework-arduinoespressif32/tools/partitions/boot_app0.bin" esp32-otadata.bin
           test "$(stat -c%s esp32-otadata.bin)" -eq 8192
+          if [ "${{ steps.ver.outputs.is_lab }}" = "true" ]; then
+            cp .pio/build/tdeck-plus/bootloader.bin tdeck-plus-bootloader.bin
+            cp .pio/build/tdeck-plus/partitions.bin tdeck-plus-partitions.bin
+            cp .pio/build/tdeck-plus/firmware.bin tdeck-plus-firmware.bin
+            cp .pio/build/freenove35-st77922/bootloader.bin freenove35-st77922-bootloader.bin
+            cp .pio/build/freenove35-st77922/partitions.bin freenove35-st77922-partitions.bin
+            cp .pio/build/freenove35-st77922/firmware.bin freenove35-st77922-firmware.bin
+          fi
           # The S3 watch shares none of that: its own chip, its own bootloader
           # and its own table. otadata is the same eight bytes of boot_app0.
           cp .pio/build/twatch-s3/bootloader.bin esp32s3-bootloader.bin
@@ -580,6 +596,26 @@ jobs:
           label = "${{ steps.ver.outputs.label }}"
           ver   = "${{ steps.ver.outputs.version }}"
           matrix = json.load(open("web-flasher/boards.json"))
+          # The live production index lacks this new LAB-only option.
+          # Add the path strictly inside the ?lab=1 list in the mirrored
+          # page without changing normal production board choices.
+          page = "_site/index.html"
+          html = open(page, encoding="utf-8").read()
+          # The published LAB picker may already contain T-Deck from an
+          # earlier deployment. Extend its array idempotently rather than
+          # assuming the original T-Watch must still be its final item.
+          start = html.find("function addLabOptions()")
+          end = html.find("].forEach(function (path)", start)
+          if start < 0 or end < 0 or end - start > 3000:
+              raise SystemExit("LAB picker array not found; refusing unrelated HTML edits")
+          picker = html[start:end]
+          for board in ("tdeck-plus", "freenove35-st77922"):
+              filename = "./manifest-lab-" + board + ".json"
+              if filename not in picker:
+                  html = html[:end] + ", '" + filename + "'" + html[end:]
+                  end += len(", '" + filename + "'")
+                  picker = html[start:end]
+          open(page, "w", encoding="utf-8").write(html)
           # LAB firmware may require an updated OTA partition layout.
           # The mirrored production esp32-partitions.bin must remain
           # byte-for-byte unchanged. Serve THIS build's partition table

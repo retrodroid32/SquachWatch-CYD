@@ -37,6 +37,10 @@
 #include <string.h>
 #include <SD.h>
 
+#if defined(FREENOVE35_N)
+extern void freenoveBootProgress(const char* stage);
+#endif
+
 // -------- global engine instance (referenced by callbacks) --------
 static DetectionEngine* g_engine = nullptr;
 
@@ -140,6 +144,10 @@ enum class RawScanMode : uint8_t { NONE, BLE, WIFI, UPDATE, REST };
 static bool g_restBle = false;   // REST: is the BLE scan resting too?
 static RawScanMode g_rawMode        = RawScanMode::NONE;
 static uint32_t    g_rawBleStartMs  = 0;
+#if defined(FREENOVE35_N)
+static uint32_t s_fnWifiStartMs = 0;
+static constexpr uint32_t FN_WIFI_SCAN_TIMEOUT_MS = 12000u;
+#endif
 #if defined(GPS_SUPPORT) && defined(GPS_RX_PIN)
 // GPIO35 GPS firmware revealed raw WiFi and NimBLE competing for RF airtime.
 // Pause BLE on its host task before doing an active WiFi survey, with a
@@ -879,6 +887,9 @@ bool DetectionEngine::init() {
 #else
     static const bool SLIM_WIFI = true;    // A/B on the bench: 45 frames/40 s slim, 20/45 s stock
 #endif
+#if defined(FREENOVE35_N)
+    freenoveBootProgress("Starting Wi-Fi...");
+#endif
     Serial.println("[boot] starting WiFi");
     serialFlush();
     Serial.printf("[boot] heap before WiFi: %lu free, %lu largest\n", (unsigned long)ESP.getFreeHeap(), (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
@@ -893,6 +904,9 @@ bool DetectionEngine::init() {
     // network interface stays; it is re-attached to the new driver so an
     // update over WiFi still gets an address.
     if (SLIM_WIFI) {
+#if defined(FREENOVE35_N)
+        freenoveBootProgress("Configuring Wi-Fi memory...");
+#endif
         esp_wifi_stop();
         esp_wifi_deinit();
         wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
@@ -1038,9 +1052,15 @@ bool DetectionEngine::init() {
     s_bootHeap.wifiLargest = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
     Serial.printf("[boot] heap with WiFi up: %lu free, %lu largest\n",
                   (unsigned long)s_bootHeap.wifiFree, (unsigned long)s_bootHeap.wifiLargest);
+#if defined(FREENOVE35_N)
+    freenoveBootProgress("Starting Bluetooth...");
+#endif
     Serial.println("[boot] starting Bluetooth");
     serialFlush();
     NimBLEDevice::init("");
+#if defined(FREENOVE35_N)
+    freenoveBootProgress("Starting BLE scan...");
+#endif
     NimBLEScan* scan = NimBLEDevice::getScan();
     // Passive to start, whatever the room: the first second of an active
     // scan in a crowded building is what killed a user's board. Active
@@ -1099,6 +1119,7 @@ bool DetectionEngine::init() {
     }
 
     // 5. SD card (best-effort), now that the radios have what they need.
+#if !defined(FREENOVE35_N)
     _sd.begin();
 #if !(defined(CYD) && !defined(CYD32) && !defined(CYD35) && !defined(AWOK) && !defined(RLPHANTOM) && !defined(RLPHANTOM_R))
     _sd.startMonitor();  // other boards preserve original startup behavior
@@ -1107,6 +1128,11 @@ bool DetectionEngine::init() {
     // run; the 2.8 boot log shows the SD stack exhausting its last block.
 #endif
 
+#else
+    // FNK0104N shares LCD/SD resources differently from CYD. Never start
+    // the classic SPI SD implementation on an unvalidated QSPI panel bus.
+    Serial.println("[freenove35] SD deferred until dedicated SDMMC driver");
+#endif
     return true;
 }
 
@@ -2391,6 +2417,12 @@ void DetectionEngine::startRawWifiScan() {
     requestRawBleScanMode();
 #else
     if (leavingRawBle) requestRawBleScanMode();
+#if defined(FREENOVE35_N)
+    // A transient WIFI_SCAN_FAILED can precede the asynchronous completion.
+    // Do not expose it as terminal while the scan's completion window is open.
+    WiFi.scanDelete();
+    s_fnWifiStartMs = millis();
+#endif
     WiFi.scanNetworks(true /* async */, true /* hidden */, true /* passive */, 150);
 #endif
 }
@@ -2480,7 +2512,14 @@ bool DetectionEngine::rawWifiScanFailed() const {
 #if defined(GPS_SUPPORT) && defined(GPS_RX_PIN)
     return g_rawMode == RawScanMode::WIFI && s_rawWifiFailed;
 #else
+#if defined(FREENOVE35_N)
+    if (g_rawMode != RawScanMode::WIFI) return false;
+    const int result = WiFi.scanComplete();
+    // Success always takes precedence; do not flash a failure during startup.
+    return result < 0 && (uint32_t)(millis() - s_fnWifiStartMs) >= FN_WIFI_SCAN_TIMEOUT_MS;
+#else
     return g_rawMode == RawScanMode::WIFI && WiFi.scanComplete() == -2;
+#endif
 #endif
 }
 
